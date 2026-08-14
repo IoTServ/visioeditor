@@ -263,6 +263,66 @@ void main() {
       final again = const DocumentParser().parse(result.originalBytes);
       expect(again.pages.first.shapes.length,
           result.document.pages.first.shapes.length);
+
+      Map<int, VsdxShape> indexShapes(List<VsdxShape> roots) {
+        final out = <int, VsdxShape>{};
+        void visit(VsdxShape shape) {
+          out[shape.id] = shape;
+          for (final child in shape.children) {
+            visit(child);
+          }
+        }
+
+        for (final shape in roots) {
+          visit(shape);
+        }
+        return out;
+      }
+
+      final originalById = indexShapes(result.document.pages.first.shapes);
+      final reopenedById = indexShapes(again.pages.first.shapes);
+      for (final entry in originalById.entries) {
+        final original = entry.value;
+        final reopened = reopenedById[entry.key];
+        expect(reopened, isNotNull, reason: 'shape ${entry.key}');
+        if (original.line.hasBeginArrow) {
+          expect(
+            reopened!.line.beginArrowSizeInches,
+            closeTo(original.line.beginArrowSizeInches, 1e-12),
+            reason: 'shape ${entry.key} begin marker must round-trip exactly',
+          );
+        }
+        if (original.line.hasEndArrow) {
+          expect(
+            reopened!.line.endArrowSizeInches,
+            closeTo(original.line.endArrowSizeInches, 1e-12),
+            reason: 'shape ${entry.key} end marker must round-trip exactly',
+          );
+        }
+      }
+
+      // The editor saves the original binary model against the synthesized
+      // package. Preserve the private exact-size rows on that path as well.
+      final savedBytes = const VsdxWriter().write(
+        originalBytes: result.originalBytes,
+        edited: result.document,
+      );
+      final savedById = indexShapes(
+        const DocumentParser().parse(savedBytes).pages.first.shapes,
+      );
+      for (final entry in originalById.entries) {
+        final original = entry.value;
+        final saved = savedById[entry.key];
+        expect(saved, isNotNull, reason: 'saved shape ${entry.key}');
+        if (original.line.hasBeginArrow) {
+          expect(saved!.line.beginArrowSizeInches,
+              closeTo(original.line.beginArrowSizeInches, 1e-12));
+        }
+        if (original.line.hasEndArrow) {
+          expect(saved!.line.endArrowSizeInches,
+              closeTo(original.line.endArrowSizeInches, 1e-12));
+        }
+      }
       expect(
         <int, int>{
           for (final shape in again.pages.first.shapes)
@@ -1203,6 +1263,44 @@ void main() {
           .firstWhere((s) => s.id == first.id);
       expect(againFirst.pinX, closeTo(moved.pinX, 1e-4));
       expect(againFirst.pinY, closeTo(moved.pinY, 1e-4));
+    });
+
+    test('import → edit exact arrow size → write vsdx → reopen', () {
+      final bytes = _loadSample('Visio11FormatLine.vsd');
+      if (bytes == null) return;
+      final result = parseVisio(bytes);
+      final page = result.document.pages.first;
+      final target = page.shapes.firstWhere(
+        (shape) => shape.line.hasBeginArrow || shape.line.hasEndArrow,
+      );
+      const exactSize = 0.1523456789;
+      final editedTarget = target.copyWith(
+        line: target.line.hasBeginArrow
+            ? target.line.copyWith(beginArrowSizeInches: exactSize)
+            : target.line.copyWith(endArrowSizeInches: exactSize),
+      );
+      final editedPage = page.copyWith(
+        shapes: <VsdxShape>[
+          for (final shape in page.shapes)
+            if (shape.id == target.id) editedTarget else shape,
+        ],
+      );
+      final savedBytes = const VsdxWriter().write(
+        originalBytes: result.originalBytes,
+        edited: result.document.copyWith(pages: <VsdxPage>[editedPage]),
+      );
+      final reopened = const DocumentParser()
+          .parse(savedBytes)
+          .pages
+          .first
+          .shapes
+          .firstWhere((shape) => shape.id == target.id);
+      expect(
+        target.line.hasBeginArrow
+            ? reopened.line.beginArrowSizeInches
+            : reopened.line.endArrowSizeInches,
+        closeTo(exactSize, 1e-12),
+      );
     });
 
     test('resolves page name and TextXForm when present', () {

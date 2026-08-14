@@ -544,6 +544,16 @@ class PageParser {
         drawioDashPattern = parseDrawioDashPattern(cell.value);
       } else if (cell.name == VsdxShape.userFixedDash) {
         drawioFixedDash = cell.value == '1';
+      } else if (cell.name == VsdxShape.userVsdBeginArrowSize) {
+        final size = double.tryParse(cell.value ?? '');
+        if (size != null && size > 0 && line.hasBeginArrow) {
+          line = line.copyWith(beginArrowSizeInches: size);
+        }
+      } else if (cell.name == VsdxShape.userVsdEndArrowSize) {
+        final size = double.tryParse(cell.value ?? '');
+        if (size != null && size > 0 && line.hasEndArrow) {
+          line = line.copyWith(endArrowSizeInches: size);
+        }
       }
     }
     if (drawioDashPattern != null) {

@@ -465,7 +465,13 @@ void _expectSynthesizedShape(
   expect(after.hyperlinks, before.hyperlinks, reason: '$reason hyperlinks');
   expect(after.userProperties, before.userProperties,
       reason: '$reason shape data');
-  expect(after.userCells, before.userCells, reason: '$reason user cells');
+  final synthesizedUserCells = after.userCells
+      .where((cell) =>
+          cell.name != VsdxShape.userVsdBeginArrowSize &&
+          cell.name != VsdxShape.userVsdEndArrowSize)
+      .toList();
+  expect(synthesizedUserCells, before.userCells,
+      reason: '$reason user cells');
   expect(after.controls, before.controls, reason: '$reason controls');
   expect(after.scratch, before.scratch, reason: '$reason scratch rows');
   expect(after.actions, before.actions, reason: '$reason actions');
@@ -563,6 +569,14 @@ void _expectSynthesizedShape(
       reason: '$reason begin arrow');
   expect(after.line.endArrow, before.line.endArrow,
       reason: '$reason end arrow');
+  if (before.line.hasBeginArrow) {
+    close(before.line.beginArrowSizeInches, after.line.beginArrowSizeInches,
+        'BeginArrowSize');
+  }
+  if (before.line.hasEndArrow) {
+    close(before.line.endArrowSizeInches, after.line.endArrowSizeInches,
+        'EndArrowSize');
+  }
   expect(after.shadow.enabled, before.shadow.enabled,
       reason: '$reason shadow enabled');
   expect(after.shadow.pattern, before.shadow.pattern,

@@ -8,6 +8,7 @@ import '../../model/document.dart';
 import '../../model/master.dart';
 import '../../model/page.dart';
 import '../../model/shape.dart';
+import '../../model/user_property.dart';
 import '../../writer/vsdx_writer.dart';
 import 'cfb/compound_file.dart';
 import 'vsd_metadata.dart';
@@ -166,14 +167,33 @@ VsdxDocument _prepareForOpcSynthesis(VsdxDocument document) {
     nextId++;
   }
 
-  VsdxShape rewriteShape(VsdxShape shape) => shape.copyWith(
-        masterId: shape.masterId == null
-            ? null
-            : (idMap[shape.masterId!] ?? shape.masterId),
-        children: <VsdxShape>[
-          for (final child in shape.children) rewriteShape(child),
-        ],
-      );
+  VsdxShape rewriteShape(VsdxShape shape) {
+    final exactArrowCells = <VsdxUserCell>[
+      for (final cell in shape.userCells)
+        if (cell.name != VsdxShape.userVsdBeginArrowSize &&
+            cell.name != VsdxShape.userVsdEndArrowSize)
+          cell,
+      if (shape.line.hasBeginArrow)
+        VsdxUserCell(
+          name: VsdxShape.userVsdBeginArrowSize,
+          value: '${shape.line.beginArrowSizeInches}',
+        ),
+      if (shape.line.hasEndArrow)
+        VsdxUserCell(
+          name: VsdxShape.userVsdEndArrowSize,
+          value: '${shape.line.endArrowSizeInches}',
+        ),
+    ];
+    return shape.copyWith(
+      masterId: shape.masterId == null
+          ? null
+          : (idMap[shape.masterId!] ?? shape.masterId),
+      children: <VsdxShape>[
+        for (final child in shape.children) rewriteShape(child),
+      ],
+      userCells: List<VsdxUserCell>.unmodifiable(exactArrowCells),
+    );
+  }
 
   final rewrittenMasters = <int, VsdxMaster>{};
   for (final master in masters) {

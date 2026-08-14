@@ -924,6 +924,16 @@ class VsdxShape {
   /// exposes page-level jump factors, so the User row preserves this override.
   static const String userLineJumpSize = 'veLineJumpSize';
 
+  /// Exact physical arrow sizes imported from binary VSD.
+  ///
+  /// VSD stores marker scale continuously and libvisio derives the rendered
+  /// size from that scale plus the stroke width. VSDX only exposes seven
+  /// BeginArrowSize / EndArrowSize buckets, so synthesis keeps the nearest
+  /// native bucket for Visio compatibility and these editor-owned values for
+  /// lossless reopen inside this editor.
+  static const String userVsdBeginArrowSize = 'veVsdBeginArrowSize';
+  static const String userVsdEndArrowSize = 'veVsdEndArrowSize';
+
   /// Exact draw.io/SVG `linejoin` value. Visio has no equivalent ShapeSheet
   /// cell, so this editor-owned row preserves the setting across VSDX saves.
   static const String userLineJoin = 'veLineJoin';
@@ -969,6 +979,32 @@ class VsdxShape {
   /// Serialized [VsdxConnect] rows detached while [collapsed] so unfold (and
   /// undo) can restore glue to hidden children. Editor-owned; not used by Visio.
   static const String userCollapsedGlue = 'veCollapsedGlue';
+
+  /// Keep VSD-only exact marker sizes aligned with the editable line model.
+  /// Native VSDX shapes do not carry these rows and remain untouched.
+  VsdxShape persistVsdArrowSizes({bool force = false}) {
+    final hasBegin = userCells.any((c) => c.name == userVsdBeginArrowSize);
+    final hasEnd = userCells.any((c) => c.name == userVsdEndArrowSize);
+    if (!force && !hasBegin && !hasEnd) return this;
+
+    final next = <VsdxUserCell>[
+      for (final cell in userCells)
+        if (cell.name != userVsdBeginArrowSize &&
+            cell.name != userVsdEndArrowSize)
+          cell,
+      if (line.hasBeginArrow)
+        VsdxUserCell(
+          name: userVsdBeginArrowSize,
+          value: '${line.beginArrowSizeInches}',
+        ),
+      if (line.hasEndArrow)
+        VsdxUserCell(
+          name: userVsdEndArrowSize,
+          value: '${line.endArrowSizeInches}',
+        ),
+    ];
+    return copyWith(userCells: List<VsdxUserCell>.unmodifiable(next));
+  }
 
   static const Set<String> _routeUserCellNames = {
     userRouteStraight,

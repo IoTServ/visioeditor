@@ -2697,10 +2697,15 @@ class VsdxWriter {
   }
 
   bool _patchShape(XmlElement el, VsdxShape base, VsdxShape edited) {
-    // Persist drawio-style route flags into User cells before diffing so a
-    // curved / waypointed connector keeps its edit state across reopen.
-    base = base.persistRouteState();
-    edited = edited.persistRouteState();
+    // Persist editor-owned route flags and exact legacy-VSD marker sizes into
+    // User cells before diffing so both remain editable across reopen.
+    base = base.persistRouteState().persistVsdArrowSizes();
+    final importedVsdArrowSizes = base.userCells.any((cell) =>
+        cell.name == VsdxShape.userVsdBeginArrowSize ||
+        cell.name == VsdxShape.userVsdEndArrowSize);
+    edited = edited
+        .persistRouteState()
+        .persistVsdArrowSizes(force: importedVsdArrowSizes);
     final inheritsShapeSheet = el.getAttribute('Master') != null ||
         el.getAttribute('MasterShape') != null;
     if ((preserveUnchangedPackage || inheritsShapeSheet) &&
