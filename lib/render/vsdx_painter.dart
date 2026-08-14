@@ -1695,11 +1695,16 @@ class VsdxPainter extends CustomPainter {
     if (lineOnly && !shape.line.hasLine) return;
     final paint = Paint()
       ..color = base.withValues(alpha: base.a * alpha)
-      ..maskFilter = MaskFilter.blur(
+      ..style = lineOnly ? PaintingStyle.stroke : PaintingStyle.fill;
+    // Classic VSD/VDX shadows have an offset and pattern but no blur. Keep
+    // those edges hard, as libvisio does, instead of manufacturing a minimum
+    // blur merely to satisfy MaskFilter's non-zero sigma requirement.
+    if (shadow.blurInches > 0) {
+      paint.maskFilter = MaskFilter.blur(
         BlurStyle.normal,
         _blurSigmaPx(shadow.blurInches),
-      )
-      ..style = lineOnly ? PaintingStyle.stroke : PaintingStyle.fill;
+      );
+    }
     if (lineOnly) {
       paint
         ..strokeWidth = math.max(shape.line.weightInches, 0.01)

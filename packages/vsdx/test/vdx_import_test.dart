@@ -176,6 +176,8 @@ void main() {
       expect(inheritedStyle.shadow.color, const VsdxColor(0xFF44546A));
       expect(inheritedStyle.shadow.offsetXInches, closeTo(0.2, 1e-9));
       expect(inheritedStyle.shadow.offsetYInches, closeTo(-0.15, 1e-9));
+      expect(inheritedStyle.shadow.blurInches, 0,
+          reason: 'classic VDX shadows are hard-edged like libvisio');
       expect(inheritedStyle.richText.textBlock.marginLeftInches,
           closeTo(0.05, 1e-9));
       expect(inheritedStyle.richText.textBlock.defaultTabStopInches,
@@ -350,6 +352,8 @@ void main() {
       expect(inheritedStyle.shadow.enabled, isTrue);
       expect(inheritedStyle.shadow.color, const VsdxColor(0xFF44546A));
       expect(inheritedStyle.shadow.offsetXInches, closeTo(0.2, 1e-9));
+      expect(inheritedStyle.shadow.blurInches, 0,
+          reason: 'VDX round-trip must preserve a hard classic shadow');
       expect(inheritedStyle.richText.textBlock.defaultTabStopInches,
           closeTo(0.4, 1e-9));
       final reopenedCurves = reopened.pages.single.findShapeById(2)!;

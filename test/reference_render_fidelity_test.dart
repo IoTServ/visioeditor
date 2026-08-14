@@ -13,6 +13,45 @@ void main() {
     expect(VsdxPainter.imageFilterQuality, FilterQuality.high);
   });
 
+  test('classic zero-blur shadows keep a hard libvisio edge', () async {
+    const pxPerInch = 1000.0;
+    VsdxPage page(double blurInches) => VsdxPage(
+          id: 0,
+          name: 'Classic shadow',
+          widthInches: 1,
+          heightInches: 1,
+          shapes: <VsdxShape>[
+            VsdxShapeFactory.rectangle(
+              id: 1,
+              pinX: 0.4,
+              pinY: 0.5,
+              width: 0.4,
+              height: 0.4,
+            ).copyWith(
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFF0000FF),
+              ),
+              line: const VsdxLine(pattern: 0),
+              shadow: VsdxShadow(
+                enabled: true,
+                color: const VsdxColor(0xFFFF0000),
+                offsetXInches: 0.2,
+                blurInches: blurInches,
+              ),
+            ),
+          ],
+        );
+
+    final hard = await _rasterPage(page(0), pxPerInch: pxPerInch);
+    final softlyFiltered =
+        await _rasterPage(page(0.001), pxPerInch: pxPerInch);
+    const outsideShadow = (500 * 1000 + 802) * 4;
+    expect(hard.sublist(outsideShadow, outsideShadow + 4),
+        orderedEquals(<int>[255, 255, 255, 255]));
+    expect(softlyFiltered[outsideShadow + 1], lessThan(255),
+        reason: 'a real non-zero blur must still produce a soft fringe');
+  });
+
   test('sub-pixel Visio strokes render as crisp device hairlines', () async {
     const pxPerInch = 144.0;
     final shape = VsdxShape(

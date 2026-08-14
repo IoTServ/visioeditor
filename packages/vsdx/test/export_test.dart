@@ -1854,6 +1854,39 @@ void main() {
     expect(svg, contains('translate(0.25 -0.25)'));
   });
 
+  test('SVG classic zero-blur shadow stays hard like libvisio', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Classic shadow',
+      widthInches: 4,
+      heightInches: 3,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 1.5,
+          width: 1,
+          height: 1,
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            pattern: 1,
+            color: VsdxColor(0xFF44546A),
+            offsetXInches: 0.2,
+            offsetYInches: -0.15,
+            blurInches: 0,
+          ),
+        ),
+      ],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('fill="#44546a"'));
+    expect(svg, contains('translate(0.2 -0.15)'));
+    expect(svg, isNot(contains('id="shadow-p0-1-0"')));
+    expect(svg, isNot(contains('<feGaussianBlur')));
+  });
+
   test('SVG Foreign Blur/Brightness/Contrast emit tone filter', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

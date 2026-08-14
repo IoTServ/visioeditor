@@ -1584,10 +1584,10 @@ class VsdxToSvgSerializer {
     final hex = _hex(base);
     final dx = shadow.offsetXInches;
     final dy = shadow.offsetYInches;
-    final blur = math.max(shadow.blurInches, 0.001);
+    final blur = math.max(shadow.blurInches, 0.0);
     final xform = _pageShadowTransform(page, shape, dx, dy);
     var filterAttr = '';
-    if (!pdfCompat) {
+    if (!pdfCompat && blur > 0) {
       final sid = 'shadow-$paintId';
       final bounds = _approxPathBoundsFromD(
         d,
