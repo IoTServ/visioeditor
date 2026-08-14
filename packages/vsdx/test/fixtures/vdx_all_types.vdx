@@ -132,6 +132,19 @@ Second line and tab:	value</Text>
           <Char IX="0"><Font>4</Font><Color>0</Color><Size>0.1527777778</Size><Style>2</Style></Char>
           <Para IX="0"><HorzAlign>1</HorzAlign></Para>
           <Field IX="0"><Value F="PAGENAME()">Cached field text</Value><Format>General</Format><Type>0</Type></Field>
+          <Act NameU="OpenCoverage" ID="7">
+            <Menu>Open coverage docs</Menu>
+            <Action F="HYPERLINK(&quot;https://example.test/vdx-action&quot;)">0</Action>
+            <Checked>1</Checked>
+            <SortKey>700</SortKey>
+          </Act>
+          <Hyperlink NameU="CoverageLink" ID="5">
+            <Description>Coverage documentation</Description>
+            <Address>https://example.test/vdx-link</Address>
+            <NewWindow>1</NewWindow>
+            <Default>1</Default>
+            <SortKey>500</SortKey>
+          </Hyperlink>
           <Text><cp IX="0"/><pp IX="0"/>Bezier, arcs, ellipse: <fld IX="0"/></Text>
           <Geom IX="0">
             <MoveTo IX="1"><X>0</X><Y>0.2</Y></MoveTo>

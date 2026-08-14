@@ -96,6 +96,21 @@ void main() {
       final curves = page.findShapeById(2)!;
       expect(curves.fields, hasLength(1));
       expect(curves.fields.single.value, 'Cached field text');
+      expect(curves.actions, hasLength(1));
+      expect(curves.actions.single.name, 'OpenCoverage');
+      expect(curves.actions.single.ix, 7);
+      expect(curves.actions.single.menu, 'Open coverage docs');
+      expect(curves.actions.single.actionFormula,
+          'HYPERLINK("https://example.test/vdx-action")');
+      expect(curves.actions.single.checked, isTrue);
+      expect(curves.actions.single.sortKey, '700');
+      expect(curves.hyperlinks, hasLength(1));
+      expect(curves.hyperlinks.single.id, 5);
+      expect(curves.hyperlinks.single.description, 'Coverage documentation');
+      expect(curves.hyperlinks.single.address, 'https://example.test/vdx-link');
+      expect(curves.hyperlinks.single.newWindow, isTrue);
+      expect(curves.hyperlinks.single.isDefault, isTrue);
+      expect(curves.hyperlinks.single.sortKey, '500');
       expect(
         curves.richText.plainText,
         'Bezier, arcs, ellipse: Cached field text',
@@ -170,6 +185,7 @@ void main() {
         images: result.document.images,
       );
       expect(svg, contains('data:image/bmp;base64,Qk0'));
+      expect(svg, contains('href="https://example.test/vdx-link"'));
     });
 
     test('VDX import synthesises an editable VSDX without losing visible data',
@@ -251,6 +267,26 @@ void main() {
       expect(inheritedStyle.shadow.offsetXInches, closeTo(0.2, 1e-9));
       expect(inheritedStyle.richText.textBlock.defaultTabStopInches,
           closeTo(0.4, 1e-9));
+      final reopenedCurves = reopened.pages.single.findShapeById(2)!;
+      expect(reopenedCurves.actions.single.ix, 7);
+      expect(reopenedCurves.actions.single.name, 'OpenCoverage');
+      expect(reopenedCurves.actions.single.actionFormula,
+          'HYPERLINK("https://example.test/vdx-action")');
+      expect(reopenedCurves.hyperlinks.single.id, 5);
+      expect(reopenedCurves.hyperlinks.single.address,
+          'https://example.test/vdx-link');
+      expect(reopenedSvg, contains('href="https://example.test/vdx-link"'));
+
+      final curvesXml = pageXml.descendants.whereType<XmlElement>().singleWhere(
+          (element) =>
+              element.name.local == 'Shape' &&
+              element.getAttribute('ID') == '2');
+      final rowKeys = <String>{
+        for (final row in curvesXml.descendants.whereType<XmlElement>())
+          if (row.name.local == 'Row')
+            '${row.parentElement?.getAttribute('N')}:${row.getAttribute('IX')}',
+      };
+      expect(rowKeys, containsAll(<String>['Actions:7', 'Hyperlink:5']));
     });
 
     test('VSX extracts masters as pages; VTX imports drawing pages', () {

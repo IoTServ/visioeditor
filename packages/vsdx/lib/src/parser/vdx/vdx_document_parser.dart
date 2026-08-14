@@ -538,6 +538,13 @@ XmlElement _row(XmlElement source) => XmlElement(
           source,
           const <String>{'IX', 'N', 'Del', 'T'},
         ),
+        // DiagramML names Action/Hyperlink/Control/Property/User rows with
+        // ID=, while the OPC ShapeSheet spelling uses IX=. Preserve the row
+        // identity so multiple named rows do not collapse to IX 0 on import
+        // and get renumbered during the VDX -> VSDX round-trip.
+        if (source.getAttribute('IX') == null &&
+            source.getAttribute('ID') != null)
+          XmlAttribute(XmlName('IX'), source.getAttribute('ID')!),
         if (source.getAttribute('N') == null &&
             source.getAttribute('NameU') != null)
           XmlAttribute(XmlName('N'), source.getAttribute('NameU')!),
@@ -578,6 +585,9 @@ String? _rowSectionName(String localName) => switch (localName) {
       'Control' => 'Control',
       'Scratch' => 'Scratch',
       'Field' => 'Field',
+      // In DiagramML the row is <Act>; <Action> is the formula/value cell.
+      // Accept Action as a recovery alias used by a few third-party writers.
+      'Act' => 'Actions',
       'Action' => 'Actions',
       'Prop' => 'Property',
       'User' => 'User',
