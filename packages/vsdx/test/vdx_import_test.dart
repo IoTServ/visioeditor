@@ -227,6 +227,12 @@ void main() {
         hasLength(3),
         reason: 'every Geometry section with line endpoints receives endings',
       );
+      expect(
+        RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"')
+            .allMatches(svg),
+        hasLength(3),
+        reason: 'InfiniteLine receives its page-clipped line ending',
+      );
     });
 
     test('VDX import synthesises an editable VSDX without losing visible data',
@@ -353,6 +359,12 @@ void main() {
             .allMatches(reopenedSvg),
         hasLength(3),
         reason: 'per-Geometry line endings survive VDX to VSDX round-trip',
+      );
+      expect(
+        RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"')
+            .allMatches(reopenedSvg),
+        hasLength(3),
+        reason: 'InfiniteLine ending survives VDX to VSDX round-trip',
       );
 
       final curvesXml = pageXml.descendants.whereType<XmlElement>().singleWhere(

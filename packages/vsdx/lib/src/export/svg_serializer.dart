@@ -693,10 +693,12 @@ class VsdxToSvgSerializer {
         geom,
         widthInches: shape.width,
         heightInches: shape.height,
+        infiniteLineResolver: (p, q) =>
+            _infiniteLineEndpoints(page, shape, p, q),
       );
       // libvisio emits Geometry sections as subpaths of one line path;
       // LibreOffice paints line endings on every section that has recoverable
-      // endpoint tangents (unlike Ellipse / InfiniteLine primitives).
+      // endpoint tangents. InfiniteLine uses its page-clipped visible ends.
       final attachArrows = !geom.noLine &&
           shape.line.hasLine &&
           (shape.line.hasBeginArrow || shape.line.hasEndArrow) &&
@@ -713,6 +715,8 @@ class VsdxToSvgSerializer {
                 shape.width,
                 shape.height,
                 fallback: d,
+                infiniteLineResolver: (p, q) =>
+                    _infiniteLineEndpoints(page, shape, p, q),
               )
             : null,
         strokeD: strokeD,
@@ -2156,11 +2160,13 @@ class VsdxToSvgSerializer {
     double width,
     double height, {
     required String fallback,
+    VsdxInfiniteLineEndpointResolver? infiniteLineResolver,
   }) {
     final tangents = geometryEndpointTangents(
       geometry,
       widthInches: width,
       heightInches: height,
+      infiniteLineResolver: infiniteLineResolver,
     );
     if (tangents == null) return fallback;
     final chordX = tangents.end.x - tangents.start.x;

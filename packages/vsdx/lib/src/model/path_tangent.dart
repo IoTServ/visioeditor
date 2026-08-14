@@ -15,6 +15,13 @@ typedef VsdxPathEndpointTangents = ({
   Offset2D endForward,
 });
 
+/// Resolves a Visio `InfiniteLine`'s two defining local points to the visible
+/// page-clipped endpoints, returned in the same local coordinate system.
+typedef VsdxInfiniteLineEndpointResolver = List<Offset2D>? Function(
+  Offset2D p,
+  Offset2D q,
+);
+
 /// Recover marker positions and orientations without reducing curves to
 /// coarse chords. Zero-length line/curve derivatives fall through to the
 /// next non-zero control vector, matching SVG marker orientation semantics.
@@ -22,6 +29,7 @@ VsdxPathEndpointTangents? geometryEndpointTangents(
   VsdxGeometry geometry, {
   required double widthInches,
   required double heightInches,
+  VsdxInfiniteLineEndpointResolver? infiniteLineResolver,
 }) {
   Offset2D cursor = const Offset2D(0, 0);
   Offset2D? firstPoint;
@@ -273,8 +281,26 @@ VsdxPathEndpointTangents? geometryEndpointTangents(
         );
         addPolyline(cursor, samples);
         cursor = end;
-      case EllipseCmd() || InfiniteLineCmd():
-        // Closed and unbounded primitives have no meaningful endpoint marker.
+      case InfiniteLineCmd(
+          :final x,
+          :final y,
+          :final a,
+          :final b,
+          :final relative,
+        ):
+        final sx = relative ? widthInches : 1.0;
+        final sy = relative ? heightInches : 1.0;
+        final clipped = infiniteLineResolver?.call(
+          Offset2D(x * sx, y * sy),
+          Offset2D(a * sx, b * sy),
+        );
+        if (clipped != null && clipped.length >= 2) {
+          addSegment(clipped.first, clipped.last);
+          cursor = clipped.last;
+        }
+      case EllipseCmd():
+        // A closed ellipse has no distinct endpoint marker. InfiniteLine is
+        // handled above once the caller supplies its page clipping context.
         break;
     }
   }

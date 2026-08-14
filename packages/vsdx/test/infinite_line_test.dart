@@ -67,4 +67,38 @@ void main() {
 
     expect(svg, contains('M -4.995 0.005 L 5.005 0.005'));
   });
+
+  test('SVG attaches arrows to page-clipped InfiniteLine endpoints', () {
+    const shape = VsdxShape(
+      id: 1,
+      name: 'Infinite arrows',
+      pinX: 5,
+      pinY: 3,
+      width: 0.01,
+      height: 0.01,
+      line: VsdxLine(beginArrow: 4, endArrow: 13),
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            InfiniteLineCmd(x: 0, y: 0.005, a: 0.01, b: 0.005),
+          ],
+        ),
+      ],
+    );
+    const page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 10,
+      heightInches: 6,
+      shapes: <VsdxShape>[shape],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+
+    expect(svg, contains('marker-start="url(#arrow-start-p0-1-0)"'));
+    expect(svg, contains('marker-end="url(#arrow-end-p0-1-0)"'));
+    expect(svg, contains('M -4.995 0.005 L -4.994 0.005'));
+    expect(svg, contains('L 5.004 0.005 L 5.005 0.005'));
+  });
 }

@@ -86,4 +86,25 @@ void main() {
     expect(tangents.startForward, const Offset2D(2, 0));
     expect(tangents.endForward, const Offset2D(2, 0));
   });
+
+  test('InfiniteLine arrows use its libvisio-style clipped page span', () {
+    final tangents = geometryEndpointTangents(
+      const VsdxGeometry(
+        commands: <VsdxPathCommand>[
+          InfiniteLineCmd(x: 0, y: 0.5, a: 2, b: 0.5),
+        ],
+      ),
+      widthInches: 2,
+      heightInches: 1,
+      infiniteLineResolver: (p, q) => const <Offset2D>[
+        Offset2D(-3, 0.5),
+        Offset2D(7, 0.5),
+      ],
+    )!;
+
+    expect(tangents.start, const Offset2D(-3, 0.5));
+    expect(tangents.end, const Offset2D(7, 0.5));
+    expect(tangents.startForward, const Offset2D(10, 0));
+    expect(tangents.endForward, const Offset2D(10, 0));
+  });
 }

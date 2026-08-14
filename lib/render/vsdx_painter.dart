@@ -1866,6 +1866,7 @@ class VsdxPainter extends CustomPainter {
         geom,
         widthInches: shape.width,
         heightInches: shape.height,
+        infiniteLineResolver: (p, q) => _infiniteLineEndpoints(shape, p, q),
       );
       if (tangents == null) continue;
       final start = Offset(tangents.start.x, tangents.start.y);
@@ -1951,6 +1952,7 @@ class VsdxPainter extends CustomPainter {
         geom,
         widthInches: w,
         heightInches: h,
+        infiniteLineResolver: (p, q) => _infiniteLineEndpoints(shape, p, q),
       );
       if (tangents != null) {
         final start = Offset(tangents.start.x, tangents.start.y);
