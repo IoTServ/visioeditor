@@ -636,9 +636,6 @@ class VsdxToSvgSerializer {
     // the outer half of the stroke stays visible around the bitmap.
     var wroteGeom = false;
     var geomIndex = 0;
-    // Canvas [_paintLineEndings] draws arrows once from the first strokeable
-    // Geometry — do not attach markers/bake on every section.
-    var arrowsAttached = false;
     final jumpD = _connectorJumpD(page, shape);
     // Match canvas / libvisio: ≥2 NoFill=0 sections → one evenodd fill path.
     final fillParts = <String>[];
@@ -692,10 +689,18 @@ class VsdxToSvgSerializer {
       // geometry. Do not break — later Geometry sections still paint.
       final strokeD = (jumpD != null && !geom.noLine) ? jumpD : null;
       wroteGeom = true;
+      final endpoints = geometryEndpointTangents(
+        geom,
+        widthInches: shape.width,
+        heightInches: shape.height,
+      );
+      // libvisio emits Geometry sections as subpaths of one line path;
+      // LibreOffice paints line endings on every section that has recoverable
+      // endpoint tangents (unlike Ellipse / InfiniteLine primitives).
       final attachArrows = !geom.noLine &&
-          !arrowsAttached &&
           shape.line.hasLine &&
-          (shape.line.hasBeginArrow || shape.line.hasEndArrow);
+          (shape.line.hasBeginArrow || shape.line.hasEndArrow) &&
+          endpoints != null;
       _writePath(
         buf,
         shape,
@@ -719,7 +724,6 @@ class VsdxToSvgSerializer {
         paintId: '$paintIdScope-${shape.id}-$geomIndex',
         indent: '$indent  ',
       );
-      if (attachArrows) arrowsAttached = true;
       geomIndex++;
     }
     if (shape.glassEffect &&

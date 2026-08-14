@@ -221,6 +221,12 @@ void main() {
       );
       expect(svg, contains('data:image/bmp;base64,Qk0'));
       expect(svg, contains('href="https://example.test/vdx-link"'));
+      expect(
+        RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"')
+            .allMatches(svg),
+        hasLength(3),
+        reason: 'every Geometry section with line endpoints receives endings',
+      );
     });
 
     test('VDX import synthesises an editable VSDX without losing visible data',
@@ -342,6 +348,12 @@ void main() {
       expect(reopenedCurves.hyperlinks.single.address,
           'https://example.test/vdx-link');
       expect(reopenedSvg, contains('href="https://example.test/vdx-link"'));
+      expect(
+        RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"')
+            .allMatches(reopenedSvg),
+        hasLength(3),
+        reason: 'per-Geometry line endings survive VDX to VSDX round-trip',
+      );
 
       final curvesXml = pageXml.descendants.whereType<XmlElement>().singleWhere(
           (element) =>

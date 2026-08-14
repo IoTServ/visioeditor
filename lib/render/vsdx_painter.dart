@@ -1806,8 +1806,14 @@ class VsdxPainter extends CustomPainter {
   void _paintLineEndings(Canvas canvas, VsdxShape shape) {
     if (!shape.line.hasLine) return;
     if (!shape.line.hasBeginArrow && !shape.line.hasEndArrow) return;
-    final endPoints = _lineEndPoints(shape);
-    if (endPoints == null) return;
+    var endPoints = shape.hasGeometry
+        ? _geometryLineEndPoints(shape)
+        : const <_LineEndpoints>[];
+    if (endPoints.isEmpty) {
+      final fallback = _lineEndPoints(shape);
+      if (fallback == null) return;
+      endPoints = <_LineEndpoints>[fallback];
+    }
     // NB: the fallback Paint is parenthesised so the cascade only applies to
     // it — writing `_resolveStrokePaint(shape) ?? Paint()..color = …` binds the
     // cascade to the whole `??` result and clobbers the real line colour with
@@ -1818,34 +1824,66 @@ class VsdxPainter extends CustomPainter {
           ..style = PaintingStyle.stroke
           ..color = fallbackStroke);
     // Arrows use tip stop colours (SVG/PDF parity) — not the full line shader.
-    if (shape.line.hasBeginArrow) {
-      _drawArrowAt(
-        canvas,
-        endPoints.start,
-        math.atan2(
-          endPoints.start.dy - endPoints.beginTangent.dy,
-          endPoints.start.dx - endPoints.beginTangent.dx,
-        ),
-        shape.line.beginArrow,
-        shape.line.beginArrowSizeInches,
-        paint,
-        tipColor: _arrowTipColor(shape, atEnd: false, fallback: paint.color),
-      );
+    for (final points in endPoints) {
+      if (shape.line.hasBeginArrow) {
+        _drawArrowAt(
+          canvas,
+          points.start,
+          math.atan2(
+            points.start.dy - points.beginTangent.dy,
+            points.start.dx - points.beginTangent.dx,
+          ),
+          shape.line.beginArrow,
+          shape.line.beginArrowSizeInches,
+          paint,
+          tipColor: _arrowTipColor(shape, atEnd: false, fallback: paint.color),
+        );
+      }
+      if (shape.line.hasEndArrow) {
+        _drawArrowAt(
+          canvas,
+          points.end,
+          math.atan2(
+            points.end.dy - points.endTangent.dy,
+            points.end.dx - points.endTangent.dx,
+          ),
+          shape.line.endArrow,
+          shape.line.endArrowSizeInches,
+          paint,
+          tipColor: _arrowTipColor(shape, atEnd: true, fallback: paint.color),
+        );
+      }
     }
-    if (shape.line.hasEndArrow) {
-      _drawArrowAt(
-        canvas,
-        endPoints.end,
-        math.atan2(
-          endPoints.end.dy - endPoints.endTangent.dy,
-          endPoints.end.dx - endPoints.endTangent.dx,
-        ),
-        shape.line.endArrow,
-        shape.line.endArrowSizeInches,
-        paint,
-        tipColor: _arrowTipColor(shape, atEnd: true, fallback: paint.color),
+  }
+
+  /// LibreOffice/libvisio applies line endings to every Geometry section with
+  /// recoverable endpoint tangents, not just the first section in a Shape.
+  List<_LineEndpoints> _geometryLineEndPoints(VsdxShape shape) {
+    final out = <_LineEndpoints>[];
+    for (final geom in shape.geometries) {
+      if (geom.noShow || geom.noLine || geom.commands.isEmpty) continue;
+      final tangents = geometryEndpointTangents(
+        geom,
+        widthInches: shape.width,
+        heightInches: shape.height,
       );
+      if (tangents == null) continue;
+      final start = Offset(tangents.start.x, tangents.start.y);
+      final end = Offset(tangents.end.x, tangents.end.y);
+      out.add(_LineEndpoints(
+        start,
+        end,
+        beginTangent: Offset(
+          start.dx + tangents.startForward.x,
+          start.dy + tangents.startForward.y,
+        ),
+        endTangent: Offset(
+          end.dx - tangents.endForward.x,
+          end.dy - tangents.endForward.y,
+        ),
+      ));
     }
+    return out;
   }
 
   /// Solid tip colour for arrowheads (gradient end-stop nearest the tip).

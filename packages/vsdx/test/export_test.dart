@@ -2291,7 +2291,7 @@ void main() {
     );
   });
 
-  test('SVG attaches EndArrow once across multi-geometry shapes', () {
+  test('SVG attaches EndArrow to every open Geometry section', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2312,7 +2312,15 @@ void main() {
     );
     doc = doc.replacePage(0, doc.pages.first.addShape(shape));
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(RegExp(r'marker-end=').allMatches(svg).length, 1);
+    expect(RegExp(r'marker-end=').allMatches(svg).length, 2);
+    final carriers = RegExp(
+      r'<path d="([^"]+)" fill="none" [^>]*marker-end=',
+    ).allMatches(svg).map((match) => match.group(1)).toList();
+    expect(carriers, hasLength(2));
+    expect(carriers.first, startsWith('M 0 0 '));
+    expect(carriers.first, endsWith('L 3 0'));
+    expect(carriers.last, startsWith('M 0 0.2 '));
+    expect(carriers.last, endsWith('L 3 0.2'));
   });
 
   test('SVG arrow 10 is a ball and arrow 13 a long filled triangle', () {
