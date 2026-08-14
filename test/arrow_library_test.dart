@@ -44,6 +44,14 @@ void main() {
     }));
   });
 
+  test('id 13 keeps libvisio long-triangle proportions', () {
+    final marker = arrowDescriptor(13)!;
+    final bounds = marker.path.getBounds();
+    expect(marker.filled, isTrue);
+    expect(bounds.width, closeTo(1.4, 1e-6));
+    expect(bounds.height / bounds.width, closeTo(2 / 3, 1e-6));
+  });
+
   test('ids 11/20/22 match square, open circle and open diamond', () {
     final square = arrowDescriptor(11)!;
     final circle = arrowDescriptor(20)!;

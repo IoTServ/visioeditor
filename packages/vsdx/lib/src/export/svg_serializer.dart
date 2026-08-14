@@ -2988,7 +2988,7 @@ class VsdxToSvgSerializer {
         ),
       11 => ('M 0 1 H 10 V 9 H 0 Z', true), // centred filled square
       12 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false),
-      13 => ('M 0 3.2 L 10 5 L 0 6.8 Z', true),
+      13 => ('M 0 1.667 L 10 5 L 0 8.333 Z', true),
       14 => ('M 1.5 -0.5 L 10 5 L 1.5 10.5 Z', false),
       15 => ('M 0 2.5 L 10 5 L 0 7.5 Z', false),
       16 => ('M 0 1 L 10 5 L 0 9 Z', false),
@@ -3107,7 +3107,8 @@ class VsdxToSvgSerializer {
       'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z' =>
         'M 10 1 L 0 5 L 10 9 Z M 12 0.5 L 10 1 L 10 9 L 12 9.5 Z',
       'M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7' => 'M 10 1 L 0 5 L 10 9 Z M 3 3 L 7 7',
-      'M 0 3.2 L 10 5 L 0 6.8 Z' => 'M 10 3.2 L 0 5 L 10 6.8 Z',
+      'M 0 1.667 L 10 5 L 0 8.333 Z' =>
+        'M 10 1.667 L 0 5 L 10 8.333 Z',
       'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z' =>
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
       'M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9' =>

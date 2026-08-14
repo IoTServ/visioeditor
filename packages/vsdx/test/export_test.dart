@@ -2419,7 +2419,7 @@ void main() {
     doc = doc.replacePage(0, page);
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('m -5,0 a 5,5 0 1,0 10,0'));
-    expect(svg, contains('M 0 3.2 L 10 5 L 0 6.8 Z'));
+    expect(svg, contains('M 0 1.667 L 10 5 L 0 8.333 Z'));
   });
 
   test('SVG FillPattern 17 is hatch and unsupported 41 is solid', () {
