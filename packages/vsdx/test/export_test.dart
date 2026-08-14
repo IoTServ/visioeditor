@@ -2323,6 +2323,50 @@ void main() {
     expect(carriers.last, endsWith('L 3 0.2'));
   });
 
+  test('SVG marker carrier retains open multi-M but skips closed paths', () {
+    const shape = VsdxShape(
+      id: 1,
+      name: 'Multi subpath markers',
+      pinX: 3,
+      pinY: 1,
+      width: 6,
+      height: 2,
+      line: VsdxLine(beginArrow: 4, endArrow: 13),
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(1, 0),
+            EllipseCmd(cx: 2, cy: 1, aX: 3, aY: 1, bX: 2, bY: 2),
+            MoveTo(4, 0),
+            LineTo(5, 0),
+            MoveTo(0, 1),
+            LineTo(1, 1),
+            LineTo(1, 2),
+            LineTo(0, 1),
+          ],
+        ),
+      ],
+    );
+    const page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 6,
+      heightInches: 2,
+      shapes: <VsdxShape>[shape],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final carrier = RegExp(
+      r'<path d="([^"]+)" fill="none" [^>]*stroke-opacity="0"[^>]*marker-start=',
+    ).firstMatch(svg)!.group(1)!;
+
+    expect(RegExp(r'\bM ').allMatches(carrier), hasLength(2));
+    expect(carrier, isNot(contains('M 3 1')));
+    expect(carrier, isNot(contains('M 0 1')));
+  });
+
   test('SVG arrow 10 is a ball and arrow 13 a long filled triangle', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
@@ -2960,6 +3004,16 @@ void main() {
             endArrow: 2,
             weightInches: 0.04,
           ),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(2, 0),
+                LineTo(2, 1),
+                LineTo(0, 1),
+              ],
+            ),
+          ],
         ),
       ),
     );

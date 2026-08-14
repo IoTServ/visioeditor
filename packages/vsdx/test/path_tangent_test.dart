@@ -107,4 +107,64 @@ void main() {
     expect(tangents.startForward, const Offset2D(10, 0));
     expect(tangents.endForward, const Offset2D(10, 0));
   });
+
+  test('multi-M Geometry exposes markers for every libvisio subpath', () {
+    const geometry = VsdxGeometry(
+      commands: <VsdxPathCommand>[
+        MoveTo(0, 0),
+        LineTo(1, 0),
+        EllipseCmd(cx: 2, cy: 1, aX: 3, aY: 1, bX: 2, bY: 2),
+        MoveTo(4, 0),
+        LineTo(5, 0),
+      ],
+    );
+
+    final subpaths = geometrySubpathEndpointTangents(
+      geometry,
+      widthInches: 5,
+      heightInches: 2,
+    );
+
+    expect(subpaths, hasLength(2));
+    expect(subpaths[0].start, const Offset2D(0, 0));
+    expect(subpaths[0].end, const Offset2D(1, 0));
+    expect(subpaths[1].start, const Offset2D(4, 0));
+    expect(subpaths[1].end, const Offset2D(5, 0));
+
+    final aggregate = geometryEndpointTangents(
+      geometry,
+      widthInches: 5,
+      heightInches: 2,
+    )!;
+    expect(aggregate.start, subpaths.first.start);
+    expect(aggregate.end, subpaths.last.end);
+  });
+
+  test('closed line-command subpaths suppress markers like libvisio', () {
+    const geometry = VsdxGeometry(
+      commands: <VsdxPathCommand>[
+        MoveTo(0, 0),
+        LineTo(2, 0),
+        LineTo(2, 1),
+        LineTo(0, 0),
+      ],
+    );
+
+    expect(
+      geometrySubpathEndpointTangents(
+        geometry,
+        widthInches: 2,
+        heightInches: 1,
+      ),
+      isEmpty,
+    );
+    expect(
+      geometryEndpointTangents(
+        geometry,
+        widthInches: 2,
+        heightInches: 1,
+      ),
+      isNull,
+    );
+  });
 }

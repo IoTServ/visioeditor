@@ -689,7 +689,7 @@ class VsdxToSvgSerializer {
       // geometry. Do not break — later Geometry sections still paint.
       final strokeD = (jumpD != null && !geom.noLine) ? jumpD : null;
       wroteGeom = true;
-      final endpoints = geometryEndpointTangents(
+      final endpoints = geometrySubpathEndpointTangents(
         geom,
         widthInches: shape.width,
         heightInches: shape.height,
@@ -697,12 +697,13 @@ class VsdxToSvgSerializer {
             _infiniteLineEndpoints(page, shape, p, q),
       );
       // libvisio emits Geometry sections as subpaths of one line path;
-      // LibreOffice paints line endings on every section that has recoverable
-      // endpoint tangents. InfiniteLine uses its page-clipped visible ends.
+      // LibreOffice paints line endings on every open subpath that has
+      // recoverable endpoint tangents. InfiniteLine uses its page-clipped
+      // visible ends.
       final attachArrows = !geom.noLine &&
           shape.line.hasLine &&
           (shape.line.hasBeginArrow || shape.line.hasEndArrow) &&
-          endpoints != null;
+          endpoints.isNotEmpty;
       _writePath(
         buf,
         shape,
@@ -2162,40 +2163,50 @@ class VsdxToSvgSerializer {
     required String fallback,
     VsdxInfiniteLineEndpointResolver? infiniteLineResolver,
   }) {
-    final tangents = geometryEndpointTangents(
+    final subpaths = geometrySubpathEndpointTangents(
       geometry,
       widthInches: width,
       heightInches: height,
       infiniteLineResolver: infiniteLineResolver,
     );
-    if (tangents == null) return fallback;
-    final chordX = tangents.end.x - tangents.start.x;
-    final chordY = tangents.end.y - tangents.start.y;
-    final chordLength = math.sqrt(chordX * chordX + chordY * chordY);
-    final startLength = math.sqrt(
-      tangents.startForward.x * tangents.startForward.x +
-          tangents.startForward.y * tangents.startForward.y,
-    );
-    final endLength = math.sqrt(
-      tangents.endForward.x * tangents.endForward.x +
-          tangents.endForward.y * tangents.endForward.y,
-    );
-    if (chordLength <= 1e-9 || startLength <= 1e-12 || endLength <= 1e-12) {
-      return fallback;
-    }
-    final epsilon = math.min(0.001, chordLength / 4);
-    final afterStart = Offset2D(
-      tangents.start.x + tangents.startForward.x / startLength * epsilon,
-      tangents.start.y + tangents.startForward.y / startLength * epsilon,
-    );
-    final beforeEnd = Offset2D(
-      tangents.end.x - tangents.endForward.x / endLength * epsilon,
-      tangents.end.y - tangents.endForward.y / endLength * epsilon,
-    );
-    return 'M ${_strokeN(tangents.start.x)} ${_strokeN(tangents.start.y)} '
+    if (subpaths.isEmpty) return fallback;
+    final carriers = StringBuffer();
+    for (final tangents in subpaths) {
+      final chordX = tangents.end.x - tangents.start.x;
+      final chordY = tangents.end.y - tangents.start.y;
+      final chordLength = math.sqrt(chordX * chordX + chordY * chordY);
+      final startLength = math.sqrt(
+        tangents.startForward.x * tangents.startForward.x +
+            tangents.startForward.y * tangents.startForward.y,
+      );
+      final endLength = math.sqrt(
+        tangents.endForward.x * tangents.endForward.x +
+            tangents.endForward.y * tangents.endForward.y,
+      );
+      if (startLength <= 1e-12 || endLength <= 1e-12) continue;
+      final epsilon = math.min(
+        0.001,
+        chordLength > 1e-9
+            ? chordLength / 4
+            : math.min(startLength, endLength) / 4,
+      );
+      final afterStart = Offset2D(
+        tangents.start.x + tangents.startForward.x / startLength * epsilon,
+        tangents.start.y + tangents.startForward.y / startLength * epsilon,
+      );
+      final beforeEnd = Offset2D(
+        tangents.end.x - tangents.endForward.x / endLength * epsilon,
+        tangents.end.y - tangents.endForward.y / endLength * epsilon,
+      );
+      if (carriers.isNotEmpty) carriers.write(' ');
+      carriers.write(
+        'M ${_strokeN(tangents.start.x)} ${_strokeN(tangents.start.y)} '
         'L ${_strokeN(afterStart.x)} ${_strokeN(afterStart.y)} '
         'L ${_strokeN(beforeEnd.x)} ${_strokeN(beforeEnd.y)} '
-        'L ${_strokeN(tangents.end.x)} ${_strokeN(tangents.end.y)}';
+        'L ${_strokeN(tangents.end.x)} ${_strokeN(tangents.end.y)}',
+      );
+    }
+    return carriers.isEmpty ? fallback : carriers.toString();
   }
 
   String _geometryToD(

@@ -22,16 +22,17 @@ typedef VsdxInfiniteLineEndpointResolver = List<Offset2D>? Function(
   Offset2D q,
 );
 
-/// Recover marker positions and orientations without reducing curves to
-/// coarse chords. Zero-length line/curve derivatives fall through to the
-/// next non-zero control vector, matching SVG marker orientation semantics.
-VsdxPathEndpointTangents? geometryEndpointTangents(
+/// Recover marker positions and orientations for every open drawable subpath
+/// without reducing curves to coarse chords. This matches libvisio's single
+/// multi-`M` line path: LibreOffice applies start/end markers to each subpath.
+List<VsdxPathEndpointTangents> geometrySubpathEndpointTangents(
   VsdxGeometry geometry, {
   required double widthInches,
   required double heightInches,
   VsdxInfiniteLineEndpointResolver? infiniteLineResolver,
 }) {
   Offset2D cursor = const Offset2D(0, 0);
+  final subpaths = <VsdxPathEndpointTangents>[];
   Offset2D? firstPoint;
   Offset2D? firstForward;
   Offset2D? lastPoint;
@@ -76,13 +77,45 @@ VsdxPathEndpointTangents? geometryEndpointTangents(
     }
   }
 
+  void flushSubpath() {
+    final start = firstPoint;
+    final end = lastPoint;
+    final startVector = firstForward;
+    final endVector = lastForward;
+    // VSDContentCollector closes line subpaths whose final coordinates return
+    // to their MoveTo coordinates, using VSD_EPSILON (1E-6). LibreOffice does
+    // not paint start/end markers on the resulting Z-closed subpath.
+    final isClosed = start != null &&
+        end != null &&
+        (start.x - end.x).abs() <= 1e-6 &&
+        (start.y - end.y).abs() <= 1e-6;
+    if (start != null &&
+        end != null &&
+        startVector != null &&
+        endVector != null &&
+        !isClosed) {
+      subpaths.add((
+        start: start,
+        end: end,
+        startForward: startVector,
+        endForward: endVector,
+      ));
+    }
+    firstPoint = null;
+    firstForward = null;
+    lastPoint = null;
+    lastForward = null;
+  }
+
   final commands = geometry.commands;
   for (var i = 0; i < commands.length; i++) {
     final command = commands[i];
     switch (command) {
       case MoveTo(:final x, :final y):
+        flushSubpath();
         cursor = Offset2D(x, y);
       case RelMoveTo(:final fx, :final fy):
+        flushSubpath();
         cursor = Offset2D(fx * widthInches, fy * heightInches);
       case LineTo(:final x, :final y):
         final end = Offset2D(x, y);
@@ -288,6 +321,9 @@ VsdxPathEndpointTangents? geometryEndpointTangents(
           :final b,
           :final relative,
         ):
+        // libvisio emits InfiniteLine as an explicit M/L pair, so it starts a
+        // fresh marker-bearing subpath even without an authored MoveTo row.
+        flushSubpath();
         final sx = relative ? widthInches : 1.0;
         final sy = relative ? heightInches : 1.0;
         final clipped = infiniteLineResolver?.call(
@@ -299,26 +335,38 @@ VsdxPathEndpointTangents? geometryEndpointTangents(
           cursor = clipped.last;
         }
       case EllipseCmd():
-        // A closed ellipse has no distinct endpoint marker. InfiniteLine is
-        // handled above once the caller supplies its page clipping context.
-        break;
+        // collectEllipse emits M/A/A/Z. LibreOffice suppresses line endings
+        // on that closed subpath even when the surrounding path style carries
+        // marker properties, so only flush the preceding open subpath.
+        flushSubpath();
     }
   }
+  flushSubpath();
+  return subpaths;
+}
 
-  final start = firstPoint;
-  final end = lastPoint;
-  final startVector = firstForward;
-  final endVector = lastForward;
-  if (start == null ||
-      end == null ||
-      startVector == null ||
-      endVector == null) {
-    return null;
-  }
+/// Recover the aggregate first/last marker endpoints for compatibility with
+/// callers that treat a Geometry section as one path. New renderers should use
+/// [geometrySubpathEndpointTangents] so multi-`M` paths retain every marker.
+VsdxPathEndpointTangents? geometryEndpointTangents(
+  VsdxGeometry geometry, {
+  required double widthInches,
+  required double heightInches,
+  VsdxInfiniteLineEndpointResolver? infiniteLineResolver,
+}) {
+  final subpaths = geometrySubpathEndpointTangents(
+    geometry,
+    widthInches: widthInches,
+    heightInches: heightInches,
+    infiniteLineResolver: infiniteLineResolver,
+  );
+  if (subpaths.isEmpty) return null;
+  final first = subpaths.first;
+  final last = subpaths.last;
   return (
-    start: start,
-    end: end,
-    startForward: startVector,
-    endForward: endVector,
+    start: first.start,
+    end: last.end,
+    startForward: first.startForward,
+    endForward: last.endForward,
   );
 }

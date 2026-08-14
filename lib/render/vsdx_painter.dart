@@ -1856,33 +1856,34 @@ class VsdxPainter extends CustomPainter {
     }
   }
 
-  /// LibreOffice/libvisio applies line endings to every Geometry section with
-  /// recoverable endpoint tangents, not just the first section in a Shape.
+  /// LibreOffice/libvisio applies line endings to every open drawable subpath,
+  /// not just the first Geometry section in a Shape.
   List<_LineEndpoints> _geometryLineEndPoints(VsdxShape shape) {
     final out = <_LineEndpoints>[];
     for (final geom in shape.geometries) {
       if (geom.noShow || geom.noLine || geom.commands.isEmpty) continue;
-      final tangents = geometryEndpointTangents(
+      final subpaths = geometrySubpathEndpointTangents(
         geom,
         widthInches: shape.width,
         heightInches: shape.height,
         infiniteLineResolver: (p, q) => _infiniteLineEndpoints(shape, p, q),
       );
-      if (tangents == null) continue;
-      final start = Offset(tangents.start.x, tangents.start.y);
-      final end = Offset(tangents.end.x, tangents.end.y);
-      out.add(_LineEndpoints(
-        start,
-        end,
-        beginTangent: Offset(
-          start.dx + tangents.startForward.x,
-          start.dy + tangents.startForward.y,
-        ),
-        endTangent: Offset(
-          end.dx - tangents.endForward.x,
-          end.dy - tangents.endForward.y,
-        ),
-      ));
+      for (final tangents in subpaths) {
+        final start = Offset(tangents.start.x, tangents.start.y);
+        final end = Offset(tangents.end.x, tangents.end.y);
+        out.add(_LineEndpoints(
+          start,
+          end,
+          beginTangent: Offset(
+            start.dx + tangents.startForward.x,
+            start.dy + tangents.startForward.y,
+          ),
+          endTangent: Offset(
+            end.dx - tangents.endForward.x,
+            end.dy - tangents.endForward.y,
+          ),
+        ));
+      }
     }
     return out;
   }

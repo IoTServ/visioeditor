@@ -222,16 +222,23 @@ void main() {
       expect(svg, contains('data:image/bmp;base64,Qk0'));
       expect(svg, contains('href="https://example.test/vdx-link"'));
       expect(
-        RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"')
-            .allMatches(svg),
-        hasLength(3),
-        reason: 'every Geometry section with line endpoints receives endings',
+        RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"').allMatches(svg),
+        hasLength(2),
+        reason:
+            'open Geometry sections receive endings; the closed one does not',
       );
       expect(
-        RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"')
-            .allMatches(svg),
+        RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"').allMatches(svg),
         hasLength(3),
         reason: 'InfiniteLine receives its page-clipped line ending',
+      );
+      final ellipseCarrier = RegExp(
+        r'<path d="([^"]+)"[^>]*marker-end="url\(#arrow-end-p0-2-1\)"',
+      ).firstMatch(svg)!.group(1)!;
+      expect(
+        RegExp(r'\bM ').allMatches(ellipseCarrier),
+        hasLength(1),
+        reason: 'closed Ellipse is skipped while its following open arc marks',
       );
     });
 
@@ -357,14 +364,22 @@ void main() {
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"')
             .allMatches(reopenedSvg),
-        hasLength(3),
-        reason: 'per-Geometry line endings survive VDX to VSDX round-trip',
+        hasLength(2),
+        reason: 'open/closed Geometry endings survive VDX to VSDX round-trip',
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"')
             .allMatches(reopenedSvg),
         hasLength(3),
         reason: 'InfiniteLine ending survives VDX to VSDX round-trip',
+      );
+      final reopenedEllipseCarrier = RegExp(
+        r'<path d="([^"]+)"[^>]*marker-end="url\(#arrow-end-p0-2-1\)"',
+      ).firstMatch(reopenedSvg)!.group(1)!;
+      expect(
+        RegExp(r'\bM ').allMatches(reopenedEllipseCarrier),
+        hasLength(1),
+        reason: 'closed/open marker semantics survive VDX to VSDX round-trip',
       );
 
       final curvesXml = pageXml.descendants.whereType<XmlElement>().singleWhere(
