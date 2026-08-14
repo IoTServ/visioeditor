@@ -90,6 +90,19 @@ void main() {
     expect(marker34.path.getBounds(), marker33.path.getBounds());
   });
 
+  test('non-centred markers trim the body but centred markers do not', () {
+    expect(arrowBodyTrimInches(31, 0.25, 0.04), closeTo(0.23, 1e-9));
+    expect(arrowBodyTrimInches(39, 0.25, 0.04), closeTo(0.28, 1e-6));
+    expect(arrowBodyTrimInches(20, 0.25, 0.04), 0);
+  });
+
+  test('ids 35–37 put the bar before the filled circle', () {
+    final marker = arrowDescriptor(35)!;
+    expect(marker.path.contains(const Offset(-0.9, 0.45)), isTrue);
+    expect(marker.path.contains(const Offset(-0.02, 0.45)), isFalse);
+    expect(marker.path.getBounds(), arrowDescriptor(37)!.path.getBounds());
+  });
+
   test('id 7 aliases the open-chevron path of id 19 like libvisio', () {
     final marker7 = arrowDescriptor(7)!;
     final marker19 = arrowDescriptor(19)!;

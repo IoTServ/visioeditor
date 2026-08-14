@@ -760,13 +760,14 @@ class VsdxPainter extends CustomPainter {
               final jumped = _lineJumpsPath(shape, geom);
               if (jumped != null) strokeSrc = jumped;
             }
+            final bodyPath = _trimArrowBodyPath(strokeSrc, shape);
             _drawBodyStroke(
               canvas,
-              strokeSrc,
+              bodyPath,
               strokePaint,
               shape,
               dashes: dashes,
-              dashPhase: dashPhase,
+              dashPhase: dashPhase + _arrowBodyBeginTrim(shape),
             );
           }
         }
@@ -794,9 +795,10 @@ class VsdxPainter extends CustomPainter {
             final jumped = _lineJumpsPath(shape, geom);
             if (jumped != null) strokeSrc = jumped;
           }
+          final bodyPath = _trimArrowBodyPath(strokeSrc, shape);
           _drawCompoundStroke(
             canvas,
-            strokeSrc,
+            bodyPath,
             Paint()
               ..color = const Color(0xFFFFFFFF)
               ..style = PaintingStyle.stroke
@@ -806,7 +808,7 @@ class VsdxPainter extends CustomPainter {
             shape.line.compoundType,
             w,
             dashes: dashes,
-            dashPhase: dashPhase,
+            dashPhase: dashPhase + _arrowBodyBeginTrim(shape),
           );
         }
         canvas.restore();
@@ -835,13 +837,14 @@ class VsdxPainter extends CustomPainter {
           }
           // Offset compound rails on the continuous path, then dash each rail
           // (SVG order) — dashing before offset breaks thick-thin rails.
+          final bodyPath = _trimArrowBodyPath(strokeSrc, shape);
           _drawBodyStroke(
             canvas,
-            strokeSrc,
+            bodyPath,
             strokePaint,
             shape,
             dashes: dashes,
-            dashPhase: dashPhase,
+            dashPhase: dashPhase + _arrowBodyBeginTrim(shape),
           );
         }
       }
@@ -1234,13 +1237,14 @@ class VsdxPainter extends CustomPainter {
     _drawReflection(canvas, shape, path, noFill: true, noLine: false);
     _applyLineGradient(stroke, shape, path.getBounds());
     final dashes = _effectiveStrokeDashes(shape);
+    final bodyPath = _trimArrowBodyPath(path, shape);
     _drawBodyStroke(
       canvas,
-      path,
+      bodyPath,
       stroke,
       shape,
       dashes: dashes,
-      dashPhase: _flowDashPhase(shape, dashes),
+      dashPhase: _flowDashPhase(shape, dashes) + _arrowBodyBeginTrim(shape),
     );
   }
 
@@ -1746,6 +1750,57 @@ class VsdxPainter extends CustomPainter {
       canvas.transform(m.storage);
     }
     canvas.translate(-cx, -cy);
+  }
+
+  double _arrowBodyBeginTrim(VsdxShape shape) => shape.line.hasBeginArrow
+      ? arrowBodyTrimInches(
+          shape.line.beginArrow,
+          shape.line.beginArrowSizeInches,
+          shape.line.weightInches,
+        )
+      : 0;
+
+  double _arrowBodyEndTrim(VsdxShape shape) => shape.line.hasEndArrow
+      ? arrowBodyTrimInches(
+          shape.line.endArrow,
+          shape.line.endArrowSizeInches,
+          shape.line.weightInches,
+        )
+      : 0;
+
+  /// End the visible stroke at marker bases while keeping marker tips at the
+  /// authored endpoints, matching LibreOffice/libvisio. Multiple open
+  /// contours (line-jump gaps) are retained.
+  Path _trimArrowBodyPath(Path source, VsdxShape shape) {
+    final beginTrim = _arrowBodyBeginTrim(shape);
+    final endTrim = _arrowBodyEndTrim(shape);
+    if (beginTrim <= 1e-12 && endTrim <= 1e-12) return source;
+    final metrics = source.computeMetrics().toList(growable: false);
+    if (metrics.isEmpty || metrics.any((metric) => metric.isClosed)) {
+      return source;
+    }
+    final total = metrics.fold<double>(0, (sum, metric) => sum + metric.length);
+    final from = beginTrim.clamp(0.0, total);
+    final to = (total - endTrim).clamp(from, total);
+    if (to - from <= 1e-12) return Path();
+
+    final out = Path();
+    var offset = 0.0;
+    for (final metric in metrics) {
+      final contourStart = offset;
+      final contourEnd = offset + metric.length;
+      final localStart = math.max(from, contourStart) - contourStart;
+      final localEnd = math.min(to, contourEnd) - contourStart;
+      if (localEnd - localStart > 1e-12) {
+        out.addPath(
+          metric.extractPath(localStart, localEnd, startWithMoveTo: true),
+          Offset.zero,
+        );
+      }
+      offset = contourEnd;
+      if (offset >= to) break;
+    }
+    return out;
   }
 
   void _paintLineEndings(Canvas canvas, VsdxShape shape) {

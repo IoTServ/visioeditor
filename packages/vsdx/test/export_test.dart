@@ -1599,7 +1599,7 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" '
+        'd="M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" '
         'fill="none" stroke="#000000"',
       ),
       reason: 'libvisio aliases arrow 34 to the full open-circle path',
@@ -1687,7 +1687,7 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" '
+        'd="M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" '
         'fill="none" stroke="#000000"',
       ),
       reason: 'libvisio currently renders marker 33 as an open circle',
@@ -2190,10 +2190,74 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0" '
+        'd="M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" '
         'fill="none" stroke="#000000"',
       ),
     );
+    expect(svg, contains('d="M 0 0 L 1.895 0"'));
+    expect(
+      svg,
+      contains('L 1.999 0 L 2 0" fill="none"'),
+      reason: 'the marker carrier must retain the authored endpoint',
+    );
+  });
+
+  test('SVG arrows 35–37 put the bar before the filled circle', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(endArrow: 35, weightInches: 0.04),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      svg,
+      contains(
+        'd="M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+        'M 0 0 V 10 H 2 V 0 Z" fill="#000000"',
+      ),
+    );
+    expect(svg, contains('d="M 0 0 L 1.895 0"'));
+  });
+
+  test('all Visio arrow ids survive write, reopen and SVG export', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var id = page.nextFreeShapeId();
+    for (var arrowId = 1; arrowId <= 45; arrowId++) {
+      page = page.addShape(
+        VsdxShapeFactory.line(
+          id: id++,
+          ax: 1,
+          ay: arrowId / 10,
+          bx: 3,
+          by: arrowId / 10,
+          line: VsdxLine(beginArrow: arrowId, endArrow: arrowId),
+        ),
+      );
+    }
+    doc = doc.replacePage(0, page);
+    final reopened = parser.parse(
+      writer.write(originalBytes: blank, edited: doc),
+    );
+    final lines = reopened.pages.first.shapes.where((shape) => shape.is1D);
+    expect(lines.map((shape) => shape.line.beginArrow), <int>[
+      for (var arrowId = 1; arrowId <= 45; arrowId++) arrowId,
+    ]);
+    expect(lines.map((shape) => shape.line.endArrow), <int>[
+      for (var arrowId = 1; arrowId <= 45; arrowId++) arrowId,
+    ]);
+    final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
+    expect(RegExp(r'marker-start=').allMatches(svg), hasLength(45));
+    expect(RegExp(r'marker-end=').allMatches(svg), hasLength(45));
   });
 
   test('SVG marker carrier path has single stroke-opacity=0', () {

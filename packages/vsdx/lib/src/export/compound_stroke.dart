@@ -465,6 +465,64 @@ String polylineToPathD(List<Offset2D> pts, {bool closed = false}) {
   return buf.toString();
 }
 
+/// Trim measured distances from an open polyline without changing its middle
+/// vertices. This ends connector strokes at arrow-marker bases while leaving
+/// the separate marker carrier anchored at the authored endpoints.
+List<Offset2D> trimPolylineEnds(
+  List<Offset2D> points, {
+  double begin = 0,
+  double end = 0,
+}) {
+  if (points.length < 2 || (begin <= 1e-12 && end <= 1e-12)) {
+    return List<Offset2D>.of(points);
+  }
+  final lengths = <double>[];
+  var total = 0.0;
+  for (var i = 1; i < points.length; i++) {
+    final dx = points[i].x - points[i - 1].x;
+    final dy = points[i].y - points[i - 1].y;
+    total += math.sqrt(dx * dx + dy * dy);
+    lengths.add(total);
+  }
+  if (total <= 1e-12) return <Offset2D>[points.first];
+  final from = begin.clamp(0.0, total);
+  final to = (total - end).clamp(from, total);
+
+  Offset2D at(double distance) {
+    if (distance <= 0) return points.first;
+    if (distance >= total) return points.last;
+    var previousLength = 0.0;
+    for (var i = 0; i < lengths.length; i++) {
+      final nextLength = lengths[i];
+      if (distance <= nextLength) {
+        final segmentLength = nextLength - previousLength;
+        if (segmentLength <= 1e-12) return points[i + 1];
+        final t = (distance - previousLength) / segmentLength;
+        return Offset2D(
+          points[i].x + (points[i + 1].x - points[i].x) * t,
+          points[i].y + (points[i + 1].y - points[i].y) * t,
+        );
+      }
+      previousLength = nextLength;
+    }
+    return points.last;
+  }
+
+  final out = <Offset2D>[at(from)];
+  for (var i = 1; i < points.length - 1; i++) {
+    final distance = lengths[i - 1];
+    if (distance > from + 1e-12 && distance < to - 1e-12) {
+      out.add(points[i]);
+    }
+  }
+  final last = at(to);
+  if ((out.last.x - last.x).abs() > 1e-12 ||
+      (out.last.y - last.y).abs() > 1e-12) {
+    out.add(last);
+  }
+  return out;
+}
+
 String _fmt(double v) {
   if (v == v.roundToDouble()) return v.toInt().toString();
   return v.toStringAsFixed(4).replaceFirst(RegExp(r'0+$'), '').replaceFirst(

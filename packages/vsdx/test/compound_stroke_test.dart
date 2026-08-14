@@ -53,6 +53,22 @@ void main() {
     expect(rect.points.length, greaterThanOrEqualTo(4));
   });
 
+  test('trimPolylineEnds preserves elbows and trims both endpoints', () {
+    final trimmed = trimPolylineEnds(
+      const <Offset2D>[
+        Offset2D(0, 0),
+        Offset2D(2, 0),
+        Offset2D(2, 2),
+      ],
+      begin: 0.5,
+      end: 0.75,
+    );
+    expect(trimmed, hasLength(3));
+    expect(trimmed.first.x, closeTo(0.5, 1e-9));
+    expect(trimmed[1], const Offset2D(2, 0));
+    expect(trimmed.last.y, closeTo(1.25, 1e-9));
+  });
+
   test('VsdxFill.copyWith can clear theme background', () {
     const fill = VsdxFill(
       pattern: 2,

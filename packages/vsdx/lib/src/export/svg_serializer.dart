@@ -976,7 +976,8 @@ class VsdxToSvgSerializer {
       paintId: paintId,
       defs: defs,
     );
-    final sD = strokeD ?? d;
+    final rawStrokeD = strokeD ?? d;
+    final sD = _trimArrowStrokeD(rawStrokeD, shape.line);
     // Gap jumps insert mid-path `M` subpaths; SVG markers would repeat on
     // every subpath. Hang markers (and baked tips) on the continuous [d].
     final effectiveMarkerD = markerD ?? d;
@@ -1155,7 +1156,7 @@ class VsdxToSvgSerializer {
           '${_markerCarrierStroke(stroke.paint)}${stroke.markers}/>',
         );
       }
-    } else if (strokeD != null && strokeD != d) {
+    } else if (sD != d) {
       // Distinct fill vs jump stroke paths (canvas parity).
       if (filter.isNotEmpty) {
         buf.writeln('$indent<g$filter>');
@@ -2973,8 +2974,8 @@ class VsdxToSvgSerializer {
       17 => ('M 0 1 L 10 5 L 0 9 L 3 5 Z', false),
       18 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', false),
       19 => ('M 0 -4.091 L 10 5 L 0 14.091', false),
-      20 || 31 || 32 || 33 || 41 => (
-          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
+      20 || 31 || 32 || 33 || 34 || 41 => (
+          'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
           false,
         ),
       21 => ('M 0 1 H 10 V 9 H 0 Z', false),
@@ -3001,17 +3002,13 @@ class VsdxToSvgSerializer {
               'M 7 1 V 9',
           false,
         ),
-      34 => (
-          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
-          false,
-        ),
       35 || 36 || 37 => (
-          'M 4.2 5 m -3.4,0 a 3.4,3.4 0 1,0 6.8,0 a 3.4,3.4 0 1,0 -6.8,0 '
-              'M 9.2 0 V 10 H 10 V 0 Z',
+          'M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+              'M 0 0 V 10 H 2 V 0 Z',
           true,
         ),
       38 => (
-          'M 5 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0',
+          'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
           true,
         ),
       39 => (
@@ -3094,10 +3091,10 @@ class VsdxToSvgSerializer {
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
       'M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9' =>
         'M 0 5 L 8 1 M 0 5 L 10 5 M 0 5 L 8 9',
-      'M 4.2 5 m -3.4,0 a 3.4,3.4 0 1,0 6.8,0 a 3.4,3.4 0 1,0 -6.8,0 '
-            'M 9.2 0 V 10 H 10 V 0 Z' =>
-        'M 5.8 5 m -3.4,0 a 3.4,3.4 0 1,0 6.8,0 a 3.4,3.4 0 1,0 -6.8,0 '
-            'M 0.8 0 V 10 H 0 V 0 Z',
+      'M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+            'M 0 0 V 10 H 2 V 0 Z' =>
+        'M 4 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+            'M 10 0 V 10 H 8 V 0 Z',
       _ => d, // circles are symmetric
     };
   }
@@ -3113,6 +3110,38 @@ class VsdxToSvgSerializer {
     return (s * _arrowCanvasReach(arrowId)).clamp(0.02, 1.5);
   }
 
+  double _arrowBodyTrim(
+    VsdxLine line,
+    int arrowId,
+    double sizeInches,
+  ) {
+    if (arrowId == 0 || _isCenteredMarker(arrowId)) return 0;
+    final size = sizeInches > 0 ? sizeInches : 0.125;
+    return math.max(
+      0.0,
+      size * _arrowCanvasBodyReach(arrowId) -
+          math.max(0.0, line.weightInches) / 2,
+    );
+  }
+
+  /// SVG markers do not shorten their carrier line as LibreOffice/libvisio
+  /// do. Use a dense, body-only polyline and leave the untouched path as the
+  /// invisible marker carrier. Multi-subpath jump strokes keep their gaps.
+  String _trimArrowStrokeD(String d, VsdxLine line) {
+    final begin = line.hasBeginArrow
+        ? _arrowBodyTrim(line, line.beginArrow, line.beginArrowSizeInches)
+        : 0.0;
+    final end = line.hasEndArrow
+        ? _arrowBodyTrim(line, line.endArrow, line.endArrowSizeInches)
+        : 0.0;
+    if (begin <= 1e-12 && end <= 1e-12) return d;
+    if (RegExp(r'[Mm]').allMatches(d).length > 1) return d;
+    final sampled = samplePathD(d, curveStep: 0.025);
+    if (sampled.closed || sampled.points.length < 2) return d;
+    final trimmed = trimPolylineEnds(sampled.points, begin: begin, end: end);
+    return polylineToPathD(trimmed);
+  }
+
   /// Tip→base extent in canvas `arrow_library` local units (tip at origin).
   double _arrowCanvasReach(int arrowId) {
     return switch (arrowId) {
@@ -3122,6 +3151,25 @@ class VsdxToSvgSerializer {
       7 || 19 => 0.55,
       25 || 26 => 0.85,
       28 || 29 || 30 => 1.1,
+      39 || 40 => 1.2,
+      _ => 1.0,
+    };
+  }
+
+  /// Endpoint-to-base reach along the line axis. This intentionally differs
+  /// from [_arrowCanvasReach], which is the marker's largest dimension and is
+  /// used for its square SVG viewport (wide marker 14 is the clearest case).
+  double _arrowCanvasBodyReach(int arrowId) {
+    return switch (arrowId) {
+      6 || 8 || 12 || 18 => 1.1,
+      7 || 19 || 25 || 26 => 0.55,
+      13 => 1.4,
+      14 => 0.85,
+      24 => 0.3,
+      27 => 0.85,
+      28 => 0.88,
+      29 => 1.1,
+      30 => 0.78,
       39 || 40 => 1.2,
       _ => 1.0,
     };

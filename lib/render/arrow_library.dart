@@ -95,19 +95,19 @@ final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   28: _databaseManyOne,
   29: _databaseOptionalMany,
   30: _databaseOptionalOne,
-  31: _openCircle,
-  32: _openCircle,
-  33: _openCircle,
-  34: _openCircle,
+  31: _openCircleTerminator,
+  32: _openCircleTerminator,
+  33: _openCircleTerminator,
+  34: _openCircleTerminator,
   35: _filledCircleWithLine,
   36: _filledCircleWithLine,
   37: _filledCircleWithLine,
-  38: _circleDot,
+  38: _filledCircleTerminator,
   39: _doubleTriangle,
   // libvisio currently emits the same filled marker path for 39 and 40.
   40: _doubleTriangle,
-  41: _openCircle,
-  42: _filledCircle,
+  41: _openCircleTerminator,
+  42: _filledCircleTerminator,
   43: _openArrow,
   44: _openArrow,
   45: _openArrow,
@@ -199,10 +199,12 @@ ArrowDescriptor _filledCircle() {
 }
 
 ArrowDescriptor _filledCircleWithLine() {
-  // libvisio uses this same filled-circle + centred bar marker for ids 35–37.
+  // libvisio uses this same filled-circle + leading bar marker for ids 35–37.
+  // LibreOffice shortens the line to the bar, then places the circle between
+  // the bar and the authored endpoint.
   final p = Path()
-    ..addOval(Rect.fromCircle(center: const Offset(-0.58, 0), radius: 0.34))
-    ..addRect(const Rect.fromLTWH(-0.08, -0.5, 0.08, 1.0));
+    ..addOval(Rect.fromCircle(center: const Offset(-0.4, 0), radius: 0.4))
+    ..addRect(const Rect.fromLTWH(-1.0, -0.5, 0.2, 1.0));
   return ArrowDescriptor(path: p, filled: true);
 }
 
@@ -216,15 +218,21 @@ ArrowDescriptor _openDiamond() {
   return ArrowDescriptor(path: p, filled: false);
 }
 
-ArrowDescriptor _circleDot() {
+ArrowDescriptor _filledCircleTerminator() {
   final p = Path()
-    ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.4));
+    ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.5));
   return ArrowDescriptor(path: p, filled: true);
 }
 
 ArrowDescriptor _openCircle() {
   final p = Path()
     ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.4));
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _openCircleTerminator() {
+  final p = Path()
+    ..addOval(Rect.fromCircle(center: const Offset(-0.5, 0), radius: 0.5));
   return ArrowDescriptor(path: p, filled: false);
 }
 
@@ -387,4 +395,20 @@ double arrowDebugReach(int id) {
   // The arrow's reach along the line direction is `|min(x)|` (tip at 0,
   // base at negative X).
   return math.max(b.width, b.height);
+}
+
+/// Visible body-stroke length hidden underneath a non-centred marker.
+///
+/// The marker remains anchored at the authored endpoint; trimming prevents
+/// open circles and line arrows from showing the body through their interior.
+double arrowBodyTrimInches(
+  int id,
+  double sizeInches,
+  double lineWeightInches,
+) {
+  final desc = arrowDescriptor(id);
+  if (desc == null || desc.centered || id == 0) return 0;
+  final reach = math.max(0.0, -desc.path.getBounds().left);
+  final size = sizeInches > 0 ? sizeInches : 0.125;
+  return math.max(0.0, reach * size - math.max(0.0, lineWeightInches) / 2);
 }
