@@ -186,6 +186,30 @@ Second line and tab:	value</Text>
             <RelArcTo IX="5"><X>0</X><Y>0</Y><A>0.1</A></RelArcTo>
           </Geom>
           <Geom IX="1"><NoFill>1</NoFill><MoveTo IX="1"><X>0</X><Y>0.5</Y></MoveTo><PolylineTo IX="2"><X>3</X><Y>0.5</Y><A>POLYLINE(1,1,0.5,0.8,1.0,0.2,1.5,0.8,2.0,0.2,2.5,0.8)</A></PolylineTo></Geom>
+          <Geom IX="2"><NoFill>1</NoFill><RelMoveTo IX="1"><X>0</X><Y>0.5</Y></RelMoveTo><RelEllipticalArcTo IX="2"><X>1</X><Y>0.5</Y><A>0.5</A><B>1</B><C>0</C><D>1.3</D></RelEllipticalArcTo></Geom>
+        </Shape>
+        <Shape ID="10" Type="Shape" LineStyle="0" FillStyle="0" TextStyle="0">
+          <XForm><PinX>2.1</PinX><PinY>1</PinY><Width>3.2</Width><Height>1.4</Height><LocPinX>1.6</LocPinX><LocPinY>0.7</LocPinY></XForm>
+          <Line><LineColor>#7030A0</LineColor><LineWeight>0.0208333333</LineWeight><LinePattern>1</LinePattern></Line>
+          <Fill><FillPattern>0</FillPattern></Fill>
+          <Char IX="0"><Font>4</Font><Color>#7030A0</Color><Size>0.125</Size></Char>
+          <Text><cp IX="0"/>Spline, NURBS, infinite line</Text>
+          <Geom IX="0">
+            <NoFill>1</NoFill>
+            <MoveTo IX="1"><X>0</X><Y>0.2</Y></MoveTo>
+            <SplineStart IX="2"><X>0.7</X><Y>1.1</Y><A>0.5</A><B>0</B><C>2</C><D>3</D></SplineStart>
+            <SplineKnot IX="3"><X>1.7</X><Y>0.2</Y><A>1</A></SplineKnot>
+            <SplineKnot IX="4"><X>3.1</X><Y>1.1</Y><A>1.5</A></SplineKnot>
+          </Geom>
+          <Geom IX="1">
+            <NoFill>1</NoFill>
+            <MoveTo IX="1"><X>0</X><Y>0.15</Y></MoveTo>
+            <NURBSTo IX="2"><X>3.2</X><Y>0.15</Y><A>1</A><B>1</B><C>0</C><D>1</D><E>NURBS(1.5,3,1,1,0.8,1.2,0.5,1,2.4,1.2,1,1)</E></NURBSTo>
+          </Geom>
+          <Geom IX="2">
+            <NoFill>1</NoFill>
+            <InfiniteLine IX="1"><X>0</X><Y>0.7</Y><A>3.2</A><B>0.7</B></InfiniteLine>
+          </Geom>
         </Shape>
         <Shape ID="8" Type="Foreign" LineStyle="0" FillStyle="0" TextStyle="0">
           <XForm><PinX>9.1</PinX><PinY>6.2</PinY><Width>0.6</Width><Height>0.6</Height><LocPinX>0.3</LocPinX><LocPinY>0.3</LocPinY></XForm>

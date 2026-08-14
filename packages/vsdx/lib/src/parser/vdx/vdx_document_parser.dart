@@ -597,7 +597,10 @@ XmlElement _cell(XmlElement source, {String? name}) {
 
 String? _legacyValue(XmlElement element) {
   final text = element.innerText;
-  if (text.isNotEmpty) return text;
+  // Pretty-printers sometimes expand an otherwise empty `<X V="1"/>` into
+  // `<X V="1">\n</X>`. Whitespace-only element content is not the evaluated
+  // ShapeSheet value; libvisio still consumes the cached V= in that case.
+  if (text.trim().isNotEmpty) return text;
   final cached = element.getAttribute('V');
   if (cached == null || cached.toLowerCase() == 'null') return null;
   return cached;
@@ -682,7 +685,7 @@ class _VdxMediaCollector {
   String type,
   String? compression,
 ) {
-  switch (compression?.toUpperCase()) {
+  switch (compression?.trim().toUpperCase()) {
     case 'PNG':
       return (bytes: bytes, ext: 'png', mime: 'image/png');
     case 'JPEG':
@@ -692,28 +695,19 @@ class _VdxMediaCollector {
     case 'TIFF':
       return (bytes: bytes, ext: 'tif', mime: 'image/tiff');
   }
-  switch (type.toLowerCase()) {
+  switch (type.trim().toLowerCase()) {
     case 'enhmetafile':
       return (bytes: bytes, ext: 'emf', mime: 'image/x-emf');
     case 'metafile':
       return (bytes: bytes, ext: 'wmf', mime: 'image/x-wmf');
     case 'object':
       return (bytes: bytes, ext: 'ole', mime: 'object/ole');
-    case 'bitmap':
-      // DiagramML stores an uncompressed Bitmap as a DIB: it starts at the
-      // BITMAPINFOHEADER and omits the 14-byte BITMAPFILEHEADER. libvisio's
-      // VSDContentCollector::_handleForeignData() reconstructs that header
-      // before librevenge/LibreOffice sees the image. Do the same so Flutter,
-      // browsers, and a VSDX save/reopen all receive a standalone BMP.
-      return (
-        bytes: _dibToBmp(bytes),
-        ext: 'bmp',
-        mime: 'image/bmp',
-      );
   }
 
-  // A missing/unknown ForeignType occurs in third-party DiagramML. Preserve
-  // self-describing raster payloads and fall back to the legacy DIB rule.
+  // Some third-party DiagramML writers keep ForeignType="Bitmap" but omit or
+  // misspell CompressionType. Preserve any self-describing raster before the
+  // legacy uncompressed-DIB fallback. This is deliberately after EMF/WMF/OLE:
+  // those containers may carry preview bytes but their object type must win.
   if (_hasMagic(bytes, const <int>[0x89, 0x50, 0x4E, 0x47])) {
     return (bytes: bytes, ext: 'png', mime: 'image/png');
   }
@@ -723,9 +717,19 @@ class _VdxMediaCollector {
   if (_hasMagic(bytes, const <int>[0x47, 0x49, 0x46])) {
     return (bytes: bytes, ext: 'gif', mime: 'image/gif');
   }
+  if (_hasMagic(bytes, const <int>[0x49, 0x49, 0x2A, 0x00]) ||
+      _hasMagic(bytes, const <int>[0x4D, 0x4D, 0x00, 0x2A])) {
+    return (bytes: bytes, ext: 'tif', mime: 'image/tiff');
+  }
   if (_hasMagic(bytes, const <int>[0x42, 0x4D])) {
     return (bytes: bytes, ext: 'bmp', mime: 'image/bmp');
   }
+
+  // DiagramML stores an uncompressed Bitmap as a DIB: it starts at the
+  // BITMAPINFOHEADER and omits the 14-byte BITMAPFILEHEADER. libvisio's
+  // VSDContentCollector::_handleForeignData() reconstructs that header before
+  // librevenge/LibreOffice sees the image. Unknown bitmap-like payloads use
+  // the same tolerant fallback so one producer quirk cannot abort the page.
   return (bytes: _dibToBmp(bytes), ext: 'bmp', mime: 'image/bmp');
 }
 

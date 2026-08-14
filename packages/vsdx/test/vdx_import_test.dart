@@ -56,7 +56,7 @@ void main() {
       expect(page.connects, hasLength(2));
 
       final shapes = _allShapes(result.document);
-      expect(shapes, hasLength(9));
+      expect(shapes, hasLength(10));
       final masterInstance = page.findShapeById(1)!;
       expect(masterInstance.geometries.single.commands, hasLength(5));
       expect(masterInstance.fill.foreground, const VsdxColor(0xFFE2F0D9));
@@ -106,7 +106,18 @@ void main() {
           RelCubBezTo,
           RelQuadBezTo,
           RelArcTo,
+          RelEllipticalArcTo,
           PolylineTo,
+        ]),
+      );
+      final advancedGeometry = page.findShapeById(10)!;
+      expect(
+        _commandTypes(advancedGeometry),
+        containsAll(<Type>[
+          InfiniteLineCmd,
+          SplineStart,
+          SplineKnot,
+          NurbsTo,
         ]),
       );
       final image = page.findShapeById(8)!;
@@ -138,7 +149,7 @@ void main() {
       ).document;
 
       expect(reopened.pages, hasLength(1));
-      expect(_allShapes(reopened), hasLength(9));
+      expect(_allShapes(reopened), hasLength(10));
       expect(reopened.images.length, 2);
       final allText = _allShapes(reopened)
           .map((shape) => shape.richText.plainText)
@@ -151,6 +162,7 @@ void main() {
         'Grouped child B',
         '1-D connector',
         'Relative and polyline rows',
+        'Spline, NURBS, infinite line',
       ]) {
         expect(allText, contains(expected));
       }
@@ -184,7 +196,16 @@ void main() {
           lessThan(childNames.indexOf('ForeignData')));
       expect(
         _commandTypes(reopened.pages.single.findShapeById(7)!),
-        contains(PolylineTo),
+        containsAll(<Type>[PolylineTo, RelEllipticalArcTo]),
+      );
+      expect(
+        _commandTypes(reopened.pages.single.findShapeById(10)!),
+        containsAll(<Type>[
+          InfiniteLineCmd,
+          SplineStart,
+          SplineKnot,
+          NurbsTo,
+        ]),
       );
       final inheritedStyle = reopened.pages.single.findShapeById(7)!;
       expect(inheritedStyle.line.cap, LineCap.square);
@@ -216,7 +237,33 @@ void main() {
 
       final template = parseVisio(source, sourceName: 'coverage.vtx');
       expect(template.document.pages.single.name, 'Coverage');
-      expect(_allShapes(template.document), hasLength(9));
+      expect(_allShapes(template.document), hasLength(10));
+    });
+
+    test('uses V caches for whitespace-only leaves and sniffs bitmap payloads',
+        () {
+      final xml = utf8
+          .decode(_fixture())
+          .replaceFirst(
+            '<PinX>2</PinX>',
+            '<PinX V="2">\n  </PinX>',
+          )
+          .replaceFirst(
+            ' ForeignType="Bitmap" CompressionType="PNG"',
+            ' ForeignType="Bitmap"',
+          );
+      final result = parseVisio(
+        Uint8List.fromList(utf8.encode(xml)),
+        sourceName: 'third-party.vdx',
+      );
+
+      expect(result.document.pages.single.findShapeById(1)!.pinX, 2);
+      final imageShape = result.document.pages.single.findShapeById(8)!;
+      final image = result.document.images.findByPart(
+        imageShape.imagePartName!,
+      )!;
+      expect(image.mimeType, 'image/png');
+      expect(image.bytes.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
     });
 
     test('accepts UTF-16 DiagramML and rejects unrelated XML', () {

@@ -44,6 +44,7 @@ const _vdxCoverageTexts = <String>[
   'Grouped child B',
   '1-D connector',
   'Relative and polyline rows',
+  'Spline, NURBS, infinite line',
 ];
 
 const _corpus = <_CorpusEntry>[
