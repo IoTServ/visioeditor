@@ -30,6 +30,7 @@ import '../model/hyperlink.dart';
 import '../model/image.dart';
 import '../model/layer.dart';
 import '../model/line.dart';
+import '../model/master.dart';
 import '../model/page.dart';
 import '../model/rich_text.dart';
 import '../model/shape.dart';
@@ -1902,6 +1903,199 @@ class VsdxWriter {
       throw StateError('Failed to encode blank .vsdx');
     }
     return Uint8List.fromList(encoded);
+  }
+
+  /// Attach the semantic [document]'s masters to a freshly synthesised VSDX.
+  ///
+  /// Legacy VSD/VDX import resolves master inheritance eagerly, so the page
+  /// shapes are already complete. Preserve the separate master registry too,
+  /// using the relationship chain consumed by libvisio/LibreOffice:
+  /// document -> masters.xml -> masterN.xml.
+  Uint8List attachSyntheticMasters({
+    required Uint8List originalBytes,
+    required VsdxDocument document,
+  }) {
+    final masters = document.masters.all.toList(growable: false);
+    if (masters.isEmpty) return originalBytes;
+
+    final pkg = VsdxPackage.open(originalBytes);
+    final resolver = RelationshipResolver(pkg);
+    final docPart = pkg.resolveDocumentPartName();
+    if (resolver.singleTargetOfType(docPart, VsdxRelType.masters) != null) {
+      return originalBytes;
+    }
+
+    final contentTypes = pkg.readPartXml('/[Content_Types].xml');
+    if (contentTypes == null) return originalBytes;
+
+    final patched = <String, Uint8List>{};
+    final docRelsPart = _relsPartFor(docPart);
+    final docRels = pkg.readPartXml(docRelsPart) ??
+        XmlDocument.parse(
+          '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+          '<Relationships xmlns="$_relNs"/>',
+        );
+    final mastersRelId = 'rId${_maxRelId(docRels) + 1}';
+    docRels.rootElement.children.add(XmlElement(XmlName('Relationship'), [
+      XmlAttribute(XmlName('Id'), mastersRelId),
+      XmlAttribute(
+        XmlName('Type'),
+        'http://schemas.microsoft.com/visio/2010/relationships/masters',
+      ),
+      XmlAttribute(XmlName('Target'), 'masters/masters.xml'),
+    ]));
+    patched[_noSlash(docRelsPart)] =
+        Uint8List.fromList(utf8.encode(docRels.toXmlString()));
+
+    _ensurePartOverride(
+      contentTypes,
+      '/visio/masters/masters.xml',
+      'application/vnd.ms-visio.masters+xml',
+    );
+
+    final masterIndexRows = <XmlNode>[];
+    final masterRelationships = <XmlNode>[];
+    for (var i = 0; i < masters.length; i++) {
+      final master = masters[i];
+      final number = i + 1;
+      final fileName = 'master$number.xml';
+      final partName = '/visio/masters/$fileName';
+      final relId = 'rId$number';
+
+      final imageShapes = <VsdxShape>[];
+      void collectImages(VsdxShape shape) {
+        if (shape.hasImage) imageShapes.add(shape);
+        for (final child in shape.children) {
+          collectImages(child);
+        }
+      }
+
+      collectImages(master.prototype);
+      for (final shape in master.additionalPrototypes) {
+        collectImages(shape);
+      }
+      final imageRels = _prepareImageParts(
+        pkg: pkg,
+        edited: document,
+        rebuiltImageShapes: imageShapes,
+        pagePart: partName,
+        patched: patched,
+        ctXml: contentTypes,
+        markCtDirty: () {},
+      );
+
+      patched[_noSlash(partName)] = Uint8List.fromList(utf8.encode(
+        _buildMasterContentsXml(master, imageRels: imageRels),
+      ));
+      _ensurePartOverride(
+        contentTypes,
+        partName,
+        'application/vnd.ms-visio.master+xml',
+      );
+      masterIndexRows.add(_buildMasterIndexElement(master, relId));
+      masterRelationships.add(XmlElement(XmlName('Relationship'), [
+        XmlAttribute(XmlName('Id'), relId),
+        XmlAttribute(
+          XmlName('Type'),
+          'http://schemas.microsoft.com/visio/2010/relationships/master',
+        ),
+        XmlAttribute(XmlName('Target'), fileName),
+      ]));
+    }
+
+    final mastersRoot = XmlElement(
+      XmlName('Masters'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('xmlns'), _mainNs),
+        XmlAttribute(XmlName('r', 'xmlns'), _officeRelNs),
+      ],
+      masterIndexRows,
+    );
+    patched['visio/masters/masters.xml'] = Uint8List.fromList(utf8.encode(
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      '${mastersRoot.toXmlString()}',
+    ));
+    final mastersRelsRoot = XmlElement(
+      XmlName('Relationships'),
+      <XmlAttribute>[XmlAttribute(XmlName('xmlns'), _relNs)],
+      masterRelationships,
+    );
+    patched['visio/masters/_rels/masters.xml.rels'] =
+        Uint8List.fromList(utf8.encode(
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+      '${mastersRelsRoot.toXmlString()}',
+    ));
+    patched['[Content_Types].xml'] =
+        Uint8List.fromList(utf8.encode(contentTypes.toXmlString()));
+    return _rezip(originalBytes, patched);
+  }
+
+  bool _ensurePartOverride(
+    XmlDocument contentTypes,
+    String partName,
+    String contentType,
+  ) {
+    for (final child in contentTypes.rootElement.childElements) {
+      if (child.name.local == 'Override' &&
+          child.getAttribute('PartName') == partName) {
+        return false;
+      }
+    }
+    contentTypes.rootElement.children.add(XmlElement(XmlName('Override'), [
+      XmlAttribute(XmlName('PartName'), partName),
+      XmlAttribute(XmlName('ContentType'), contentType),
+    ]));
+    return true;
+  }
+
+  XmlElement _buildMasterIndexElement(VsdxMaster master, String relId) {
+    final width = master.pageWidthInches > 0
+        ? master.pageWidthInches
+        : master.prototype.width.abs();
+    final height = master.pageHeightInches > 0
+        ? master.pageHeightInches
+        : master.prototype.height.abs();
+    return XmlElement(
+      XmlName('Master'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('ID'), master.id.toString()),
+        XmlAttribute(XmlName('NameU'), master.name),
+        XmlAttribute(XmlName('Name'), master.name),
+      ],
+      <XmlNode>[
+        XmlElement(XmlName('PageSheet'), const [], <XmlNode>[
+          _cell('PageWidth', _fmt(width)),
+          _cell('PageHeight', _fmt(height)),
+          ..._pageSheetExtraCells(master.pageSheet),
+        ]),
+        XmlElement(
+          XmlName('Rel'),
+          <XmlAttribute>[XmlAttribute(XmlName('id', 'r'), relId)],
+        ),
+      ],
+    );
+  }
+
+  String _buildMasterContentsXml(
+    VsdxMaster master, {
+    Map<String, String> imageRels = const <String, String>{},
+  }) {
+    final root = XmlElement(
+      XmlName('MasterContents'),
+      <XmlAttribute>[
+        XmlAttribute(XmlName('xmlns'), _mainNs),
+        XmlAttribute(XmlName('r', 'xmlns'), _officeRelNs),
+      ],
+      <XmlNode>[
+        XmlElement(XmlName('Shapes'), const [], <XmlNode>[
+          _buildShapeElement(master.prototype, imageRels: imageRels),
+          for (final shape in master.additionalPrototypes)
+            _buildShapeElement(shape, imageRels: imageRels),
+        ]),
+      ],
+    );
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
+        '${root.toXmlString()}';
   }
 
   // --- Page/part resolution --------------------------------------------------

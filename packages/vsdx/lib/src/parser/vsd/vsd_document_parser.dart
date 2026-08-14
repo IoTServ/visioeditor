@@ -5,7 +5,9 @@ import 'dart:typed_data';
 
 import '../../core/exceptions.dart';
 import '../../model/document.dart';
+import '../../model/master.dart';
 import '../../model/page.dart';
+import '../../model/shape.dart';
 import '../../writer/vsdx_writer.dart';
 import 'cfb/compound_file.dart';
 import 'vsd_metadata.dart';
@@ -100,7 +102,8 @@ String? _isoSecond(DateTime? value) {
 /// The result is a fresh OPC package suitable as `_originalBytes` for
 /// [VsdxWriter.write] — not a fidelity-preserving OLE round-trip.
 Uint8List synthesizeVsdx(VsdxDocument doc) {
-  final pages = doc.pages;
+  final synthetic = _prepareForOpcSynthesis(doc);
+  final pages = synthetic.pages;
   final first = pages.isEmpty
       ? const VsdxPage(
           id: 0,
@@ -113,24 +116,89 @@ Uint8List synthesizeVsdx(VsdxDocument doc) {
   final empty = VsdxWriter().emptyDocument(
     widthInches: first.widthInches,
     heightInches: first.heightInches,
-    title: doc.title,
-    creator: doc.creator ?? 'Editor for Visio Diagrams',
-    subject: doc.subject,
-    keywords: doc.keywords,
-    description: doc.description,
-    lastModifiedBy: doc.lastModifiedBy,
-    created: doc.created,
-    modified: doc.modified,
-    language: doc.language,
-    category: doc.category,
-    company: doc.company,
-    template: doc.template,
+    title: synthetic.title,
+    creator: synthetic.creator ?? 'Editor for Visio Diagrams',
+    subject: synthetic.subject,
+    keywords: synthetic.keywords,
+    description: synthetic.description,
+    lastModifiedBy: synthetic.lastModifiedBy,
+    created: synthetic.created,
+    modified: synthetic.modified,
+    language: synthetic.language,
+    category: synthetic.category,
+    company: synthetic.company,
+    template: synthetic.template,
   );
   final remapped = <VsdxPage>[
     first.copyWith(id: 0),
     for (var i = 1; i < pages.length; i++) pages[i],
   ];
-  final edited = doc.copyWith(pages: remapped);
-  return const VsdxWriter(preserveTextBlockCoordinates: true)
-      .write(originalBytes: empty, edited: edited);
+  final edited = synthetic.copyWith(pages: remapped);
+  const writer = VsdxWriter(preserveTextBlockCoordinates: true);
+  final pagesAndMedia = writer.write(originalBytes: empty, edited: edited);
+  return writer.attachSyntheticMasters(
+    originalBytes: pagesAndMedia,
+    document: edited,
+  );
+}
+
+VsdxDocument _prepareForOpcSynthesis(VsdxDocument document) {
+  final masters = document.masters.all.toList(growable: false);
+
+  // DiagramML permits Master ID=0, while VSDX consumers including
+  // libvisio/LibreOffice use zero as the no-master sentinel.
+  final used = <int>{
+    for (final master in masters)
+      if (master.id > 0) master.id,
+  };
+  final idMap = <int, int>{};
+  var nextId = 1;
+  for (final master in masters) {
+    if (master.id > 0) {
+      idMap[master.id] = master.id;
+      continue;
+    }
+    while (used.contains(nextId)) {
+      nextId++;
+    }
+    idMap[master.id] = nextId;
+    used.add(nextId);
+    nextId++;
+  }
+
+  VsdxShape rewriteShape(VsdxShape shape) => shape.copyWith(
+        masterId: shape.masterId == null
+            ? null
+            : (idMap[shape.masterId!] ?? shape.masterId),
+        children: <VsdxShape>[
+          for (final child in shape.children) rewriteShape(child),
+        ],
+      );
+
+  final rewrittenMasters = <int, VsdxMaster>{};
+  for (final master in masters) {
+    final id = idMap[master.id] ?? master.id;
+    rewrittenMasters[id] = VsdxMaster(
+      id: id,
+      name: master.name,
+      prototype: rewriteShape(master.prototype),
+      additionalPrototypes: <VsdxShape>[
+        for (final shape in master.additionalPrototypes) rewriteShape(shape),
+      ],
+      pageWidthInches: master.pageWidthInches,
+      pageHeightInches: master.pageHeightInches,
+      pageSheet: master.pageSheet,
+    );
+  }
+  return document.copyWith(
+    pages: <VsdxPage>[
+      for (final page in document.pages)
+        page.copyWith(shapes: <VsdxShape>[
+          for (final shape in page.shapes) rewriteShape(shape),
+        ]),
+    ],
+    masters: MasterRegistry(Map<int, VsdxMaster>.unmodifiable(
+      rewrittenMasters,
+    )),
+  );
 }

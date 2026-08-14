@@ -197,6 +197,11 @@ void main() {
       ).document;
 
       expect(reopened.pages, hasLength(1));
+      expect(reopened.masters.length, imported.document.masters.length);
+      final reopenedMaster = reopened.masters.find(1)!;
+      expect(reopenedMaster.name, 'Master Rectangle');
+      expect(reopenedMaster.prototype.id, 100);
+      expect(reopenedMaster.prototype.geometries.single.commands, hasLength(5));
       expect(_allShapes(reopened), hasLength(10));
       expect(reopened.images.length, 2);
       final allText = _allShapes(reopened)
@@ -228,7 +233,33 @@ void main() {
       );
       expect(reopenedSvg, contains('data:image/bmp;base64,Qk0'));
       final package = VsdxPackage.open(imported.originalBytes);
+      expect(
+        package.allPartNames,
+        containsAll(<String>[
+          '/visio/masters/masters.xml',
+          '/visio/masters/_rels/masters.xml.rels',
+          '/visio/masters/master1.xml',
+        ]),
+      );
+      final relationships = RelationshipResolver(package);
+      final documentPart = package.resolveDocumentPartName();
+      final mastersPart = relationships.singleTargetOfType(
+        documentPart,
+        VsdxRelType.masters,
+      );
+      expect(mastersPart, '/visio/masters/masters.xml');
+      expect(
+        relationships.targetsOfType(mastersPart!, VsdxRelType.master),
+        <String>['/visio/masters/master1.xml'],
+      );
       final pageXml = package.readPartXml('/visio/pages/page1.xml')!;
+      final masterInstanceXml =
+          pageXml.descendants.whereType<XmlElement>().singleWhere(
+                (element) =>
+                    element.name.local == 'Shape' &&
+                    element.getAttribute('ID') == '1',
+              );
+      expect(masterInstanceXml.getAttribute('Master'), '1');
       final picture = pageXml.descendants.whereType<XmlElement>().singleWhere(
           (element) =>
               element.name.local == 'Shape' &&
@@ -287,6 +318,73 @@ void main() {
             '${row.parentElement?.getAttribute('N')}:${row.getAttribute('IX')}',
       };
       expect(rowKeys, containsAll(<String>['Actions:7', 'Hyperlink:5']));
+    });
+
+    test('remaps DiagramML master zero to a positive VSDX master id', () {
+      final source = utf8
+          .decode(_fixture())
+          .replaceFirst('<Master ID="1"', '<Master ID="0"')
+          .replaceFirst(' Master="1"', ' Master="0"');
+
+      final imported = parseVisio(
+        Uint8List.fromList(utf8.encode(source)),
+        sourceName: 'master-zero.vdx',
+      );
+      expect(imported.document.masters.find(0), isNotNull);
+
+      final reopened = parseVisio(
+        imported.originalBytes,
+        sourceName: 'master-zero.vsdx',
+      ).document;
+      expect(reopened.masters.find(0), isNull);
+      expect(reopened.masters.find(1), isNotNull);
+      expect(reopened.pages.single.findShapeById(1)!.masterId, 1);
+
+      final package = VsdxPackage.open(imported.originalBytes);
+      final mastersXml = package.readPartXml('/visio/masters/masters.xml')!;
+      final emittedIds = mastersXml.rootElement.childElements
+          .where((element) => element.name.local == 'Master')
+          .map((element) => int.parse(element.getAttribute('ID')!));
+      expect(emittedIds, everyElement(greaterThan(0)));
+    });
+
+    test('synthesised master parts retain embedded image relationships', () {
+      final imported = parseVisio(_fixture(), sourceName: 'master-image.vdx');
+      final document = imported.document;
+      final master = document.masters.find(1)!;
+      final image = document.images.all.first;
+      final imageMaster = VsdxMaster(
+        id: master.id,
+        name: master.name,
+        prototype: master.prototype.copyWith(
+          imagePartName: image.partName,
+          foreignType: image.foreignType,
+          foreignCompressionType: image.compressionType,
+        ),
+        additionalPrototypes: master.additionalPrototypes,
+        pageWidthInches: master.pageWidthInches,
+        pageHeightInches: master.pageHeightInches,
+        pageSheet: master.pageSheet,
+      );
+
+      final bytes = synthesizeVsdx(document.copyWith(
+        masters: MasterRegistry(<int, VsdxMaster>{1: imageMaster}),
+      ));
+      final package = VsdxPackage.open(bytes);
+      final relationships = RelationshipResolver(package);
+      expect(
+        relationships.targetsOfType(
+          '/visio/masters/master1.xml',
+          VsdxRelType.image,
+        ),
+        <String>[image.partName],
+      );
+      expect(package.readPartBytes(image.partName), isNotNull);
+
+      final reopened = const DocumentParser().parse(bytes);
+      final reopenedImageMaster = reopened.masters.find(1)!;
+      expect(reopenedImageMaster.prototype.imagePartName, image.partName);
+      expect(reopened.images.findByPart(image.partName), isNotNull);
     });
 
     test('VSX extracts masters as pages; VTX imports drawing pages', () {
