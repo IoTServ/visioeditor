@@ -11,6 +11,9 @@ library;
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:charset/charset.dart' as charset;
+import 'package:cp949_codec/cp949_codec.dart' as korean;
+import 'package:enough_convert/enough_convert.dart' as enough;
 import 'package:xml/xml.dart';
 
 import '../../core/exceptions.dart';
@@ -834,7 +837,26 @@ List<XmlAttribute> _copySelectedAttributes(
           XmlAttribute(XmlName(attribute.name.local), attribute.value),
     ];
 
+/// Decode the raw DiagramML stream before handing it to `package:xml`.
+///
+/// libvisio `VDXParser::processXmlDocument` passes the byte stream to
+/// libxml's `xmlReaderForStream`, which honours BOMs and the XML declaration.
+/// Keep the Dart importer at the same boundary instead of assuming UTF-8.
 String _decodeXml(Uint8List bytes) {
+  if (bytes.length >= 4) {
+    if (bytes[0] == 0xFF &&
+        bytes[1] == 0xFE &&
+        bytes[2] == 0 &&
+        bytes[3] == 0) {
+      return _decodeUtf32(bytes, littleEndian: true, offset: 4);
+    }
+    if (bytes[0] == 0 &&
+        bytes[1] == 0 &&
+        bytes[2] == 0xFE &&
+        bytes[3] == 0xFF) {
+      return _decodeUtf32(bytes, littleEndian: false, offset: 4);
+    }
+  }
   if (bytes.length >= 2) {
     if (bytes[0] == 0xFF && bytes[1] == 0xFE) {
       return _decodeUtf16(bytes, littleEndian: true, offset: 2);
@@ -849,15 +871,98 @@ String _decodeXml(Uint8List bytes) {
           bytes[2] == 0xBF
       ? 3
       : 0;
-  // UTF-16 XML is occasionally emitted without a BOM. The leading `<` is a
-  // reliable discriminator for both byte orders.
+  // UTF-16/32 XML is occasionally emitted without a BOM. Check the four-byte
+  // signatures first because UTF-32LE also begins with `<`, NUL.
+  if (bytes.length >= 4 &&
+      bytes[0] == 0x3C &&
+      bytes[1] == 0 &&
+      bytes[2] == 0 &&
+      bytes[3] == 0) {
+    return _decodeUtf32(bytes, littleEndian: true);
+  }
+  if (bytes.length >= 4 &&
+      bytes[0] == 0 &&
+      bytes[1] == 0 &&
+      bytes[2] == 0 &&
+      bytes[3] == 0x3C) {
+    return _decodeUtf32(bytes, littleEndian: false);
+  }
   if (bytes.length >= 4 && bytes[0] == 0x3C && bytes[1] == 0) {
     return _decodeUtf16(bytes, littleEndian: true);
   }
   if (bytes.length >= 4 && bytes[0] == 0 && bytes[1] == 0x3C) {
     return _decodeUtf16(bytes, littleEndian: false);
   }
-  return utf8.decode(Uint8List.sublistView(bytes, offset));
+  final data = Uint8List.sublistView(bytes, offset);
+  final declared = _declaredXmlEncoding(data);
+  if (declared != null) {
+    final normalized = declared.trim().toLowerCase();
+    if (normalized != 'utf-8' &&
+        normalized != 'utf8' &&
+        normalized != 'us-ascii') {
+      final encoding = switch (normalized) {
+        'big5' ||
+        'big-5' ||
+        'csbig5' =>
+          const enough.Big5Codec(allowInvalid: true),
+        'euc-kr' ||
+        'euckr' ||
+        'euc_kr' ||
+        'cp949' ||
+        'windows-949' ||
+        'windows949' =>
+          const korean.CP949Codec(allowInvalid: true),
+        _ => charset.Charset.getByName(normalized),
+      };
+      if (encoding != null) {
+        if (encoding is charset.CodePage) {
+          return encoding.decode(data, allowInvalid: true);
+        }
+        return encoding.decode(data);
+      }
+    }
+  }
+  return utf8.decode(data);
+}
+
+String _decodeUtf32(
+  Uint8List bytes, {
+  required bool littleEndian,
+  int offset = 0,
+}) {
+  final codePoints = <int>[];
+  for (var i = offset; i + 3 < bytes.length; i += 4) {
+    final value = littleEndian
+        ? bytes[i] |
+            (bytes[i + 1] << 8) |
+            (bytes[i + 2] << 16) |
+            (bytes[i + 3] << 24)
+        : (bytes[i] << 24) |
+            (bytes[i + 1] << 16) |
+            (bytes[i + 2] << 8) |
+            bytes[i + 3];
+    final valid =
+        value >= 0 && value <= 0x10FFFF && (value < 0xD800 || value > 0xDFFF);
+    codePoints.add(valid ? value : 0xFFFD);
+  }
+  return String.fromCharCodes(codePoints);
+}
+
+String? _declaredXmlEncoding(Uint8List bytes) {
+  if (bytes.isEmpty) return null;
+  // XML declarations are ASCII-compatible even when the document body uses a
+  // legacy single- or multi-byte code page. Reading only the prolog as Latin-1
+  // is therefore safe and avoids decoding user text before we know its codec.
+  final prologLength = bytes.length < 512 ? bytes.length : 512;
+  final prolog = latin1.decode(
+    Uint8List.sublistView(bytes, 0, prologLength),
+    allowInvalid: true,
+  );
+  final match = RegExp(
+    r'''<\?xml\s+[^>]*encoding\s*=\s*["']\s*([^"']+)\s*["']''',
+    caseSensitive: false,
+  ).firstMatch(prolog);
+  return match?.group(1);
 }
 
 String _decodeUtf16(

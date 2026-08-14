@@ -2,12 +2,38 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:charset/charset.dart' as charset;
+import 'package:cp949_codec/cp949_codec.dart' as korean;
+import 'package:enough_convert/enough_convert.dart' as enough;
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
 Uint8List _fixture() =>
     File('test/fixtures/vdx_all_types.vdx').readAsBytesSync();
+
+Uint8List _utf32(
+  String value, {
+  required bool littleEndian,
+  required bool bom,
+}) {
+  final out = BytesBuilder(copy: false);
+  if (bom) {
+    out.add(littleEndian
+        ? const <int>[0xFF, 0xFE, 0, 0]
+        : const <int>[0, 0, 0xFE, 0xFF]);
+  }
+  for (final rune in value.runes) {
+    final data = ByteData(4)
+      ..setUint32(
+        0,
+        rune,
+        littleEndian ? Endian.little : Endian.big,
+      );
+    out.add(data.buffer.asUint8List());
+  }
+  return out.takeBytes();
+}
 
 List<VsdxShape> _allShapes(VsdxDocument document) {
   final out = <VsdxShape>[];
@@ -266,7 +292,7 @@ void main() {
       expect(image.bytes.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
     });
 
-    test('accepts UTF-16 DiagramML and rejects unrelated XML', () {
+    test('accepts UTF-16/32 DiagramML and rejects unrelated XML', () {
       final xml = utf8.decode(_fixture());
       final units = xml.codeUnits;
       final utf16le = BytesBuilder(copy: false)..add(const <int>[0xFF, 0xFE]);
@@ -280,9 +306,98 @@ void main() {
         hasLength(1),
       );
 
+      for (final littleEndian in const <bool>[true, false]) {
+        for (final bom in const <bool>[true, false]) {
+          final declaration = littleEndian ? 'UTF-32LE' : 'UTF-32BE';
+          final utf32 = _utf32(
+            xml.replaceFirst('encoding="UTF-8"', 'encoding="$declaration"'),
+            littleEndian: littleEndian,
+            bom: bom,
+          );
+          expect(looksLikeVdx(utf32), isTrue, reason: '$declaration bom=$bom');
+          expect(
+            parseVisio(utf32, sourceName: 'utf32.vdx').document.pages,
+            hasLength(1),
+            reason: '$declaration bom=$bom',
+          );
+        }
+      }
+
       final unrelated = Uint8List.fromList(utf8.encode('<root/>'));
       expect(looksLikeVdx(unrelated), isFalse);
       expect(() => parseVisio(unrelated), throwsA(isA<VsdxFormatException>()));
+    });
+
+    test('honours declared single- and multi-byte XML encodings end to end',
+        () {
+      final source = utf8.decode(_fixture());
+      final cases = <({String declaration, Encoding codec, String text})>[
+        (
+          declaration: 'windows-1252',
+          codec: charset.windows1252,
+          text: 'Résumé “VDX” — €',
+        ),
+        (
+          declaration: 'Shift_JIS',
+          codec: charset.shiftJis,
+          text: '日本語のVDX往復',
+        ),
+        (
+          declaration: 'GBK',
+          codec: charset.gbk,
+          text: '简体中文VDX往返',
+        ),
+        (
+          declaration: 'Big5',
+          codec: const enough.Big5Codec(),
+          text: '繁體中文VDX往返',
+        ),
+        (
+          declaration: 'EUC-KR',
+          codec: const korean.CP949Codec(allowInvalid: true),
+          text: '한국어 VDX 왕복',
+        ),
+      ];
+
+      for (final testCase in cases) {
+        final xml = source
+            .replaceFirst(
+                'encoding="UTF-8"', 'encoding="${testCase.declaration}"')
+            .replaceFirst(
+              'DiagramML parser coverage',
+              testCase.text,
+            )
+            .replaceFirst(
+              'Spline, NURBS, infinite line',
+              testCase.text,
+            );
+        final bytes = Uint8List.fromList(testCase.codec.encode(xml));
+        expect(looksLikeVdx(bytes), isTrue, reason: testCase.declaration);
+
+        final imported = parseVisio(
+          bytes,
+          sourceName: 'encoded-${testCase.declaration}.vdx',
+        );
+        expect(imported.document.title, testCase.text);
+        expect(
+          imported.document.pages.single.findShapeById(10)!.richText.plainText,
+          testCase.text,
+        );
+        expect(
+          VsdxToSvgSerializer().serializePage(
+            imported.document.pages.single,
+            images: imported.document.images,
+          ),
+          contains(testCase.text),
+        );
+
+        final reopened = const DocumentParser().parse(imported.originalBytes);
+        expect(reopened.title, testCase.text);
+        expect(
+          reopened.pages.single.findShapeById(10)!.richText.plainText,
+          testCase.text,
+        );
+      }
     });
   });
 }
