@@ -855,6 +855,7 @@ MetafileDrawing? parseWmfDrawing(Uint8List bytes) {
       final encoding = face == 'Symbol' || face == 'MT Extra'
           ? VsdLegacyTextEncoding.symbol
           : vsdLegacyEncodingForCodePage(charset);
+      face = normalizeMetafileFontFace(face);
       objects[allocSlot()] = _GdiFont(
         height,
         face,

@@ -9,6 +9,35 @@ import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
 
+/// Remove legacy Windows charset suffixes from a GDI font family.
+///
+/// Old Office producers used names such as `Arial Cyr` while carrying the
+/// actual character set in LOGFONT. libvisio applies the same suffix mapping
+/// to classic VSD fonts. Keeping the suffix as part of the family name makes
+/// modern renderers look for a non-existent font and can produce tofu boxes.
+String? normalizeMetafileFontFace(String? face) {
+  if (face == null || face.isEmpty) return face;
+  const suffixes = <String>[
+    ' Cyrillic',
+    ' Cyr',
+    ' CYR',
+    ' CE',
+    ' Baltic',
+    ' Greek',
+    ' Tur',
+    ' TUR',
+    ' Hebrew',
+    ' Arabic',
+    ' Thai',
+  ];
+  for (final suffix in suffixes) {
+    if (face.endsWith(suffix) && face.length > suffix.length) {
+      return face.substring(0, face.length - suffix.length);
+    }
+  }
+  return face;
+}
+
 @immutable
 class MetafilePoint {
   const MetafilePoint(this.x, this.y);

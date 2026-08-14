@@ -43,6 +43,15 @@ Uint8List? extractOlePresentationMetafile(Uint8List oleBytes) {
       }
       final data = cfb.readStream(name);
       if (data == null || data.length < 40) continue;
+      // A complete WMF can begin at the conventional 40-byte presentation
+      // offset even when the clipboard format says CF_ENHMETAFILE. Office's
+      // dual-mode wrapper splits the authoritative EMF across WMFC comment
+      // records; a loose EMF signature scan returns only its first chunk and
+      // loses later chart labels. Keep the WMF so the facade can reassemble it.
+      final bd = ByteData.sublistView(data);
+      final clipboardFormat = bd.getUint32(4, Endian.little);
+      final presentationBody = Uint8List.sublistView(data, 40);
+      if (looksLikeWmf(presentationBody)) return presentationBody;
       final emfOff = findEmfOffset(data);
       if (emfOff != null) {
         return data.sublist(emfOff);
@@ -65,9 +74,8 @@ Uint8List? extractOlePresentationMetafile(Uint8List oleBytes) {
       }
       // CF_METAFILEPICT (3): presentation header then WMF without placeable.
       if (data.length > 40) {
-        final bd = ByteData.sublistView(data);
-        final cf = bd.getUint32(4, Endian.little);
-        if (cf == 3 /* CF_METAFILEPICT */ || cf == 14 /* CF_ENHMETAFILE */) {
+        if (clipboardFormat == 3 /* CF_METAFILEPICT */ ||
+            clipboardFormat == 14 /* CF_ENHMETAFILE */) {
           // Skip ~40 byte OLE presentation header used by POI samples.
           final body = data.sublist(40);
           final nested = findEmfOffset(body);

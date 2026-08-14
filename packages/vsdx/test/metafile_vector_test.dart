@@ -1212,6 +1212,11 @@ void main() {
         synthesized.images.findByPart('/visio/media/image5.bin')?.bytes,
         reason: 'OLE payload without a presentation preview must round-trip',
       );
+      expect(
+        reopened.images.findByPart('/visio/media/image2.bin')?.bytes,
+        synthesized.images.findByPart('/visio/media/image2.bin')?.bytes,
+        reason: 'dual-mode OLE presentation chunks must round-trip intact',
+      );
 
       final svg = VsdxToSvgSerializer().serializePage(
         reopened.pages.first,
@@ -1224,6 +1229,9 @@ void main() {
         reason: 'two Excel previews and three preview-less OLE objects use '
             'LibreOffice Blue 2 surfaces',
       );
+      expect(svg, contains('translate(117 161) scale(1 -1)"><text'));
+      expect(svg, contains('>к</tspan><tspan x="15" y="9.35">в</tspan>'));
+      expect(svg, contains('translate(530 83) scale(1 -1)"><text'));
     });
 
     test('OLE Excel preview retains source-less PATCOPY fill bands', () {
@@ -1278,28 +1286,54 @@ void main() {
       );
     });
 
-    test('extractOlePresentationMetafile finds EMF', () {
+    test('OLE dual-mode WMF reassembles every embedded EMF label', () {
       final vsd = File('test/fixtures/vsd/external/visio_with_embeded.vsd')
           .readAsBytesSync();
       final doc = parseVisio(vsd).document;
-      var found = false;
-      for (final img in doc.images.all) {
-        if (!img.mimeType.contains('ole')) continue;
-        final cfb = CompoundFile.open(img.bytes);
-        for (final name in cfb.entryNames) {
-          if (!name.contains('Pres')) continue;
-          final data = cfb.readStream(name);
-          if (data == null) continue;
-          final emf = extractOlePresentationMetafile(img.bytes);
-          if (emf != null && looksLikeEmf(emf)) {
-            found = true;
-            final d = parseEmfDrawing(emf);
-            // Truncated dual-mode streams may still yield some polygons.
-            expect(d == null || d.ops.isNotEmpty, isTrue);
-          }
-        }
-      }
-      expect(found, isTrue);
+      final chart = doc.images.findByPart('/visio/media/image2.bin');
+      expect(chart, isNotNull);
+      final presentation = extractOlePresentationMetafile(chart!.bytes);
+      expect(presentation, isNotNull);
+      expect(looksLikeWmf(presentation!), isTrue);
+      expect(extractWmfEmbeddedEmf(presentation), isNotNull);
+
+      final drawing = parseMetafileDrawing(
+        chart.bytes,
+        mimeType: chart.mimeType,
+        partName: chart.partName,
+      );
+      expect(drawing, isNotNull);
+      final labels =
+          drawing!.ops.whereType<MetafileTextOp>().map((op) => op.text).toSet();
+      expect(labels, containsAll(<String>['100', '1 кв', '4 кв']));
+      expect(labels.any((label) => label.contains('zombie')), isTrue);
+      expect(
+        drawing.ops
+            .whereType<MetafileTextOp>()
+            .firstWhere((op) => op.text == '100')
+            .face,
+        'Arial',
+      );
+      expect(
+        drawing.ops.whereType<MetafileClipRectOp>().map((clip) => clip.mode),
+        containsAll(<MetafileClipCombineMode>[
+          MetafileClipCombineMode.intersect,
+          MetafileClipCombineMode.exclude,
+        ]),
+        reason: 'graphics still come from the authoritative embedded EMF',
+      );
+
+      final svg = VsdxToSvgSerializer().serializePage(
+        doc.pages.first,
+        theme: doc.theme,
+        images: doc.images,
+      );
+      expect(svg, contains('translate(57 19) scale(1 -1)"><text'));
+      expect(svg, contains('translate(117 161) scale(1 -1)"><text'));
+      expect(svg, contains('>к</tspan><tspan x="15" y="9.35">в</tspan>'));
+      expect(svg, contains('translate(530 83) scale(1 -1)"><text'));
+      expect(svg, contains('>z</tspan>'));
+      expect(svg, contains('>e</tspan>'));
     });
   });
 

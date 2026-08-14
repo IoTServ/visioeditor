@@ -1686,6 +1686,7 @@ MetafileDrawing? parseEmfDrawing(Uint8List bytes) {
         final encoding = face == 'Symbol' || face == 'MT Extra'
             ? VsdLegacyTextEncoding.symbol
             : vsdLegacyEncodingForCodePage(charset);
+        face = normalizeMetafileFontFace(face);
         _store(
           objects,
           ih,
