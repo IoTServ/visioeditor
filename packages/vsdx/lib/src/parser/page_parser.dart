@@ -386,6 +386,14 @@ class PageParser {
                 ) ??
                 protoBlock));
 
+    // DiagramML commonly stores a dynamic field's display cache in the
+    // Field row while leaving `<fld IX="…"/>` empty. Parse rows first so the
+    // rich-text stream can resolve those markers the way libvisio's collector
+    // does when it flushes a shape.
+    final ownFields = _readFields(shapeEl, inherit: proto?.fields);
+    final fields =
+        ownFields.isEmpty && proto != null ? proto.fields : ownFields;
+
     var richText = _richText.parse(
       shapeEl,
       defaultChar: defaultChar,
@@ -395,6 +403,7 @@ class PageParser {
       // Master aren't forced back to horizontal.
       defaultBlock: defaultBlock,
       inheritTabs: proto?.richText.tabSets ?? const <VsdxTabSet>[],
+      fields: fields,
       preferCachedInh: preferCachedInhStyle,
     );
     // Masters often carry TextStyle but no <Text>. Seed an empty run so
@@ -549,9 +558,6 @@ class PageParser {
     final ownScratch = _readScratch(shapeEl, inherit: proto?.scratch);
     final scratch =
         ownScratch.isEmpty && proto != null ? proto.scratch : ownScratch;
-    final ownFields = _readFields(shapeEl, inherit: proto?.fields);
-    final fields =
-        ownFields.isEmpty && proto != null ? proto.fields : ownFields;
     final ownActions = _readActions(shapeEl, inherit: proto?.actions);
     final actions =
         ownActions.isEmpty && proto != null ? proto.actions : ownActions;

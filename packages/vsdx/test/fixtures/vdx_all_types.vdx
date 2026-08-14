@@ -131,7 +131,8 @@ Second line and tab:	value</Text>
           <Fill><FillForegnd>#FFF2CC</FillForegnd><FillBkgnd>#FFFFFF</FillBkgnd><FillPattern>1</FillPattern></Fill>
           <Char IX="0"><Font>4</Font><Color>0</Color><Size>0.1527777778</Size><Style>2</Style></Char>
           <Para IX="0"><HorzAlign>1</HorzAlign></Para>
-          <Text><cp IX="0"/><pp IX="0"/>Bezier, arcs, ellipse</Text>
+          <Field IX="0"><Value F="PAGENAME()">Cached field text</Value><Format>General</Format><Type>0</Type></Field>
+          <Text><cp IX="0"/><pp IX="0"/>Bezier, arcs, ellipse: <fld IX="0"/></Text>
           <Geom IX="0">
             <MoveTo IX="1"><X>0</X><Y>0.2</Y></MoveTo>
             <CubBezTo IX="2"><X>3</X><Y>0.2</Y><A>0.6</A><B>1.3</B><C>2.4</C><D>1.3</D></CubBezTo>

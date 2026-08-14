@@ -94,6 +94,12 @@ void main() {
       expect(masterInstance.richText.tabSets, hasLength(1));
 
       final curves = page.findShapeById(2)!;
+      expect(curves.fields, hasLength(1));
+      expect(curves.fields.single.value, 'Cached field text');
+      expect(
+        curves.richText.plainText,
+        'Bezier, arcs, ellipse: Cached field text',
+      );
       expect(
         _commandTypes(curves),
         containsAll(<Type>[
@@ -184,6 +190,7 @@ void main() {
         'All rich text retained',
         'Second line and tab',
         'Bezier, arcs, ellipse',
+        'Cached field text',
         'Grouped child A',
         'Grouped child B',
         '1-D connector',
@@ -290,6 +297,38 @@ void main() {
       )!;
       expect(image.mimeType, 'image/png');
       expect(image.bytes.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
+    });
+
+    test('renders empty fld markers from DiagramML Field.Value caches', () {
+      final imported = parseVisio(
+        _fixture(),
+        sourceName: 'field-cache.vdx',
+      );
+      final shape = imported.document.pages.single.findShapeById(2)!;
+
+      expect(shape.fields, hasLength(1));
+      expect(shape.fields.single.value, 'Cached field text');
+      expect(
+        shape.richText.plainText,
+        'Bezier, arcs, ellipse: Cached field text',
+      );
+      expect(shape.richText.runs.single.fieldSpans, hasLength(1));
+      expect(
+        VsdxToSvgSerializer().serializePage(
+          imported.document.pages.single,
+          images: imported.document.images,
+        ),
+        contains('Bezier, arcs, ellipse: Cached field text'),
+      );
+
+      final reopened = const DocumentParser().parse(imported.originalBytes);
+      final reopenedShape = reopened.pages.single.findShapeById(2)!;
+      expect(reopenedShape.fields.single.value, 'Cached field text');
+      expect(
+        reopenedShape.richText.plainText,
+        'Bezier, arcs, ellipse: Cached field text',
+      );
+      expect(reopenedShape.richText.runs.single.fieldSpans, hasLength(1));
     });
 
     test('accepts UTF-16/32 DiagramML and rejects unrelated XML', () {

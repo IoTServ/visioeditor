@@ -40,6 +40,7 @@ const _vdxCoverageTexts = <String>[
   'All rich text retained',
   'Second line and tab:',
   'Bezier, arcs, ellipse',
+  'Cached field text',
   'Grouped child A',
   'Grouped child B',
   '1-D connector',

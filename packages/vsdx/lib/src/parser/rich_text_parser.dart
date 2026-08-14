@@ -18,6 +18,7 @@ library;
 import 'package:xml/xml.dart';
 
 import '../model/rich_text.dart';
+import '../model/sheet_sections.dart';
 import '../utils/color.dart';
 import 'cell_helpers.dart';
 
@@ -196,6 +197,7 @@ class RichTextParser {
     VsdxParaStyle defaultPara = libvisioParagraphStyleDefault,
     VsdxTextBlock defaultBlock = libvisioTextBlockStyleDefault,
     List<VsdxTabSet> inheritTabs = const <VsdxTabSet>[],
+    List<VsdxFieldRow> fields = const <VsdxFieldRow>[],
     bool preferCachedInh = false,
   }) {
     final textEl = _firstChildLocal(shape, 'Text');
@@ -236,6 +238,7 @@ class RichTextParser {
       paraStyles: paraStyles,
       defaultChar: defaultChar,
       defaultPara: defaultPara,
+      fields: fields,
     );
     return VsdxRichText(
       runs: List.unmodifiable(runs),
@@ -742,6 +745,7 @@ class RichTextParser {
     required Map<int, VsdxParaStyle> paraStyles,
     required VsdxCharStyle defaultChar,
     required VsdxParaStyle defaultPara,
+    required List<VsdxFieldRow> fields,
   }) {
     final runs = <VsdxTextRun>[];
     var curChar = charStyles[0] ?? defaultChar;
@@ -750,6 +754,9 @@ class RichTextParser {
     final fieldSpans = <VsdxFieldSpan>[];
     final tabIndices = <int>[];
     var currentTabSetIx = 0;
+    final fieldsByIx = <int, VsdxFieldRow>{
+      for (final field in fields) field.ix: field,
+    };
 
     void flush() {
       if (buf.isEmpty && fieldSpans.isEmpty) return;
@@ -790,9 +797,17 @@ class RichTextParser {
                 int.tryParse(node.getAttribute('IX') ?? '') ?? 0;
           case 'fld':
             // Dynamic field — keep display text for paint, record span for
-            // XML round-trip (`<fld IX="n">cached</fld>`).
+            // XML round-trip (`<fld IX="n">cached</fld>`). DiagramML may
+            // keep that cache only in Field.Value and emit an empty marker;
+            // libvisio collects field rows before flushing the text object,
+            // so use the same IX-based fallback rather than losing the label.
             final ix = int.tryParse(node.getAttribute('IX') ?? '') ?? 0;
-            final display = normalizeVisioText(fieldResolver.resolve(node));
+            final resolved = fieldResolver.resolve(node);
+            final display = normalizeVisioText(
+              resolved.isNotEmpty
+                  ? resolved
+                  : (fieldsByIx[ix]?.displayText ?? ''),
+            );
             final start = buf.length;
             buf.write(display);
             for (var i = 0; i < display.length; i++) {
