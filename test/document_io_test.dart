@@ -10,19 +10,29 @@ void main() {
     expect(baseName(null), 'drawing');
   });
 
-  test('legacy Visio binary detection covers drawings, stencils, templates', () {
-    expect(isLegacyVisioBinary('x.vsd'), isTrue);
-    expect(isLegacyVisioBinary('x.vss'), isTrue);
-    expect(isLegacyVisioBinary('x.VST'), isTrue);
-    expect(isLegacyVisioBinary('x.vsdx'), isFalse);
-    expect(isLegacyVisioBinary('x.VSD'), isTrue);
-  });
+  test(
+    'legacy Visio binary detection covers drawings, stencils, templates',
+    () {
+      expect(isLegacyVisioBinary('x.vsd'), isTrue);
+      expect(isLegacyVisioBinary('x.vss'), isTrue);
+      expect(isLegacyVisioBinary('x.VST'), isTrue);
+      expect(isLegacyVisioBinary('x.vsdx'), isFalse);
+      expect(isLegacyVisioBinary('x.VSD'), isTrue);
+      expect(isLegacyVisioXml('x.vdx'), isTrue);
+      expect(isLegacyVisioXml('x.VSX'), isTrue);
+      expect(isLegacyVisioXml('x.vtx'), isTrue);
+      expect(isLegacyVisioXml('x.vsdx'), isFalse);
+    },
+  );
 
   test('open filters cover every supported Visio family extension', () {
     expect(kVisioOpenExtensions, <String>[
       'vsd',
       'vss',
       'vst',
+      'vdx',
+      'vsx',
+      'vtx',
       'vsdx',
       'vsdm',
       'vstx',
@@ -85,6 +95,10 @@ void main() {
     expect(normalizedDocumentSaveName('stencil.VSS'), 'stencil.vsdx');
     expect(documentSaveExtension('template.vst'), 'vsdx');
     expect(normalizedDocumentSaveName('template.VST'), 'template.vsdx');
+    expect(documentSaveExtension('drawing.vdx'), 'vsdx');
+    expect(normalizedDocumentSaveName('drawing.VDX'), 'drawing.vsdx');
+    expect(normalizedDocumentSaveName('stencil.VSX'), 'stencil.vsdx');
+    expect(normalizedDocumentSaveName('template.VTX'), 'template.vsdx');
     expect(documentSaveExtension('untitled'), 'vsdx');
     expect(normalizedDocumentSaveName('untitled'), 'untitled.vsdx');
   });

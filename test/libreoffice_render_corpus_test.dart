@@ -36,6 +36,16 @@ const _legacyUnitFieldTexts = <String>[
   'Example testing text',
 ];
 
+const _vdxCoverageTexts = <String>[
+  'All rich text retained',
+  'Second line and tab:',
+  'Bezier, arcs, ellipse',
+  'Grouped child A',
+  'Grouped child B',
+  '1-D connector',
+  'Relative and polyline rows',
+];
+
 const _corpus = <_CorpusEntry>[
   _CorpusEntry('Visio11FormatLine.vsd'),
   _CorpusEntry('Visio11PlanWithDimensions.vsd'),
@@ -108,6 +118,11 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry('test_jinja_loop_showif.vsdx', packageFixture: true),
   _CorpusEntry('test_jinja_page_showif.vsdx', packageFixture: true),
   _CorpusEntry('test_jinja_self_refs.vsdx', packageFixture: true),
+  _CorpusEntry(
+    'vdx_all_types.vdx',
+    packageFixture: true,
+    expectedTextFragments: _vdxCoverageTexts,
+  ),
   _CorpusEntry('sample.vsd', applicationExample: true),
   _CorpusEntry('workflow.vsdx', applicationExample: true),
   _CorpusEntry('人才招聘冰山模型.vsdx', applicationExample: true),
@@ -119,12 +134,12 @@ void main() {
 
   final enabled = Platform.environment[_runEnvironment] == '1';
   test(
-    '55 Visio fixtures and 4 app examples render like LibreOffice',
+    '56 Visio fixtures and 4 app examples render like LibreOffice',
     () async {
       await _loadAuditFonts();
       expect(
         _corpus.where((entry) => !entry.applicationExample),
-        hasLength(55),
+        hasLength(56),
       );
       expect(_corpus.where((entry) => entry.applicationExample), hasLength(4));
       final filter = Platform.environment[_filterEnvironment];
@@ -171,7 +186,7 @@ void main() {
           if (entry.expectedTextFragments.isNotEmpty) {
             final visibleTexts = _visibleTexts(document);
             for (final expected in entry.expectedTextFragments) {
-              if (!visibleTexts.contains(expected)) {
+              if (!visibleTexts.any((text) => text.contains(expected))) {
                 failures.add(
                   '${entry.name}: parsed model lost text "$expected"',
                 );

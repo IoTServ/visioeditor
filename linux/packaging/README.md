@@ -2,7 +2,7 @@
 
 `flutter build linux` does **not** register file types — that is an install-time
 step. These artifacts associate `.vsdx` / `.vsd` / `.vss` / `.vst` (and the
-`.vsdm/.vstx/.vstm/.vssx/.vssm` family) with the app so double-clicking a
+`.vdx/.vsx/.vtx/.vsdm/.vstx/.vstm/.vssx/.vssm` family) with the app so double-clicking a
 drawing in a file manager offers / launches *Editor for Visio Diagrams*.
 
 ## Files

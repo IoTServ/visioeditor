@@ -9,9 +9,10 @@ import 'document_parser.dart';
 import 'package_reader.dart';
 import 'vsd/cfb/compound_file.dart';
 import 'vsd/vsd_document_parser.dart';
+import 'vdx/vdx_document_parser.dart';
 
 /// Result of [parseVisio], including a synthetic `.vsdx` baseline for
-/// import-only binary files and standalone stencil packages.
+/// import-only binary/XML files and standalone stencil packages.
 class VisioParseResult {
   const VisioParseResult({
     required this.document,
@@ -24,7 +25,7 @@ class VisioParseResult {
   /// Bytes suitable as [VsdxWriter.write] baseline (always OPC `.vsdx`).
   final Uint8List originalBytes;
 
-  /// `true` for legacy binary or standalone stencil input (prompt Save As).
+  /// `true` for legacy binary/XML or standalone stencil input (prompt Save As).
   final bool importedFromVsd;
 }
 
@@ -36,15 +37,15 @@ bool looksLikeZipOpc(Uint8List bytes) {
 
 /// Parse Visio bytes into an editable model.
 ///
-/// For legacy binary files, synthesises a `.vsdx` package so subsequent saves
-/// use the existing load-preserve-patch writer.
+/// For legacy binary/XML files, synthesises a `.vsdx` package so subsequent
+/// saves use the existing load-preserve-patch writer.
 VisioParseResult parseVisio(Uint8List bytes, {String? sourceName}) {
   final lowerName = sourceName?.toLowerCase() ?? '';
   if (looksLikeZipOpc(bytes)) {
     // Confirm it is a Visio OPC package (not a random ZIP).
     try {
-      final extractStencils = lowerName.endsWith('.vssx') ||
-          lowerName.endsWith('.vssm');
+      final extractStencils =
+          lowerName.endsWith('.vssx') || lowerName.endsWith('.vssm');
       final doc = const DocumentParser().parse(
         bytes,
         extractStencils: extractStencils,
@@ -84,8 +85,20 @@ VisioParseResult parseVisio(Uint8List bytes, {String? sourceName}) {
       importedFromVsd: true,
     );
   }
+  if (looksLikeVdx(bytes)) {
+    final extractStencils = lowerName.endsWith('.vsx');
+    final doc = const VdxDocumentParser().parse(
+      bytes,
+      extractStencils: extractStencils,
+    );
+    return VisioParseResult(
+      document: doc,
+      originalBytes: synthesizeVsdx(doc),
+      importedFromVsd: true,
+    );
+  }
   throw const VsdxFormatException(
-    'Unsupported file: expected Visio OPC ZIP or OLE2 binary',
+    'Unsupported file: expected Visio OPC ZIP, OLE2 binary, or DiagramML XML',
   );
 }
 

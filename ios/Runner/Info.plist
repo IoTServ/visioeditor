@@ -92,7 +92,7 @@
 	<key>UISupportsDocumentBrowser</key>
 	<true/>
 	<!--
-	  Match system Visio UTIs (.vsdx → drawing.opc, .vsd → drawing).
+	  Match system Visio UTIs (.vsdx → drawing.opc, legacy files → drawing).
 	  See macos/Runner/Info.plist for the full rationale.
 	-->
 	<key>CFBundleDocumentTypes</key>
@@ -139,6 +139,9 @@
 				<string>vsd</string>
 				<string>vss</string>
 				<string>vst</string>
+				<string>vdx</string>
+				<string>vsx</string>
+				<string>vtx</string>
 			</array>
 		</dict>
 		<dict>
@@ -201,10 +204,14 @@
 					<string>vsd</string>
 					<string>vss</string>
 					<string>vst</string>
+					<string>vdx</string>
+					<string>vsx</string>
+					<string>vtx</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>
 					<string>application/vnd.visio</string>
+					<string>application/vnd.ms-visio.viewer</string>
 				</array>
 			</dict>
 		</dict>

@@ -11240,12 +11240,12 @@ class EditorController extends ChangeNotifier {
         _filePath = null;
         final base = name ?? _basename(path) ?? 'drawing.vsd';
         _fileName = RegExp(
-          r'\.(vsd|vss|vst|vssx|vssm)$',
+          r'\.(vsd|vss|vst|vdx|vsx|vtx|vssx|vssm)$',
           caseSensitive: false,
         ).hasMatch(base)
             ? base.replaceFirst(
                 RegExp(
-                  r'\.(vsd|vss|vst|vssx|vssm)$',
+                  r'\.(vsd|vss|vst|vdx|vsx|vtx|vssx|vssm)$',
                   caseSensitive: false,
                 ),
                 '.vsdx',

@@ -70,6 +70,19 @@ Windows Registry Editor Version 5.00
 @="VisioEditor.Drawing.Binary"
 "Content Type"="application/vnd.visio"
 
+; Legacy DiagramML XML drawing, stencil, and template
+[HKEY_CURRENT_USER\Software\Classes\.vdx]
+@="VisioEditor.Drawing.Binary"
+"Content Type"="application/vnd.ms-visio.viewer"
+
+[HKEY_CURRENT_USER\Software\Classes\.vsx]
+@="VisioEditor.Drawing.Binary"
+"Content Type"="application/vnd.visio"
+
+[HKEY_CURRENT_USER\Software\Classes\.vtx]
+@="VisioEditor.Drawing.Binary"
+"Content Type"="application/vnd.visio"
+
 [HKEY_CURRENT_USER\Software\Classes\.drawio]
 @="VisioEditor.Drawio"
 "Content Type"="application/vnd.jgraph.mxfile"

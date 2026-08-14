@@ -45,7 +45,7 @@
 	<!--
 	  Bind to the system / Microsoft Visio UTIs that Launch Services already
 	  assigns to these extensions (see `mdls` / UTType):
-	    .vsd/.vss/.vst → com.microsoft.visio.drawing
+	    .vsd/.vss/.vst/.vdx/.vsx/.vtx → com.microsoft.visio.drawing
 	    .vsdx → com.microsoft.visio.drawing.opc
 	    .vsdm → com.microsoft.visio.drawing.macro-enabled
 	    .vstx → com.microsoft.visio.template.opc
@@ -99,6 +99,9 @@
 				<string>vsd</string>
 				<string>vss</string>
 				<string>vst</string>
+				<string>vdx</string>
+				<string>vsx</string>
+				<string>vtx</string>
 			</array>
 		</dict>
 		<dict>
@@ -163,10 +166,14 @@
 					<string>vsd</string>
 					<string>vss</string>
 					<string>vst</string>
+					<string>vdx</string>
+					<string>vsx</string>
+					<string>vtx</string>
 				</array>
 				<key>public.mime-type</key>
 				<array>
 					<string>application/vnd.visio</string>
+					<string>application/vnd.ms-visio.viewer</string>
 				</array>
 			</dict>
 		</dict>

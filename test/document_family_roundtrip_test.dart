@@ -93,6 +93,33 @@ void main() {
       });
     }
 
+    for (final extension in const <String>['vdx', 'vsx', 'vtx']) {
+      test('.$extension imports DiagramML and saves as editable VSDX',
+          () async {
+        final source = File(
+          'packages/vsdx/test/fixtures/vdx_all_types.vdx',
+        ).readAsBytesSync();
+        final controller = EditorController();
+        addTearDown(controller.dispose);
+
+        await controller.openBytes(source, name: 'legacy.$extension');
+
+        expect(controller.error, isNull);
+        expect(controller.importedFromVsd, isTrue);
+        expect(controller.fileName, 'legacy.vsdx');
+        expect(controller.document!.pages, isNotEmpty);
+        expect(
+          controller.document!.pages.every((page) => page.shapes.isNotEmpty),
+          isTrue,
+        );
+        final reopened = const DocumentParser().parse(
+          controller.exportToBytes(),
+        );
+        expect(reopened.pages, hasLength(controller.document!.pages.length));
+        expect(reopened.pages.every((page) => page.shapes.isNotEmpty), isTrue);
+      });
+    }
+
     test('.vsd imports into an editable VSDX and reopens', () async {
       final source = await File('assets/examples/sample.vsd').readAsBytes();
       final controller = EditorController();

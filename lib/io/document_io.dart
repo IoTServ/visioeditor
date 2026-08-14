@@ -17,11 +17,14 @@ class PickedDocument {
 /// Visio drawing extensions the editor can open.
 ///
 /// OPC drawings/templates round-trip in place. Standalone stencils and legacy
-/// binary files are imported as editable pages and saved as `.vsdx`.
+/// binary/XML files are imported as editable pages and saved as `.vsdx`.
 const List<String> kVisioOpenExtensions = <String>[
   'vsd',
   'vss',
   'vst',
+  'vdx',
+  'vsx',
+  'vtx',
   'vsdx',
   'vsdm',
   'vstx',
@@ -168,6 +171,18 @@ bool isLegacyVisioBinary(String path) {
   return extension == 'vsd' || extension == 'vss' || extension == 'vst';
 }
 
+/// Visio 2003 DiagramML drawing, stencil, or template.
+///
+/// These files are fully imported but, like binary Visio, save through the
+/// editable VSDX writer rather than overwriting the legacy source encoding.
+bool isLegacyVisioXml(String path) {
+  final extension = extensionOfPath(path);
+  return extension == 'vdx' || extension == 'vsx' || extension == 'vtx';
+}
+
+bool isImportOnlyVisio(String path) =>
+    isLegacyVisioBinary(path) || isLegacyVisioXml(path);
+
 /// `true` when [path] looks like a raster image the editor can embed.
 bool hasImageExtension(String path) {
   final lower = path.toLowerCase();
@@ -185,12 +200,12 @@ String extensionOfPath(String path) {
 /// Browser downloads, UIDocumentPicker, and Android SAF destinations cannot.
 bool get supportsDirectFileSave => save_platform.supportsDirectFileSave;
 
-/// Extension retained by Save As for [suggestedName]. Legacy OLE2 Visio is an
-/// import-only format and unknown names fall back to a normal `.vsdx` drawing.
+/// Extension retained by Save As for [suggestedName]. Legacy OLE2/DiagramML
+/// Visio is import-only and unknown names fall back to a normal `.vsdx`.
 String documentSaveExtension(String suggestedName) {
   final extension = extensionOfPath(suggestedName);
   if (extension == 'drawio') return extension;
-  if (!isLegacyVisioBinary(suggestedName) &&
+  if (!isImportOnlyVisio(suggestedName) &&
       kVisioOpenExtensions.contains(extension)) {
     return extension;
   }
@@ -200,9 +215,9 @@ String documentSaveExtension(String suggestedName) {
 /// Suggested filename normalized to [documentSaveExtension].
 String normalizedDocumentSaveName(String suggestedName) {
   final extension = documentSaveExtension(suggestedName);
-  if (isLegacyVisioBinary(suggestedName)) {
+  if (isImportOnlyVisio(suggestedName)) {
     return suggestedName.replaceFirst(
-      RegExp(r'\.(vsd|vss|vst)$', caseSensitive: false),
+      RegExp(r'\.(vsd|vss|vst|vdx|vsx|vtx)$', caseSensitive: false),
       '.vsdx',
     );
   }

@@ -31,13 +31,15 @@
             </intent-filter>
             <!-- Open Visio drawings handed over by another app / file manager
                  that already knows the MIME type.
-                 .vsd/.vss/.vst → application/vnd.visio
+                 .vsd/.vss/.vst/.vsx/.vtx → application/vnd.visio
+                 .vdx → application/vnd.ms-visio.viewer
                  .vsdx → application/vnd.ms-visio.drawing (+ macro/template/stencil) -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW"/>
                 <category android:name="android.intent.category.DEFAULT"/>
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:mimeType="application/vnd.visio"/>
+                <data android:mimeType="application/vnd.ms-visio.viewer"/>
                 <data android:mimeType="application/vnd.ms-visio.drawing"/>
                 <data android:mimeType="application/vnd.ms-visio.drawing.macroEnabled.12"/>
                 <!-- Compatibility with providers that omit the Office `.12` suffix. -->
@@ -64,6 +66,9 @@
                 <data android:pathPattern=".*\\.vsd"/>
                 <data android:pathPattern=".*\\.vss"/>
                 <data android:pathPattern=".*\\.vst"/>
+                <data android:pathPattern=".*\\.vdx"/>
+                <data android:pathPattern=".*\\.vsx"/>
+                <data android:pathPattern=".*\\.vtx"/>
                 <data android:pathPattern=".*\\.vsdx"/>
                 <data android:pathPattern=".*\\.vsdm"/>
                 <data android:pathPattern=".*\\.vstx"/>
