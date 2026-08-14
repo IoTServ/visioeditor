@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
+import 'package:xml/xml.dart';
 
 Uint8List _fixture() =>
     File('test/fixtures/vdx_all_types.vdx').readAsBytesSync();
@@ -43,7 +44,7 @@ void main() {
       expect(result.document.creator, 'visioeditor tests');
       expect(result.document.pages, hasLength(1));
       expect(result.document.masters.length, 1);
-      expect(result.document.images.length, 1);
+      expect(result.document.images.length, 2);
 
       final page = result.document.pages.single;
       expect(page.name, 'Coverage');
@@ -55,7 +56,7 @@ void main() {
       expect(page.connects, hasLength(2));
 
       final shapes = _allShapes(result.document);
-      expect(shapes, hasLength(8));
+      expect(shapes, hasLength(9));
       final masterInstance = page.findShapeById(1)!;
       expect(masterInstance.geometries.single.commands, hasLength(5));
       expect(masterInstance.fill.foreground, const VsdxColor(0xFFE2F0D9));
@@ -112,6 +113,20 @@ void main() {
       expect(image.hasImage, isTrue);
       expect(
           result.document.images.findByPart(image.imagePartName!), isNotNull);
+      final dibImageShape = page.findShapeById(9)!;
+      expect(dibImageShape.hasImage, isTrue);
+      final dibImage =
+          result.document.images.findByPart(dibImageShape.imagePartName!)!;
+      expect(dibImage.mimeType, 'image/bmp');
+      expect(dibImage.partName, endsWith('.bmp'));
+      expect(dibImage.bytes, hasLength(58));
+      expect(dibImage.bytes.sublist(0, 2), orderedEquals(<int>[0x42, 0x4D]));
+      expect(dibImage.bytes.sublist(10, 14), orderedEquals(<int>[54, 0, 0, 0]));
+      final svg = VsdxToSvgSerializer().serializePage(
+        page,
+        images: result.document.images,
+      );
+      expect(svg, contains('data:image/bmp;base64,Qk0'));
     });
 
     test('VDX import synthesises an editable VSDX without losing visible data',
@@ -123,8 +138,8 @@ void main() {
       ).document;
 
       expect(reopened.pages, hasLength(1));
-      expect(_allShapes(reopened), hasLength(8));
-      expect(reopened.images.length, 1);
+      expect(_allShapes(reopened), hasLength(9));
+      expect(reopened.images.length, 2);
       final allText = _allShapes(reopened)
           .map((shape) => shape.richText.plainText)
           .join('\n');
@@ -140,6 +155,33 @@ void main() {
         expect(allText, contains(expected));
       }
       expect(reopened.pages.single.findShapeById(8)!.hasImage, isTrue);
+      final reopenedDibShape = reopened.pages.single.findShapeById(9)!;
+      expect(reopenedDibShape.hasImage, isTrue);
+      final reopenedDib =
+          reopened.images.findByPart(reopenedDibShape.imagePartName!)!;
+      expect(reopenedDib.mimeType, 'image/bmp');
+      expect(reopenedDib.bytes.sublist(0, 2), orderedEquals(<int>[0x42, 0x4D]));
+      final reopenedSvg = VsdxToSvgSerializer().serializePage(
+        reopened.pages.single,
+        images: reopened.images,
+      );
+      expect(reopenedSvg, contains('data:image/bmp;base64,Qk0'));
+      final package = VsdxPackage.open(imported.originalBytes);
+      final pageXml = package.readPartXml('/visio/pages/page1.xml')!;
+      final picture = pageXml.descendants.whereType<XmlElement>().singleWhere(
+          (element) =>
+              element.name.local == 'Shape' &&
+              element.getAttribute('ID') == '9');
+      final foreignData = picture.childElements
+          .singleWhere((element) => element.name.local == 'ForeignData');
+      expect(foreignData.getAttribute('ForeignType'), 'Bitmap');
+      expect(foreignData.getAttribute('CompressionType'), isNull,
+          reason: 'the VSDX media part already contains a complete BMP header');
+      final childNames =
+          picture.childElements.map((element) => element.name.local).toList();
+      expect(childNames.last, 'ForeignData');
+      expect(childNames.lastIndexOf('Section'),
+          lessThan(childNames.indexOf('ForeignData')));
       expect(
         _commandTypes(reopened.pages.single.findShapeById(7)!),
         contains(PolylineTo),
@@ -174,7 +216,7 @@ void main() {
 
       final template = parseVisio(source, sourceName: 'coverage.vtx');
       expect(template.document.pages.single.name, 'Coverage');
-      expect(_allShapes(template.document), hasLength(8));
+      expect(_allShapes(template.document), hasLength(9));
     });
 
     test('accepts UTF-16 DiagramML and rejects unrelated XML', () {

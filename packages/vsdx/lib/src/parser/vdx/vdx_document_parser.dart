@@ -655,14 +655,14 @@ class _VdxMediaCollector {
       final id = _nextId++;
       final type = source.getAttribute('ForeignType') ?? 'Bitmap';
       final compression = source.getAttribute('CompressionType');
-      final format = _foreignFormat(type, compression);
-      final partName = '/visio/media/vdxImage$id.${format.$1}';
+      final decoded = _decodeForeignImage(bytes, type, compression);
+      final partName = '/visio/media/vdxImage$id.${decoded.ext}';
       final relationshipId = 'vdxImage$id';
       relationships[relationshipId] = partName;
       images[partName] = VsdxImage(
         partName: partName,
-        bytes: bytes,
-        mimeType: format.$2,
+        bytes: decoded.bytes,
+        mimeType: decoded.mime,
       );
       children.add(XmlElement(
         XmlName('Rel'),
@@ -677,27 +677,111 @@ class _VdxMediaCollector {
   }
 }
 
-(String, String) _foreignFormat(String type, String? compression) {
+({Uint8List bytes, String ext, String mime}) _decodeForeignImage(
+  Uint8List bytes,
+  String type,
+  String? compression,
+) {
   switch (compression?.toUpperCase()) {
     case 'PNG':
-      return ('png', 'image/png');
+      return (bytes: bytes, ext: 'png', mime: 'image/png');
     case 'JPEG':
-      return ('jpg', 'image/jpeg');
+      return (bytes: bytes, ext: 'jpg', mime: 'image/jpeg');
     case 'GIF':
-      return ('gif', 'image/gif');
+      return (bytes: bytes, ext: 'gif', mime: 'image/gif');
     case 'TIFF':
-      return ('tiff', 'image/tiff');
+      return (bytes: bytes, ext: 'tif', mime: 'image/tiff');
   }
   switch (type.toLowerCase()) {
     case 'enhmetafile':
-      return ('emf', 'image/x-emf');
+      return (bytes: bytes, ext: 'emf', mime: 'image/x-emf');
     case 'metafile':
-      return ('wmf', 'image/x-wmf');
+      return (bytes: bytes, ext: 'wmf', mime: 'image/x-wmf');
     case 'object':
-      return ('ole', 'object/ole');
-    default:
-      return ('bmp', 'image/bmp');
+      return (bytes: bytes, ext: 'ole', mime: 'object/ole');
+    case 'bitmap':
+      // DiagramML stores an uncompressed Bitmap as a DIB: it starts at the
+      // BITMAPINFOHEADER and omits the 14-byte BITMAPFILEHEADER. libvisio's
+      // VSDContentCollector::_handleForeignData() reconstructs that header
+      // before librevenge/LibreOffice sees the image. Do the same so Flutter,
+      // browsers, and a VSDX save/reopen all receive a standalone BMP.
+      return (
+        bytes: _dibToBmp(bytes),
+        ext: 'bmp',
+        mime: 'image/bmp',
+      );
   }
+
+  // A missing/unknown ForeignType occurs in third-party DiagramML. Preserve
+  // self-describing raster payloads and fall back to the legacy DIB rule.
+  if (_hasMagic(bytes, const <int>[0x89, 0x50, 0x4E, 0x47])) {
+    return (bytes: bytes, ext: 'png', mime: 'image/png');
+  }
+  if (_hasMagic(bytes, const <int>[0xFF, 0xD8, 0xFF])) {
+    return (bytes: bytes, ext: 'jpg', mime: 'image/jpeg');
+  }
+  if (_hasMagic(bytes, const <int>[0x47, 0x49, 0x46])) {
+    return (bytes: bytes, ext: 'gif', mime: 'image/gif');
+  }
+  if (_hasMagic(bytes, const <int>[0x42, 0x4D])) {
+    return (bytes: bytes, ext: 'bmp', mime: 'image/bmp');
+  }
+  return (bytes: _dibToBmp(bytes), ext: 'bmp', mime: 'image/bmp');
+}
+
+bool _hasMagic(Uint8List bytes, List<int> magic) {
+  if (bytes.length < magic.length) return false;
+  for (var i = 0; i < magic.length; i++) {
+    if (bytes[i] != magic[i]) return false;
+  }
+  return true;
+}
+
+Uint8List _dibToBmp(Uint8List dib) {
+  // Be lenient with producers that already embedded a complete BMP even
+  // though CompressionType was omitted; adding a second header would make a
+  // previously renderable image invalid.
+  if (_hasMagic(dib, const <int>[0x42, 0x4D])) return dib;
+  final total = dib.length + 14;
+  final out = Uint8List(total);
+  out[0] = 0x42;
+  out[1] = 0x4D;
+  out[2] = total & 0xFF;
+  out[3] = (total >> 8) & 0xFF;
+  out[4] = (total >> 16) & 0xFF;
+  out[5] = (total >> 24) & 0xFF;
+  final dataOffset = _bmpDataOffset(dib);
+  out[10] = dataOffset & 0xFF;
+  out[11] = (dataOffset >> 8) & 0xFF;
+  out[12] = (dataOffset >> 16) & 0xFF;
+  out[13] = (dataOffset >> 24) & 0xFF;
+  out.setRange(14, total, dib);
+  return out;
+}
+
+int _bmpDataOffset(Uint8List dib) {
+  if (dib.length < 4) return 54;
+  var headerSize = dib[0] | (dib[1] << 8) | (dib[2] << 16) | (dib[3] << 24);
+  if (headerSize > dib.length) headerSize = 40;
+  var offset = headerSize;
+  var bitsPerPixel = dib.length >= 16 ? dib[14] | (dib[15] << 8) : 0;
+  if (bitsPerPixel > 32) bitsPerPixel = 32;
+  for (final supported in const <int>[1, 4, 8, 16, 24, 32]) {
+    if (bitsPerPixel <= supported) {
+      bitsPerPixel = supported;
+      break;
+    }
+  }
+  var paletteColors = dib.length >= 36
+      ? dib[32] | (dib[33] << 8) | (dib[34] << 16) | (dib[35] << 24)
+      : 0;
+  if (bitsPerPixel < 16 && paletteColors == 0) {
+    paletteColors = 1 << bitsPerPixel;
+  }
+  if (paletteColors > 0 && paletteColors < (dib.length - offset) / 4) {
+    offset += 4 * paletteColors;
+  }
+  return offset + 14;
 }
 
 XmlDocument _document(XmlElement root) => XmlDocument.parse(root.toXmlString());

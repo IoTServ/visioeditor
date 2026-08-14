@@ -192,6 +192,11 @@ Second line and tab:	value</Text>
           <Foreign><ImgOffsetX>0</ImgOffsetX><ImgOffsetY>0</ImgOffsetY><ImgWidth>0.6</ImgWidth><ImgHeight>0.6</ImgHeight></Foreign>
           <ForeignData ForeignType="Bitmap" CompressionType="PNG">iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=</ForeignData>
         </Shape>
+        <Shape ID="9" Type="Foreign" LineStyle="0" FillStyle="0" TextStyle="0">
+          <XForm><PinX>9.1</PinX><PinY>5.3</PinY><Width>0.6</Width><Height>0.6</Height><LocPinX>0.3</LocPinX><LocPinY>0.3</LocPinY></XForm>
+          <Foreign><ImgOffsetX>0</ImgOffsetX><ImgOffsetY>0</ImgOffsetY><ImgWidth>0.6</ImgWidth><ImgHeight>0.6</ImgHeight></Foreign>
+          <ForeignData ForeignType="Bitmap" CompressionType="None">KAAAAAEAAAABAAAAAQAYAAAAAAAEAAAAAAAAAAAAAAAAAAAAAAAAAAAA/wA=</ForeignData>
+        </Shape>
       </Shapes>
       <Connects>
         <Connect FromSheet="6" FromCell="BeginX" FromPart="9" ToSheet="3" ToCell="PinX" ToPart="3"/>

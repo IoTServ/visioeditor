@@ -6880,13 +6880,7 @@ class VsdxWriter {
           mimeType: '',
           partName: part ?? '',
         );
-    final wantCompression = s.foreignCompressionType ??
-        (wantType == 'Bitmap'
-            ? VsdxImage.compressionTypeFor(
-                mimeType: '',
-                partName: part ?? '',
-              )
-            : null);
+    final wantCompression = _vsdxCompressionFor(s, wantType, part);
     var changed = false;
     if (foreign.getAttribute('ForeignType') != wantType) {
       foreign.setAttribute('ForeignType', wantType);
@@ -6902,6 +6896,24 @@ class VsdxWriter {
       changed = true;
     }
     return changed;
+  }
+
+  /// VDX stores an uncompressed Bitmap as a headerless DIB, whereas an OPC
+  /// image part contains a complete BMP file. libvisio interprets an explicit
+  /// `CompressionType="None"` as the former and prepends a BMP header. Omit
+  /// that legacy marker after the payload has been normalised for VSDX so a
+  /// VDX -> VSDX round-trip does not acquire a second, invalid file header.
+  static String? _vsdxCompressionFor(
+      VsdxShape shape, String foreignType, String? part) {
+    final explicit = shape.foreignCompressionType;
+    if (explicit != null && explicit.toLowerCase() == 'none') return null;
+    return explicit ??
+        (foreignType == 'Bitmap'
+            ? VsdxImage.compressionTypeFor(
+                mimeType: '',
+                partName: part ?? '',
+              )
+            : null);
   }
 
   bool _ensureLocPinPresent(XmlElement el, VsdxShape s) {
@@ -7794,13 +7806,7 @@ class VsdxWriter {
           mimeType: '',
           partName: part ?? '',
         );
-    final compression = s.foreignCompressionType ??
-        (foreignType == 'Bitmap'
-            ? VsdxImage.compressionTypeFor(
-                mimeType: '',
-                partName: part ?? '',
-              )
-            : null);
+    final compression = _vsdxCompressionFor(s, foreignType, part);
     final bgSlot = s.fill.themeBackgroundIndex;
     final fgSlot = s.fill.themeForegroundIndex;
     final namedBg = (bgSlot != null && fgSlot != null && fgSlot != bgSlot)
@@ -8070,6 +8076,7 @@ class VsdxWriter {
       shapeForDefaults: s,
       hasLabel: pictureRuns.isNotEmpty,
     );
+    XmlElement? pictureText;
     if (pictureRuns.isNotEmpty) {
       children
         ..add(_buildCharacterSection(pictureRuns))
@@ -8095,7 +8102,7 @@ class VsdxWriter {
         ));
         _appendRunText(textEl.children, pictureRuns[i]);
       }
-      children.add(textEl);
+      pictureText = textEl;
     } else {
       if (s.richText.tabSets.isNotEmpty) {
         children.add(_buildTabsSection(s.richText.tabSets));
@@ -8159,6 +8166,11 @@ class VsdxWriter {
     if (s.hyperlinks.isNotEmpty) {
       children.add(_buildHyperlinkSection(s.hyperlinks));
     }
+    // Sheet_Type requires every Cell / Section before ShapeSheet_Type's Text
+    // and ForeignData tail. LibreOffice/libvisio follows that ordering when it
+    // consumes the relationship, even though our parser is intentionally lax.
+    _appendOpaqueChildren(children, s, opaqueById);
+    if (pictureText != null) children.add(pictureText);
     if (rId != null) {
       children.add(XmlElement(
         XmlName('ForeignData'),
@@ -8173,8 +8185,6 @@ class VsdxWriter {
         ],
       ));
     }
-    // Unmodelled cells / sections from the prior XML (group rebuild).
-    _appendOpaqueChildren(children, s, opaqueById);
     return XmlElement(
       XmlName('Shape'),
       <XmlAttribute>[
