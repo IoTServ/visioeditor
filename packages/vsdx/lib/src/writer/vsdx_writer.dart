@@ -7290,6 +7290,15 @@ class VsdxWriter {
     final staleTheme = _staleThemeFormulaKeys(s);
     String? formulaOf(String key) =>
         staleTheme.contains(key) ? null : s.formulas[key];
+    bool unresolvedWalkGlue(String name, double? value) =>
+        value != null &&
+        value.abs() <= _epsilon &&
+        s.formulas[name]?.toUpperCase().contains('_WALKGLUE') == true;
+    final retainConnectorFrame = s.is1D &&
+        unresolvedWalkGlue('BeginX', s.beginX) &&
+        unresolvedWalkGlue('BeginY', s.beginY) &&
+        unresolvedWalkGlue('EndX', s.endX) &&
+        unresolvedWalkGlue('EndY', s.endY);
     // --- XForm ---------------------------------------------------------------
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX), formula: _nonInhFormula(s.formulas['PinX'])),
@@ -7304,12 +7313,17 @@ class VsdxWriter {
     // the shape's bottom-left), shifting every centred shape by half its size.
     // Writing the cells (with Width*0.5 / Height*0.5 when centred) keeps
     // exports aligned with how this editor and Visio place the pin.
+    // One exception is an unresolved VDX WALKGLUE route: its literal LocPin
+    // belongs to the retained master frame, and recalculating it collapses the
+    // cached Geometry in LibreOffice.
     final locPinXF = _nonInhFormula(s.formulas['LocPinX']) ??
-        ((s.effectiveLocPinX - s.width / 2).abs() <= _epsilon
+        (!retainConnectorFrame &&
+                (s.effectiveLocPinX - s.width / 2).abs() <= _epsilon
             ? 'Width*0.5'
             : null);
     final locPinYF = _nonInhFormula(s.formulas['LocPinY']) ??
-        ((s.effectiveLocPinY - s.height / 2).abs() <= _epsilon
+        (!retainConnectorFrame &&
+                (s.effectiveLocPinY - s.height / 2).abs() <= _epsilon
             ? 'Height*0.5'
             : null);
     children

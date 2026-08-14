@@ -264,7 +264,10 @@ class VdxDocumentParser {
         contents,
         partName: 'VDX/Page-$id',
       )) {
-        shapes.add(scaleVisioDrawingShape(shape, drawingScale));
+        shapes.add(scaleVisioDrawingShape(
+          _restoreUnresolvedConnectorFrame(shape, masters),
+          drawingScale,
+        ));
       }
       final layers = pageSheet == null
           ? const <VsdxLayer>[]
@@ -314,6 +317,85 @@ class VdxDocumentParser {
     }
     return List.unmodifiable(pages);
   }
+}
+
+/// Restore the stencil XForm used by DiagramML for unresolved dynamic routes.
+///
+/// A legacy VDX connector can store all four XForm1D caches as zero with
+/// `_WALKGLUE(...)`, while its visible path is already cached in Geometry.
+/// libvisio's VDX path keeps the master's Width/Height/LocPin/Angle frame until
+/// Visio evaluates that glue formula. The shared VSDX parser deliberately
+/// recalculates inherited XForm formulas, which otherwise collapses this VDX
+/// frame to zero and shifts the geometry when the synthesised VSDX is opened.
+VsdxShape _restoreUnresolvedConnectorFrame(
+  VsdxShape shape,
+  MasterRegistry masters, {
+  VsdxMaster? inheritedMaster,
+}) {
+  final master =
+      shape.masterId == null ? inheritedMaster : masters.find(shape.masterId!);
+  final prototype = shape.masterShapeId != null && master != null
+      ? master.findShape(shape.masterShapeId!)
+      : shape.masterId != null
+          ? master?.prototype
+          : null;
+  var childrenChanged = false;
+  final children = <VsdxShape>[];
+  for (final child in shape.children) {
+    final restored = _restoreUnresolvedConnectorFrame(
+      child,
+      masters,
+      inheritedMaster: master,
+    );
+    childrenChanged |= !identical(restored, child);
+    children.add(restored);
+  }
+
+  bool isWalkGlue(String name) =>
+      shape.formulas[name]?.toUpperCase().contains('_WALKGLUE') == true;
+  final unresolved = prototype != null &&
+      shape.is1D &&
+      shape.beginX?.abs() == 0 &&
+      shape.beginY?.abs() == 0 &&
+      shape.endX?.abs() == 0 &&
+      shape.endY?.abs() == 0 &&
+      isWalkGlue('BeginX') &&
+      isWalkGlue('BeginY') &&
+      isWalkGlue('EndX') &&
+      isWalkGlue('EndY');
+  if (!unresolved) {
+    return childrenChanged ? shape.copyWith(children: children) : shape;
+  }
+
+  final formulas = Map<String, String>.of(shape.formulas);
+  var width = shape.width;
+  var height = shape.height;
+  var locPinX = shape.locPinXInches;
+  var locPinY = shape.locPinYInches;
+  var angle = shape.angleRad;
+
+  void restore(String name, void Function() apply) {
+    final inherited = prototype.formulas[name];
+    if (inherited == null || formulas[name] != inherited) return;
+    formulas.remove(name);
+    apply();
+  }
+
+  restore('Width', () => width = prototype.width);
+  restore('Height', () => height = prototype.height);
+  restore('LocPinX', () => locPinX = prototype.locPinXInches);
+  restore('LocPinY', () => locPinY = prototype.locPinYInches);
+  restore('Angle', () => angle = prototype.angleRad);
+
+  return shape.copyWith(
+    width: width,
+    height: height,
+    locPinXInches: locPinX,
+    locPinYInches: locPinY,
+    angleRad: angle,
+    children: children,
+    formulas: Map<String, String>.unmodifiable(formulas),
+  );
 }
 
 XmlDocument _normaliseDocument(XmlElement root) {

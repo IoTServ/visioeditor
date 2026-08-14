@@ -12,6 +12,41 @@ import 'package:xml/xml.dart';
 Uint8List _fixture() =>
     File('test/fixtures/vdx_all_types.vdx').readAsBytesSync();
 
+Uint8List _unresolvedConnectorFixture() => Uint8List.fromList(utf8.encode('''
+<?xml version="1.0" encoding="UTF-8"?>
+<VisioDocument xmlns="http://schemas.microsoft.com/visio/2003/core">
+  <Masters>
+    <Master ID="2" NameU="Dynamic connector">
+      <PageSheet><PageProps><PageWidth>3</PageWidth><PageHeight>3</PageHeight><PageScale>1</PageScale><DrawingScale>1</DrawingScale></PageProps></PageSheet>
+      <Shapes><Shape ID="5" Type="Shape">
+        <XForm>
+          <PinX F="GUARD((BeginX+EndX)/2)">1.5</PinX><PinY F="GUARD((BeginY+EndY)/2)">1.5</PinY>
+          <Width F="GUARD(EndX-BeginX)">1</Width><Height F="GUARD(EndY-BeginY)">-1</Height>
+          <LocPinX F="GUARD(Width*0.5)">0.5</LocPinX><LocPinY F="GUARD(Height*0.5)">-0.5</LocPinY>
+          <Angle F="GUARD(0DA)">0</Angle>
+        </XForm>
+        <XForm1D><BeginX>1</BeginX><BeginY>2</BeginY><EndX>2</EndX><EndY>1</EndY></XForm1D>
+        <Misc><ObjType>2</ObjType></Misc>
+        <Geom IX="0"><NoFill>1</NoFill><MoveTo IX="1"><X>0</X><Y>0</Y></MoveTo><LineTo IX="2"><X>0</X><Y>-1</Y></LineTo><LineTo IX="3"><X>1</X><Y>-1</Y></LineTo></Geom>
+      </Shape></Shapes>
+    </Master>
+  </Masters>
+  <Pages><Page ID="0" NameU="Page-1">
+    <PageSheet><PageProps><PageWidth>8</PageWidth><PageHeight>4</PageHeight></PageProps></PageSheet>
+    <Shapes><Shape ID="1" Type="Shape" Master="2">
+      <XForm><PinX>0</PinX><PinY>0</PinY></XForm>
+      <XForm1D>
+        <BeginX F="_WALKGLUE(BegTrigger,EndTrigger,WalkPreference)">0</BeginX>
+        <BeginY F="_WALKGLUE(BegTrigger,EndTrigger,WalkPreference)">0</BeginY>
+        <EndX F="_WALKGLUE(EndTrigger,BegTrigger,WalkPreference)">0</EndX>
+        <EndY F="_WALKGLUE(EndTrigger,BegTrigger,WalkPreference)">0</EndY>
+      </XForm1D>
+      <Geom IX="0"><MoveTo IX="1"><X>1</X><Y>3</Y></MoveTo><LineTo IX="2"><X>5</X><Y>3</Y></LineTo></Geom>
+    </Shape></Shapes>
+  </Page></Pages>
+</VisioDocument>
+'''));
+
 Uint8List _utf32(
   String value, {
   required bool littleEndian,
@@ -318,6 +353,68 @@ void main() {
             '${row.parentElement?.getAttribute('N')}:${row.getAttribute('IX')}',
       };
       expect(rowKeys, containsAll(<String>['Actions:7', 'Hyperlink:5']));
+    });
+
+    test('retains the master frame for unresolved WALKGLUE connectors', () {
+      final imported = parseVisio(
+        _unresolvedConnectorFixture(),
+        sourceName: 'walkglue.vdx',
+      );
+
+      void expectConnector(VsdxDocument document) {
+        final connector = document.pages.single.findShapeById(1)!;
+        expect(connector.is1D, isTrue);
+        expect(connector.width, 1);
+        expect(connector.height, -1);
+        expect(connector.locPinXInches, 0.5);
+        expect(connector.locPinYInches, -0.5);
+        expect(connector.angleRad, 0);
+        for (final name in const <String>[
+          'Width',
+          'Height',
+          'LocPinX',
+          'LocPinY',
+          'Angle',
+        ]) {
+          expect(connector.formulas, isNot(contains(name)));
+        }
+        for (final name in const <String>['BeginX', 'BeginY', 'EndX', 'EndY']) {
+          expect(connector.formulas[name], contains('_WALKGLUE'));
+        }
+        expect(connector.geometries.single.commands, hasLength(3));
+      }
+
+      expectConnector(imported.document);
+      expectConnector(const DocumentParser().parse(imported.originalBytes));
+
+      final pageXml = VsdxPackage.open(imported.originalBytes)
+          .readPartXml('/visio/pages/page1.xml')!;
+      final connectorXml =
+          pageXml.descendants.whereType<XmlElement>().singleWhere(
+                (element) =>
+                    element.name.local == 'Shape' &&
+                    element.getAttribute('ID') == '1',
+              );
+      final cells = <String, XmlElement>{
+        for (final cell in connectorXml.childElements
+            .where((element) => element.name.local == 'Cell'))
+          cell.getAttribute('N')!: cell,
+      };
+      expect(cells['Width']!.getAttribute('V'), '1');
+      expect(cells['Height']!.getAttribute('V'), '-1');
+      expect(cells['LocPinX']!.getAttribute('V'), '0.5');
+      expect(cells['LocPinY']!.getAttribute('V'), '-0.5');
+      expect(cells['Angle']!.getAttribute('V'), '0');
+      for (final name in const <String>[
+        'Width',
+        'Height',
+        'LocPinX',
+        'LocPinY',
+        'Angle',
+      ]) {
+        expect(cells[name]!.getAttribute('F'), isNull);
+      }
+      expect(cells['BeginX']!.getAttribute('F'), contains('_WALKGLUE'));
     });
 
     test('remaps DiagramML master zero to a positive VSDX master id', () {
