@@ -82,8 +82,23 @@ void main() {
           group.children.map((shape) => shape.id), orderedEquals(<int>[4, 5]));
       expect(page.findShapeById(6)!.is1D, isTrue);
       expect(page.findShapeById(6)!.line.endArrow, 4);
+      final inheritedStyle = page.findShapeById(7)!;
+      expect(inheritedStyle.line.cap, LineCap.square);
+      expect(inheritedStyle.line.beginArrow, 4);
+      expect(inheritedStyle.line.endArrow, 13);
+      expect(inheritedStyle.line.roundingInches, closeTo(0.08, 1e-9));
+      expect(inheritedStyle.fill.foregroundTransparency, closeTo(0.15, 1e-9));
+      expect(inheritedStyle.fill.backgroundTransparency, closeTo(0.35, 1e-9));
+      expect(inheritedStyle.shadow.enabled, isTrue);
+      expect(inheritedStyle.shadow.color, const VsdxColor(0xFF44546A));
+      expect(inheritedStyle.shadow.offsetXInches, closeTo(0.2, 1e-9));
+      expect(inheritedStyle.shadow.offsetYInches, closeTo(-0.15, 1e-9));
+      expect(inheritedStyle.richText.textBlock.marginLeftInches,
+          closeTo(0.05, 1e-9));
+      expect(inheritedStyle.richText.textBlock.defaultTabStopInches,
+          closeTo(0.4, 1e-9));
       expect(
-        _commandTypes(page.findShapeById(7)!),
+        _commandTypes(inheritedStyle),
         containsAll(<Type>[
           RelMoveTo,
           RelLineTo,
@@ -129,6 +144,17 @@ void main() {
         _commandTypes(reopened.pages.single.findShapeById(7)!),
         contains(PolylineTo),
       );
+      final inheritedStyle = reopened.pages.single.findShapeById(7)!;
+      expect(inheritedStyle.line.cap, LineCap.square);
+      expect(inheritedStyle.line.beginArrow, 4);
+      expect(inheritedStyle.line.endArrow, 13);
+      expect(inheritedStyle.line.roundingInches, closeTo(0.08, 1e-9));
+      expect(inheritedStyle.fill.foregroundTransparency, closeTo(0.15, 1e-9));
+      expect(inheritedStyle.shadow.enabled, isTrue);
+      expect(inheritedStyle.shadow.color, const VsdxColor(0xFF44546A));
+      expect(inheritedStyle.shadow.offsetXInches, closeTo(0.2, 1e-9));
+      expect(inheritedStyle.richText.textBlock.defaultTabStopInches,
+          closeTo(0.4, 1e-9));
     });
 
     test('VSX extracts masters as pages; VTX imports drawing pages', () {

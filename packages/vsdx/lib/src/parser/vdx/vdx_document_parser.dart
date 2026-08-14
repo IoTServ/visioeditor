@@ -48,8 +48,7 @@ bool looksLikeVdx(Uint8List bytes) {
   try {
     final head = _decodeXml(
         bytes.length > 8192 ? Uint8List.sublistView(bytes, 0, 8192) : bytes);
-    return RegExp(r'<(?:[A-Za-z_][\w.-]*:)?VisioDocument\b')
-            .hasMatch(head) &&
+    return RegExp(r'<(?:[A-Za-z_][\w.-]*:)?VisioDocument\b').hasMatch(head) &&
         (_vdxNamespaces.any(head.contains) || head.contains('xmlns='));
   } catch (_) {
     return false;
@@ -381,11 +380,23 @@ XmlElement _normaliseStyleSheet(XmlElement source) {
           if (leaf.childElements.isEmpty) _cell(leaf),
       ];
       if (cells.isNotEmpty) {
-        children.add(XmlElement(
-          XmlName('Section'),
-          <XmlAttribute>[XmlAttribute(XmlName('N'), child.name.local)],
-          cells,
-        ));
+        // DiagramML stores these as property blocks, while VSDX stores their
+        // cells directly on StyleSheet. This mirrors VDXParser::readLine(),
+        // readFillAndShadow(), and readTextBlock(): all values are collected
+        // into the corresponding style object, not a named section. Keeping
+        // them in a synthetic Section silently drops arrows, caps, shadows,
+        // transparency, margins, and tab/direction settings because the
+        // shared VSDX stylesheet parser expects those cells at sheet level.
+        if (const <String>{'Line', 'Fill', 'TextBlock'}
+            .contains(child.name.local)) {
+          children.addAll(cells);
+        } else {
+          children.add(XmlElement(
+            XmlName('Section'),
+            <XmlAttribute>[XmlAttribute(XmlName('N'), child.name.local)],
+            cells,
+          ));
+        }
       }
     }
   }

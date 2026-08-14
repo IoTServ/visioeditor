@@ -348,6 +348,7 @@ Future<void> _loadAuditFonts() async {
     'Calibri Light',
     'Cambria',
     'Courier New',
+    'DejaVu Sans',
     'Helvetica',
     'Liberation Sans',
     'Liberation Serif',

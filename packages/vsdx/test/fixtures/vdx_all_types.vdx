@@ -25,13 +25,21 @@
         <LineWeight Unit="PT">0.0138888889</LineWeight>
         <LineColor>0</LineColor>
         <LinePattern>1</LinePattern>
-        <BeginArrow>0</BeginArrow>
-        <EndArrow>0</EndArrow>
+        <LineCap>2</LineCap>
+        <Rounding>0.08</Rounding>
+        <BeginArrow>4</BeginArrow>
+        <EndArrow>13</EndArrow>
       </Line>
       <Fill>
         <FillForegnd>1</FillForegnd>
         <FillBkgnd>1</FillBkgnd>
         <FillPattern>1</FillPattern>
+        <FillForegndTrans>0.15</FillForegndTrans>
+        <FillBkgndTrans>0.35</FillBkgndTrans>
+        <ShdwForegnd>#44546A</ShdwForegnd>
+        <ShdwPattern>1</ShdwPattern>
+        <ShapeShdwOffsetX>0.2</ShapeShdwOffsetX>
+        <ShapeShdwOffsetY>-0.15</ShapeShdwOffsetY>
       </Fill>
       <TextBlock>
         <LeftMargin>0.05</LeftMargin>
@@ -39,6 +47,8 @@
         <TopMargin>0.03</TopMargin>
         <BottomMargin>0.03</BottomMargin>
         <VerticalAlign>1</VerticalAlign>
+        <DefaultTabStop>0.4</DefaultTabStop>
+        <TextDirection>0</TextDirection>
       </TextBlock>
       <Char IX="0">
         <Font>4</Font>
