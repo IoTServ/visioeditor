@@ -2,6 +2,13 @@ import 'dart:math' as math;
 
 import 'geometry.dart';
 
+typedef FilletPathSegment = ({Offset2D end, Offset2D? control});
+typedef FilletPath = ({
+  Offset2D start,
+  List<FilletPathSegment> segments,
+  bool closed,
+});
+
 /// Whether a Move/Line polyline should be treated as a closed ring for Rounding.
 ///
 /// Explicit first≈last is always closed. Filled outlines (`!noFill`) that omit
@@ -40,31 +47,96 @@ List<Offset2D> filletPolyline(
     final prev = points[(i - 1 + n) % n];
     final cur = points[i];
     final next = points[(i + 1) % n];
-    final fillet = _filletCorner(
+    final corner = _filletCorner(
       prev,
       cur,
       next,
       radius,
-      arcSegments: arcSegments,
     );
-    if (fillet == null) {
+    if (corner == null) {
       out.add(cur);
       continue;
     }
-    out.addAll(fillet);
+    final samples = <Offset2D>[corner.start];
+    final segs = math.max(2, arcSegments);
+    for (var s = 1; s < segs; s++) {
+      final t = s / segs;
+      final u = 1.0 - t;
+      samples.add(Offset2D(
+        u * u * corner.start.x +
+            2.0 * u * t * corner.control.x +
+            t * t * corner.end.x,
+        u * u * corner.start.y +
+            2.0 * u * t * corner.control.y +
+            t * t * corner.end.y,
+      ));
+    }
+    samples.add(corner.end);
+    out.addAll(samples);
   }
 
   if (!closed) out.add(points.last);
   return out;
 }
 
-List<Offset2D>? _filletCorner(
+/// Exact libvisio-style path: lines between trimmed corners and one quadratic
+/// Bézier per corner, with the original sharp vertex as its control point.
+FilletPath? filletPolylinePath(
+  List<Offset2D> points,
+  double radius, {
+  bool closed = false,
+}) {
+  if (radius <= 1e-12 || points.length < 3) return null;
+  final n = points.length;
+  final corners = <_FilletCorner?>[
+    for (var i = 0; i < n; i++)
+      (!closed && (i == 0 || i == n - 1))
+          ? null
+          : _filletCorner(
+              points[(i - 1 + n) % n],
+              points[i],
+              points[(i + 1) % n],
+              radius,
+            ),
+  ];
+  final segments = <FilletPathSegment>[];
+  if (!closed) {
+    for (var i = 1; i < n - 1; i++) {
+      final corner = corners[i];
+      if (corner == null) {
+        segments.add((end: points[i], control: null));
+      } else {
+        segments
+          ..add((end: corner.start, control: null))
+          ..add((end: corner.end, control: corner.control));
+      }
+    }
+    segments.add((end: points.last, control: null));
+    return (start: points.first, segments: segments, closed: false);
+  }
+
+  final firstCorner = corners.first;
+  final start = firstCorner?.end ?? points.first;
+  for (var step = 1; step <= n; step++) {
+    final i = step % n;
+    final corner = corners[i];
+    if (corner == null) {
+      segments.add((end: points[i], control: null));
+    } else {
+      segments
+        ..add((end: corner.start, control: null))
+        ..add((end: corner.end, control: corner.control));
+    }
+  }
+  return (start: start, segments: segments, closed: true);
+}
+
+_FilletCorner? _filletCorner(
   Offset2D prev,
   Offset2D cur,
   Offset2D next,
-  double radius, {
-  required int arcSegments,
-}) {
+  double radius,
+) {
   final inDx = cur.x - prev.x;
   final inDy = cur.y - prev.y;
   final outDx = next.x - cur.x;
@@ -82,28 +154,29 @@ List<Offset2D>? _filletCorner(
   final dot = (inUx * outUx + inUy * outUy).clamp(-1.0, 1.0);
   final turn = math.atan2(cross, dot);
   if (turn.abs() < 1e-6 || (turn.abs() - math.pi).abs() < 1e-6) {
-    return <Offset2D>[cur];
+    return null;
   }
 
   final half = turn.abs() / 2;
   var trim = radius * math.tan(half);
   final maxTrim = math.min(inLen, outLen) * 0.5;
   if (trim > maxTrim) trim = maxTrim;
-  if (trim < 1e-12) return <Offset2D>[cur];
+  if (trim < 1e-12) return null;
 
   final p1 = Offset2D(cur.x - inUx * trim, cur.y - inUy * trim);
   final p2 = Offset2D(cur.x + outUx * trim, cur.y + outUy * trim);
 
-  final samples = <Offset2D>[p1];
-  final segs = math.max(2, arcSegments);
-  for (var s = 1; s < segs; s++) {
-    final t = s / segs;
-    final u = 1.0 - t;
-    samples.add(Offset2D(
-      u * u * p1.x + 2.0 * u * t * cur.x + t * t * p2.x,
-      u * u * p1.y + 2.0 * u * t * cur.y + t * t * p2.y,
-    ));
-  }
-  samples.add(p2);
-  return samples;
+  return _FilletCorner(start: p1, control: cur, end: p2);
+}
+
+class _FilletCorner {
+  const _FilletCorner({
+    required this.start,
+    required this.control,
+    required this.end,
+  });
+
+  final Offset2D start;
+  final Offset2D control;
+  final Offset2D end;
 }

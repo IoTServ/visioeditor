@@ -2236,16 +2236,22 @@ class VsdxToSvgSerializer {
     if (roundingInches > 1e-12) {
       final poly = _polylineVertices(g, w, h);
       if (poly != null && poly.points.length >= 3) {
-        final filleted = filletPolyline(
+        final filleted = filletPolylinePath(
           poly.points,
           roundingInches,
           closed: poly.closed,
         );
-        if (filleted.isNotEmpty) {
+        if (filleted != null) {
           final out = StringBuffer(
-              'M ${_n(filleted.first.x)} ${_n(filleted.first.y)} ');
-          for (var i = 1; i < filleted.length; i++) {
-            out.write('L ${_n(filleted[i].x)} ${_n(filleted[i].y)} ');
+              'M ${_n(filleted.start.x)} ${_n(filleted.start.y)} ');
+          for (final segment in filleted.segments) {
+            final control = segment.control;
+            if (control == null) {
+              out.write('L ${_n(segment.end.x)} ${_n(segment.end.y)} ');
+            } else {
+              out.write('Q ${_n(control.x)} ${_n(control.y)} '
+                  '${_n(segment.end.x)} ${_n(segment.end.y)} ');
+            }
           }
           if (poly.closed) out.write('Z');
           return out.toString().trim();

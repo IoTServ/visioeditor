@@ -151,14 +151,14 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    // Sharp rect is 4 LineTos; fillet inserts sampled arc segments.
+    // Match libvisio: each rounded corner is an exact quadratic Bézier.
     // Skip marker paths in <defs>; the shape path carries stroke-linejoin.
     final pathMatch = RegExp(
       r'<path d="([^"]+)"[^>]*stroke-linejoin="round"',
     ).firstMatch(svg);
     expect(pathMatch, isNotNull);
     final d = pathMatch!.group(1)!;
-    expect('L'.allMatches(d).length, greaterThan(4));
+    expect('Q'.allMatches(d).length, 4);
   });
 
   test('TextDirection=1 is stored on text block for paint', () {

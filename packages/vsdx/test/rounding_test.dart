@@ -47,6 +47,23 @@ void main() {
     expect(out.length, greaterThan(pts.length));
   });
 
+  test('filletPolylinePath preserves libvisio quadratic corner controls', () {
+    const pts = <Offset2D>[
+      Offset2D(0, 0),
+      Offset2D(2, 0),
+      Offset2D(2, 2),
+    ];
+    final path = filletPolylinePath(pts, 0.25)!;
+    expect(path.start, const Offset2D(0, 0));
+    expect(path.segments, hasLength(3));
+    expect(path.segments[0].end, const Offset2D(1.75, 0));
+    expect(path.segments[0].control, isNull);
+    expect(path.segments[1].control, const Offset2D(2, 0));
+    expect(path.segments[1].end.x, closeTo(2, 1e-9));
+    expect(path.segments[1].end.y, closeTo(0.25, 1e-9));
+    expect(path.segments[2].end, const Offset2D(2, 2));
+  });
+
   test('polylineLooksClosed treats filled open rings as closed', () {
     const pts = <Offset2D>[
       Offset2D(0, 0),

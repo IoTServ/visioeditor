@@ -706,8 +706,8 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(page);
     final d = RegExp(r'<path d="([^"]+)"').firstMatch(svg)?.group(1);
     expect(d, isNotNull);
-    // Closed square → 4 corners; fillet inserts multiple samples per corner.
-    expect('L'.allMatches(d!).length, greaterThan(8));
+    // Match libvisio: one exact quadratic Bézier per rounded corner.
+    expect('Q'.allMatches(d!).length, 4);
   });
 
   test('SVG Rounding fillets filled rects that omit closing LineTo', () {
@@ -741,8 +741,8 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(page);
     final d = RegExp(r'<path d="([^"]+)"').firstMatch(svg)?.group(1);
     expect(d, isNotNull);
-    // All four corners filleted → more than an open-path's two interior bends.
-    expect('L'.allMatches(d!).length, greaterThan(8));
+    // Filled open outlines close before rounding, so all corners get a Q.
+    expect('Q'.allMatches(d!).length, 4);
   });
 
   test('SVG geometry-less 1D uses elbow/obstacle route not a chord', () {

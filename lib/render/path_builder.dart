@@ -71,16 +71,26 @@ Path buildPath(
       heightInches: heightInches,
     );
     if (poly != null && poly.points.length >= 3) {
-      final filleted = filletPolyline(
+      final filleted = filletPolylinePath(
         poly.points,
         roundingInches,
         closed: poly.closed,
       );
       final path = Path();
-      if (filleted.isEmpty) return path;
-      path.moveTo(filleted.first.x, filleted.first.y);
-      for (var i = 1; i < filleted.length; i++) {
-        path.lineTo(filleted[i].x, filleted[i].y);
+      if (filleted == null) return path;
+      path.moveTo(filleted.start.x, filleted.start.y);
+      for (final segment in filleted.segments) {
+        final control = segment.control;
+        if (control == null) {
+          path.lineTo(segment.end.x, segment.end.y);
+        } else {
+          path.quadraticBezierTo(
+            control.x,
+            control.y,
+            segment.end.x,
+            segment.end.y,
+          );
+        }
       }
       if (poly.closed) path.close();
       return path;
