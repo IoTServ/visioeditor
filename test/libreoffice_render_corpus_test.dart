@@ -105,7 +105,11 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry('recursion-cycle.vsdx', ignoreLibreOfficePageCount: true),
   _CorpusEntry('tab-short-prefix.vsdx'),
   _CorpusEntry('tdf136564-WhiteTextBackground.vsdx'),
-  _CorpusEntry('tdf154379-DrawingUnits-type.vsd'),
+  _CorpusEntry(
+    'tdf154379-DrawingUnits-type.vsd',
+    maxMeanAbsoluteError: 0.024,
+    expectedTextFragments: <String>['Couloir'],
+  ),
   _CorpusEntry('tdf154379-QuickStyleFillMatrix.vsdx'),
   _CorpusEntry('tdf76829-datetime-format.vsd'),
   _CorpusEntry('tdf76829-numeric-format.vsd'),

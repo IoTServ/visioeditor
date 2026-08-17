@@ -423,7 +423,9 @@ class RelQuadBezTo extends VsdxPathCommand {
 }
 
 /// `ArcTo` — end point + `bow` (the perpendicular offset of the arc's apex
-/// from the chord, MS-VSDX §"ArcTo Row").
+/// from the chord, MS-VSDX §"ArcTo Row"). In native Y-up shape coordinates,
+/// positive bow lies on the chord's right side, matching libvisio's
+/// `sweep = (bow < 0)` conversion.
 @immutable
 class ArcTo extends VsdxPathCommand {
   const ArcTo({required this.x, required this.y, required this.bow});

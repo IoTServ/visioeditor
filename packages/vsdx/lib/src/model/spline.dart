@@ -174,15 +174,22 @@ _ArcByBowSolution? _solveArcByBow({
   final r = (chord * chord + 4 * s * s) / (8 * s);
   final mx = (start.x + end.x) / 2;
   final my = (start.y + end.y) / 2;
-  // Unit left-normal of the chord (Visio +bow lies on this side).
+  // Unit left-normal of the chord. Visio/libvisio uses the opposite side for
+  // a positive bow: collectArcTo emits SVG sweep=0 for +bow after converting
+  // the page to Y-down coordinates, which maps back to the chord's right side
+  // in the shape's native Y-up coordinates.
   final nx = -dy / chord;
   final ny = dx / chord;
-  final sign = bow > 0 ? 1.0 : -1.0;
-  // Apex at M + n·bow; centre is r from both ends, on the same side.
+  final signedSagitta = -bow;
+  final sign = signedSagitta > 0 ? 1.0 : -1.0;
+  // Apex at M + n·signedSagitta; centre is r from both endpoints.
   final dist = r - s;
   final cx = mx - nx * sign * dist;
   final cy = my - ny * sign * dist;
-  final apex = Offset2D(mx + nx * bow, my + ny * bow);
+  final apex = Offset2D(
+    mx + nx * signedSagitta,
+    my + ny * signedSagitta,
+  );
 
   final a0 = math.atan2(start.y - cy, start.x - cx);
   final a1 = math.atan2(end.y - cy, end.x - cx);

@@ -451,15 +451,16 @@ void _arcByBow(
     return;
   }
   final r = (chord * chord + 4 * bow * bow) / (8 * bow.abs());
-  // `bow > 0` is "left of the chord direction" in Visio's convention.
-  // Flutter's `arcToPoint` clockwise=true sweeps clockwise. We map:
-  //   bow > 0 → CCW sweep (clockwise=false)
-  //   bow < 0 → CW  sweep (clockwise=true)
+  // libvisio maps `bow < 0` to SVG sweep=1 after its Y-down page transform.
+  // Flutter builds this path in Visio's native Y-up values before the page
+  // canvas reflection, so the corresponding raw-path mapping is the reverse:
+  //   bow > 0 → clockwise raw sweep (right of the chord)
+  //   bow < 0 → counter-clockwise raw sweep (left of the chord)
   path.arcToPoint(
     Offset(x1, y1),
     radius: Radius.circular(r),
     largeArc: visioArcByBowIsLarge(chord, bow),
-    clockwise: bow < 0,
+    clockwise: bow > 0,
   );
 }
 

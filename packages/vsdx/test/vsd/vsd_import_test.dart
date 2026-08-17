@@ -403,6 +403,19 @@ void main() {
       expect(reopened.pages.every((page) => page.pageSheet.lineJumpCode == 0),
           isTrue);
 
+      ArcTo doorArc(VsdxDocument document) => document.pages.first
+          .findShapeById(121)!
+          .geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<ArcTo>()
+          .singleWhere((arc) => arc.bow != 0);
+      final importedDoorArc = doorArc(doc);
+      final reopenedDoorArc = doorArc(reopened);
+      expect(importedDoorArc.bow, lessThan(0),
+          reason: 'the Couloir plan door retains its VSD sweep direction');
+      expect(reopenedDoorArc.bow, closeTo(importedDoorArc.bow, 1e-9),
+          reason: 'VSD → VSDX must not reverse the door arc');
+
       // Page 2 is a rectangular grid. LibreOffice/libvisio renders straight
       // crossings; an unset jump code used to turn every horizontal stroke
       // into a row of artificial SVG arc hops.

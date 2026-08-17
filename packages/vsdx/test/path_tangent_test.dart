@@ -19,12 +19,12 @@ void main() {
     expect(tangents.start, const Offset2D(0, 0));
     expect(tangents.end, const Offset2D(2, 0));
     expect(tangents.startForward.x, greaterThan(0));
-    expect(tangents.startForward.y, greaterThan(0));
+    expect(tangents.startForward.y, lessThan(0));
     expect(tangents.endForward.x, greaterThan(0));
-    expect(tangents.endForward.y, lessThan(0));
+    expect(tangents.endForward.y, greaterThan(0));
     expect(
       tangents.startForward.y / tangents.startForward.x,
-      closeTo(1 / 0.5333333333333333, 1e-9),
+      closeTo(-1 / 0.5333333333333333, 1e-9),
     );
   });
 

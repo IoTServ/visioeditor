@@ -21,5 +21,7 @@ void main() {
 
     expect(bounds.width, closeTo(2, 1e-6));
     expect(bounds.height, closeTo(0.6, 1e-6));
+    expect(bounds.top, closeTo(-0.6, 1e-6));
+    expect(bounds.bottom, closeTo(0, 1e-6));
   });
 }

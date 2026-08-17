@@ -174,7 +174,7 @@ void main() {
       expect(visioArcByBowIsLarge(2, -1.01), isTrue);
     });
 
-    test('positive bow is a circular arc through the sagitta apex', () {
+    test('positive bow follows libvisio sweep through the sagitta apex', () {
       final pts = sampleArcByBow(
         start: const Offset2D(0, 0),
         end: const Offset2D(2, 0),
@@ -183,16 +183,17 @@ void main() {
       );
       expect(pts.last.x, closeTo(2, 1e-9));
       expect(pts.last.y, closeTo(0, 1e-9));
-      // Apex of +bow=0.5 on (0,0)→(2,0) is (1, 0.5).
+      // libvisio emits sweep=0 for +bow. In native Y-up coordinates the apex
+      // of +bow=0.5 on (0,0)→(2,0) is therefore (1, -0.5).
       var nearest = double.infinity;
       for (final p in pts) {
-        final d = (p.x - 1) * (p.x - 1) + (p.y - 0.5) * (p.y - 0.5);
+        final d = (p.x - 1) * (p.x - 1) + (p.y + 0.5) * (p.y + 0.5);
         if (d < nearest) nearest = d;
       }
       expect(nearest, lessThan(0.02));
       // Radius from Visio formula: (chord²+4s²)/(8s) = 1.25.
       const r = 1.25;
-      const cx = 1.0, cy = -0.75;
+      const cx = 1.0, cy = 0.75;
       for (final p in pts) {
         final d = math.sqrt((p.x - cx) * (p.x - cx) + (p.y - cy) * (p.y - cy));
         expect(d, closeTo(r, 1e-3));
