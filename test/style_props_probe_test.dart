@@ -1064,7 +1064,7 @@ void main() {
         reason: 'geom hollow SoftEdges must match canvas / glowHollow');
   });
 
-  test('SVG skips stroke shadow when NoFill and LinePattern=0', () {
+  test('SVG does not manufacture a stroke shadow for a NoFill shape', () {
     final page = VsdxPage(
       id: 0,
       name: 'Page-1',
@@ -1079,7 +1079,7 @@ void main() {
           height: 1,
         ).copyWith(
           fill: const VsdxFill(pattern: 0),
-          line: const VsdxLine(pattern: 0),
+          line: const VsdxLine(pattern: 1),
           shadow: const VsdxShadow(
             enabled: true,
             offsetXInches: 0.1,
@@ -1090,7 +1090,7 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     expect(svg.contains('filter="url(#shadow-'), isFalse,
-        reason: 'canvas skips stroke shadow when LinePattern=0');
+        reason: 'libvisio shadows collected fill geometry, not line paths');
   });
 
   test('SVG skips reflection fill on NoFill geometry', () {

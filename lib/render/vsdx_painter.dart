@@ -1675,27 +1675,20 @@ class VsdxPainter extends CustomPainter {
         const Color(0x99000000);
     final alpha = (1 - shadow.transparency).clamp(0.0, 1.0);
     if (alpha <= 0) return;
-    // Connectors / line-only geometry: stroke the shadow (Visio ShadowPattern
-    // on open paths). Filled shapes keep a filled drop shadow.
-    // Match SVG: NoFill+NoLine dividers cast no shadow — except Foreign
-    // pictures, which use the geometry as an image silhouette.
+    // libvisio/LibreOffice produces shadows from collected fill geometry, not
+    // from the separate line path. Foreign pictures are the one exception:
+    // their geometry supplies a filled image silhouette.
     final imageSilhouette =
         shape.hasImage &&
         (geom?.noFill ?? true) &&
         ((geom?.noLine ?? true) || !shape.line.hasLine);
-    if ((geom?.noFill ?? false) &&
-        (geom?.noLine ?? false) &&
-        !imageSilhouette) {
+    if (!imageSilhouette &&
+        (shape.is1D || (geom?.noFill ?? false) || !shape.fill.hasFill)) {
       return;
     }
-    final lineOnly =
-        !imageSilhouette &&
-        (shape.is1D || (geom?.noFill ?? false) || !shape.fill.hasFill);
-    if (lineOnly && (geom?.noLine ?? false)) return;
-    if (lineOnly && !shape.line.hasLine) return;
     final paint = Paint()
       ..color = base.withValues(alpha: base.a * alpha)
-      ..style = lineOnly ? PaintingStyle.stroke : PaintingStyle.fill;
+      ..style = PaintingStyle.fill;
     // Classic VSD/VDX shadows have an offset and pattern but no blur. Keep
     // those edges hard, as libvisio does, instead of manufacturing a minimum
     // blur merely to satisfy MaskFilter's non-zero sigma requirement.
@@ -1705,30 +1698,11 @@ class VsdxPainter extends CustomPainter {
         _blurSigmaPx(shadow.blurInches),
       );
     }
-    if (lineOnly) {
-      paint
-        ..strokeWidth = math.max(shape.line.weightInches, 0.01)
-        ..strokeCap = _flutterCap(shape)
-        ..strokeJoin = canvasStrokeJoin(shape.line)
-        ..strokeMiterLimit = shape.line.miterLimit.clamp(1.0, 100.0);
-    }
     canvas.save();
     // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
     canvas.translate(shadow.offsetXInches, shadow.offsetYInches);
     _applyPageShadowXform(canvas, shape);
-    if (lineOnly) {
-      // Match body stroke: compound rails + dash (blur via paint.maskFilter).
-      _drawCompoundStroke(
-        canvas,
-        path,
-        paint,
-        shape.line.compoundType,
-        shape.line.weightInches,
-        dashes: effectiveDashPatternForLine(shape.line),
-      );
-    } else {
-      canvas.drawPath(path, paint);
-    }
+    canvas.drawPath(path, paint);
     canvas.restore();
   }
 

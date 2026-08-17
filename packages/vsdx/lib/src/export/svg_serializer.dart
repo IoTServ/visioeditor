@@ -1554,8 +1554,8 @@ class VsdxToSvgSerializer {
     );
   }
 
-  /// Canvas-matching drop shadow: blurred fill (2D) or stroke (1D / NoFill),
-  /// drawn before the sharp shape — not feDropShadow on fill+stroke+markers.
+  /// Canvas-matching drop shadow from the filled geometry silhouette, drawn
+  /// before the sharp shape — not feDropShadow on fill+stroke+markers.
   void _writeDropShadow(
     StringBuffer buf,
     VsdxShape shape,
@@ -1577,12 +1577,13 @@ class VsdxToSvgSerializer {
     // NoFill + (NoLine or pattern-less stroke)).
     final imageSilhouette =
         shape.hasImage && noFill && (noLine || !shape.line.hasLine);
-    final lineOnly =
-        !imageSilhouette && (shape.is1D || noFill || !shape.fill.hasFill);
-    if (lineOnly && noLine) return;
-    // Match canvas: LinePattern=0 means no stroke, so no stroke-style shadow.
-    if (lineOnly && !shape.line.hasLine) return;
-    if (!lineOnly && noFill && !imageSilhouette) return;
+    // libvisio attaches the shadow style to both librevenge paths, but the
+    // line path has draw:fill=none and LibreOffice does not manufacture a
+    // stroked shadow for it. Only collected fill geometry casts the shadow.
+    if (!imageSilhouette &&
+        (shape.is1D || noFill || !shape.fill.hasFill)) {
+      return;
+    }
     final hex = _hex(base);
     final dx = shadow.offsetXInches;
     final dy = shadow.offsetYInches;
@@ -1614,24 +1615,11 @@ class VsdxToSvgSerializer {
       );
       filterAttr = ' filter="url(#$sid)"';
     }
-    if (lineOnly) {
-      // Match body / canvas: CompoundType rails + LinePattern dash.
-      _writeCompoundOrPlainStroke(
-        buf,
-        d: d,
-        line: shape.line,
-        strokePaint: 'stroke="$hex"',
-        strokeOpacity: alpha,
-        indent: indent,
-        extraAttrs: ' transform="$xform"$filterAttr',
-      );
-    } else {
-      buf.writeln(
-        '$indent<path d="$d" fill="$hex" fill-opacity="${_n(alpha)}" '
-        'stroke="none" transform="$xform"'
-        '$filterAttr/>',
-      );
-    }
+    buf.writeln(
+      '$indent<path d="$d" fill="$hex" fill-opacity="${_n(alpha)}" '
+      'stroke="none" transform="$xform"'
+      '$filterAttr/>',
+    );
   }
 
   /// Compose offset + optional page oblique/scale about LocPin (canvas parity).

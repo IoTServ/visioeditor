@@ -153,13 +153,14 @@ void main() {
       expect(
         _commandTypes(curves),
         containsAll(<Type>[
-          CubBezTo,
-          QuadBezTo,
           ArcTo,
           EllipseCmd,
           EllipticalArcTo,
         ]),
       );
+      expect(_commandTypes(curves), isNot(contains(CubBezTo)));
+      expect(_commandTypes(curves), isNot(contains(QuadBezTo)),
+          reason: 'VDX ignores row names absent from libvisio DiagramML');
       final group = page.findShapeById(3)!;
       expect(
           group.children.map((shape) => shape.id), orderedEquals(<int>[4, 5]));
@@ -189,11 +190,12 @@ void main() {
           RelLineTo,
           RelCubBezTo,
           RelQuadBezTo,
-          RelArcTo,
           RelEllipticalArcTo,
           PolylineTo,
         ]),
       );
+      expect(_commandTypes(inheritedStyle), isNot(contains(RelArcTo)),
+          reason: 'RelArcTo is a VSDX row, not a libvisio VDX element');
       final advancedGeometry = page.findShapeById(10)!;
       expect(
         _commandTypes(advancedGeometry),
@@ -225,9 +227,8 @@ void main() {
       expect(svg, contains('href="https://example.test/vdx-link"'));
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"').allMatches(svg),
-        hasLength(2),
-        reason:
-            'open Geometry sections receive endings; the closed one does not',
+        hasLength(3),
+        reason: 'all three libvisio VDX Geometry sections are open',
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"').allMatches(svg),
@@ -368,8 +369,8 @@ void main() {
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"')
             .allMatches(reopenedSvg),
-        hasLength(2),
-        reason: 'open/closed Geometry endings survive VDX to VSDX round-trip',
+        hasLength(3),
+        reason: 'VDX open Geometry endings survive the VSDX round-trip',
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"')

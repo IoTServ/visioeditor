@@ -149,6 +149,8 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry(
     'vdx_all_types.vdx',
     packageFixture: true,
+    maxMeanAbsoluteError: 0.02,
+    minInkIntersectionOverUnion: 0.85,
     expectedTextFragments: _vdxCoverageTexts,
   ),
   _CorpusEntry('sample.vsd', applicationExample: true),

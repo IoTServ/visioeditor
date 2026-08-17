@@ -2757,7 +2757,7 @@ void main() {
     expect(svg, contains('x="0.14"'));
   });
 
-  test('SVG 1D shadow honours LinePattern dash', () {
+  test('SVG 1D line does not manufacture a libvisio fill shadow', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2777,10 +2777,11 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('stroke-dasharray="0.24 0.12"'));
-    // Shadow path also dashed (not only the main stroke).
+    // The dash belongs only to the main stroke. LibreOffice does not turn the
+    // fill shadow attached by libvisio into a second stroked line.
     expect(
       RegExp(r'stroke-dasharray="0\.24 0\.12"').allMatches(svg).length,
-      greaterThanOrEqualTo(2),
+      1,
     );
   });
 

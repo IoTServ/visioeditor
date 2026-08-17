@@ -592,7 +592,7 @@ XmlElement _geometrySection(XmlElement source) {
   for (final child in source.childElements) {
     if (child.childElements.isEmpty) {
       children.add(_cell(child));
-    } else {
+    } else if (_libvisioVdxGeometryRows.contains(child.name.local)) {
       final attributes = <XmlAttribute>[
         ..._copySelectedAttributes(child, const <String>{'IX', 'Del', 'N'}),
         XmlAttribute(XmlName('T'), child.name.local),
@@ -612,6 +612,31 @@ XmlElement _geometrySection(XmlElement source) {
     children,
   );
 }
+
+// Keep this list aligned with VSDXMLParserBase::readGeometry() in libvisio.
+// DiagramML represents commands as named elements, and its vocabulary is not
+// identical to the newer VSDX Geometry row types. In particular CubBezTo,
+// QuadBezTo, and RelArcTo are VSDX extensions: libvisio ignores those names in
+// a VDX stream. Converting arbitrary child elements into VSDX rows made invalid
+// extensions visible after import and produced geometry LibreOffice never
+// collected. The shared VSDX parser still supports those row types normally.
+const _libvisioVdxGeometryRows = <String>{
+  'MoveTo',
+  'LineTo',
+  'ArcTo',
+  'NURBSTo',
+  'PolylineTo',
+  'InfiniteLine',
+  'EllipticalArcTo',
+  'Ellipse',
+  'RelCubBezTo',
+  'RelEllipticalArcTo',
+  'RelMoveTo',
+  'RelLineTo',
+  'RelQuadBezTo',
+  'SplineStart',
+  'SplineKnot',
+};
 
 XmlElement _row(XmlElement source) => XmlElement(
       XmlName('Row'),
