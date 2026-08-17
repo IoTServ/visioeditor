@@ -10,7 +10,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'VDX all-types vectors render identically after VSDX synthesis',
+    'VDX all-types content renders identically after VSDX synthesis',
     () async {
       final source = File(
         'packages/vsdx/test/fixtures/vdx_all_types.vdx',
@@ -21,19 +21,19 @@ void main() {
         sourceName: 'vdx_all_types.vsdx',
       );
 
-      // Keep bitmap decoding out of this vector/text regression. Image payload
-      // fidelity is covered separately; placeholders still verify ForeignData
-      // position and ensure its synthetic hidden frame paints no effects.
+      // Render the real PNG and DIB/BMP payloads too. The all-types fixture is
+      // our end-to-end VDX contract, so placeholder-only parity would miss a
+      // changed image relationship, decoder, crop, or ForeignData transform.
       final before = await renderPageToPng(
         imported.document.pages.single,
         theme: imported.document.theme,
-        images: ImageRegistry.empty,
+        images: imported.document.images,
         pxPerInch: 72,
       );
       final after = await renderPageToPng(
         reopened.document.pages.single,
         theme: reopened.document.theme,
-        images: ImageRegistry.empty,
+        images: reopened.document.images,
         pxPerInch: 72,
       );
 

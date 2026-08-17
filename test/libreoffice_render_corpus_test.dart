@@ -152,6 +152,19 @@ const _corpus = <_CorpusEntry>[
     maxMeanAbsoluteError: 0.02,
     minInkIntersectionOverUnion: 0.85,
     expectedTextFragments: _vdxCoverageTexts,
+    renderMatchProbes: <_RenderMatchProbe>[
+      _RenderMatchProbe(
+        label: 'Grouped child A',
+        left: 38 / 720,
+        top: 228 / 504,
+        right: 172 / 720,
+        bottom: 334 / 504,
+        maxCanvasMeanAbsoluteError: 0.012,
+        minCanvasDarkIntersectionOverUnion: 0.92,
+        maxSvgMeanAbsoluteError: 0.038,
+        minSvgDarkIntersectionOverUnion: 0.78,
+      ),
+    ],
     svgInkProbes: <_SvgInkProbe>[
       _SvgInkProbe(
         label: 'Grouped child A',
@@ -270,6 +283,7 @@ void main() {
             libreOfficePages.length,
           );
           for (var pageIndex = 0; pageIndex < comparablePages; pageIndex++) {
+            Uint8List? importedSvgPng;
             final page = pages[pageIndex];
             final appPng = await renderPageToPng(
               page,
@@ -303,7 +317,8 @@ void main() {
                   failures.add('${entry.name}: SVG lost text "$expected"');
                 }
               }
-              if (entry.svgInkProbes.isNotEmpty) {
+              if (entry.svgInkProbes.isNotEmpty ||
+                  entry.renderMatchProbes.isNotEmpty) {
                 final svgImportDirectory = Directory(
                   '${caseDirectory.path}/libreoffice-svg-import',
                 )..createSync(recursive: true);
@@ -313,9 +328,8 @@ void main() {
                   source: appSvgFile,
                   outputDirectory: svgImportDirectory,
                 );
-                final importedSvgImage = await _decodePng(
-                  importedSvgPages.first.readAsBytesSync(),
-                );
+                importedSvgPng = importedSvgPages.first.readAsBytesSync();
+                final importedSvgImage = await _decodePng(importedSvgPng);
                 try {
                   for (final probe in entry.svgInkProbes) {
                     final darkFraction = _darkFraction(
@@ -344,6 +358,62 @@ void main() {
             final appMetrics = _measure(appImage);
             final referenceMetrics = _measure(referenceImage);
             final comparison = _compare(appImage, referenceImage);
+            if (pageIndex == 0 && entry.renderMatchProbes.isNotEmpty) {
+              _DecodedImage? importedSvgImage;
+              if (importedSvgPng != null) {
+                importedSvgImage = await _decodePng(importedSvgPng);
+              }
+              try {
+                for (final probe in entry.renderMatchProbes) {
+                  final canvasComparison = _compareRegion(
+                    appImage,
+                    referenceImage,
+                    probe,
+                  );
+                  if (canvasComparison.meanAbsoluteError >
+                      probe.maxCanvasMeanAbsoluteError) {
+                    failures.add(
+                      '${entry.name}: canvas "${probe.label}" mean absolute '
+                      'error ${canvasComparison.meanAbsoluteError.toStringAsFixed(4)} '
+                      '> ${probe.maxCanvasMeanAbsoluteError.toStringAsFixed(4)}',
+                    );
+                  }
+                  if (canvasComparison.inkIntersectionOverUnion <
+                      probe.minCanvasDarkIntersectionOverUnion) {
+                    failures.add(
+                      '${entry.name}: canvas "${probe.label}" dark-ink IoU '
+                      '${canvasComparison.inkIntersectionOverUnion.toStringAsFixed(4)} '
+                      '< ${probe.minCanvasDarkIntersectionOverUnion.toStringAsFixed(4)}',
+                    );
+                  }
+                  if (importedSvgImage != null) {
+                    final svgComparison = _compareRegion(
+                      importedSvgImage,
+                      referenceImage,
+                      probe,
+                    );
+                    if (svgComparison.meanAbsoluteError >
+                        probe.maxSvgMeanAbsoluteError) {
+                      failures.add(
+                        '${entry.name}: SVG "${probe.label}" mean absolute '
+                        'error ${svgComparison.meanAbsoluteError.toStringAsFixed(4)} '
+                        '> ${probe.maxSvgMeanAbsoluteError.toStringAsFixed(4)}',
+                      );
+                    }
+                    if (svgComparison.inkIntersectionOverUnion <
+                        probe.minSvgDarkIntersectionOverUnion) {
+                      failures.add(
+                        '${entry.name}: SVG "${probe.label}" dark-ink IoU '
+                        '${svgComparison.inkIntersectionOverUnion.toStringAsFixed(4)} '
+                        '< ${probe.minSvgDarkIntersectionOverUnion.toStringAsFixed(4)}',
+                      );
+                    }
+                  }
+                }
+              } finally {
+                importedSvgImage?.dispose();
+              }
+            }
             appImage.dispose();
             referenceImage.dispose();
             renderedPages++;
@@ -562,6 +632,7 @@ class _CorpusEntry {
     this.maxMeanAbsoluteError,
     this.minInkIntersectionOverUnion,
     this.expectedTextFragments = const <String>[],
+    this.renderMatchProbes = const <_RenderMatchProbe>[],
     this.svgInkProbes = const <_SvgInkProbe>[],
   });
 
@@ -575,6 +646,7 @@ class _CorpusEntry {
   final double? maxMeanAbsoluteError;
   final double? minInkIntersectionOverUnion;
   final List<String> expectedTextFragments;
+  final List<_RenderMatchProbe> renderMatchProbes;
   final List<_SvgInkProbe> svgInkProbes;
 
   String get path => applicationExample
@@ -584,6 +656,30 @@ class _CorpusEntry {
       : packageFixture
       ? '$_packageFixtureDirectory/$name'
       : '$_upstreamDirectory/$name';
+}
+
+class _RenderMatchProbe {
+  const _RenderMatchProbe({
+    required this.label,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+    required this.maxCanvasMeanAbsoluteError,
+    required this.minCanvasDarkIntersectionOverUnion,
+    required this.maxSvgMeanAbsoluteError,
+    required this.minSvgDarkIntersectionOverUnion,
+  });
+
+  final String label;
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+  final double maxCanvasMeanAbsoluteError;
+  final double minCanvasDarkIntersectionOverUnion;
+  final double maxSvgMeanAbsoluteError;
+  final double minSvgDarkIntersectionOverUnion;
 }
 
 class _SvgInkProbe {
@@ -842,6 +938,51 @@ _ImageComparison _compare(_DecodedImage app, _DecodedImage reference) {
       absoluteError += (appLuma - refLuma).abs() / 255;
       final appInk = appLuma < 248;
       final refInk = refLuma < 248;
+      if (appInk && refInk) intersection++;
+      if (appInk || refInk) union++;
+    }
+  }
+  return _ImageComparison(
+    meanAbsoluteError: absoluteError / (sampleWidth * sampleHeight),
+    inkIntersectionOverUnion: union == 0 ? 1 : intersection / union,
+  );
+}
+
+/// Compare a normalized page region at a fixed sampling density. The darker
+/// threshold deliberately ignores pale fills and shadows so a missing or
+/// displaced label cannot be hidden by a large, otherwise matching shape.
+_ImageComparison _compareRegion(
+  _DecodedImage app,
+  _DecodedImage reference,
+  _RenderMatchProbe probe,
+) {
+  const sampleWidth = 128;
+  const sampleHeight = 128;
+  const darkThreshold = 128;
+  var absoluteError = 0.0;
+  var intersection = 0;
+  var union = 0;
+  for (var y = 0; y < sampleHeight; y++) {
+    final fy = probe.top + (probe.bottom - probe.top) * y / sampleHeight;
+    final appY = math.min(app.height - 1, (fy * app.height).floor());
+    final refY = math.min(
+      reference.height - 1,
+      (fy * reference.height).floor(),
+    );
+    for (var x = 0; x < sampleWidth; x++) {
+      final fx = probe.left + (probe.right - probe.left) * x / sampleWidth;
+      final appX = math.min(app.width - 1, (fx * app.width).floor());
+      final refX = math.min(
+        reference.width - 1,
+        (fx * reference.width).floor(),
+      );
+      final appOffset = (appY * app.width + appX) * 4;
+      final refOffset = (refY * reference.width + refX) * 4;
+      final appLuma = _luma(app.rgba, appOffset);
+      final refLuma = _luma(reference.rgba, refOffset);
+      absoluteError += (appLuma - refLuma).abs() / 255;
+      final appInk = appLuma < darkThreshold;
+      final refInk = refLuma < darkThreshold;
       if (appInk && refInk) intersection++;
       if (appInk || refInk) union++;
     }
