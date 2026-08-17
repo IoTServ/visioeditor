@@ -1189,7 +1189,9 @@ void main() {
           shapes: <VsdxShape>[s],
         ),
       );
-      final re = RegExp(r'translate\(([^ ]+) ([^)]+)\) scale\(1 -1\)');
+      final re = RegExp(
+        r'translate\(([^ ]+) ([^)]+)\) scale\(0\.001 -0\.001\)',
+      );
       return re.firstMatch(svg)!.group(2)!;
     }
 
@@ -1235,8 +1237,10 @@ void main() {
         shapes: <VsdxShape>[labeled(1, VsdxVertAlign.bottom)],
       ),
     );
-    // Last translate before scale(1 -1) is the content anchor (y differs).
-    final re = RegExp(r'translate\(([^ ]+) ([^)]+)\) scale\(1 -1\)');
+    // Last translate before the text-unit inverse scale is the content anchor.
+    final re = RegExp(
+      r'translate\(([^ ]+) ([^)]+)\) scale\(0\.001 -0\.001\)',
+    );
     final topY = re.firstMatch(topSvg)!.group(2);
     final botY = re.firstMatch(botSvg)!.group(2);
     expect(topY, isNot(botY));
@@ -2039,9 +2043,9 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg.contains('font-size="0.4"'), isFalse,
+    expect(svg.contains('font-size="400"'), isFalse,
         reason: 'FontScale must not inflate glyph height');
-    expect(svg.contains('font-size="0.2"'), isTrue);
+    expect(svg.contains('font-size="200"'), isTrue);
     expect(svg.contains('letter-spacing='), isTrue);
   });
 
@@ -2076,13 +2080,13 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
     // Combined ≈ 0.05 + 0.2*(2-1)*0.55 = 0.16 (mean Latin advance)
-    expect(svg, contains('letter-spacing="0.16"'));
+    expect(svg, contains('letter-spacing="160"'));
     expect(
       RegExp(r'letter-spacing="').allMatches(svg).length,
       1,
       reason: 'raw Letterspace must not overwrite FontScale-merged spacing',
     );
-    expect(svg.contains('letter-spacing="0.05"'), isFalse);
+    expect(svg.contains('letter-spacing="50"'), isFalse);
   });
 
   test('setGlow toggles restore theme slot; setFillPattern(0) clears gradient',

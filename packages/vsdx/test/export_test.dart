@@ -467,7 +467,7 @@ void main() {
       shapes: <VsdxShape>[shape],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg, contains('letter-spacing="0.11"'));
+    expect(svg, contains('letter-spacing="110"'));
     expect(RegExp(r'<text\b').allMatches(svg), hasLength(1));
   });
 
@@ -1190,7 +1190,7 @@ void main() {
     expect(
       svg,
       contains(
-        "font-family=\"'Microsoft YaHei', sans-serif\" font-size=\"0.2\"",
+        "font-family=\"'Microsoft YaHei', sans-serif\" font-size=\"200\"",
       ),
     );
     expect(svg, contains('>订单</tspan>'));
@@ -1235,21 +1235,21 @@ void main() {
       svg,
       contains(
         "font-family=\"Arial, 'Microsoft YaHei', 'Times New Roman', sans-serif\" "
-        'font-size="0.2"',
+        'font-size="200"',
       ),
     );
     expect(
       svg,
       contains(
         "font-family=\"'Microsoft YaHei', 'Times New Roman', sans-serif\" "
-        'font-size="0.2"',
+        'font-size="200"',
       ),
     );
     expect(
       svg,
       contains(
         "font-family=\"'Times New Roman', 'Microsoft YaHei', sans-serif\" "
-        'font-size="0.35"',
+        'font-size="350"',
       ),
     );
     expect(svg, contains('>سلام</tspan>'));
@@ -1292,17 +1292,19 @@ void main() {
       svg,
       contains(
         "font-family=\"'Microsoft YaHei', 'Times New Roman', sans-serif\" "
-        'font-size="0.12"',
+        'font-size="120"',
       ),
     );
     expect(
       svg,
       contains(
         "font-family=\"'Times New Roman', 'Microsoft YaHei', sans-serif\" "
-        'font-size="0.4"',
+        'font-size="400"',
       ),
     );
     expect(svg, contains('>سلام</tspan></textPath>'));
+    expect(svg, contains('scale(0.001 0.001)'));
+    expect(svg.contains('dominant-baseline'), isFalse);
   });
 
   test('SVG unbound text uses libvisio Arial and opaque black defaults', () {
@@ -1511,7 +1513,7 @@ void main() {
     expect(b, isNotNull);
     expect(
       double.parse(b!.group(1)!) - double.parse(a!.group(1)!),
-      closeTo(1, 0.001),
+      closeTo(1000, 0.001),
     );
     expect(svg, isNot(contains('\t')),
         reason: 'tab control characters must become positioned tspans');
@@ -2667,8 +2669,8 @@ void main() {
       ),
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
-    expect(svg, contains('font-size="0.2"'));
-    expect(svg.contains('font-size="0.333'), isFalse);
+    expect(svg, contains('font-size="200"'));
+    expect(svg.contains('font-size="333'), isFalse);
   });
 
   test('SVG negative BulletFontSize follows libvisio percentage semantics', () {
@@ -2703,8 +2705,8 @@ void main() {
     final style = page.shapes.single.richText.runs.single.paraStyle;
     expect(style.effectiveBulletFontSizeInches(0.2), closeTo(0.1, 1e-12));
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg, contains('font-size="0.1"'));
-    expect(svg, contains('font-size="0.2"'));
+    expect(svg, contains('font-size="100"'));
+    expect(svg, contains('font-size="200"'));
   });
 
   test('SVG bullet inherits body paint and aligns its alphabetic baseline', () {
@@ -2750,7 +2752,7 @@ void main() {
     final body = textNodes.firstWhere((m) => m.group(2)!.contains('>Item<'));
     final bulletY = double.parse(bullet.group(1)!);
     final bodyY = double.parse(body.group(1)!);
-    expect(bulletY - bodyY, closeTo(0.035, 0.001));
+    expect(bulletY - bodyY, closeTo(-35, 0.001));
   });
 
   test('SVG IndFirst applies only to the first wrapped line', () {
@@ -2788,9 +2790,9 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     // margin 0.04 + IndLeft 0.1 + IndFirst 0.25 = 0.39 on first line
-    expect(svg, contains('x="0.39"'));
+    expect(svg, contains('x="390"'));
     // Subsequent lines: margin + IndLeft only = 0.14
-    expect(svg, contains('x="0.14"'));
+    expect(svg, contains('x="140"'));
   });
 
   test('SVG 1D line does not manufacture a libvisio fill shadow', () {
@@ -2861,10 +2863,10 @@ void main() {
     // Bullet still drawn when centred (previously skipped for center).
     expect(svg, contains('•'));
     // Bullet origin is margin + IndLeft; IndFirst belongs to body line one.
-    expect(svg, contains('x="0.29"'));
+    expect(svg, contains('x="290"'));
     // Resting body band starts at margin + IndLeft + label field = 0.59.
     // First line additionally applies -0.15 IndFirst, so centred x = 1.7.
-    expect(svg, contains('x="1.7"'));
+    expect(svg, contains('x="1700"'));
   });
 
   test('SVG absolute SpLine uses inches not max(fontSize)', () {
@@ -2905,7 +2907,7 @@ void main() {
         .map((m) => double.parse(m.group(1)!))
         .toList();
     expect(ys.length, greaterThanOrEqualTo(2));
-    expect((ys[1] - ys[0]).abs(), closeTo(0.08, 1e-6));
+    expect((ys[1] - ys[0]).abs(), closeTo(80, 1e-6));
   });
 
   test('SVG pdfCompat reflection uses solid fill not missing pat url', () {
@@ -3017,9 +3019,10 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     // LibreOffice percentage spacing applies to a 1.12× typographic cell:
-    // 0.2 * 1.5 * 1.12 = 0.336; centres are ±0.168 from the cluster middle.
-    expect(svg, contains('y="-0.168"'));
-    expect(svg, contains('y="0.168"'));
+    // 0.2 * 1.5 * 1.12 = 0.336. The explicit alphabetic baseline adds 0.07
+    // inch, then the importer-safe SVG text units scale values by 1000.
+    expect(svg, contains('y="-98"'));
+    expect(svg, contains('y="238"'));
   });
 
   test('SVG relative SpLine uses ComplexScriptSize for line metrics', () {
@@ -3061,7 +3064,7 @@ void main() {
         .map((m) => double.parse(m.group(1)!))
         .toList();
     expect(ys.length, greaterThanOrEqualTo(2));
-    expect((ys[1] - ys[0]).abs(), closeTo(0.672, 1e-6));
+    expect((ys[1] - ys[0]).abs(), closeTo(672, 1e-6));
   });
 
   test('SVG arrows 5/6 are filled concave/convex markers', () {
@@ -3385,9 +3388,10 @@ void main() {
     );
     expect(
       RegExp(r'scale\(1 -1\)').allMatches(flipYSvg),
-      hasLength(3),
-      reason: 'group mirror + text compensation + SVG glyph Y normalisation',
+      hasLength(2),
+      reason: 'one group mirror and one text compensation',
     );
+    expect(flipYSvg, contains('scale(0.001 -0.001)'));
   });
 
   test('SVG FlipY bitmap normalises rows before parent mirror', () {
@@ -3742,13 +3746,13 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     // Label stays at margin + IndLeft; the body moves right when WWW is wider
     // than the authored 0.08" minimum field.
-    expect(svg, contains('x="0.14"'));
+    expect(svg, contains('x="140"'));
     expect(svg, contains('WWW'));
     final xs = RegExp(r'x="([0-9.]+)"')
         .allMatches(svg)
         .map((m) => double.parse(m.group(1)!))
         .toList();
-    expect(xs.any((x) => x > 0.4), isTrue,
+    expect(xs.any((x) => x > 400), isTrue,
         reason: 'long label must expand the body field instead of moving left');
   });
 
@@ -3819,7 +3823,7 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(svg, contains('translate(0'));
-    final m = RegExp(r'translate\(0 ([-\d.]+)\) scale\(1 -1\)')
+    final m = RegExp(r'translate\(0 ([-\d.]+)\) scale\(0\.001 -0\.001\)')
         .firstMatch(svg);
     expect(m, isNotNull);
     final yc = double.parse(m!.group(1)!);
@@ -3859,7 +3863,7 @@ void main() {
     final svg =
         VsdxToSvgSerializer(pdfCompat: true).serializePage(doc.pages.first);
     expect(svg.contains('baseline-shift'), isFalse);
-    expect(svg, contains('dy="-0.07"')); // 0.2 * 0.35
+    expect(svg, contains('dy="-70"')); // 0.2 * 0.35 * 1000
   });
 
   test('SVG CurvedText stays rectangular on glueable connectors', () {

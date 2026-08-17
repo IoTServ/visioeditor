@@ -195,6 +195,11 @@ class VsdxToSvgSerializer {
   int _variationColorIndex = 0;
   int _variationStyleIndex = 0;
 
+  // Keep text coordinates comfortably above SVG importers' sub-unit
+  // quantisation thresholds. libvisio uses 1/2540-inch document units; 1000
+  // units per local inch gives the same robustness while keeping output terse.
+  static const double _svgTextUnitScale = 1000.0;
+
   /// Serialize the entire document into a single multi-page SVG with each
   /// page wrapped in a `<g class="page-N">` translated downward. Use
   /// [serializePage] when only one page is needed.
@@ -4379,7 +4384,8 @@ class VsdxToSvgSerializer {
       'width="${_n(maxW + padLeft + padRight)}" height="${_n(totalH + padTop + padBottom)}" '
       'rx="0.02" fill="${_hex(plate)}" '
       'fill-opacity="${_n(bgOp)}" $borderPaint/>'
-      '<g transform="scale(1 -1)">',
+      '<g transform="scale(${_n(1 / _svgTextUnitScale)} '
+      '${_n(-1 / _svgTextUnitScale)})">',
     );
     var yTop = -totalH / 2;
     for (final line in lines) {
@@ -4391,8 +4397,7 @@ class VsdxToSvgSerializer {
         }
       }
       final yRel = yTop + line.lineH / 2;
-      final yText = pdfCompat ? yRel + bodyFont * 0.35 : yRel;
-      final baseline = pdfCompat ? '' : ' dominant-baseline="middle"';
+      final yText = _svgAlphabeticBaseline(yRel, bodyFont);
       final body = StringBuffer();
       for (var si = 0; si < line.segs.length; si++) {
         final (raw, run) = line.segs[si];
@@ -4402,11 +4407,12 @@ class VsdxToSvgSerializer {
           style: run.charStyle,
           theme: theme,
           xAttr: si == 0 ? 'x="0"' : null,
+          coordinateScale: _svgTextUnitScale,
         );
       }
       buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="middle"$baseline '
-        'y="${_n(yText)}">$body</text>',
+        '$indent  <text xml:space="preserve" text-anchor="middle" '
+        'y="${_n(yText * _svgTextUnitScale)}">$body</text>',
       );
       yTop += line.lineH;
     }
@@ -4730,7 +4736,10 @@ class VsdxToSvgSerializer {
       );
     }
     textXf.write(' translate(0 ${_n(yCenter)})');
-    textXf.write(' scale(1 -1)');
+    textXf.write(
+      ' scale(${_n(1 / _svgTextUnitScale)} '
+      '${_n(-1 / _svgTextUnitScale)})',
+    );
     buf.writeln('$indent<g transform="$textXf">');
     for (final layout in layouts) {
       final style = layout.style;
@@ -4773,8 +4782,9 @@ class VsdxToSvgSerializer {
       }
       // y relative to cluster centre (Y-down after scale).
       final yRel = layout.yTop + layout.lineH / 2 - textH / 2;
-      // package:pdf ignores dominant-baseline — shift by font size (not SpLine
-      // lineH) so absolute line spacing does not push glyphs off-band.
+      // Use an explicit alphabetic baseline. LibreOffice's SVG importer and
+      // package:pdf do not implement dominant-baseline consistently, and can
+      // otherwise discard text below a nested Y-axis reflection entirely.
       var bodyFont = 0.14;
       for (final (_, run) in layout.segs) {
         if (run.text.isNotEmpty && run.charStyle.fontSizeInches > 0) {
@@ -4782,8 +4792,7 @@ class VsdxToSvgSerializer {
           break;
         }
       }
-      final yText = pdfCompat ? yRel + bodyFont * 0.35 : yRel;
-      final baseline = pdfCompat ? '' : ' dominant-baseline="middle"';
+      final yText = _svgAlphabeticBaseline(yRel, bodyFont);
 
       if (layout.showBullet) {
         final glyph = _svgBulletGlyph(style);
@@ -4807,13 +4816,14 @@ class VsdxToSvgSerializer {
         final bulletOpacity =
             _combinedOpacity(bulletColor, bulletBodyStyle.transparency);
         final bulletFamily = style.bulletFont ?? bulletBodyStyle.fontFamily;
-        // Both <text> nodes use dominant-baseline=middle. Offset the smaller
-        // label's centre so its estimated alphabetic baseline matches body.
-        final bulletY = yText + (bodyFont - bFs) * 0.35;
+        // Give the label its own alphabetic baseline while keeping its visual
+        // centre on the body line.
+        final bulletY = _svgAlphabeticBaseline(yRel, bFs);
         buf.writeln(
-          '$indent  <text xml:space="preserve" text-anchor="start"$baseline '
-          'y="${_n(bulletY)}">'
-          '<tspan x="${_n(bx)}" font-size="${_n(bFs)}" '
+          '$indent  <text xml:space="preserve" text-anchor="start" '
+          'y="${_n(bulletY * _svgTextUnitScale)}">'
+          '<tspan x="${_n(bx * _svgTextUnitScale)}" '
+          'font-size="${_n(bFs * _svgTextUnitScale)}" '
           '${bulletFamily != null ? 'font-family="${_esc(bulletFamily)}" ' : ''}'
           'fill="${_hex(bulletColor)}" fill-opacity="${_n(bulletOpacity)}">'
           '${_esc(glyph)}</tspan></text>',
@@ -4829,6 +4839,7 @@ class VsdxToSvgSerializer {
             tabSets: shape.richText.tabSets,
             defaultTabStopInches: block.defaultTabStopInches,
             originX: xBody,
+            coordinateScale: _svgTextUnitScale,
           ).body,
         );
       } else {
@@ -4839,7 +4850,10 @@ class VsdxToSvgSerializer {
             raw: raw,
             style: run.charStyle,
             theme: theme,
-            xAttr: si == 0 ? 'x="${_n(xBody)}"' : null,
+            xAttr: si == 0
+                ? 'x="${_n(xBody * _svgTextUnitScale)}"'
+                : null,
+            coordinateScale: _svgTextUnitScale,
           );
         }
       }
@@ -4854,14 +4868,16 @@ class VsdxToSvgSerializer {
           natural += _estSvgTextWidth(raw, run.charStyle);
         }
         if (natural > 1e-6 && natural < bandW * 0.98) {
-          justifyAttr = ' textLength="${_n(bandW)}" lengthAdjust="spacing"';
+          justifyAttr =
+              ' textLength="${_n(bandW * _svgTextUnitScale)}" '
+              'lengthAdjust="spacing"';
         }
       }
       // Preserve consecutive spaces (canvas TextPainter does; SVG defaults fold).
       buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="$anchor"$baseline'
+        '$indent  <text xml:space="preserve" text-anchor="$anchor"'
         '$justifyAttr '
-        'y="${_n(yText)}">$body</text>',
+        'y="${_n(yText * _svgTextUnitScale)}">$body</text>',
       );
     }
     buf.writeln('$indent</g>');
@@ -5085,7 +5101,9 @@ class VsdxToSvgSerializer {
     }
 
     buf.writeln(
-      '$indent<g transform="$transform translate(0 ${_n(height)}) scale(1 -1)">',
+      '$indent<g transform="$transform translate(0 ${_n(height)}) '
+      'scale(${_n(1 / _svgTextUnitScale)} '
+      '${_n(-1 / _svgTextUnitScale)})">',
     );
     for (final layout in layouts) {
       final widthAvailable = layout.right - layout.left;
@@ -5102,8 +5120,7 @@ class VsdxToSvgSerializer {
         }
       }
       final middle = top + layout.yTop + layout.lineHeight / 2;
-      final y = pdfCompat ? middle + fontSize * 0.35 : middle;
-      final baseline = pdfCompat ? '' : ' dominant-baseline="middle"';
+      final y = _svgAlphabeticBaseline(middle, fontSize);
       final body = StringBuffer();
       for (var i = 0; i < layout.segs.length; i++) {
         final (raw, run) = layout.segs[i];
@@ -5112,16 +5129,27 @@ class VsdxToSvgSerializer {
           raw: raw,
           style: run.charStyle,
           theme: theme,
-          xAttr: i == 0 ? 'x="${_n(x)}"' : null,
+          xAttr: i == 0
+              ? 'x="${_n(x * _svgTextUnitScale)}"'
+              : null,
+          coordinateScale: _svgTextUnitScale,
         );
       }
       buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="$anchor"$baseline '
-        'y="${_n(y)}">$body</text>',
+        '$indent  <text xml:space="preserve" text-anchor="$anchor" '
+        'y="${_n(y * _svgTextUnitScale)}">$body</text>',
       );
     }
     buf.writeln('$indent</g>');
   }
+
+  /// Alphabetic baseline that visually centres a font on [middle].
+  ///
+  /// libvisio/LibreOffice export explicit baseline coordinates. Keeping that
+  /// convention is also understood by browser SVG, LibreOffice import and the
+  /// package:pdf SVG subset, unlike `dominant-baseline="middle"`.
+  double _svgAlphabeticBaseline(double middle, double fontSize) =>
+      middle + fontSize * 0.35;
 
   /// Greedy wrap of rich-text segments to [maxWidth] inches (canvas maxWidth).
   ///
@@ -5341,6 +5369,7 @@ class VsdxToSvgSerializer {
     required List<VsdxTabSet> tabSets,
     required double defaultTabStopInches,
     required double originX,
+    double coordinateScale = 1.0,
   }) {
     final tokens = <({String text, VsdxTextRun run, int? tabSetIx})>[];
     for (final (raw, run) in segs) {
@@ -5409,7 +5438,10 @@ class VsdxToSvgSerializer {
         raw: token.text,
         style: token.run.charStyle,
         theme: theme,
-        xAttr: forceX ? 'x="${_n(originX + x)}"' : null,
+        xAttr: forceX
+            ? 'x="${_n((originX + x) * coordinateScale)}"'
+            : null,
+        coordinateScale: coordinateScale,
       );
       x += _estSvgTextWidth(token.text, token.run.charStyle);
       maxX = math.max(maxX, x);
@@ -5510,13 +5542,18 @@ class VsdxToSvgSerializer {
     final pathId = 'curved-$paintIdScope-${shape.id}';
     final style =
         runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
-    final attrs = _charStyleSvgAttrs(style, theme);
+    final attrs = _charStyleSvgAttrs(
+      style,
+      theme,
+      coordinateScale: _svgTextUnitScale,
+    );
     final body = StringBuffer();
     _writeStyledTspans(
       body,
       raw: plain,
       style: style,
       theme: theme,
+      coordinateScale: _svgTextUnitScale,
     );
 
     final xf = StringBuffer('translate(${_n(pinX)} ${_n(pinY)})');
@@ -5535,16 +5572,30 @@ class VsdxToSvgSerializer {
         'translate(${_n(-th / 2)} ${_n(-tw / 2)})',
       );
     }
+    xf.write(
+      ' scale(${_n(1 / _svgTextUnitScale)} '
+      '${_n(1 / _svgTextUnitScale)})',
+    );
+
+    final baselineOffset =
+        style.effectiveFontSizeInchesForText(plain) *
+        0.35 *
+        _svgTextUnitScale;
 
     buf.writeln('$indent<g transform="$xf">');
     buf.writeln(
       '$indent  <path id="$pathId" fill="none" stroke="none" '
-      'd="M ${_n(x0)} ${_n(y0)} Q ${_n(x1)} ${_n(y1)} ${_n(x2)} ${_n(y2)}"/>',
+      'd="M ${_n(x0 * _svgTextUnitScale)} '
+      '${_n(y0 * _svgTextUnitScale)} Q '
+      '${_n(x1 * _svgTextUnitScale)} '
+      '${_n(y1 * _svgTextUnitScale)} '
+      '${_n(x2 * _svgTextUnitScale)} '
+      '${_n(y2 * _svgTextUnitScale)}"/>',
     );
     buf.writeln(
-      '$indent  <text $attrs>'
+      '$indent  <text $attrs dy="${_n(baselineOffset)}">'
       '<textPath href="#$pathId" startOffset="50%" '
-      'text-anchor="middle" dominant-baseline="middle">'
+      'text-anchor="middle">'
       '$body</textPath></text>',
     );
     buf.writeln('$indent</g>');
@@ -5559,6 +5610,7 @@ class VsdxToSvgSerializer {
     required VsdxTheme theme,
     String? xAttr,
     bool applyScriptFonts = true,
+    double coordinateScale = 1.0,
   }) {
     final asianFontName = style.asianFont?.trim();
     final latinFontName = style.fontFamily?.trim();
@@ -5610,6 +5662,7 @@ class VsdxToSvgSerializer {
           theme: theme,
           xAttr: first ? xAttr : null,
           applyScriptFonts: false,
+          coordinateScale: coordinateScale,
         );
         first = false;
       }
@@ -5623,6 +5676,7 @@ class VsdxToSvgSerializer {
         theme,
         synthesizeSmallCaps: true,
         text: text,
+        coordinateScale: coordinateScale,
       );
       body.write('<tspan $x$attrs>${_esc(text)}</tspan>');
       return;
@@ -5652,6 +5706,7 @@ class VsdxToSvgSerializer {
         synthesizeSmallCaps: true,
         fontSizeOverride: bufLower! ? smallFs : null,
         text: glyph,
+        coordinateScale: coordinateScale,
       );
       body.write('<tspan $prefix$attrs>${_esc(glyph)}</tspan>');
       bufLower = null;
@@ -5701,6 +5756,7 @@ class VsdxToSvgSerializer {
     bool synthesizeSmallCaps = false,
     double? fontSizeOverride,
     String? text,
+    double coordinateScale = 1.0,
   }) {
     // libvisio's VSDCharStyle baseline is opaque black.
     final color =
@@ -5737,9 +5793,10 @@ class VsdxToSvgSerializer {
       if (c.overline) 'overline',
     ];
     final attrs = StringBuffer(
-      'font-family="$family" font-size="${_n(fs)}" '
+      'font-family="$family" '
+      'font-size="${_n(fs * coordinateScale)}" '
       'font-weight="$weight" font-style="$italic" '
-      '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing)}" ' : ''}'
+      '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing * coordinateScale)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
     final lang = c.langId?.trim();
@@ -5777,13 +5834,17 @@ class VsdxToSvgSerializer {
     switch (c.position) {
       case VsdxTextPosition.superscript:
         if (pdfCompat) {
-          attrs.write(' dy="${_n(-baseFs * 0.35)}"');
+          attrs.write(
+            ' dy="${_n(-baseFs * 0.35 * coordinateScale)}"',
+          );
         } else {
           attrs.write(' baseline-shift="super"');
         }
       case VsdxTextPosition.subscript:
         if (pdfCompat) {
-          attrs.write(' dy="${_n(baseFs * 0.2)}"');
+          attrs.write(
+            ' dy="${_n(baseFs * 0.2 * coordinateScale)}"',
+          );
         } else {
           attrs.write(' baseline-shift="sub"');
         }

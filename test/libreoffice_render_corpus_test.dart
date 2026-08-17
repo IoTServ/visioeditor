@@ -152,6 +152,16 @@ const _corpus = <_CorpusEntry>[
     maxMeanAbsoluteError: 0.02,
     minInkIntersectionOverUnion: 0.85,
     expectedTextFragments: _vdxCoverageTexts,
+    svgInkProbes: <_SvgInkProbe>[
+      _SvgInkProbe(
+        label: 'Grouped child A',
+        left: 54 / 720,
+        top: 268 / 504,
+        right: 148 / 720,
+        bottom: 288 / 504,
+        minimumDarkFraction: 0.1,
+      ),
+    ],
   ),
   _CorpusEntry('sample.vsd', applicationExample: true),
   _CorpusEntry('workflow.vsdx', applicationExample: true),
@@ -275,14 +285,46 @@ void main() {
               theme: document.theme,
               images: document.images,
             );
-            File(
+            final appSvgFile = File(
               '${caseDirectory.path}/app-${pageIndex + 1}.svg',
-            ).writeAsStringSync(appSvg);
+            )..writeAsStringSync(appSvg);
             if (pageIndex == 0) {
               final svgText = _svgPlainText(appSvg);
               for (final expected in entry.expectedTextFragments) {
                 if (!svgText.contains(expected)) {
                   failures.add('${entry.name}: SVG lost text "$expected"');
+                }
+              }
+              if (entry.svgInkProbes.isNotEmpty) {
+                final svgImportDirectory = Directory(
+                  '${caseDirectory.path}/libreoffice-svg-import',
+                )..createSync(recursive: true);
+                final importedSvgPages = await _renderWithLibreOffice(
+                  soffice: soffice,
+                  pdftoppm: pdftoppm,
+                  source: appSvgFile,
+                  outputDirectory: svgImportDirectory,
+                );
+                final importedSvgImage = await _decodePng(
+                  importedSvgPages.first.readAsBytesSync(),
+                );
+                try {
+                  for (final probe in entry.svgInkProbes) {
+                    final darkFraction = _darkFraction(
+                      importedSvgImage,
+                      probe,
+                    );
+                    if (darkFraction < probe.minimumDarkFraction) {
+                      failures.add(
+                        '${entry.name}: LibreOffice SVG import lost '
+                        '"${probe.label}" ink '
+                        '(${darkFraction.toStringAsFixed(4)} < '
+                        '${probe.minimumDarkFraction.toStringAsFixed(4)})',
+                      );
+                    }
+                  }
+                } finally {
+                  importedSvgImage.dispose();
                 }
               }
             }
@@ -512,6 +554,7 @@ class _CorpusEntry {
     this.maxMeanAbsoluteError,
     this.minInkIntersectionOverUnion,
     this.expectedTextFragments = const <String>[],
+    this.svgInkProbes = const <_SvgInkProbe>[],
   });
 
   final String name;
@@ -524,6 +567,7 @@ class _CorpusEntry {
   final double? maxMeanAbsoluteError;
   final double? minInkIntersectionOverUnion;
   final List<String> expectedTextFragments;
+  final List<_SvgInkProbe> svgInkProbes;
 
   String get path => applicationExample
       ? '$_appExampleDirectory/$name'
@@ -532,6 +576,24 @@ class _CorpusEntry {
       : packageFixture
       ? '$_packageFixtureDirectory/$name'
       : '$_upstreamDirectory/$name';
+}
+
+class _SvgInkProbe {
+  const _SvgInkProbe({
+    required this.label,
+    required this.left,
+    required this.top,
+    required this.right,
+    required this.bottom,
+    required this.minimumDarkFraction,
+  });
+
+  final String label;
+  final double left;
+  final double top;
+  final double right;
+  final double bottom;
+  final double minimumDarkFraction;
 }
 
 Set<String> _visibleTexts(VsdxDocument document) {
@@ -714,6 +776,27 @@ _ImageMetrics _measure(_DecodedImage image) {
     colorFraction: color / pixels,
     bboxFraction: bboxPixels / pixels,
   );
+}
+
+double _darkFraction(_DecodedImage image, _SvgInkProbe probe) {
+  final left = (probe.left * image.width).round().clamp(0, image.width);
+  final top = (probe.top * image.height).round().clamp(0, image.height);
+  final right = (probe.right * image.width).round().clamp(left, image.width);
+  final bottom = (probe.bottom * image.height).round().clamp(
+    top,
+    image.height,
+  );
+  var dark = 0;
+  for (var y = top; y < bottom; y++) {
+    for (var x = left; x < right; x++) {
+      final offset = (y * image.width + x) * 4;
+      if (image.rgba[offset + 3] >= 16 && _luma(image.rgba, offset) < 100) {
+        dark++;
+      }
+    }
+  }
+  final pixels = (right - left) * (bottom - top);
+  return pixels == 0 ? 0 : dark / pixels;
 }
 
 class _ImageComparison {
