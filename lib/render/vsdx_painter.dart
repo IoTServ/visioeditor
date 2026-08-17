@@ -3575,45 +3575,53 @@ class VsdxPainter extends CustomPainter {
       List<TextPainter>? posPainters;
       List<double>? posDys;
       if (hasTabs) {
-        final line = _layoutTabbedCanvasLine(
+        final lines = _layoutTabbedCanvasLines(
           para.runs,
           tabSets: tabSets,
           defaultTabStopInches: defaultTabStopInches,
           scale: scale,
           applyPosDy: needsPos,
           backgroundColor: backgroundColor,
+          firstLineMaxWidth: wordWrap ? availFirst : double.infinity,
+          continuationMaxWidth: wordWrap ? availRest : double.infinity,
         );
         final b = style.spaceBeforeInches * scale;
         final a = style.spaceAfterInches * scale;
-        painters.add(
-          TextPainter(
-            text: const TextSpan(text: ''),
-            textDirection: TextDirection.ltr,
-          )..layout(),
-        );
-        bulletPainters.add(bulletTp);
-        bulletOriginsX.add(bulletX);
-        paraPosPainters.add(line.painters);
-        paraPosDys.add(line.dys);
-        paraPosOffsets.add(line.offsets);
-        final alignedX = switch (pAlign) {
-          TextAlign.center => firstX + (availFirst - line.width) / 2,
-          TextAlign.right => firstX + availFirst - line.width,
-          _ => firstX,
-        };
-        textOriginsX.add(alignedX);
-        beforePx.add(b);
-        afterPx.add(a);
-        final metrics = rowMetrics(
-          line.height,
-          bulletTp,
-          line.painters.first,
-          bodyDy: line.dys.first,
-        );
-        rowBodyTopOffsets.add(metrics.bodyTop);
-        rowBulletTopOffsets.add(metrics.bulletTop);
-        rowHeights.add(metrics.height);
-        totalH += b + metrics.height + a;
+        for (var li = 0; li < lines.length; li++) {
+          final line = lines[li];
+          final lineX = li == 0 ? firstX : textX;
+          final lineAvail = li == 0 ? availFirst : availRest;
+          painters.add(
+            TextPainter(
+              text: const TextSpan(text: ''),
+              textDirection: TextDirection.ltr,
+            )..layout(),
+          );
+          bulletPainters.add(li == 0 ? bulletTp : null);
+          bulletOriginsX.add(bulletX);
+          paraPosPainters.add(line.painters);
+          paraPosDys.add(line.dys);
+          paraPosOffsets.add(line.offsets);
+          final alignedX = switch (pAlign) {
+            TextAlign.center => lineX + (lineAvail - line.width) / 2,
+            TextAlign.right => lineX + lineAvail - line.width,
+            _ => lineX,
+          };
+          textOriginsX.add(alignedX);
+          beforePx.add(li == 0 ? b : 0.0);
+          afterPx.add(li == lines.length - 1 ? a : 0.0);
+          final lineBullet = li == 0 ? bulletTp : null;
+          final metrics = rowMetrics(
+            line.height,
+            lineBullet,
+            line.painters.first,
+            bodyDy: line.dys.first,
+          );
+          rowBodyTopOffsets.add(metrics.bodyTop);
+          rowBulletTopOffsets.add(metrics.bulletTop);
+          rowHeights.add(metrics.height);
+          totalH += beforePx.last + metrics.height + afterPx.last;
+        }
         continue;
       }
       if (needsLineWrap) {
@@ -3775,6 +3783,36 @@ class VsdxPainter extends CustomPainter {
     required bool applyPosDy,
     required Color? backgroundColor,
   }) {
+    return _layoutTabbedCanvasLines(
+      runs,
+      tabSets: tabSets,
+      defaultTabStopInches: defaultTabStopInches,
+      scale: scale,
+      applyPosDy: applyPosDy,
+      backgroundColor: backgroundColor,
+      firstLineMaxWidth: double.infinity,
+      continuationMaxWidth: double.infinity,
+    ).first;
+  }
+
+  /// Wrap a tabbed paragraph at a tab boundary when its following field no
+  /// longer fits the text band, matching LibreOffice's libvisio text object.
+  List<({
+    List<TextPainter> painters,
+    List<double> dys,
+    List<double> offsets,
+    double width,
+    double height,
+  })> _layoutTabbedCanvasLines(
+    List<VsdxTextRun> runs, {
+    required List<VsdxTabSet> tabSets,
+    required double defaultTabStopInches,
+    required double scale,
+    required bool applyPosDy,
+    required Color? backgroundColor,
+    required double firstLineMaxWidth,
+    required double continuationMaxWidth,
+  }) {
     final tokens = <({TextPainter? painter, double dy, int? tabSetIx, String text, VsdxTextRun run})>[];
     for (final run in runs) {
       var start = 0;
@@ -3815,12 +3853,39 @@ class VsdxPainter extends CustomPainter {
       }
     }
 
-    final painters = <TextPainter>[];
-    final dys = <double>[];
-    final offsets = <double>[];
+    final lines = <({
+      List<TextPainter> painters,
+      List<double> dys,
+      List<double> offsets,
+      double width,
+      double height,
+    })>[];
+    var painters = <TextPainter>[];
+    var dys = <double>[];
+    var offsets = <double>[];
     var x = 0.0;
     var maxX = 0.0;
     var height = 1.0;
+    var lineLimit = firstLineMaxWidth;
+
+    void finishLine() {
+      if (painters.isEmpty) return;
+      lines.add((
+        painters: painters,
+        dys: dys,
+        offsets: offsets,
+        width: maxX,
+        height: height,
+      ));
+      painters = <TextPainter>[];
+      dys = <double>[];
+      offsets = <double>[];
+      x = 0.0;
+      maxX = 0.0;
+      height = 1.0;
+      lineLimit = continuationMaxWidth;
+    }
+
     for (var i = 0; i < tokens.length; i++) {
       final token = tokens[i];
       if (token.tabSetIx case final tabSetIx?) {
@@ -3850,7 +3915,7 @@ class VsdxPainter extends CustomPainter {
             }
           }
         }
-        x = visioTabFieldStart(
+        final fieldX = visioTabFieldStart(
               tabSets: tabSets,
               tabSetIx: tabSetIx,
               currentPosition: x / scale,
@@ -3859,6 +3924,14 @@ class VsdxPainter extends CustomPainter {
               defaultTabStop: defaultTabStopInches,
             ) *
             scale;
+        if (painters.isNotEmpty && lineLimit.isFinite &&
+            fieldX + following > lineLimit + 1e-6) {
+          finishLine();
+          // The wrapping tab is consumed; its field begins at the next line's
+          // text-band origin in LibreOffice Draw.
+          continue;
+        }
+        x = fieldX;
         maxX = math.max(maxX, x);
         continue;
       }
@@ -3870,7 +3943,8 @@ class VsdxPainter extends CustomPainter {
       maxX = math.max(maxX, x);
       height = math.max(height, tp.height + token.dy.abs());
     }
-    if (painters.isEmpty) {
+    finishLine();
+    if (lines.isEmpty) {
       final empty = _posShiftPiece(
         '',
         runs.isEmpty ? const VsdxTextRun(text: '') : runs.first,
@@ -3878,18 +3952,15 @@ class VsdxPainter extends CustomPainter {
         applyPosDy: applyPosDy,
         backgroundColor: backgroundColor,
       );
-      painters.add(empty.tp);
-      dys.add(empty.dy);
-      offsets.add(x);
-      height = empty.tp.height;
+      lines.add((
+        painters: <TextPainter>[empty.tp],
+        dys: <double>[empty.dy],
+        offsets: const <double>[0],
+        width: 0,
+        height: empty.tp.height,
+      ));
     }
-    return (
-      painters: painters,
-      dys: dys,
-      offsets: offsets,
-      width: maxX,
-      height: height,
-    );
+    return lines;
   }
 
   /// Default Visio-style bullet glyph for [VsdxParaStyle.bullet] (1…).

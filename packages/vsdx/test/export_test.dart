@@ -1519,6 +1519,66 @@ void main() {
         reason: 'tab control characters must become positioned tspans');
   });
 
+  test('SVG wraps an overflowing tab field like LibreOffice', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Wrapped tab',
+      widthInches: 3,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 1.5,
+          pinY: 1,
+          width: 3,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Seco',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'DejaVu Sans',
+                  fontSizeInches: 12 / 72,
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'nd line and tab:\tvalue',
+                tabIndices: <int>[0],
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'DejaVu Sans',
+                  fontSizeInches: 14 / 72,
+                  style: VsdxFontStyle(bold: true),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0.05,
+              marginRightInches: 0.05,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              defaultTabStopInches: 0.4,
+            ),
+          ),
+        ),
+      ],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final prefix = svg.indexOf('Seco');
+    final value = svg.indexOf('value');
+    expect(prefix, greaterThanOrEqualTo(0));
+    expect(value, greaterThan(prefix));
+    expect(svg.indexOf('</text>', prefix), lessThan(value),
+        reason: 'the overflowing tab field must start in a new SVG text row');
+  });
+
   test('SVG open-concave arrow (id 17) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

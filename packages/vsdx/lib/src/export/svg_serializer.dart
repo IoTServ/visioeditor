@@ -4696,12 +4696,20 @@ class VsdxToSvgSerializer {
         layoutW - layoutMr - p.style.indentRightInches - firstBandX,
       );
       final paragraphHasTabs = p.segs.any((seg) => seg.$1.contains('\t'));
-      final wrapped = shape.wordWrap && !paragraphHasTabs
-          ? _wrapSvgSegs(
-              p.segs,
-              availRest,
-              firstLineMaxWidth: availFirst,
-            )
+      final wrapped = shape.wordWrap
+          ? paragraphHasTabs
+              ? _wrapSvgTabbedSegs(
+                  p.segs,
+                  tabSets: shape.richText.tabSets,
+                  defaultTabStopInches: block.defaultTabStopInches,
+                  firstLineMaxWidth: availFirst,
+                  continuationMaxWidth: availRest,
+                )
+              : _wrapSvgSegs(
+                  p.segs,
+                  availRest,
+                  firstLineMaxWidth: availFirst,
+                )
           : <List<(String text, VsdxTextRun run)>>[p.segs];
       for (var li = 0; li < wrapped.length; li++) {
         layouts.add((
@@ -4940,12 +4948,21 @@ class VsdxToSvgSerializer {
       final firstX = hasBullet ? restX : ml + indentL + indentF;
       final bandRight = layoutW - mr - p.style.indentRightInches;
       final paragraphHasTabs = p.segs.any((seg) => seg.$1.contains('\t'));
-      final wrapped = shape.wordWrap && !paragraphHasTabs
-          ? _wrapSvgSegs(
-              p.segs,
-              math.max(0.04, bandRight - restX),
-              firstLineMaxWidth: math.max(0.04, bandRight - firstX),
-            )
+      final wrapped = shape.wordWrap
+          ? paragraphHasTabs
+              ? _wrapSvgTabbedSegs(
+                  p.segs,
+                  tabSets: tabSets,
+                  defaultTabStopInches: defaultTabStopInches,
+                  firstLineMaxWidth: math.max(0.04, bandRight - firstX),
+                  continuationMaxWidth:
+                      math.max(0.04, bandRight - restX),
+                )
+              : _wrapSvgSegs(
+                  p.segs,
+                  math.max(0.04, bandRight - restX),
+                  firstLineMaxWidth: math.max(0.04, bandRight - firstX),
+                )
           : <List<(String text, VsdxTextRun run)>>[p.segs];
       for (var i = 0; i < wrapped.length; i++) {
         final xBand = i == 0 ? firstX : restX;
@@ -5254,6 +5271,14 @@ class VsdxToSvgSerializer {
     var w = 0.0;
     final smallCaps = style.style.smallCaps;
     final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
+    // The neutral table below is Helvetica/Arial-based. DejaVu Sans — the
+    // face embedded with LibreOffice and used by the VDX corpus — is wider,
+    // especially in its bold face. Account for that before deciding line and
+    // tab-field wraps; emitted SVG still lets the renderer use exact metrics.
+    final family = (style.fontFamily ?? '').toLowerCase();
+    final faceWidthFactor = family.contains('dejavu sans')
+        ? (style.style.bold ? 1.28 : 1.06)
+        : 1.0;
     for (var i = 0; i < runes.length; i++) {
       final r = runes[i];
       final runeFs = isVisioComplexScriptRune(r) ? complexFs : fs;
@@ -5269,7 +5294,7 @@ class VsdxToSvgSerializer {
         final measuredRune = smallCaps && r >= 0x61 && r <= 0x7a
             ? r - 0x20
             : r;
-        w += chFs * _latinAdvanceFactor(measuredRune);
+        w += chFs * _latinAdvanceFactor(measuredRune) * faceWidthFactor;
       }
       if (i + 1 < runes.length) {
         // Flutter applies tracking between glyphs. Complex-script tspans use
@@ -5361,6 +5386,109 @@ class VsdxToSvgSerializer {
       out.removeLast();
     }
     return out;
+  }
+
+  /// Wrap a tabbed paragraph at the tab boundary when the following field no
+  /// longer fits, matching LibreOffice's layout of libvisio text objects.
+  List<List<(String text, VsdxTextRun run)>> _wrapSvgTabbedSegs(
+    List<(String text, VsdxTextRun run)> segs, {
+    required List<VsdxTabSet> tabSets,
+    required double defaultTabStopInches,
+    required double firstLineMaxWidth,
+    required double continuationMaxWidth,
+  }) {
+    final tokens = <({String text, VsdxTextRun run, int? tabSetIx})>[];
+    for (final (raw, run) in segs) {
+      var start = 0;
+      var tab = 0;
+      for (var i = 0; i < raw.length; i++) {
+        if (raw.codeUnitAt(i) != 0x09) continue;
+        if (i > start) {
+          tokens.add((
+            text: raw.substring(start, i),
+            run: run,
+            tabSetIx: null,
+          ));
+        }
+        tokens.add((
+          text: '',
+          run: run,
+          tabSetIx: tab < run.tabIndices.length ? run.tabIndices[tab] : 0,
+        ));
+        tab++;
+        start = i + 1;
+      }
+      if (start < raw.length) {
+        tokens.add((text: raw.substring(start), run: run, tabSetIx: null));
+      }
+    }
+
+    final lines = <List<(String text, VsdxTextRun run)>>[];
+    var line = <(String text, VsdxTextRun run)>[];
+    var x = 0.0;
+    var lineLimit = firstLineMaxWidth;
+    bool hasText() => line.any((seg) => seg.$1.isNotEmpty);
+    void finishLine() {
+      if (!hasText()) return;
+      lines.add(line);
+      line = <(String text, VsdxTextRun run)>[];
+      x = 0.0;
+      lineLimit = continuationMaxWidth;
+    }
+
+    for (var i = 0; i < tokens.length; i++) {
+      final token = tokens[i];
+      if (token.tabSetIx case final tabSetIx?) {
+        var following = 0.0;
+        var decimalPrefix = 0.0;
+        var sawDecimal = false;
+        for (var j = i + 1; j < tokens.length; j++) {
+          final next = tokens[j];
+          if (next.tabSetIx != null) break;
+          following += _estSvgTextWidth(next.text, next.run.charStyle);
+          if (!sawDecimal) {
+            final dot = next.text.indexOf('.');
+            if (dot < 0) {
+              decimalPrefix += _estSvgTextWidth(
+                next.text,
+                next.run.charStyle,
+              );
+            } else {
+              decimalPrefix += _estSvgTextWidth(
+                next.text.substring(0, dot),
+                next.run.charStyle,
+              );
+              sawDecimal = true;
+            }
+          }
+        }
+        final fieldX = visioTabFieldStart(
+          tabSets: tabSets,
+          tabSetIx: tabSetIx,
+          currentPosition: x,
+          followingWidth: following,
+          decimalPrefixWidth: decimalPrefix,
+          defaultTabStop: defaultTabStopInches,
+        );
+        if (hasText() && fieldX + following > lineLimit + 1e-9) {
+          finishLine();
+          continue; // The wrapping tab is consumed by the line break.
+        }
+        line.add((
+          '\t',
+          token.run.copyWith(text: '\t', tabIndices: <int>[tabSetIx]),
+        ));
+        x = fieldX;
+        continue;
+      }
+      line.add((
+        token.text,
+        token.run.copyWith(text: token.text, tabIndices: const <int>[]),
+      ));
+      x += _estSvgTextWidth(token.text, token.run.charStyle);
+    }
+    finishLine();
+    return lines.isEmpty ? <List<(String, VsdxTextRun)>>[segs] : lines;
   }
 
   ({String body, double width}) _writeSvgTabbedTspans(
