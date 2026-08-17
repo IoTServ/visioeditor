@@ -147,10 +147,14 @@ class VsdxImageCache extends ChangeNotifier {
       final codec = await ui.instantiateImageCodec(
         Uint8List.fromList(bytes),
       );
-      final frame = await codec.getNextFrame();
-      _ready[src.partName] = frame.image;
-      _decodeEpoch++;
-      notifyListeners();
+      try {
+        final frame = await codec.getNextFrame();
+        _ready[src.partName] = frame.image;
+        _decodeEpoch++;
+        notifyListeners();
+      } finally {
+        codec.dispose();
+      }
     } catch (_) {
       // Decoding failure — renderer falls back to its placeholder.
     } finally {

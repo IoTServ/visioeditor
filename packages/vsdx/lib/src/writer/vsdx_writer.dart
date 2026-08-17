@@ -8341,6 +8341,12 @@ class VsdxWriter {
     }
     if (!emittedGeom) {
       final frame = VsdxGeometry(
+        // ForeignData is painted independently of Geometry. Keep a hidden
+        // frame for Edraw/Visio hit-testing, but do not manufacture visible
+        // fill/line/effects that were absent from the source picture. In
+        // particular, inherited libvisio shadows must not appear after a
+        // VDX -> synthesised VSDX -> reopen round-trip.
+        noShow: true,
         noFill: true,
         noLine: true,
         commands: <VsdxPathCommand>[

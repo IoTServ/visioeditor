@@ -315,8 +315,19 @@ void main() {
         expect(allText, contains(expected));
       }
       expect(reopened.pages.single.findShapeById(8)!.hasImage, isTrue);
+      expect(
+        reopened.pages.single.findShapeById(8)!.geometries,
+        everyElement(isA<VsdxGeometry>().having(
+          (geometry) => geometry.noShow,
+          'NoShow',
+          isTrue,
+        )),
+        reason: 'a synthetic Foreign hit frame must not acquire inherited '
+            'fill, line, or shadow after reopen',
+      );
       final reopenedDibShape = reopened.pages.single.findShapeById(9)!;
       expect(reopenedDibShape.hasImage, isTrue);
+      expect(reopenedDibShape.geometries.single.noShow, isTrue);
       final reopenedDib =
           reopened.images.findByPart(reopenedDibShape.imagePartName!)!;
       expect(reopenedDib.mimeType, 'image/bmp');
