@@ -2442,19 +2442,28 @@ class VsdxToSvgSerializer {
                   'A ${_n(rx)} ${_n(ry)} 0 1 0 ${_n(cx - rx)} ${_n(cy)} ',
                 );
             } else {
-              // Rotated ellipse: dense polyline.
-              const steps = 64;
-              for (var i = 0; i <= steps; i++) {
-                final t = 2 * math.pi * i / steps;
-                final cosT = math.cos(t), sinT = math.sin(t);
-                final x = cx + ax * cosT + bx * sinT;
-                final y = cy + ay * cosT + by * sinT;
-                if (i == 0) {
-                  m(x, y);
-                } else {
-                  l(x, y);
-                }
+              // libvisio emits continuous elliptical arcs. SVG's A command
+              // cannot express a general affine ellipse whose conjugate axes
+              // are no longer perpendicular, so transform four unit-circle
+              // cubics by the two authored axis vectors.
+              const k = 0.5522847498307936;
+              m(cx + ax, cy + ay);
+              void cubic(double c1x, double c1y, double c2x, double c2y,
+                  double ex, double ey) {
+                out.write(
+                  'C ${_n(c1x)} ${_n(c1y)} ${_n(c2x)} ${_n(c2y)} '
+                  '${_n(ex)} ${_n(ey)} ',
+                );
               }
+              cubic(cx + ax + k * bx, cy + ay + k * by,
+                  cx + bx + k * ax, cy + by + k * ay, cx + bx, cy + by);
+              cubic(cx + bx - k * ax, cy + by - k * ay,
+                  cx - ax + k * bx, cy - ay + k * by, cx - ax, cy - ay);
+              cubic(cx - ax - k * bx, cy - ay - k * by,
+                  cx - bx - k * ax, cy - by - k * ay, cx - bx, cy - by);
+              cubic(cx - bx + k * ax, cy - by + k * ay,
+                  cx + ax - k * bx, cy + ay - k * by, cx + ax, cy + ay);
+              out.write('Z ');
             }
           }
         case PolylineTo(

@@ -2439,6 +2439,42 @@ void main() {
     expect(carrier, isNot(contains('M 0 1')));
   });
 
+  test('SVG keeps rotated affine Ellipse continuous like libvisio arcs', () {
+    const page = VsdxPage(
+      id: 0,
+      name: 'Page-1',
+      widthInches: 6,
+      heightInches: 4,
+      shapes: <VsdxShape>[
+        VsdxShape(
+          id: 1,
+          name: 'Affine ellipse',
+          pinX: 3,
+          pinY: 2,
+          width: 6,
+          height: 4,
+          geometries: <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                EllipseCmd(cx: 3, cy: 2, aX: 4.2, aY: 2.7,
+                    bX: 2.55, bY: 2.9),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    final pathData = RegExp(r'<path d="([^"]+)" fill=')
+        .firstMatch(svg)!
+        .group(1)!;
+
+    expect(RegExp(r'\bC ').allMatches(pathData), hasLength(4));
+    expect(pathData, isNot(contains(' L ')));
+    expect(pathData, endsWith('Z'));
+  });
+
   test('SVG arrow 10 is a ball and arrow 13 a long filled triangle', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

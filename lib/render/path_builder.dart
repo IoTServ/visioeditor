@@ -9,6 +9,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 import 'dart:ui';
 
 import 'package:vsdx/vsdx.dart';
@@ -475,7 +476,11 @@ void _arcByBow(
 }
 
 /// Visio Ellipse row: centre `(cx,cy)`, axis end-point A and conjugate B.
-/// Samples a rotated ellipse when A/B are not axis-aligned.
+///
+/// libvisio emits this as two true elliptical arcs. A transformed unit oval
+/// preserves that continuous conic for rotated and affine (non-perpendicular
+/// conjugate-axis) rows; sampling it into line segments leaves visible facets
+/// after nested rotation and at high zoom.
 void _ellipseFromPoints(
   Path path,
   double cx,
@@ -505,28 +510,12 @@ void _ellipseFromPoints(
   }
   final ax = aX - cx, ay = aY - cy;
   final bx = bX - cx, by = bY - cy;
-  final rx = math.sqrt(ax * ax + ay * ay);
-  final ry = math.sqrt(bx * bx + by * by);
-  // Axis-aligned fast path.
-  if (ay.abs() < 1e-9 && bx.abs() < 1e-9) {
-    path.addOval(Rect.fromCenter(
-      center: Offset(cx, cy),
-      width: 2 * rx,
-      height: 2 * ry,
-    ));
-    return;
-  }
-  const steps = 64;
-  for (var i = 0; i <= steps; i++) {
-    final t = 2 * math.pi * i / steps;
-    final cosT = math.cos(t), sinT = math.sin(t);
-    final x = cx + ax * cosT + bx * sinT;
-    final y = cy + ay * cosT + by * sinT;
-    if (i == 0) {
-      path.moveTo(x, y);
-    } else {
-      path.lineTo(x, y);
-    }
-  }
-  path.close();
+  final unit = Path()..addOval(const Rect.fromLTRB(-1, -1, 1, 1));
+  final transform = Float64List.fromList(<double>[
+    ax, ay, 0, 0,
+    bx, by, 0, 0,
+    0, 0, 1, 0,
+    cx, cy, 0, 1,
+  ]);
+  path.addPath(unit.transform(transform), Offset.zero);
 }
