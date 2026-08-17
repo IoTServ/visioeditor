@@ -23,6 +23,7 @@ import '../../model/image.dart';
 import '../../model/layer.dart';
 import '../../model/master.dart';
 import '../../model/page.dart';
+import '../../model/rich_text.dart';
 import '../../model/shape.dart';
 import '../../model/stylesheet.dart';
 import '../../model/theme.dart';
@@ -180,7 +181,11 @@ class VdxDocumentParser {
         stylesheets: stylesheets,
         imageRels: localMedia.relationships,
         style: StyleParser(colorPalette: colors),
-        richText: RichTextParser(colorPalette: colors, fontNames: fonts),
+        richText: RichTextParser(
+          colorPalette: colors,
+          fontNames: fonts,
+          useDiagramMlCharacterCounts: true,
+        ),
       );
       final parsed = MasterParser(shapes: shapeParser).parse(
         contents,
@@ -249,7 +254,11 @@ class VdxDocumentParser {
         stylesheets: stylesheets,
         imageRels: localMedia.relationships,
         style: StyleParser(colorPalette: colors),
-        richText: RichTextParser(colorPalette: colors, fontNames: fonts),
+        richText: RichTextParser(
+          colorPalette: colors,
+          fontNames: fonts,
+          useDiagramMlCharacterCounts: true,
+        ),
       ).withFieldResolver(FieldResolver(
         pageName: name,
         pageIndex: pageIndex,
@@ -259,19 +268,20 @@ class VdxDocumentParser {
         sheet.shadowOffsetXInches,
         sheet.shadowOffsetYInches,
       );
+      final layers = pageSheet == null
+          ? const <VsdxLayer>[]
+          : LayerParser(colorPalette: colors).parseLayers(pageSheet);
       final shapes = <VsdxShape>[];
       for (final shape in parser.parseShapes(
         contents,
         partName: 'VDX/Page-$id',
       )) {
-        shapes.add(scaleVisioDrawingShape(
+        final scaled = scaleVisioDrawingShape(
           _restoreUnresolvedConnectorFrame(shape, masters),
           drawingScale,
-        ));
+        );
+        shapes.add(_materializeDiagramMlLayerColor(scaled, layers));
       }
-      final layers = pageSheet == null
-          ? const <VsdxLayer>[]
-          : LayerParser(colorPalette: colors).parseLayers(pageSheet);
       final pageColor =
           pageSheet == null ? null : _readPageColor(pageSheet, colors);
       media.merge(localMedia);
@@ -317,6 +327,64 @@ class VdxDocumentParser {
     }
     return List.unmodifiable(pages);
   }
+}
+
+/// libvisio applies a VDX layer colour while producing its drawing output,
+/// rather than exposing it as an optional editor view. Preserve that visible
+/// result in the shared model so Canvas, SVG, and the synthesised VSDX agree
+/// without requiring callers to discover and enable Color-by-Layer.
+///
+/// `VSDContentCollector::_lineProperties()` and `_fillCharProperties()` tint
+/// strokes and text, but intentionally leave shape fills unchanged. A group
+/// passes its tint to children unless a child declares an explicit (possibly
+/// uncoloured) membership, matching the collector/render traversal.
+VsdxShape _materializeDiagramMlLayerColor(
+  VsdxShape shape,
+  List<VsdxLayer> layers, [
+  VsdxLayer? inherited,
+]) {
+  var source = inherited;
+  if (shape.layerMemberIds.isNotEmpty) {
+    source = layerColorSource(layers, shape.layerMemberIds);
+  }
+  final color = source?.color;
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      _materializeDiagramMlLayerColor(child, layers, source),
+  ];
+  if (color == null) {
+    return children.length == shape.children.length &&
+            _sameShapeChildren(children, shape.children)
+        ? shape
+        : shape.copyWith(children: List.unmodifiable(children));
+  }
+  final transparency = source!.colorTrans.clamp(0.0, 1.0);
+  return shape.copyWith(
+    line: shape.line.copyWith(
+      color: color,
+      transparency: transparency,
+      clearThemeColorIndex: true,
+    ),
+    richText: shape.richText.copyWith(
+      runs: List.unmodifiable(<VsdxTextRun>[
+        for (final run in shape.richText.runs)
+          run.copyWith(
+            charStyle: run.charStyle.withSolidColor(color).copyWith(
+                  transparency: transparency,
+                ),
+          ),
+      ]),
+    ),
+    children: List.unmodifiable(children),
+  );
+}
+
+bool _sameShapeChildren(List<VsdxShape> a, List<VsdxShape> b) {
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if (!identical(a[i], b[i])) return false;
+  }
+  return true;
 }
 
 /// Restore the stencil XForm used by DiagramML for unresolved dynamic routes.
@@ -486,7 +554,14 @@ XmlElement _normaliseStyleSheet(XmlElement source) {
     }
   }
   for (final entry in rows.entries) {
-    children.add(_section(entry.key, entry.value));
+    final sectionRows = entry.key == 'Character'
+        ? entry.value.reversed.toList(growable: false)
+        : entry.value;
+    // VSDContentCollector::collectCharIXStyle() deliberately ignores IX and
+    // overlays every stylesheet Character row onto one default style. The
+    // last VDX row therefore wins. StyleSheetParser reads the first normalised
+    // row, so reverse only this DiagramML section to preserve that behaviour.
+    children.add(_section(entry.key, sectionRows));
   }
   return XmlElement(
     XmlName('StyleSheet'),

@@ -281,8 +281,9 @@ class PageParser {
     // cells are absent (older writers omitted them), default to pattern 0
     // rather than Visio's solid defaults so round-trips stay visually empty.
     final isForeign = shapeTypeAttr == 'Foreign';
-    final fillStyleId = int.tryParse(shapeEl.getAttribute('FillStyle') ?? '') ??
-        proto?.fillStyleId;
+    final ownFillStyleId =
+        int.tryParse(shapeEl.getAttribute('FillStyle') ?? '');
+    final fillStyleId = ownFillStyleId ?? proto?.fillStyleId;
     final sheetFill =
         fillStyleId != null ? _stylesheets.resolveFill(fillStyleId) : null;
     // libvisio reads evaluated V= colour caches from master instances even
@@ -291,18 +292,27 @@ class PageParser {
     final preferCachedInhStyle = proto != null;
     final fill = _style.parseFill(
       shapeEl,
-      defaults: proto?.fill ?? sheetFill ?? libvisioShapeFillDefault,
+      // VSDContentCollector::collectShape replaces a master fill with an
+      // explicitly selected instance FillStyle before applying local cells.
+      // Without an explicit style, the stencil's local fill still inherits.
+      defaults: ownFillStyleId != null
+          ? (sheetFill ?? libvisioShapeFillDefault)
+          : (proto?.fill ?? sheetFill ?? libvisioShapeFillDefault),
       preferCachedInh: preferCachedInhStyle,
     );
-    final lineStyleId = int.tryParse(shapeEl.getAttribute('LineStyle') ?? '') ??
-        proto?.lineStyleId;
+    final ownLineStyleId =
+        int.tryParse(shapeEl.getAttribute('LineStyle') ?? '');
+    final lineStyleId = ownLineStyleId ?? proto?.lineStyleId;
     final sheetLine =
         lineStyleId != null ? _stylesheets.resolveLine(lineStyleId) : null;
     var line = _style.parseLine(
       shapeEl,
-      defaults: proto?.line ??
-          sheetLine ??
-          (isForeign ? const VsdxLine(pattern: 0) : VsdxLine.defaultLine),
+      defaults: ownLineStyleId != null
+          ? (sheetLine ??
+              (isForeign ? const VsdxLine(pattern: 0) : VsdxLine.defaultLine))
+          : (proto?.line ??
+              sheetLine ??
+              (isForeign ? const VsdxLine(pattern: 0) : VsdxLine.defaultLine)),
       preferCachedInh: preferCachedInhStyle,
     );
     final sheetShadow = fillStyleId == null
@@ -314,7 +324,9 @@ class PageParser {
           );
     final shadow = _style.parseShadow(
       shapeEl,
-      defaults: proto?.shadow ?? sheetShadow ?? VsdxShadow.disabled,
+      defaults: ownFillStyleId != null
+          ? (sheetShadow ?? VsdxShadow.disabled)
+          : (proto?.shadow ?? sheetShadow ?? VsdxShadow.disabled),
       pageOffsetXInches: pageShadowOffsetXInches,
       pageOffsetYInches: pageShadowOffsetYInches,
     );

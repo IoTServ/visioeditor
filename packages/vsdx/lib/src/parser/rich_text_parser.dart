@@ -15,6 +15,8 @@
 /// PageParser populates from the Master prototype).
 library;
 
+import 'dart:convert';
+
 import 'package:xml/xml.dart';
 
 import '../model/rich_text.dart';
@@ -177,6 +179,7 @@ class RichTextParser {
     this.fieldResolver = FieldResolver.placeholder,
     this.colorPalette = const <int, VsdxColor>{},
     this.fontNames = const <int, String>{},
+    this.useDiagramMlCharacterCounts = false,
   });
 
   /// Field substitution policy. Defaults to a static placeholder; the
@@ -185,6 +188,16 @@ class RichTextParser {
   final FieldResolver fieldResolver;
   final Map<int, VsdxColor> colorPalette;
   final Map<int, String> fontNames;
+
+  /// Reproduce libvisio's DiagramML/VDX character-run ordering.
+  ///
+  /// VDX stores the amount of text associated with each `<cp IX>` marker,
+  /// but libvisio emits the Character rows in numeric IX order and applies
+  /// those accumulated counts to the text stream from the beginning. This is
+  /// observably different from VSDX, where each marker changes style at its
+  /// literal position. Keep the compatibility behaviour opt-in so native
+  /// VSDX parsing retains its marker semantics.
+  final bool useDiagramMlCharacterCounts;
 
   /// Parse the shape's text into a [VsdxRichText].
   ///
@@ -232,7 +245,7 @@ class RichTextParser {
       );
     }
 
-    final runs = _splitRuns(
+    var runs = _splitRuns(
       textEl,
       charStyles: charStyles,
       paraStyles: paraStyles,
@@ -240,6 +253,14 @@ class RichTextParser {
       defaultPara: defaultPara,
       fields: fields,
     );
+    if (useDiagramMlCharacterCounts) {
+      runs = _applyDiagramMlCharacterCounts(
+        textEl,
+        runs: runs,
+        charStyles: charStyles,
+        defaultChar: defaultChar,
+      );
+    }
     return VsdxRichText(
       runs: List.unmodifiable(runs),
       textBlock: block,
@@ -254,6 +275,7 @@ class RichTextParser {
         fieldResolver: resolver,
         colorPalette: colorPalette,
         fontNames: fontNames,
+        useDiagramMlCharacterCounts: useDiagramMlCharacterCounts,
       );
 
   /// Public: parse only the Character section into a map IX→style (used by
@@ -827,6 +849,104 @@ class RichTextParser {
     }
     flush();
     return runs;
+  }
+
+  /// Match `VSDXMLParserBase::readText()` + `VSDCharacterList::handle()`:
+  /// text byte counts are accumulated per cp IX, Character rows are emitted
+  /// in numeric IX order, and the resulting counts are consumed one Unicode
+  /// character at a time by `VSDContentCollector::_flushText()`.
+  List<VsdxTextRun> _applyDiagramMlCharacterCounts(
+    XmlElement textEl, {
+    required List<VsdxTextRun> runs,
+    required Map<int, VsdxCharStyle> charStyles,
+    required VsdxCharStyle defaultChar,
+  }) {
+    if (charStyles.length < 2 ||
+        runs.isEmpty ||
+        runs.any((run) => run.fieldSpans.isNotEmpty)) {
+      return runs;
+    }
+
+    final counts = <int, int>{};
+    var cp = 0;
+    for (final node in textEl.children) {
+      if (node is XmlText) {
+        final value = normalizeVisioText(node.value);
+        counts[cp] = (counts[cp] ?? 0) + utf8.encode(value).length;
+      } else if (node is XmlElement) {
+        if (node.name.local == 'fld') return runs;
+        if (node.name.local == 'cp') {
+          cp = int.tryParse(node.getAttribute('IX') ?? '') ?? cp;
+        }
+      }
+    }
+
+    final order = charStyles.keys.toList()..sort();
+    if (order.length < 2) return runs;
+    final bands = <({int end, VsdxCharStyle style})>[];
+    var end = 0;
+    for (var position = 0; position < order.length; position++) {
+      final ix = order[position];
+      final count = counts[ix] ?? 0;
+      // VSDCharacterList always emits its first row; later unused rows are
+      // skipped. VSDContentCollector consumes one character before advancing
+      // a zero-count first row, because its decrement/advance happens after
+      // inserting the current character.
+      if (count > 0 || position == 0) {
+        end += count > 0 ? count : 1;
+        bands.add((end: end, style: charStyles[ix] ?? defaultChar));
+      }
+    }
+    if (bands.isEmpty) return runs;
+
+    final out = <VsdxTextRun>[];
+    var globalRune = 0;
+    var bandIndex = 0;
+    for (final run in runs) {
+      final offsets = <int>[0];
+      var codeUnits = 0;
+      for (final rune in run.text.runes) {
+        codeUnits += rune > 0xffff ? 2 : 1;
+        offsets.add(codeUnits);
+      }
+      var localRune = 0;
+      var consumedTabs = 0;
+      while (localRune < offsets.length - 1) {
+        while (bandIndex < bands.length - 1 &&
+            globalRune >= bands[bandIndex].end) {
+          bandIndex++;
+        }
+        final band = bands[bandIndex];
+        final available = offsets.length - 1 - localRune;
+        final remaining =
+            band.end > globalRune ? band.end - globalRune : available;
+        final take = remaining < available ? remaining : available;
+        if (take <= 0) {
+          if (bandIndex < bands.length - 1) {
+            bandIndex++;
+            continue;
+          }
+          break;
+        }
+        final startOffset = offsets[localRune];
+        final endOffset = offsets[localRune + take];
+        final text = run.text.substring(startOffset, endOffset);
+        final tabCount = '\t'.allMatches(text).length;
+        out.add(run.copyWith(
+          text: text,
+          charStyle: band.style,
+          fieldSpans: const <VsdxFieldSpan>[],
+          tabIndices: run.tabIndices
+              .skip(consumedTabs)
+              .take(tabCount)
+              .toList(growable: false),
+        ));
+        consumedTabs += tabCount;
+        localRune += take;
+        globalRune += take;
+      }
+    }
+    return out;
   }
 
   /// `<Section N="Tabs">` — libvisio `PositionN` / `AlignmentN` cells per row.

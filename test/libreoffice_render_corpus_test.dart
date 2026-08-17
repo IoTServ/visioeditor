@@ -279,8 +279,9 @@ void main() {
               '${caseDirectory.path}/app-${pageIndex + 1}.svg',
             ).writeAsStringSync(appSvg);
             if (pageIndex == 0) {
+              final svgText = _svgPlainText(appSvg);
               for (final expected in entry.expectedTextFragments) {
-                if (!appSvg.contains(expected)) {
+                if (!svgText.contains(expected)) {
                   failures.add('${entry.name}: SVG lost text "$expected"');
                 }
               }
@@ -374,6 +375,17 @@ void main() {
   );
 }
 
+/// Join text split across SVG `<text>` / `<tspan>` elements. Checking the raw
+/// markup reports false losses when a character-style boundary falls inside
+/// an expected phrase (as libvisio's VDX cp-count ordering commonly does).
+String _svgPlainText(String svg) => svg
+    .replaceAll(RegExp(r'<[^>]*>'), '')
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&amp;', '&');
+
 /// Flutter's test binding otherwise substitutes the square-glyph Ahem font,
 /// which makes a visual comparison with LibreOffice actively misleading.
 /// This audit is opt-in and already depends on host executables, so loading a
@@ -393,6 +405,13 @@ Future<void> _loadAuditFonts() async {
       'A real Latin font is required; set $_latinFontEnvironment',
     );
   }
+  final latinBold = _firstExistingFile(<String?>[
+    '/System/Library/Fonts/Supplemental/Arial Bold.ttf',
+    '/Library/Fonts/Arial Bold.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  ]);
   await _loadFontAliases(latin, const <String>[
     'Arial',
     'Arial Black',
@@ -400,7 +419,6 @@ Future<void> _loadAuditFonts() async {
     'Calibri Light',
     'Cambria',
     'Courier New',
-    'DejaVu Sans',
     'Helvetica',
     'Liberation Sans',
     'Liberation Serif',
@@ -409,7 +427,27 @@ Future<void> _loadAuditFonts() async {
     'Times New Roman',
     'Trebuchet MS',
     'Verdana',
+  ], bold: latinBold);
+
+  // Do not alias every family to DejaVu: most legacy fixtures request Arial
+  // or Liberation Sans and their text metrics are observably different. The
+  // DiagramML coverage document explicitly requests DejaVu Sans, so register
+  // LibreOffice's own regular/bold pair only for that family.
+  final dejavu = _firstExistingFile(const <String?>[
+    '/Applications/LibreOffice.app/Contents/Resources/fonts/truetype/DejaVuSans.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
   ]);
+  final dejavuBold = _firstExistingFile(const <String?>[
+    '/Applications/LibreOffice.app/Contents/Resources/fonts/truetype/DejaVuSans-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+  ]);
+  if (dejavu != null) {
+    await _loadFontAliases(
+      dejavu,
+      const <String>['DejaVu Sans'],
+      bold: dejavuBold,
+    );
+  }
 
   final cjk = _firstExistingFile(<String?>[
     Platform.environment[_cjkFontEnvironment],
@@ -444,10 +482,20 @@ File? _firstExistingFile(Iterable<String?> paths) {
   return null;
 }
 
-Future<void> _loadFontAliases(File file, List<String> families) async {
+Future<void> _loadFontAliases(
+  File file,
+  List<String> families, {
+  File? bold,
+}) async {
   final bytes = ByteData.sublistView(file.readAsBytesSync());
+  final boldBytes = bold == null
+      ? null
+      : ByteData.sublistView(bold.readAsBytesSync());
   for (final family in families) {
     final loader = FontLoader(family)..addFont(Future<ByteData>.value(bytes));
+    if (boldBytes != null) {
+      loader.addFont(Future<ByteData>.value(boldBytes));
+    }
     await loader.load();
   }
 }

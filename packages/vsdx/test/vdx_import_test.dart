@@ -6,6 +6,7 @@ import 'package:charset/charset.dart' as charset;
 import 'package:cp949_codec/cp949_codec.dart' as korean;
 import 'package:enough_convert/enough_convert.dart' as enough;
 import 'package:test/test.dart';
+import 'package:vsdx/src/parser/rich_text_parser.dart';
 import 'package:vsdx/vsdx.dart';
 import 'package:xml/xml.dart';
 
@@ -120,13 +121,35 @@ void main() {
       expect(shapes, hasLength(10));
       final masterInstance = page.findShapeById(1)!;
       expect(masterInstance.geometries.single.commands, hasLength(5));
-      expect(masterInstance.fill.foreground, const VsdxColor(0xFFE2F0D9));
+      expect(masterInstance.fill.foreground, const VsdxColor(0xFFFFFFFF));
+      expect(masterInstance.fill.foregroundTransparency, closeTo(0.15, 1e-9));
+      expect(masterInstance.line.color, const VsdxColor(0xFF2F5597));
       expect(masterInstance.richText.plainText,
           contains('All rich text retained'));
       expect(
           masterInstance.richText.plainText, contains('Second line and tab'));
       expect(masterInstance.richText.runs.length, greaterThanOrEqualTo(2));
       expect(masterInstance.richText.tabSets, hasLength(1));
+      expect(
+        masterInstance.richText.runs.map((run) => run.charStyle.color),
+        everyElement(const VsdxColor(0xFF2F5597)),
+        reason: 'libvisio materialises VDX layer colour on text and stroke',
+      );
+      expect(
+        masterInstance.richText.runs
+            .where((run) => !run.charStyle.style.bold)
+            .map((run) => run.text)
+            .join(),
+        'All rich text retained\nSeco',
+        reason: 'libvisio applies cp character counts in numeric IX order',
+      );
+      expect(
+        masterInstance.richText.runs
+            .where((run) => run.charStyle.style.bold)
+            .map((run) => run.text)
+            .join(),
+        'nd line and tab:\tvalue',
+      );
 
       final curves = page.findShapeById(2)!;
       expect(curves.fields, hasLength(1));
@@ -164,6 +187,12 @@ void main() {
       final group = page.findShapeById(3)!;
       expect(
           group.children.map((shape) => shape.id), orderedEquals(<int>[4, 5]));
+      expect(
+        group.children
+            .map((shape) => shape.richText.runs.single.charStyle.style.bold),
+        everyElement(isTrue),
+        reason: 'the final VDX stylesheet Character row is the default',
+      );
       expect(page.findShapeById(6)!.is1D, isTrue);
       expect(page.findShapeById(6)!.line.endArrow, 4);
       final inheritedStyle = page.findShapeById(7)!;
@@ -357,6 +386,26 @@ void main() {
           reason: 'VDX round-trip must preserve a hard classic shadow');
       expect(inheritedStyle.richText.textBlock.defaultTabStopInches,
           closeTo(0.4, 1e-9));
+      final reopenedMasterInstance = reopened.pages.single.findShapeById(1)!;
+      expect(
+        reopenedMasterInstance.richText.runs.map((run) => run.charStyle.color),
+        everyElement(const VsdxColor(0xFF2F5597)),
+      );
+      expect(
+        reopenedMasterInstance.richText.runs
+            .where((run) => !run.charStyle.style.bold)
+            .map((run) => run.text)
+            .join(),
+        'All rich text retained\nSeco',
+        reason: 'synthesised VSDX retains libvisio VDX character bands',
+      );
+      expect(
+        reopenedMasterInstance.richText.runs
+            .where((run) => run.charStyle.style.bold)
+            .map((run) => run.text)
+            .join(),
+        'nd line and tab:\tvalue',
+      );
       final reopenedCurves = reopened.pages.single.findShapeById(2)!;
       expect(reopenedCurves.actions.single.ix, 7);
       expect(reopenedCurves.actions.single.name, 'OpenCoverage');
@@ -604,6 +653,25 @@ void main() {
         'Bezier, arcs, ellipse: Cached field text',
       );
       expect(reopenedShape.richText.runs.single.fieldSpans, hasLength(1));
+    });
+
+    test('libvisio keeps one character for an unused first cp row', () {
+      final shape = XmlDocument.parse('''
+<Shape>
+  <Section N="Character">
+    <Row IX="0"><Cell N="Style" V="1"/></Row>
+    <Row IX="1"><Cell N="Style" V="0"/></Row>
+  </Section>
+  <Text><cp IX="1"/>AB</Text>
+</Shape>
+''').rootElement;
+      final richText = const RichTextParser(
+        useDiagramMlCharacterCounts: true,
+      ).parse(shape);
+
+      expect(richText.runs.map((run) => run.text), <String>['A', 'B']);
+      expect(richText.runs.first.charStyle.style.bold, isTrue);
+      expect(richText.runs.last.charStyle.style.bold, isFalse);
     });
 
     test('accepts UTF-16/32 DiagramML and rejects unrelated XML', () {

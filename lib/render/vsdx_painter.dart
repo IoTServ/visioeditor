@@ -1789,6 +1789,12 @@ class VsdxPainter extends CustomPainter {
         ? _geometryLineEndPoints(shape)
         : const <_LineEndpoints>[];
     if (endPoints.isEmpty) {
+      // A Geometry section whose drawable contours all return to their MoveTo
+      // is closed. libvisio/LibreOffice suppress line endings in that case;
+      // do not fall through to the coarse first/last-command fallback, which
+      // manufactured arrowheads on closed rectangles and ellipses. SVG uses
+      // the same open-subpath detector in geometrySubpathEndpointTangents().
+      if (shape.hasGeometry) return;
       final fallback = _lineEndPoints(shape);
       if (fallback == null) return;
       endPoints = <_LineEndpoints>[fallback];
