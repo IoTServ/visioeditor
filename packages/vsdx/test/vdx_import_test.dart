@@ -257,10 +257,10 @@ void main() {
       expect(
         RegExp(
           r'fill="#44546a" fill-opacity="0\.85" stroke="none" '
-          r'transform="translate\(0\.2 -0\.15\)"',
+          r'transform="translate\(0\.187 -0\.166\)"',
         ).allMatches(svg).length,
-        greaterThanOrEqualTo(4),
-        reason: 'libvisio/LibreOffice applies FillForegndTrans to shadows',
+        2,
+        reason: 'group rotation must not rotate libvisio page-space shadows',
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"').allMatches(svg),
@@ -326,6 +326,14 @@ void main() {
         images: reopened.images,
       );
       expect(reopenedSvg, contains('data:image/bmp;base64,Qk0'));
+      expect(
+        RegExp(
+          r'fill="#44546a" fill-opacity="0\.85" stroke="none" '
+          r'transform="translate\(0\.187 -0\.166\)"',
+        ).allMatches(reopenedSvg).length,
+        2,
+        reason: 'round-trip must retain page-space shadows in the group',
+      );
       final package = VsdxPackage.open(imported.originalBytes);
       expect(
         package.allPartNames,

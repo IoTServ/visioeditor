@@ -1703,10 +1703,31 @@ class VsdxPainter extends CustomPainter {
     }
     canvas.save();
     // Canvas is already Visio Y-up (page scale flipped). +ShadowOffsetY is up.
-    canvas.translate(shadow.offsetXInches, shadow.offsetYInches);
+    final localOffset = _shadowOffsetInLocal(
+      shape,
+      shadow.offsetXInches,
+      shadow.offsetYInches,
+    );
+    canvas.translate(localOffset.dx, localOffset.dy);
     _applyPageShadowXform(canvas, shape);
     canvas.drawPath(path, paint);
     canvas.restore();
+  }
+
+  /// Convert a libvisio page-frame shadow vector into the current local frame.
+  Offset _shadowOffsetInLocal(VsdxShape shape, double dx, double dy) {
+    final target = _paintTarget;
+    if (target == null) return Offset(dx, dy);
+    try {
+      final origin = target.localToPageDeep(shape.id, const Offset2D(0, 0));
+      final endpoint = target.pageToLocalDeep(
+        shape.id,
+        Offset2D(origin.x + dx, origin.y + dy),
+      );
+      return Offset(endpoint.x, endpoint.y);
+    } catch (_) {
+      return Offset(dx, dy);
+    }
   }
 
   /// PageSheet `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` — skew and

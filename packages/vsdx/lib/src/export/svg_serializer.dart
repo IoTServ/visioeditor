@@ -1633,7 +1633,10 @@ class VsdxToSvgSerializer {
     double dx,
     double dy,
   ) {
-    final parts = <String>['translate(${_n(dx)} ${_n(dy)})'];
+    final localOffset = _shadowOffsetInLocal(page, shape, dx, dy);
+    final parts = <String>[
+      'translate(${_n(localOffset.x)} ${_n(localOffset.y)})',
+    ];
     final sheet = page.pageSheet;
     final scale = sheet.shadowScaleFactor;
     final oblique = sheet.shadowObliqueAngle;
@@ -1653,6 +1656,26 @@ class VsdxToSvgSerializer {
       parts.add('translate(${_n(-cx)} ${_n(-cy)})');
     }
     return parts.join(' ');
+  }
+
+  /// libvisio emits shadow offsets after flattening nested shape transforms,
+  /// so their direction stays fixed in page coordinates.
+  ({double x, double y}) _shadowOffsetInLocal(
+    VsdxPage page,
+    VsdxShape shape,
+    double dx,
+    double dy,
+  ) {
+    try {
+      final origin = page.localToPageDeep(shape.id, const Offset2D(0, 0));
+      final endpoint = page.pageToLocalDeep(
+        shape.id,
+        Offset2D(origin.x + dx, origin.y + dy),
+      );
+      return (x: endpoint.x, y: endpoint.y);
+    } catch (_) {
+      return (x: dx, y: dy);
+    }
   }
 
   /// Filter region in shape-local inches (canvas inflate(blur×3) parity).
