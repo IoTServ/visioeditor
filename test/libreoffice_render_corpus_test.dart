@@ -49,7 +49,11 @@ const _vdxCoverageTexts = <String>[
 ];
 
 const _corpus = <_CorpusEntry>[
-  _CorpusEntry('Visio11FormatLine.vsd'),
+  _CorpusEntry(
+    'Visio11FormatLine.vsd',
+    maxMeanAbsoluteError: 0.015,
+    minInkIntersectionOverUnion: 0.55,
+  ),
   _CorpusEntry(
     'Visio11PlanWithDimensions.vsd',
     maxMeanAbsoluteError: 0.015,

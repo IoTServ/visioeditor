@@ -1679,10 +1679,10 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9" '
+        'd="M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9" '
         'fill="none" stroke="#000000"',
       ),
-      reason: 'arrow 27 is the crow-foot many marker',
+      reason: 'arrow 27 is the outward crow-foot many marker',
     );
     expect(
       svg,
@@ -1694,12 +1694,12 @@ void main() {
     );
     expect(
       svg,
-      contains('M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9'),
+      contains('M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9'),
       reason: 'arrow 28 adds the one-bar to the crow foot',
     );
     expect(
       svg,
-      contains('M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0'),
+      contains('M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0'),
       reason: 'arrow 29 combines an open circle with a crow foot',
     );
   });
@@ -2235,6 +2235,24 @@ void main() {
     );
   });
 
+  test('SVG crow-foot extends outward without trimming the carrier', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 1, bx: 3, by: 1).copyWith(
+              line: const VsdxLine(endArrow: 27, weightInches: 0.04),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('d="M 0 0 L 2 0"'));
+    expect(svg, contains('viewBox="0 0 10 10" refX="0" refY="5"'));
+  });
+
   test('SVG arrows 35–37 put the bar before the filled circle', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
@@ -2295,6 +2313,22 @@ void main() {
       svg,
       contains('d="M 0 -6 L 10 16 M 5 -6 V 16"'),
       reason: 'marker 9 keeps libvisio dimension-tick viewBox overflow',
+    );
+    expect(
+      svg,
+      matches(RegExp(
+        r'<marker id="arrow-start-[^"]+"[^>]*refX="10"[^>]*>'
+        r'<path d="M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9"',
+      )),
+      reason: 'start crow-foot uses the reversed libvisio anchor',
+    );
+    expect(
+      svg,
+      matches(RegExp(
+        r'<marker id="arrow-end-[^"]+"[^>]*refX="0"[^>]*>'
+        r'<path d="M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9"',
+      )),
+      reason: 'end crow-foot-plus-one uses the reversed libvisio anchor',
     );
   });
 

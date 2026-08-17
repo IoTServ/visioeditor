@@ -72,6 +72,14 @@ void main() {
     expect(bounds.height, closeTo(1, 0.02));
   });
 
+  test('crow-foot markers extend beyond rather than into the endpoint', () {
+    for (final id in <int>[27, 28, 29, 30]) {
+      final bounds = arrowDescriptor(id)!.path.getBounds();
+      expect(bounds.left, greaterThanOrEqualTo(0), reason: 'marker $id');
+      expect(bounds.right, greaterThan(0), reason: 'marker $id');
+    }
+  });
+
   test('id 9 keeps libvisio dimension-tick viewBox overflow', () {
     final marker = arrowDescriptor(9)!;
     final bounds = marker.path.getBounds();
@@ -111,6 +119,7 @@ void main() {
     expect(arrowBodyTrimInches(31, 0.25, 0.04), closeTo(0.23, 1e-9));
     expect(arrowBodyTrimInches(39, 0.25, 0.04), closeTo(0.28, 1e-6));
     expect(arrowBodyTrimInches(20, 0.25, 0.04), 0);
+    expect(arrowBodyTrimInches(27, 0.25, 0.04), 0);
   });
 
   test('ids 35–37 put the bar before the filled circle', () {

@@ -2241,7 +2241,14 @@ class VsdxPainter extends CustomPainter {
     final paint = Paint()
       ..color = tipColor ?? linePaint.color
       ..style = desc.filled ? PaintingStyle.fill : PaintingStyle.stroke
-      ..strokeWidth = math.max(linePaint.strokeWidth / sizeInches, 0.05);
+      // Preserve the device-hairline decision made by [_resolveStrokePaint].
+      // Replacing its zero width with a small local-space minimum produces a
+      // sub-pixel grey stroke after marker scaling, so database circles,
+      // crow's feet and dimension ticks can look missing on legacy VSD lines.
+      ..strokeWidth = linePaint.strokeWidth == 0
+          ? 0
+          : math.max(linePaint.strokeWidth / sizeInches, 0.05)
+      ..isAntiAlias = linePaint.isAntiAlias;
     canvas.drawPath(desc.path, paint);
     canvas.restore();
   }

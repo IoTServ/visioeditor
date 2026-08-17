@@ -96,6 +96,49 @@ void main() {
     expect(exactSourcePixels, greaterThan(400));
   });
 
+  test('sub-pixel crow-foot markers retain crisp outward strokes', () async {
+    const pxPerInch = 144.0;
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 2,
+      bx: 3,
+      by: 2,
+    ).copyWith(
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.0035,
+        endArrow: 27,
+      ),
+    );
+    final rgba = await _rasterPage(
+      VsdxPage(
+        id: 0,
+        name: 'Hairline crow-foot',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: <VsdxShape>[shape],
+      ),
+      pxPerInch: pxPerInch,
+    );
+
+    // The authored endpoint is x=3in (432px). libvisio markers 27–30 are
+    // reverse markers, so their ink must remain crisp beyond that endpoint.
+    var exactBlackOutsideEndpoint = 0;
+    for (var y = 270; y <= 306; y++) {
+      for (var x = 433; x <= 456; x++) {
+        final offset = (y * 576 + x) * 4;
+        if (rgba[offset] == 0 &&
+            rgba[offset + 1] == 0 &&
+            rgba[offset + 2] == 0 &&
+            rgba[offset + 3] == 0xFF) {
+          exactBlackOutsideEndpoint++;
+        }
+      }
+    }
+    expect(exactBlackOutsideEndpoint, greaterThan(10));
+  });
+
   test(
     'paragraph layout keeps TextBkgnd and centred vertical overflow',
     () async {

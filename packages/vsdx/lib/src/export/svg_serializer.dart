@@ -1406,7 +1406,9 @@ class VsdxToSvgSerializer {
         colorHex: paint.hex,
         opacity: paint.opacity,
       );
-      final refX = _isCenteredMarker(arrowId) ? 5 : 10;
+      final refX = _isCenteredMarker(arrowId)
+          ? 5
+          : (_isReversedMarker(arrowId) ? 0 : 10);
       // Marker viewBox is 10 units wide; centred markers anchor at x=5.
       buf.writeln(
         '$indent<g transform="translate(${_n(tip.x)} ${_n(tip.y)}) '
@@ -2891,7 +2893,9 @@ class VsdxToSvgSerializer {
           colorHex: tip.hex,
           opacity: tip.opacity,
         );
-        final refX = _isCenteredMarker(line.beginArrow) ? 5 : 0;
+        final refX = _isCenteredMarker(line.beginArrow)
+            ? 5
+            : (_isReversedMarker(line.beginArrow) ? 10 : 0);
         defs.write(
           '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
           'viewBox="0 0 10 10" refX="$refX" refY="5" '
@@ -2912,7 +2916,9 @@ class VsdxToSvgSerializer {
           colorHex: tip.hex,
           opacity: tip.opacity,
         );
-        final refX = _isCenteredMarker(line.endArrow) ? 5 : 10;
+        final refX = _isCenteredMarker(line.endArrow)
+            ? 5
+            : (_isReversedMarker(line.endArrow) ? 0 : 10);
         defs.write(
           '<marker id="$mid" markerUnits="userSpaceOnUse" overflow="visible" '
           'viewBox="0 0 10 10" refX="$refX" refY="5" '
@@ -2947,6 +2953,10 @@ class VsdxToSvgSerializer {
       arrowId == 11 ||
       arrowId == 20 ||
       arrowId == 21;
+
+  // libvisio's crow-foot family extends away from the carrier endpoint. It
+  // therefore uses the opposite marker anchor from ordinary arrowheads.
+  bool _isReversedMarker(int arrowId) => arrowId >= 27 && arrowId <= 30;
 
   String _svgMiterLimitAttr(VsdxLine line) {
     final join = line.effectiveJoin;
@@ -3009,21 +3019,21 @@ class VsdxToSvgSerializer {
       25 => ('M 7 1 V 9 M 4.5 1 V 9', false),
       26 => ('M 7 1 V 9 M 4.5 1 V 9', false),
       27 => (
-          'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9',
+          'M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9',
           false
         ),
       28 => (
-          'M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9',
+          'M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9',
           false,
         ),
       29 => (
-          'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-              'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9',
+          'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+              'M 6 5 L 10 1 M 6 5 L 10 5 M 6 5 L 10 9',
           false,
         ),
       30 => (
-          'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
-              'M 7 1 V 9',
+          'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+              'M 3 1 V 9',
           false,
         ),
       35 || 36 || 37 => (
@@ -3098,14 +3108,24 @@ class VsdxToSvgSerializer {
       'M 7 1 V 9 M 4.5 1 V 9' => 'M 3 1 V 9 M 5.5 1 V 9',
       'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9' =>
         'M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9',
+      'M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9' =>
+        'M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9',
       'M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9' =>
         'M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9',
+      'M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9' =>
+        'M 10 5 L 3 1 M 10 5 L 3 5 M 10 5 L 3 9 M 1 1 V 9',
       'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 7 1 V 9' =>
         'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 3 1 V 9',
+      'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 3 1 V 9' =>
+        'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 M 7 1 V 9',
       'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
             'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9' =>
         'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
             'M 6 5 L 10 1 M 6 5 L 10 5 M 6 5 L 10 9',
+      'M 4 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+            'M 6 5 L 10 1 M 6 5 L 10 5 M 6 5 L 10 9' =>
+        'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+            'M 4 5 L 0 1 M 4 5 L 0 5 M 4 5 L 0 9',
       'M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z' => 'M 10 0.5 L 0 5 L 10 9.5 L 7.5 5 Z',
       'M 0 2 L 10 5 L 0 8 L 2.5 5 Z' => 'M 10 2 L 0 5 L 10 8 L 7.5 5 Z',
       'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z' =>
@@ -3141,7 +3161,11 @@ class VsdxToSvgSerializer {
     int arrowId,
     double sizeInches,
   ) {
-    if (arrowId == 0 || _isCenteredMarker(arrowId)) return 0;
+    if (arrowId == 0 ||
+        _isCenteredMarker(arrowId) ||
+        _isReversedMarker(arrowId)) {
+      return 0;
+    }
     final size = sizeInches > 0 ? sizeInches : 0.125;
     return math.max(
       0.0,

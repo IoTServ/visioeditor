@@ -291,14 +291,16 @@ ArrowDescriptor _databaseOne() {
 }
 
 ArrowDescriptor _databaseMany() {
-  // Crow's foot — "many".
+  // Crow's foot — "many". libvisio's ids 27–30 are reverse markers:
+  // their notation extends past the authored endpoint, unlike arrowheads
+  // whose body sits back on the carrier line.
   final p = Path()
     ..moveTo(0, 0)
-    ..lineTo(-0.85, -0.5)
+    ..lineTo(0.85, -0.5)
     ..moveTo(0, 0)
-    ..lineTo(-0.85, 0)
+    ..lineTo(0.85, 0)
     ..moveTo(0, 0)
-    ..lineTo(-0.85, 0.5);
+    ..lineTo(0.85, 0.5);
   return ArrowDescriptor(path: p, filled: false);
 }
 
@@ -306,35 +308,35 @@ ArrowDescriptor _databaseManyOne() {
   // Crow's foot plus the "one" bar (libvisio marker 28).
   final p = Path()
     ..moveTo(0, 0)
-    ..lineTo(-0.72, -0.5)
+    ..lineTo(0.72, -0.5)
     ..moveTo(0, 0)
-    ..lineTo(-0.72, 0)
+    ..lineTo(0.72, 0)
     ..moveTo(0, 0)
-    ..lineTo(-0.72, 0.5)
-    ..moveTo(-0.88, -0.5)
-    ..lineTo(-0.88, 0.5);
+    ..lineTo(0.72, 0.5)
+    ..moveTo(0.88, -0.5)
+    ..lineTo(0.88, 0.5);
   return ArrowDescriptor(path: p, filled: false);
 }
 
 ArrowDescriptor _databaseOptionalOne() {
   // Open circle + single hash.
   final p = Path()
-    ..addOval(Rect.fromCircle(center: const Offset(-0.6, 0), radius: 0.18))
-    ..moveTo(-0.3, -0.5)
-    ..lineTo(-0.3, 0.5);
+    ..addOval(Rect.fromCircle(center: const Offset(0.6, 0), radius: 0.18))
+    ..moveTo(0.3, -0.5)
+    ..lineTo(0.3, 0.5);
   return ArrowDescriptor(path: p, filled: false);
 }
 
 ArrowDescriptor _databaseOptionalMany() {
   // Open circle + crow's foot.
   final p = Path()
-    ..addOval(Rect.fromCircle(center: const Offset(-0.4, 0), radius: 0.18))
-    ..moveTo(-0.6, -0.05)
-    ..lineTo(-1.1, -0.5)
-    ..moveTo(-0.6, 0)
-    ..lineTo(-1.1, 0)
-    ..moveTo(-0.6, 0.05)
-    ..lineTo(-1.1, 0.5);
+    ..addOval(Rect.fromCircle(center: const Offset(0.4, 0), radius: 0.18))
+    ..moveTo(0.6, -0.05)
+    ..lineTo(1.1, -0.5)
+    ..moveTo(0.6, 0)
+    ..lineTo(1.1, 0)
+    ..moveTo(0.6, 0.05)
+    ..lineTo(1.1, 0.5);
   return ArrowDescriptor(path: p, filled: false);
 }
 
