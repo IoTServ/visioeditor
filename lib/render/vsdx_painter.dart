@@ -2998,6 +2998,16 @@ class VsdxPainter extends CustomPainter {
     } else {
       tp.layout();
     }
+    final lineMetrics = tp.computeLineMetrics();
+    final authoredLineHeight = hasRich && _hasNonAxisAlignedAncestor(shape)
+        ? VsdxPainter.authoredLineHeightPx(rich.runs, s)
+        : null;
+    // TextPainter.height is pixel-rounded (for example a 13.44 px ODF line
+    // box reports 13 px). LibreOffice retains libvisio's fo:line-height in
+    // continuous document units when it vertically aligns the text object.
+    final textHeight = authoredLineHeight == null || lineMetrics.isEmpty
+        ? tp.height
+        : authoredLineHeight * lineMetrics.length;
 
     // Offsets measured from the block's upper-left corner (px).
     final ox = switch (align) {
@@ -3007,14 +3017,32 @@ class VsdxPainter extends CustomPainter {
     };
     var oy = switch (block.verticalAlign) {
       VsdxVertAlign.top => mtPx,
-      VsdxVertAlign.bottom => thPx - mbPx - tp.height,
-      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - tp.height) / 2,
+      VsdxVertAlign.bottom => thPx - mbPx - textHeight,
+      VsdxVertAlign.middle => mtPx + (thPx - mtPx - mbPx - textHeight) / 2,
     };
     // Keep authored middle/bottom alignment when text is taller than its box.
     // Visio and LibreOffice allow vertical overflow on both sides.
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
+  }
+
+  /// libvisio flattens group transforms before handing text objects to
+  /// LibreOffice. Preserve the continuous authored line box when an ancestor
+  /// rotates it off the pixel axes; otherwise retain Flutter's native rounded
+  /// block metrics, which match legacy top-level VSD text more closely.
+  bool _hasNonAxisAlignedAncestor(VsdxShape shape) {
+    final target = _paintTarget ?? page;
+    if (target == null) return false;
+    var parentId = target.findParentId(shape.id);
+    while (parentId != null) {
+      final parent = target.findShapeById(parentId);
+      if (parent == null) return false;
+      final quarterTurns = parent.angleRad / (math.pi / 2);
+      if ((quarterTurns - quarterTurns.round()).abs() > 1e-9) return true;
+      parentId = target.findParentId(parent.id);
+    }
+    return false;
   }
 
   /// Draw draw.io's plate around the laid-out glyph bounds. Text-block
@@ -3923,6 +3951,42 @@ class VsdxPainter extends CustomPainter {
   Color _edgeLabelBackground() {
     final bg = page?.backgroundColor;
     return bg == null ? const Color(0xFFFFFFFF) : Color(bg.value);
+  }
+
+  /// Continuous line height described by Visio Paragraph `SpLine`.
+  ///
+  /// Flutter rounds [TextPainter.height] to logical pixels, while libvisio
+  /// passes `fo:line-height` to LibreOffice as a continuous document value.
+  /// Returning `null` delegates to the font's natural un-authored height.
+  static double? authoredLineHeightPx(
+    List<VsdxTextRun> runs,
+    double scale,
+  ) {
+    double? height;
+    for (final run in runs) {
+      if (run.text.isEmpty) continue;
+      var fontSize = math.max(
+        run.charStyle.effectiveFontSizeInchesForText(run.text),
+        0.04,
+      ) * scale;
+      if (run.charStyle.position != VsdxTextPosition.normal) {
+        fontSize *= 0.7;
+      }
+      final para = run.paraStyle;
+      final candidate = para.lineSpacingAbsoluteInches > 0
+          ? para.lineSpacingAbsoluteInches * scale
+          : para.lineSpacingSolid
+              ? fontSize
+              : para.lineSpacing > 0
+                  ? fontSize * para.lineSpacing *
+                      kLibreOfficeFontCellLineHeightFactor
+                  : null;
+      if (candidate != null && candidate.isFinite && candidate > 0 &&
+          (height == null || candidate > height)) {
+        height = candidate;
+      }
+    }
+    return height;
   }
 
   /// Build a [TextSpan] for [run]. [scale] converts the run's inch-based sizes

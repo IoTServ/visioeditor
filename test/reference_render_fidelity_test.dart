@@ -13,6 +13,31 @@ void main() {
     expect(VsdxPainter.imageFilterQuality, FilterQuality.high);
   });
 
+  test('authored SpLine keeps LibreOffice continuous line-box units', () {
+    const run = VsdxTextRun(
+      text: 'Grouped child A',
+      charStyle: VsdxCharStyle(fontSizeInches: 10 / 72),
+      paraStyle: VsdxParaStyle(lineSpacing: 1.2),
+    );
+
+    expect(
+      VsdxPainter.authoredLineHeightPx(const <VsdxTextRun>[run], 72),
+      closeTo(13.44, 1e-9),
+    );
+    expect(
+      VsdxPainter.authoredLineHeightPx(
+        const <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'absolute',
+            paraStyle: VsdxParaStyle(lineSpacingAbsoluteInches: 0.25),
+          ),
+        ],
+        72,
+      ),
+      closeTo(18, 1e-9),
+    );
+  });
+
   test('classic zero-blur shadows keep a hard libvisio edge', () async {
     const pxPerInch = 1000.0;
     VsdxPage page(double blurInches) => VsdxPage(
