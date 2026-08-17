@@ -12,11 +12,18 @@ import 'emf_vector_parser.dart';
 import 'vsd/cfb/compound_file.dart';
 import 'wmf_parser.dart';
 
-/// LibreOffice renders embedded OLE objects on its classic "Blue 2"
-/// presentation surface. When an Excel chart/sheet has a transparent WMF/EMF
-/// preview the surface is composited behind it; when an object has no usable
-/// presentation stream the same colour remains as the visible fallback.
-const int libreOfficeOleWorkbookBackgroundArgb = 0xff729fcf;
+/// LibreOffice's default librevenge `GraphicObject` surface ("Blue 2").
+///
+/// libvisio deliberately submits an empty style for ForeignData; LibreOffice
+/// therefore lets its standard graphic style show through every transparent
+/// bitmap/metafile pixel. Opaque media is unaffected, while an object without
+/// a usable presentation stream remains a solid surface of this colour.
+const int libreOfficeForeignObjectBackgroundArgb = 0xff729fcf;
+
+/// Backwards-compatible name retained for callers that used the original OLE
+/// workbook-specific constant.
+const int libreOfficeOleWorkbookBackgroundArgb =
+    libreOfficeForeignObjectBackgroundArgb;
 
 /// Whether [oleBytes] is an embedded Excel workbook package.
 bool isOleWorkbook(Uint8List oleBytes) {

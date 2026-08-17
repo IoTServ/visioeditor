@@ -76,13 +76,14 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'embedded Excel OLE previews retain LibreOffice blue surfaces',
+    'ForeignData previews retain LibreOffice blue surfaces across round-trip',
     () async {
       final source = File(
         'packages/vsdx/test/fixtures/vsd/external/visio_with_embeded.vsd',
       );
       expect(source.existsSync(), isTrue);
-      final document = parseVisio(source.readAsBytesSync()).document;
+      final result = parseVisio(source.readAsBytesSync());
+      final document = result.document;
       expect(document.images.all, hasLength(6));
       expect(
         document.images.all.where((image) => isOleWorkbook(image.bytes)),
@@ -97,7 +98,7 @@ void main() {
       );
       expect(png, isNotNull);
       expect(
-        await _countExactArgb(png!, libreOfficeOleWorkbookBackgroundArgb),
+        await _countExactArgb(png!, libreOfficeForeignObjectBackgroundArgb),
         greaterThanOrEqualTo(200000),
       );
       final page = document.pages.first;
@@ -112,9 +113,52 @@ void main() {
           pageWidth: page.widthInches,
           pageHeight: page.heightInches,
         ),
-        libreOfficeOleWorkbookBackgroundArgb,
+        libreOfficeForeignObjectBackgroundArgb,
         reason: 'OLE without a usable presentation stream must use the same '
             'Blue 2 fallback surface as LibreOffice',
+      );
+
+      final transparentPng = page.findShapeById(1)!;
+      final transparentCorner = page.localToPageDeep(
+        transparentPng.id,
+        const Offset2D(0.15, 0.15),
+      );
+      expect(
+        await _argbAtPagePoint(
+          png,
+          pageX: transparentCorner.x,
+          pageY: transparentCorner.y,
+          pageWidth: page.widthInches,
+          pageHeight: page.heightInches,
+        ),
+        libreOfficeForeignObjectBackgroundArgb,
+        reason: 'libvisio GraphicObject has an empty style, so LibreOffice '
+            'Blue 2 must show through transparent PNG pixels',
+      );
+
+      final reopened = const DocumentParser().parse(result.originalBytes);
+      final reopenedPng = await renderPageToPng(
+        reopened.pages.first,
+        theme: reopened.theme,
+        images: reopened.images,
+        pxPerInch: 144,
+      );
+      expect(reopenedPng, isNotNull);
+      final reopenedPage = reopened.pages.first;
+      final reopenedTransparent = reopenedPage.findShapeById(1)!;
+      final reopenedCorner = reopenedPage.localToPageDeep(
+        reopenedTransparent.id,
+        const Offset2D(0.15, 0.15),
+      );
+      expect(
+        await _argbAtPagePoint(
+          reopenedPng!,
+          pageX: reopenedCorner.x,
+          pageY: reopenedCorner.y,
+          pageWidth: reopenedPage.widthInches,
+          pageHeight: reopenedPage.heightInches,
+        ),
+        libreOfficeForeignObjectBackgroundArgb,
       );
     },
   );

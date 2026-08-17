@@ -2900,6 +2900,12 @@ void main() {
       images: doc.images,
     );
     expect(svg, contains('<image'));
+    expect(
+      svg,
+      contains('fill="#729fcf"'),
+      reason: 'LibreOffice standard GraphicObject style must remain visible '
+          'behind transparent ForeignData pixels',
+    );
     expect(svg, contains('fill="#ffff00"'));
     expect(svg, contains('stroke="#ff0000"'));
   });

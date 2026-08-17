@@ -3310,6 +3310,18 @@ class VsdxToSvgSerializer {
       _writeImagePlaceholder(buf, shape, indent: indent);
       return;
     }
+    // libvisio passes an empty style to addGraphicObject(); LibreOffice's
+    // standard graphic style supplies this "Blue 2" frame fill. Keep it as a
+    // sibling so image transparency/tone filters affect media, not the frame.
+    final bgX = shape.imgOffsetXInches;
+    final bgY = shape.imgOffsetYInches;
+    final bgW = shape.effectiveImgWidth;
+    final bgH = shape.effectiveImgHeight;
+    buf.writeln(
+      '$indent<rect x="${_n(bgX)}" y="${_n(bgY)}" '
+      'width="${_n(bgW)}" height="${_n(bgH)}" '
+      'fill="${_argbCss(libreOfficeForeignObjectBackgroundArgb)}"/>',
+    );
     final toneAttr = _imageToneFilterAttr(
       shape,
       buf,
@@ -4224,7 +4236,7 @@ class VsdxToSvgSerializer {
         'y="${_n(shape.imgOffsetYInches)}" '
         'width="${_n(shape.effectiveImgWidth)}" '
         'height="${_n(shape.effectiveImgHeight)}" '
-        'fill="${_argbCss(libreOfficeOleWorkbookBackgroundArgb)}"'
+        'fill="${_argbCss(libreOfficeForeignObjectBackgroundArgb)}"'
         '$opacityAttr/>',
       );
       return;

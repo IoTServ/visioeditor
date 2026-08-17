@@ -2354,6 +2354,14 @@ class VsdxPainter extends CustomPainter {
     // the foreign object's native coordinate system.
     canvas.save();
     canvas.clipRect(bounds);
+    // VSDContentCollector::_flushCurrentForeignData() adds an empty style for
+    // every GraphicObject. LibreOffice consequently inherits its standard
+    // "Blue 2" frame fill behind transparent bitmap/metafile pixels.
+    canvas.drawRect(
+      imgRect,
+      Paint()
+        ..color = const Color(libreOfficeForeignObjectBackgroundArgb),
+    );
     if (needsTone) {
       // Blur sigma in layer pixels; Brightness/Contrast are Visio 0…1 with 0.5
       // = unchanged (same mapping as Image Properties in ShapeSheet).
@@ -2438,7 +2446,7 @@ class VsdxPainter extends CustomPainter {
         imageBounds,
         Paint()
           ..color = const Color(
-            libreOfficeOleWorkbookBackgroundArgb,
+            libreOfficeForeignObjectBackgroundArgb,
           ).withValues(alpha: opacity),
       );
       return;
