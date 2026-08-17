@@ -1673,7 +1673,10 @@ class VsdxPainter extends CustomPainter {
     final base =
         _colourOrTheme(shadow.color, shadow.themeColorIndex) ??
         const Color(0x99000000);
-    final alpha = (1 - shadow.transparency).clamp(0.0, 1.0);
+    // libvisio maps FillForegndTrans to the whole graphic style's opacity,
+    // so LibreOffice also composes it into the drop shadow.
+    final alpha = (1 - shadow.transparency).clamp(0.0, 1.0) *
+        (1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0));
     if (alpha <= 0) return;
     // libvisio/LibreOffice produces shadows from collected fill geometry, not
     // from the separate line path. Foreign pictures are the one exception:

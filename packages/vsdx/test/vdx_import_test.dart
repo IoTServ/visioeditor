@@ -255,6 +255,14 @@ void main() {
       expect(svg, contains('data:image/bmp;base64,Qk0'));
       expect(svg, contains('href="https://example.test/vdx-link"'));
       expect(
+        RegExp(
+          r'fill="#44546a" fill-opacity="0\.85" stroke="none" '
+          r'transform="translate\(0\.2 -0\.15\)"',
+        ).allMatches(svg).length,
+        greaterThanOrEqualTo(4),
+        reason: 'libvisio/LibreOffice applies FillForegndTrans to shadows',
+      );
+      expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"').allMatches(svg),
         hasLength(3),
         reason: 'all three libvisio VDX Geometry sections are open',

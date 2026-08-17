@@ -1571,7 +1571,11 @@ class VsdxToSvgSerializer {
     if (!shadow.enabled) return;
     final base = _resolveColor(shadow.color, shadow.themeColorIndex, theme) ??
         const VsdxColor(0x99000000);
-    final alpha = _combinedOpacity(base, shadow.transparency);
+    // libvisio emits FillForegndTrans as the graphic style's draw:opacity.
+    // LibreOffice therefore applies it to the shadow as well as the body,
+    // while draw:shadow-opacity contributes the shadow's own transparency.
+    final alpha = _combinedOpacity(base, shadow.transparency) *
+        (1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0));
     if (alpha <= 0) return;
     // Foreign pictures still cast a filled silhouette shadow (match canvas:
     // NoFill + (NoLine or pattern-less stroke)).
