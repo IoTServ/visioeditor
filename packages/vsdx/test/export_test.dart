@@ -1579,6 +1579,36 @@ void main() {
         reason: 'the overflowing tab field must start in a new SVG text row');
   });
 
+  test('SVG alphabetic baseline matches LibreOffice text-frame descent', () {
+    final page = VsdxPage(
+      id: 0,
+      name: 'Baseline',
+      widthInches: 2.5,
+      heightInches: 2,
+      shapes: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 1.25,
+          pinY: 1,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Grouped child A',
+                charStyle: VsdxCharStyle(fontSizeInches: 10 / 72),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(page);
+    expect(svg, contains('y="58.611"'));
+  });
+
   test('SVG open-concave arrow (id 17) is stroked not filled', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
@@ -3079,10 +3109,11 @@ void main() {
     );
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     // LibreOffice percentage spacing applies to a 1.12× typographic cell:
-    // 0.2 * 1.5 * 1.12 = 0.336. The explicit alphabetic baseline adds 0.07
-    // inch, then the importer-safe SVG text units scale values by 1000.
-    expect(svg, contains('y="-98"'));
-    expect(svg, contains('y="238"'));
+    // 0.2 * 1.5 * 1.12 = 0.336. The explicit alphabetic baseline adds 0.08
+    // inch including Draw's 0.01in descent, then importer-safe SVG text units
+    // scale values by 1000.
+    expect(svg, contains('y="-88"'));
+    expect(svg, contains('y="248"'));
   });
 
   test('SVG relative SpLine uses ComplexScriptSize for line metrics', () {

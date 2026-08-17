@@ -5164,9 +5164,11 @@ class VsdxToSvgSerializer {
   ///
   /// libvisio/LibreOffice export explicit baseline coordinates. Keeping that
   /// convention is also understood by browser SVG, LibreOffice import and the
-  /// package:pdf SVG subset, unlike `dominant-baseline="middle"`.
+  /// package:pdf SVG subset, unlike `dominant-baseline="middle"`. Draw's SVG
+  /// importer positions that explicit alphabetic baseline about one CSS pixel
+  /// (`0.01in` in the Visio text frame) below the geometric font centre.
   double _svgAlphabeticBaseline(double middle, double fontSize) =>
-      middle + fontSize * 0.35;
+      middle + fontSize * 0.35 + 0.01;
 
   /// Greedy wrap of rich-text segments to [maxWidth] inches (canvas maxWidth).
   ///
