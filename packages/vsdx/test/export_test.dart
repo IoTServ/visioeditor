@@ -2291,6 +2291,11 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     expect(RegExp(r'marker-start=').allMatches(svg), hasLength(45));
     expect(RegExp(r'marker-end=').allMatches(svg), hasLength(45));
+    expect(
+      svg,
+      contains('d="M 0 -6 L 10 16 M 5 -6 V 16"'),
+      reason: 'marker 9 keeps libvisio dimension-tick viewBox overflow',
+    );
   });
 
   test('SVG marker carrier path has single stroke-opacity=0', () {

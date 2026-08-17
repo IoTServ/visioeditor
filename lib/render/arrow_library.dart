@@ -259,12 +259,16 @@ ArrowDescriptor _backslash() {
 }
 
 ArrowDescriptor _centeredLine() {
-  // libvisio marker 9 combines an oblique stroke with a centred stem.
+  // libvisio marker 9 combines an oblique stroke with a centred stem. Its
+  // authored path is about 2.2 times taller than its nominal viewBox
+  // (`M1 2 ... 20 20 ... M11 11 v12` in VSDContentCollector), so keep that
+  // overflow. A square approximation turns architectural dimension ticks
+  // into tiny crosses, especially at the legacy VSD 0.05-inch size floor.
   final p = Path()
-    ..moveTo(-1, -0.5)
-    ..lineTo(0, 0.5)
-    ..moveTo(-0.5, -0.5)
-    ..lineTo(-0.5, 0.5);
+    ..moveTo(-1, -1.1)
+    ..lineTo(0, 1.1)
+    ..moveTo(-0.5, -1.1)
+    ..lineTo(-0.5, 1.1);
   return ArrowDescriptor(path: p, filled: false);
 }
 

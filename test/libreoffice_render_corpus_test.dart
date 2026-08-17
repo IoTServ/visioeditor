@@ -50,11 +50,25 @@ const _vdxCoverageTexts = <String>[
 
 const _corpus = <_CorpusEntry>[
   _CorpusEntry('Visio11FormatLine.vsd'),
-  _CorpusEntry('Visio11PlanWithDimensions.vsd'),
+  _CorpusEntry(
+    'Visio11PlanWithDimensions.vsd',
+    maxMeanAbsoluteError: 0.015,
+    minInkIntersectionOverUnion: 0.95,
+  ),
   _CorpusEntry('Visio11TextFieldsWithAngle.vsd'),
   _CorpusEntry('Visio11TextFieldsWithCurrency.vsd'),
   _CorpusEntry('Visio11TextFieldsWithUnits.vsd'),
-  _CorpusEntry('Visio5PlanWithDimensions.vsd'),
+  // Current libvisio misplaces several VSD5 dimension paths during direct
+  // rendering. Its WMF reference and VSD6 successor agree with our editable
+  // model, and LibreOffice renders the synthesized VSDX at the right place.
+  // Use that reopen as the visual oracle so this audit detects a real
+  // import/export offset instead of preserving the legacy importer defect.
+  _CorpusEntry(
+    'Visio5PlanWithDimensions.vsd',
+    libreOfficeReferenceFromRoundTrip: true,
+    maxMeanAbsoluteError: 0.025,
+    minInkIntersectionOverUnion: 0.85,
+  ),
   // Current LibreOffice/libvisio renders only the final plain-text label from
   // this VSD5 source. The Dart parser intentionally recovers all field labels,
   // so validate their semantics independently of the incomplete oracle image.
@@ -62,7 +76,11 @@ const _corpus = <_CorpusEntry>[
     'Visio5TextFieldsWithUnits.vsd',
     expectedTextFragments: _legacyUnitFieldTexts,
   ),
-  _CorpusEntry('Visio6PlanWithDimensions.vsd'),
+  _CorpusEntry(
+    'Visio6PlanWithDimensions.vsd',
+    maxMeanAbsoluteError: 0.02,
+    minInkIntersectionOverUnion: 0.85,
+  ),
   _CorpusEntry(
     'Visio6TextFieldsWithUnits.vsd',
     expectedTextFragments: _legacyUnitFieldTexts,
@@ -199,10 +217,16 @@ void main() {
           final caseDirectory = Directory(
             '${auditRoot.path}/${corpusIndex.toString().padLeft(2, '0')}_${_safeName(entry.name)}',
           )..createSync(recursive: true);
+          final libreOfficeSource = entry.libreOfficeReferenceFromRoundTrip
+              ? File('${caseDirectory.path}/roundtrip-reference.vsdx')
+              : source;
+          if (entry.libreOfficeReferenceFromRoundTrip) {
+            libreOfficeSource.writeAsBytesSync(result.originalBytes);
+          }
           final libreOfficePages = await _renderWithLibreOffice(
             soffice: soffice!,
             pdftoppm: pdftoppm!,
-            source: source,
+            source: libreOfficeSource,
             outputDirectory: caseDirectory,
           );
           if (!entry.ignoreLibreOfficePageCount &&
@@ -298,6 +322,22 @@ void main() {
                 '$label: app lost colored content '
                 '(app=${appMetrics.colorFraction}, '
                 'LibreOffice=${referenceMetrics.colorFraction})',
+              );
+            }
+            if (entry.maxMeanAbsoluteError case final maximum?
+                when comparison.meanAbsoluteError > maximum) {
+              failures.add(
+                '$label: mean absolute error '
+                '${comparison.meanAbsoluteError.toStringAsFixed(4)} > '
+                '${maximum.toStringAsFixed(4)}',
+              );
+            }
+            if (entry.minInkIntersectionOverUnion case final minimum?
+                when comparison.inkIntersectionOverUnion < minimum) {
+              failures.add(
+                '$label: ink intersection-over-union '
+                '${comparison.inkIntersectionOverUnion.toStringAsFixed(4)} < '
+                '${minimum.toStringAsFixed(4)}',
               );
             }
           }
@@ -410,6 +450,9 @@ class _CorpusEntry {
     this.packageFixture = false,
     this.ignoreLibreOfficePageCount = false,
     this.ignoreLibreOfficeCanvasSize = false,
+    this.libreOfficeReferenceFromRoundTrip = false,
+    this.maxMeanAbsoluteError,
+    this.minInkIntersectionOverUnion,
     this.expectedTextFragments = const <String>[],
   });
 
@@ -419,6 +462,9 @@ class _CorpusEntry {
   final bool packageFixture;
   final bool ignoreLibreOfficePageCount;
   final bool ignoreLibreOfficeCanvasSize;
+  final bool libreOfficeReferenceFromRoundTrip;
+  final double? maxMeanAbsoluteError;
+  final double? minInkIntersectionOverUnion;
   final List<String> expectedTextFragments;
 
   String get path => applicationExample

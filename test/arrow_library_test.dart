@@ -72,6 +72,15 @@ void main() {
     expect(bounds.height, closeTo(1, 0.02));
   });
 
+  test('id 9 keeps libvisio dimension-tick viewBox overflow', () {
+    final marker = arrowDescriptor(9)!;
+    final bounds = marker.path.getBounds();
+    expect(marker.filled, isFalse);
+    expect(marker.centered, isTrue);
+    expect(bounds.width, closeTo(1, 0.02));
+    expect(bounds.height, closeTo(2.2, 0.02));
+  });
+
   test('libvisio TODO aliases keep their upstream marker paths', () {
     expect(arrowDescriptor(40)!.filled, isTrue);
     for (final id in <int>[43, 44, 45]) {

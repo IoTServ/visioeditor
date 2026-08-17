@@ -2981,7 +2981,10 @@ class VsdxToSvgSerializer {
       6 => ('M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z', true), // convex
       7 => ('M 0 -4.091 L 10 5 L 0 14.091', false),
       8 => ('M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z', true),
-      9 => ('M 0 1 L 10 9 M 5 1 V 9', false), // centred line
+      // libvisio's marker-9 path extends to roughly 2.2× its nominal
+      // viewBox height. Preserve that overflow so SVG/PDF and Canvas render
+      // architectural dimension ticks at the same reach.
+      9 => ('M 0 -6 L 10 16 M 5 -6 V 16', false), // centred line
       10 => (
           'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
           true,
@@ -3079,7 +3082,8 @@ class VsdxToSvgSerializer {
         'M 10 1 L 0 5 L 10 9 L 7 5 Z',
       'M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z' =>
         'M 10 1 L 0 5 L 10 9 Q 3 5 10 1 Z',
-      'M 0 1 L 10 9 M 5 1 V 9' => 'M 10 1 L 0 9 M 5 1 V 9',
+      'M 0 -6 L 10 16 M 5 -6 V 16' =>
+        'M 10 -6 L 0 16 M 5 -6 V 16',
       'M 0 2.5 L 10 5 L 0 7.5 Z' => 'M 10 2.5 L 0 5 L 10 7.5 Z',
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
