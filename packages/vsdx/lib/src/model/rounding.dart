@@ -131,6 +131,112 @@ FilletPath? filletPolylinePath(
   return (start: start, segments: segments, closed: true);
 }
 
+/// Bake Visio `Rounding` into a pure Move/Line/Polyline geometry.
+///
+/// libvisio applies `computeRounding` while importing VDX/VSD, but its VSDX
+/// parser does not consume the `Rounding` cell. Legacy imports therefore need
+/// explicit `RelQuadBezTo` rows in their synthesised VSDX or LibreOffice
+/// reopens the same outline with sharp corners. Curved and multi-contour
+/// geometries are returned unchanged.
+VsdxGeometry bakePolylineRounding(
+  VsdxGeometry geometry, {
+  required double width,
+  required double height,
+  required double radius,
+}) {
+  if (radius <= 1e-12 || width.abs() <= 1e-12 || height.abs() <= 1e-12) {
+    return geometry;
+  }
+  final points = <Offset2D>[];
+  var started = false;
+  for (final command in geometry.commands) {
+    switch (command) {
+      case MoveTo(:final x, :final y):
+        if (started && points.isNotEmpty) return geometry;
+        points
+          ..clear()
+          ..add(Offset2D(x, y));
+        started = true;
+      case RelMoveTo(:final fx, :final fy):
+        if (started && points.isNotEmpty) return geometry;
+        points
+          ..clear()
+          ..add(Offset2D(fx * width, fy * height));
+        started = true;
+      case LineTo(:final x, :final y):
+        if (!started) {
+          points.add(const Offset2D(0, 0));
+          started = true;
+        }
+        points.add(Offset2D(x, y));
+      case RelLineTo(:final fx, :final fy):
+        if (!started) {
+          points.add(const Offset2D(0, 0));
+          started = true;
+        }
+        points.add(Offset2D(fx * width, fy * height));
+      case PolylineTo(
+          :final x,
+          :final y,
+          :final vertices,
+          :final relative,
+          :final vertsRelative,
+          :final vertsYRelative,
+        ):
+        if (!started) {
+          points.add(const Offset2D(0, 0));
+          started = true;
+        }
+        final vertexScaleX = vertsRelative ? width : 1.0;
+        final vertexScaleY = vertsYRelative ? height : 1.0;
+        for (final vertex in vertices) {
+          points.add(Offset2D(
+            vertex.x * vertexScaleX,
+            vertex.y * vertexScaleY,
+          ));
+        }
+        points.add(Offset2D(
+          x * (relative ? width : 1.0),
+          y * (relative ? height : 1.0),
+        ));
+      default:
+        return geometry;
+    }
+  }
+  if (points.length < 3) return geometry;
+
+  var closed = false;
+  final first = points.first;
+  final last = points.last;
+  if ((first.x - last.x).abs() < 1e-9 && (first.y - last.y).abs() < 1e-9) {
+    closed = true;
+    points.removeLast();
+  } else {
+    closed = polylineLooksClosed(points, noFill: geometry.noFill);
+  }
+  final fillet = filletPolylinePath(points, radius, closed: closed);
+  if (fillet == null) return geometry;
+
+  return geometry.copyWith(
+    commands: <VsdxPathCommand>[
+      MoveTo(fillet.start.x, fillet.start.y),
+      for (final segment in fillet.segments)
+        if (segment.control case final control?)
+          RelQuadBezTo(
+            fx: segment.end.x / width,
+            fy: segment.end.y / height,
+            fx1: control.x / width,
+            fy1: control.y / height,
+          )
+        else
+          LineTo(segment.end.x, segment.end.y),
+    ],
+    commandFormulas: const <Map<String, String>>[],
+    rowIndices: const <int>[],
+    deletedRowIndices: const <int>{},
+  );
+}
+
 _FilletCorner? _filletCorner(
   Offset2D prev,
   Offset2D cur,

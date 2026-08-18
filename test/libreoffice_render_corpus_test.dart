@@ -151,8 +151,8 @@ const _corpus = <_CorpusEntry>[
     packageFixture: true,
     maxMeanAbsoluteError: 0.02,
     minInkIntersectionOverUnion: 0.85,
-    maxLibreOfficeRoundTripMeanAbsoluteError: 0.02,
-    minLibreOfficeRoundTripInkIntersectionOverUnion: 0.85,
+    maxLibreOfficeRoundTripMeanAbsoluteError: 0.005,
+    minLibreOfficeRoundTripInkIntersectionOverUnion: 0.95,
     expectedTextFragments: _vdxCoverageTexts,
     renderMatchProbes: <_RenderMatchProbe>[
       _RenderMatchProbe(
@@ -165,8 +165,8 @@ const _corpus = <_CorpusEntry>[
         minCanvasDarkIntersectionOverUnion: 0.92,
         maxSvgMeanAbsoluteError: 0.038,
         minSvgDarkIntersectionOverUnion: 0.78,
-        maxLibreOfficeRoundTripMeanAbsoluteError: 0.02,
-        minLibreOfficeRoundTripDarkIntersectionOverUnion: 0.9,
+        maxLibreOfficeRoundTripMeanAbsoluteError: 0.005,
+        minLibreOfficeRoundTripDarkIntersectionOverUnion: 0.98,
       ),
     ],
     svgInkProbes: <_SvgInkProbe>[
@@ -496,6 +496,11 @@ void main() {
                       libreOfficeRoundTripImage,
                       referenceImage,
                       probe,
+                    );
+                    print(
+                      'ROUNDTRIP-PROBE ${entry.name} "${probe.label}" '
+                      'mae=${roundTripComparison.meanAbsoluteError.toStringAsFixed(4)} '
+                      'iou=${roundTripComparison.inkIntersectionOverUnion.toStringAsFixed(4)}',
                     );
                     if (roundTripComparison.meanAbsoluteError >
                         probe.maxLibreOfficeRoundTripMeanAbsoluteError) {

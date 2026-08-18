@@ -99,6 +99,14 @@ void main() {
         () {
       final source = _fixture();
       expect(looksLikeVdx(source), isTrue);
+      final rawPolyline = const VdxDocumentParser()
+          .parse(source)
+          .pages
+          .single
+          .findShapeById(7)!;
+      expect(_commandTypes(rawPolyline), contains(PolylineTo),
+          reason: 'the DiagramML row type must be parsed before compatibility '
+              'normalisation');
 
       final result = parseVisio(source, sourceName: 'coverage.vdx');
       expect(result.importedFromVsd, isTrue);
@@ -120,7 +128,12 @@ void main() {
       final shapes = _allShapes(result.document);
       expect(shapes, hasLength(10));
       final masterInstance = page.findShapeById(1)!;
-      expect(masterInstance.geometries.single.commands, hasLength(5));
+      expect(masterInstance.geometries.single.commands, hasLength(9));
+      expect(
+        masterInstance.geometries.single.commands.whereType<RelQuadBezTo>(),
+        hasLength(4),
+        reason: 'legacy Rounding must be explicit for libvisio VSDX reopen',
+      );
       expect(masterInstance.fill.foreground, const VsdxColor(0xFFFFFFFF));
       expect(masterInstance.fill.foregroundTransparency, closeTo(0.15, 1e-9));
       expect(masterInstance.line.color, const VsdxColor(0xFF2F5597));
@@ -220,9 +233,10 @@ void main() {
           RelCubBezTo,
           RelQuadBezTo,
           RelEllipticalArcTo,
-          PolylineTo,
         ]),
       );
+      expect(_commandTypes(inheritedStyle), isNot(contains(PolylineTo)),
+          reason: 'legacy Rounding is baked for libvisio VSDX reopen');
       expect(_commandTypes(inheritedStyle), isNot(contains(RelArcTo)),
           reason: 'RelArcTo is a VSDX row, not a libvisio VDX element');
       final advancedGeometry = page.findShapeById(10)!;
@@ -289,15 +303,36 @@ void main() {
         imported.originalBytes,
         sourceName: 'coverage.vsdx',
       ).document;
+      final resaved = const DocumentParser().parse(
+        const VsdxWriter().write(
+          originalBytes: imported.originalBytes,
+          edited: imported.document,
+        ),
+      );
 
       expect(reopened.pages, hasLength(1));
       expect(reopened.masters.length, imported.document.masters.length);
       final reopenedMaster = reopened.masters.find(1)!;
       expect(reopenedMaster.name, 'Master Rectangle');
       expect(reopenedMaster.prototype.id, 100);
-      expect(reopenedMaster.prototype.geometries.single.commands, hasLength(5));
+      expect(reopenedMaster.prototype.geometries.single.commands, hasLength(9));
+      expect(
+        reopenedMaster.prototype.geometries.single.commands
+            .whereType<RelQuadBezTo>(),
+        hasLength(4),
+      );
       expect(_allShapes(reopened), hasLength(10));
       expect(reopened.images.length, 2);
+      expect(
+        resaved.pages.single
+            .findShapeById(4)!
+            .geometries
+            .single
+            .commands
+            .whereType<RelQuadBezTo>(),
+        hasLength(4),
+        reason: 'the normal editor save path must retain baked VDX rounding',
+      );
       final allText = _allShapes(reopened)
           .map((shape) => shape.richText.plainText)
           .join('\n');
@@ -404,7 +439,7 @@ void main() {
           lessThan(childNames.indexOf('ForeignData')));
       expect(
         _commandTypes(reopened.pages.single.findShapeById(7)!),
-        containsAll(<Type>[PolylineTo, RelEllipticalArcTo]),
+        containsAll(<Type>[RelQuadBezTo, RelEllipticalArcTo]),
       );
       expect(
         _commandTypes(reopened.pages.single.findShapeById(10)!),

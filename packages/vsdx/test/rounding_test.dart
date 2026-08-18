@@ -86,4 +86,45 @@ void main() {
       isTrue,
     );
   });
+
+  test('bakePolylineRounding writes libvisio quadratic corner rows', () {
+    const geometry = VsdxGeometry(
+      commands: <VsdxPathCommand>[
+        MoveTo(0, 0),
+        LineTo(2, 0),
+        LineTo(2, 1),
+        LineTo(0, 1),
+        LineTo(0, 0),
+      ],
+      rowIndices: <int>[1, 2, 3, 4, 5],
+    );
+    final baked = bakePolylineRounding(
+      geometry,
+      width: 2,
+      height: 1,
+      radius: 0.08,
+    );
+
+    expect(baked.commands, hasLength(9));
+    expect(baked.commands.whereType<RelQuadBezTo>(), hasLength(4));
+    expect(baked.rowIndices, isEmpty);
+    expect((baked.commands.first as MoveTo).x, closeTo(0.08, 1e-9));
+  });
+
+  test('bakePolylineRounding leaves already-curved geometry unchanged', () {
+    const geometry = VsdxGeometry(commands: <VsdxPathCommand>[
+      MoveTo(0, 0),
+      QuadBezTo(x: 1, y: 1, x1: 1, y1: 0),
+      LineTo(0, 1),
+    ]);
+    expect(
+      bakePolylineRounding(
+        geometry,
+        width: 1,
+        height: 1,
+        radius: 0.08,
+      ),
+      same(geometry),
+    );
+  });
 }

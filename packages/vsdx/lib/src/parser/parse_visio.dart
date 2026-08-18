@@ -5,6 +5,11 @@ import 'dart:typed_data';
 
 import '../core/exceptions.dart';
 import '../model/document.dart';
+import '../model/geometry.dart';
+import '../model/master.dart';
+import '../model/page.dart';
+import '../model/rounding.dart';
+import '../model/shape.dart';
 import 'document_parser.dart';
 import 'package_reader.dart';
 import 'vsd/cfb/compound_file.dart';
@@ -68,10 +73,11 @@ VisioParseResult parseVisio(Uint8List bytes, {String? sourceName}) {
   }
   if (looksLikeCfb(bytes) || looksLikeVisioBinary(bytes)) {
     final extractStencils = lowerName.endsWith('.vss');
-    final doc = const VsdDocumentParser().parse(
+    final parsed = const VsdDocumentParser().parse(
       bytes,
       extractStencils: extractStencils,
     );
+    final doc = _bakeLegacyRounding(parsed);
     // Synthesise OPC baseline for VsdxWriter; keep the binary-parsed model for
     // editing so ForeignData frames / field text / advanced geometry are not
     // lost by a write→reparse fidelity gap. This also normalises legacy VSD5
@@ -87,10 +93,11 @@ VisioParseResult parseVisio(Uint8List bytes, {String? sourceName}) {
   }
   if (looksLikeVdx(bytes)) {
     final extractStencils = lowerName.endsWith('.vsx');
-    final doc = const VdxDocumentParser().parse(
+    final parsed = const VdxDocumentParser().parse(
       bytes,
       extractStencils: extractStencils,
     );
+    final doc = _bakeLegacyRounding(parsed);
     return VisioParseResult(
       document: doc,
       originalBytes: synthesizeVsdx(doc),
@@ -100,6 +107,53 @@ VisioParseResult parseVisio(Uint8List bytes, {String? sourceName}) {
   throw const VsdxFormatException(
     'Unsupported file: expected Visio OPC ZIP, OLE2 binary, or DiagramML XML',
   );
+}
+
+/// Materialise the corner curves that libvisio produces while reading legacy
+/// VSD/VDX. Its VSDX parser does not consume `Rounding`, so keeping only the
+/// cell in the synthetic OPC package would turn the same shapes back into
+/// sharp polygons when LibreOffice reopens or converts the saved document.
+VsdxDocument _bakeLegacyRounding(VsdxDocument document) {
+  VsdxShape bakeShape(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) bakeShape(child),
+    ];
+    final radius = shape.line.roundingInches;
+    final geometries = <VsdxGeometry>[
+      for (final geometry in shape.geometries)
+        bakePolylineRounding(
+          geometry,
+          width: shape.width,
+          height: shape.height,
+          radius: radius,
+        ),
+    ];
+    return shape.copyWith(children: children, geometries: geometries);
+  }
+
+  final pages = <VsdxPage>[
+    for (final page in document.pages)
+      page.copyWith(
+        shapes: <VsdxShape>[
+          for (final shape in page.shapes) bakeShape(shape),
+        ],
+      ),
+  ];
+  final masters = MasterRegistry(<int, VsdxMaster>{
+    for (final master in document.masters.all)
+      master.id: VsdxMaster(
+        id: master.id,
+        name: master.name,
+        prototype: bakeShape(master.prototype),
+        additionalPrototypes: <VsdxShape>[
+          for (final shape in master.additionalPrototypes) bakeShape(shape),
+        ],
+        pageWidthInches: master.pageWidthInches,
+        pageHeightInches: master.pageHeightInches,
+        pageSheet: master.pageSheet,
+      ),
+  });
+  return document.copyWith(pages: pages, masters: masters);
 }
 
 /// Convenience: open OPC package bytes (existing API wrapper).
