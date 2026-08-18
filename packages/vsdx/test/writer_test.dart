@@ -11080,9 +11080,13 @@ void main() {
     expect(pageXml.contains('N="ShadowPattern" V="0"'), isTrue);
     expect(pageXml.contains('N="ShdwPattern" V="0"'), isTrue);
     expect(pageXml.contains('N="ShadowOffsetX"'), isTrue);
+    expect(pageXml.contains('N="ShapeShdwOffsetX"'), isTrue);
+    expect(pageXml.contains('N="ShapeShdwOffsetY"'), isTrue);
     expect(pageXml.contains('N="ShadowBlur"'), isTrue);
     expect(pageXml.contains('N="ShadowForegndTrans"'), isTrue);
+    expect(pageXml.contains('N="ShdwForegndTrans"'), isTrue);
     expect(pageXml.contains('N="ShadowForegnd"'), isTrue);
+    expect(pageXml.contains('N="ShdwForegnd"'), isTrue);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.shadow.enabled, isFalse);
     expect(after.shadow.offsetXInches, closeTo(0.12, 1e-6));

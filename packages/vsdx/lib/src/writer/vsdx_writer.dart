@@ -3021,10 +3021,19 @@ class VsdxWriter {
         el, 'ShadowOffsetX', edited.shadow.offsetXInches);
     changed |= _ensureLiteralLength(
         el, 'ShadowOffsetY', edited.shadow.offsetYInches);
+    // LibreOffice/libvisio consumes the canonical ShapeSheet spellings.
+    // Keep the newer aliases too, but never emit one without its interoperable
+    // companion.
+    changed |= _ensureLiteralLength(
+        el, 'ShapeShdwOffsetX', edited.shadow.offsetXInches);
+    changed |= _ensureLiteralLength(
+        el, 'ShapeShdwOffsetY', edited.shadow.offsetYInches);
     changed |=
         _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
     changed |= _ensureLiteralLength(
         el, 'ShadowForegndTrans', edited.shadow.transparency);
+    changed |= _ensureLiteralLength(
+        el, 'ShdwForegndTrans', edited.shadow.transparency);
     // Colour companions: scrub F=Inh even when the effect model is unchanged
     // (Trans/Size already scrubbed above; colour was previously skipped).
     // Unbound (null color + null theme): drop residual cells / Inh so a
@@ -3032,6 +3041,7 @@ class VsdxWriter {
     if (edited.shadow.color != null) {
       changed |=
           _forceLiteralColor(el, 'ShadowForegnd', edited.shadow.color!);
+      changed |= _forceLiteralColor(el, 'ShdwForegnd', edited.shadow.color!);
     } else if (edited.shadow.themeColorIndex != null) {
       // Theme-bound: rewrite THEMEVAL if F=Inh (solid path uses forceLiteral).
       changed |= _patchColorOrTheme(
@@ -3043,16 +3053,21 @@ class VsdxWriter {
         editedColor: null,
         editedTheme: edited.shadow.themeColorIndex,
       );
-    } else {
       changed |= _patchColorOrTheme(
         el,
-        'ShadowForegnd',
+        'ShdwForegnd',
         'QuickStyleShadowColor',
         baseColor: null,
-        baseTheme: null,
+        baseTheme: edited.shadow.themeColorIndex,
         editedColor: null,
-        editedTheme: null,
+        editedTheme: edited.shadow.themeColorIndex,
       );
+    } else {
+      changed |= _removeNamedCells(el, const [
+        'ShadowForegnd',
+        'ShdwForegnd',
+        'QuickStyleShadowColor',
+      ]);
     }
     if (!edited.glow.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
@@ -5782,8 +5797,11 @@ class VsdxWriter {
     // colour / offsets (rebuild already did; patch previously skipped).
     final forceCompanions = !edited.enabled || !base.enabled;
     if (edited.color == null && edited.themeColorIndex == null) {
-      if (_removeNamedCells(
-          el, const ['ShadowForegnd', 'QuickStyleShadowColor'])) {
+      if (_removeNamedCells(el, const [
+        'ShadowForegnd',
+        'ShdwForegnd',
+        'QuickStyleShadowColor',
+      ])) {
         changed = true;
       }
     } else if (forceCompanions ||
@@ -7500,17 +7518,22 @@ class VsdxWriter {
       children.add(_cell('ShdwPattern', s.shadow.xmlPattern.toString()));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         // Match Fill/Line theme binding: THEMEVAL() + QuickStyle slot.
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell(
             'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
       }
       children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
     } else {
       // Edraw StyleSheet defaults can leave a residual shadow unless the shape
       // explicitly disables it. Emit both aliases + companions (patch does),
@@ -7520,16 +7543,21 @@ class VsdxWriter {
         ..add(_cell('ShdwPattern', '0'));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell(
             'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
       }
       children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
@@ -7961,8 +7989,10 @@ class VsdxWriter {
     'SoftEdgesSize', 'CompoundType',
     'LineGradientEnabled', 'LineGradientDir', 'LineGradientAngle',
     'QuickStyleLineColor', 'LayerMember',
-    'ShadowPattern', 'ShdwPattern', 'ShadowForegnd', 'QuickStyleShadowColor',
-    'ShadowOffsetX', 'ShadowOffsetY', 'ShadowBlur', 'ShadowForegndTrans',
+    'ShadowPattern', 'ShdwPattern', 'ShadowForegnd', 'ShdwForegnd',
+    'QuickStyleShadowColor',
+    'ShadowOffsetX', 'ShadowOffsetY', 'ShapeShdwOffsetX', 'ShapeShdwOffsetY',
+    'ShadowBlur', 'ShadowForegndTrans', 'ShdwForegndTrans',
     'GlowSize', 'GlowColor', 'QuickStyleEffectColor', 'GlowColorTrans',
     'ReflectionSize', 'ReflectionDist', 'ReflectionTransparency',
     'ReflectionBlur',
@@ -8136,32 +8166,42 @@ class VsdxWriter {
       children.add(_cell('ShdwPattern', s.shadow.xmlPattern.toString()));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell(
             'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
       }
       children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
     } else {
       children
         ..add(_cell('ShadowPattern', '0'))
         ..add(_cell('ShdwPattern', '0'));
       if (s.shadow.color != null) {
         children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
+        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
+        children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell(
             'QuickStyleShadowColor', s.shadow.themeColorIndex!.toString()));
       }
       children
         ..add(_cell('ShadowOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShadowOffsetY', _fmt(s.shadow.offsetYInches)))
+        ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
+        ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));

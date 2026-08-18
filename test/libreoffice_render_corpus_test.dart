@@ -151,6 +151,8 @@ const _corpus = <_CorpusEntry>[
     packageFixture: true,
     maxMeanAbsoluteError: 0.02,
     minInkIntersectionOverUnion: 0.85,
+    maxLibreOfficeRoundTripMeanAbsoluteError: 0.02,
+    minLibreOfficeRoundTripInkIntersectionOverUnion: 0.85,
     expectedTextFragments: _vdxCoverageTexts,
     renderMatchProbes: <_RenderMatchProbe>[
       _RenderMatchProbe(
@@ -163,6 +165,8 @@ const _corpus = <_CorpusEntry>[
         minCanvasDarkIntersectionOverUnion: 0.92,
         maxSvgMeanAbsoluteError: 0.038,
         minSvgDarkIntersectionOverUnion: 0.78,
+        maxLibreOfficeRoundTripMeanAbsoluteError: 0.02,
+        minLibreOfficeRoundTripDarkIntersectionOverUnion: 0.9,
       ),
     ],
     svgInkProbes: <_SvgInkProbe>[
@@ -270,6 +274,29 @@ void main() {
             source: libreOfficeSource,
             outputDirectory: caseDirectory,
           );
+          List<File>? libreOfficeRoundTripPages;
+          if (entry.maxLibreOfficeRoundTripMeanAbsoluteError != null ||
+              entry.minLibreOfficeRoundTripInkIntersectionOverUnion != null) {
+            final roundTripDirectory = Directory(
+              '${caseDirectory.path}/libreoffice-vsdx-roundtrip',
+            )..createSync(recursive: true);
+            final roundTripFile = File(
+              '${roundTripDirectory.path}/roundtrip.vsdx',
+            )..writeAsBytesSync(result.originalBytes);
+            libreOfficeRoundTripPages = await _renderWithLibreOffice(
+              soffice: soffice,
+              pdftoppm: pdftoppm,
+              source: roundTripFile,
+              outputDirectory: roundTripDirectory,
+            );
+            if (libreOfficeRoundTripPages.length != libreOfficePages.length) {
+              failures.add(
+                '${entry.name}: LibreOffice round-trip page count '
+                '${libreOfficeRoundTripPages.length} != '
+                '${libreOfficePages.length}',
+              );
+            }
+          }
           if (!entry.ignoreLibreOfficePageCount &&
               libreOfficePages.length != pages.length) {
             failures.add(
@@ -358,6 +385,61 @@ void main() {
             final appMetrics = _measure(appImage);
             final referenceMetrics = _measure(referenceImage);
             final comparison = _compare(appImage, referenceImage);
+            _DecodedImage? libreOfficeRoundTripImage;
+            _ImageComparison? libreOfficeRoundTripComparison;
+            if (libreOfficeRoundTripPages != null &&
+                pageIndex < libreOfficeRoundTripPages.length) {
+              libreOfficeRoundTripImage = await _decodePng(
+                libreOfficeRoundTripPages[pageIndex].readAsBytesSync(),
+              );
+              libreOfficeRoundTripComparison = _compare(
+                libreOfficeRoundTripImage,
+                referenceImage,
+              );
+              final roundTripLabel =
+                  '${entry.name}#${pageIndex + 1} LibreOffice VSDX round-trip';
+              print(
+                'ROUNDTRIP $roundTripLabel '
+                'size=${libreOfficeRoundTripImage.width}x'
+                '${libreOfficeRoundTripImage.height}/'
+                '${referenceImage.width}x${referenceImage.height} '
+                'mae=${libreOfficeRoundTripComparison.meanAbsoluteError.toStringAsFixed(4)} '
+                'iou=${libreOfficeRoundTripComparison.inkIntersectionOverUnion.toStringAsFixed(4)}',
+              );
+              if ((libreOfficeRoundTripImage.width - referenceImage.width)
+                          .abs() >
+                      2 ||
+                  (libreOfficeRoundTripImage.height - referenceImage.height)
+                          .abs() >
+                      2) {
+                failures.add(
+                  '$roundTripLabel: canvas '
+                  '${libreOfficeRoundTripImage.width}x'
+                  '${libreOfficeRoundTripImage.height} != '
+                  '${referenceImage.width}x${referenceImage.height}',
+                );
+              }
+              if (entry.maxLibreOfficeRoundTripMeanAbsoluteError
+                  case final maximum?
+                  when libreOfficeRoundTripComparison.meanAbsoluteError >
+                      maximum) {
+                failures.add(
+                  '$roundTripLabel: mean absolute error '
+                  '${libreOfficeRoundTripComparison.meanAbsoluteError.toStringAsFixed(4)} '
+                  '> ${maximum.toStringAsFixed(4)}',
+                );
+              }
+              if (entry.minLibreOfficeRoundTripInkIntersectionOverUnion
+                  case final minimum?
+                  when libreOfficeRoundTripComparison.inkIntersectionOverUnion <
+                      minimum) {
+                failures.add(
+                  '$roundTripLabel: ink intersection-over-union '
+                  '${libreOfficeRoundTripComparison.inkIntersectionOverUnion.toStringAsFixed(4)} '
+                  '< ${minimum.toStringAsFixed(4)}',
+                );
+              }
+            }
             if (pageIndex == 0 && entry.renderMatchProbes.isNotEmpty) {
               _DecodedImage? importedSvgImage;
               if (importedSvgPng != null) {
@@ -409,6 +491,32 @@ void main() {
                       );
                     }
                   }
+                  if (libreOfficeRoundTripImage != null) {
+                    final roundTripComparison = _compareRegion(
+                      libreOfficeRoundTripImage,
+                      referenceImage,
+                      probe,
+                    );
+                    if (roundTripComparison.meanAbsoluteError >
+                        probe.maxLibreOfficeRoundTripMeanAbsoluteError) {
+                      failures.add(
+                        '${entry.name}: LibreOffice VSDX round-trip '
+                        '"${probe.label}" mean absolute error '
+                        '${roundTripComparison.meanAbsoluteError.toStringAsFixed(4)} '
+                        '> ${probe.maxLibreOfficeRoundTripMeanAbsoluteError.toStringAsFixed(4)}',
+                      );
+                    }
+                    if (roundTripComparison.inkIntersectionOverUnion <
+                        probe
+                            .minLibreOfficeRoundTripDarkIntersectionOverUnion) {
+                      failures.add(
+                        '${entry.name}: LibreOffice VSDX round-trip '
+                        '"${probe.label}" dark-ink IoU '
+                        '${roundTripComparison.inkIntersectionOverUnion.toStringAsFixed(4)} '
+                        '< ${probe.minLibreOfficeRoundTripDarkIntersectionOverUnion.toStringAsFixed(4)}',
+                      );
+                    }
+                  }
                 }
               } finally {
                 importedSvgImage?.dispose();
@@ -416,6 +524,7 @@ void main() {
             }
             appImage.dispose();
             referenceImage.dispose();
+            libreOfficeRoundTripImage?.dispose();
             renderedPages++;
 
             final label = '${entry.name}#${pageIndex + 1}';
@@ -631,6 +740,8 @@ class _CorpusEntry {
     this.libreOfficeReferenceFromRoundTrip = false,
     this.maxMeanAbsoluteError,
     this.minInkIntersectionOverUnion,
+    this.maxLibreOfficeRoundTripMeanAbsoluteError,
+    this.minLibreOfficeRoundTripInkIntersectionOverUnion,
     this.expectedTextFragments = const <String>[],
     this.renderMatchProbes = const <_RenderMatchProbe>[],
     this.svgInkProbes = const <_SvgInkProbe>[],
@@ -645,6 +756,8 @@ class _CorpusEntry {
   final bool libreOfficeReferenceFromRoundTrip;
   final double? maxMeanAbsoluteError;
   final double? minInkIntersectionOverUnion;
+  final double? maxLibreOfficeRoundTripMeanAbsoluteError;
+  final double? minLibreOfficeRoundTripInkIntersectionOverUnion;
   final List<String> expectedTextFragments;
   final List<_RenderMatchProbe> renderMatchProbes;
   final List<_SvgInkProbe> svgInkProbes;
@@ -669,6 +782,8 @@ class _RenderMatchProbe {
     required this.minCanvasDarkIntersectionOverUnion,
     required this.maxSvgMeanAbsoluteError,
     required this.minSvgDarkIntersectionOverUnion,
+    required this.maxLibreOfficeRoundTripMeanAbsoluteError,
+    required this.minLibreOfficeRoundTripDarkIntersectionOverUnion,
   });
 
   final String label;
@@ -680,6 +795,8 @@ class _RenderMatchProbe {
   final double minCanvasDarkIntersectionOverUnion;
   final double maxSvgMeanAbsoluteError;
   final double minSvgDarkIntersectionOverUnion;
+  final double maxLibreOfficeRoundTripMeanAbsoluteError;
+  final double minLibreOfficeRoundTripDarkIntersectionOverUnion;
 }
 
 class _SvgInkProbe {

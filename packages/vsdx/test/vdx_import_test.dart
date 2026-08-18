@@ -373,6 +373,21 @@ void main() {
                     element.getAttribute('ID') == '1',
               );
       expect(masterInstanceXml.getAttribute('Master'), '1');
+      final groupedChildXml =
+          pageXml.descendants.whereType<XmlElement>().singleWhere(
+                (element) =>
+                    element.name.local == 'Shape' &&
+                    element.getAttribute('ID') == '4',
+              );
+      String? groupedChildCell(String name) => groupedChildXml.childElements
+          .where((element) =>
+              element.name.local == 'Cell' && element.getAttribute('N') == name)
+          .firstOrNull
+          ?.getAttribute('V');
+      expect(groupedChildCell('ShdwForegnd'), '#44546A');
+      expect(groupedChildCell('ShapeShdwOffsetX'), '0.2');
+      expect(groupedChildCell('ShapeShdwOffsetY'), '-0.15');
+      expect(groupedChildCell('ShdwForegndTrans'), '0');
       final picture = pageXml.descendants.whereType<XmlElement>().singleWhere(
           (element) =>
               element.name.local == 'Shape' &&
