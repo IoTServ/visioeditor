@@ -118,7 +118,12 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry('testfile4.vsdx'),
   _CorpusEntry('testfile5.vsdx'),
   _CorpusEntry('testfile6.vsdx'),
-  _CorpusEntry('visio_with_embeded.vsd', packageExternal: true),
+  _CorpusEntry(
+    'visio_with_embeded.vsd',
+    packageExternal: true,
+    maxMeanAbsoluteError: 0.03,
+    minInkIntersectionOverUnion: 0.90,
+  ),
   _CorpusEntry('test1.vsdx', packageFixture: true),
   _CorpusEntry('test2.vsdx', packageFixture: true),
   _CorpusEntry('test3_house.vsdx', packageFixture: true),
@@ -651,17 +656,59 @@ Future<void> _loadAuditFonts() async {
     'Arial Black',
     'Calibri',
     'Calibri Light',
-    'Cambria',
-    'Courier New',
     'Helvetica',
     'Liberation Sans',
-    'Liberation Serif',
     'Segoe UI',
     'Tahoma',
-    'Times New Roman',
     'Trebuchet MS',
     'Verdana',
   ], bold: latinBold);
+
+  // Preserve libvisio's FontFace class during the comparison. Aliasing these
+  // names to the Latin sans face makes a correctly parsed Times/Courier label
+  // look wrong before the renderer is even measured against LibreOffice.
+  final serif = _firstExistingFile(const <String?>[
+    '/System/Library/Fonts/Supplemental/Times New Roman.ttf',
+    '/Library/Fonts/Times New Roman.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationSerif-Regular.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf',
+  ]);
+  final serifBold = _firstExistingFile(const <String?>[
+    '/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf',
+    '/Library/Fonts/Times New Roman Bold.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationSerif-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
+  ]);
+  if (serif != null) {
+    await _loadFontAliases(serif, const <String>[
+      'Cambria',
+      'Liberation Serif',
+      'Times New Roman',
+    ], bold: serifBold);
+  }
+  final mono = _firstExistingFile(const <String?>[
+    '/System/Library/Fonts/Supplemental/Courier New.ttf',
+    '/Library/Fonts/Courier New.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationMono-Regular.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+  ]);
+  final monoBold = _firstExistingFile(const <String?>[
+    '/System/Library/Fonts/Supplemental/Courier New Bold.ttf',
+    '/Library/Fonts/Courier New Bold.ttf',
+    '/usr/share/fonts/truetype/liberation2/LiberationMono-Bold.ttf',
+    '/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf',
+    '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
+  ]);
+  if (mono != null) {
+    await _loadFontAliases(mono, const <String>[
+      'Consolas',
+      'Courier New',
+      'Liberation Mono',
+    ], bold: monoBold);
+  }
 
   // Do not alias every family to DejaVu: most legacy fixtures request Arial
   // or Liberation Sans and their text metrics are observably different. The

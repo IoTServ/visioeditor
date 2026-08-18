@@ -145,6 +145,56 @@ class VsdxFontFallback {
     },
   );
 
+  static const Set<String> _serifFamilies = <String>{
+    'cambria',
+    'garamond',
+    'georgia',
+    'liberation serif',
+    'times new roman',
+  };
+
+  static const Set<String> _monospaceFamilies = <String>{
+    'consolas',
+    'courier new',
+    'liberation mono',
+    'lucida console',
+  };
+
+  static const Map<String, List<String>> _serifFallbacks = {
+    'mac': <String>['Times', 'Georgia', 'New York', 'serif'],
+    'ios': <String>['Times New Roman', 'Georgia', 'New York', 'serif'],
+    'android': <String>['Noto Serif', 'Droid Serif', 'serif'],
+    'linux': <String>[
+      'Liberation Serif',
+      'DejaVu Serif',
+      'Noto Serif',
+      'serif',
+    ],
+    'windows': <String>['Times New Roman', 'Cambria', 'Georgia', 'serif'],
+    'web': <String>['Times New Roman', 'Georgia', 'serif'],
+    'fuchsia': <String>['Noto Serif', 'serif'],
+  };
+
+  static const Map<String, List<String>> _monospaceFallbacks = {
+    'mac': <String>['Menlo', 'Monaco', 'Courier', 'monospace'],
+    'ios': <String>['Menlo', 'Courier', 'monospace'],
+    'android': <String>['Roboto Mono', 'Noto Sans Mono', 'monospace'],
+    'linux': <String>[
+      'Liberation Mono',
+      'DejaVu Sans Mono',
+      'Noto Sans Mono',
+      'monospace',
+    ],
+    'windows': <String>[
+      'Consolas',
+      'Courier New',
+      'Lucida Console',
+      'monospace',
+    ],
+    'web': <String>['Courier New', 'Consolas', 'monospace'],
+    'fuchsia': <String>['Roboto Mono', 'Noto Sans Mono', 'monospace'],
+  };
+
   /// Resolve a Visio font name to `(family, fallback chain)`.
   ///
   /// `null` input ⇒ platform default chain (no specific family).
@@ -171,8 +221,19 @@ class VsdxFontFallback {
         : (familyMap[asianFont] ?? asianFont);
     final complex =
         (complexScriptFont == null || complexScriptFont.trim().isEmpty)
-            ? null
-            : (familyMap[complexScriptFont] ?? complexScriptFont);
+        ? null
+        : (familyMap[complexScriptFont] ?? complexScriptFont);
+
+    // libvisio preserves the authored FontFace family. If that exact face is
+    // unavailable, retain its metric/style class: a Times/Cambria label must
+    // not silently become sans-serif, and Courier/Consolas must remain
+    // fixed-width. Script-specific faces still take priority for their runs.
+    final familyKey = (primary ?? '').trim().toLowerCase();
+    final semanticFallbacks = _serifFamilies.contains(familyKey)
+        ? (_serifFallbacks[platform] ?? const <String>[])
+        : _monospaceFamilies.contains(familyKey)
+        ? (_monospaceFallbacks[platform] ?? const <String>[])
+        : const <String>[];
 
     final chain = <String>[];
     void add(String? name) {
@@ -184,6 +245,9 @@ class VsdxFontFallback {
 
     add(asian);
     add(complex);
+    for (final f in semanticFallbacks) {
+      add(f);
+    }
     for (final f in fallbacks) {
       add(f);
     }
