@@ -4840,7 +4840,9 @@ void main() {
   // Regression: `_buildShapeElement` used to omit arrows, flips, transparencies,
   // shadow, LocPin, VerticalAlign and Character/Paragraph sections — so a
   // freshly-created (or reparented) shape looked very different after save +
-  // reopen. Assert the emit path matches what the parser round-trips.
+  // reopen. An unfilled 1-D with LineColorTrans also bakes a FillForegndTrans
+  // ribbon and arrow Geometry because libvisio has no LineColorTrans token
+  // and sizes markers from line weight, not BeginArrowSize.
   test('newly emitted shapes preserve style / text / LocPin (buildShape parity)',
       () {
     final blank = writer.emptyDocument();
@@ -4919,10 +4921,12 @@ void main() {
     final rp = out.pages.first;
 
     final conn = rp.findShapeById(connId)!;
-    expect(conn.line.beginArrow, 1);
-    expect(conn.line.endArrow, 4);
-    expect(conn.line.transparency, closeTo(0.3, 1e-4));
-    expect(conn.line.pattern, 2);
+    expect(conn.is1D, isTrue);
+    expect(conn.line.beginArrow, 0);
+    expect(conn.line.endArrow, 0);
+    expect(conn.line.pattern, 0);
+    expect(conn.fill.foregroundTransparency, closeTo(0.3, 1e-4));
+    expect(conn.geometries.where((g) => !g.noFill).length, greaterThanOrEqualTo(2));
 
     final label = rp.findShapeById(labelId)!;
     expect(label.richText.textBlock.verticalAlign, VsdxVertAlign.bottom);

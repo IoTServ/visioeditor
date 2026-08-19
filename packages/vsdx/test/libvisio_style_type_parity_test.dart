@@ -132,6 +132,71 @@ void main() {
     );
     expect(shapeNeedsLibvisioArrowedStrokeBake(plain), isFalse);
     expect(libvisioShapeWrite(plain).line.beginArrow, 4);
+
+    VsdxShape filledCompound(int type) => VsdxShapeFactory.rectangle(
+          id: type,
+          pinX: 1,
+          pinY: 1,
+          width: 1,
+          height: 0.6,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFCCCCCC), pattern: 1),
+          line: VsdxLine(
+            color: const VsdxColor(0xFF000000),
+            weightInches: 0.08,
+            compoundType: type,
+          ),
+        );
+    for (final type in <int>[3, 4]) {
+      final baked = bakeCompoundTypeForLibvisio(filledCompound(type));
+      expect(baked, isNotNull, reason: 'CompoundType $type must bake rails');
+      expect(baked!.line.compoundType, 0);
+      expect(
+        baked.geometries.where((g) => !g.noLine).length,
+        type == 4 ? 3 : 2,
+      );
+    }
+
+    // VSDContentCollector::_linePropertiesMarkerPath filled ids that used to
+    // fall through to a generic triangle when compound/ribbon bakes arrows.
+    for (final id in <int>[6, 10, 12, 15, 17, 18, 20, 21, 38, 42]) {
+      final arrows = bakeArrowGeometriesForLibvisio(
+        VsdxShapeFactory.line(
+          id: id,
+          ax: 0,
+          ay: 0,
+          bx: 3,
+          by: 0,
+          line: VsdxLine(
+            color: const VsdxColor(0xFF000000),
+            weightInches: 0.08,
+            compoundType: 1,
+            beginArrow: id,
+            beginArrowSizeInches: 0.25,
+          ),
+        ),
+      );
+      expect(arrows, isNotEmpty, reason: 'arrow id $id must bake a polygon');
+    }
+    expect(
+      bakeArrowGeometriesForLibvisio(
+        VsdxShapeFactory.line(
+          id: 39,
+          ax: 0,
+          ay: 0,
+          bx: 3,
+          by: 0,
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 1,
+            beginArrow: 39,
+            beginArrowSizeInches: 0.25,
+          ),
+        ),
+      ).length,
+      2,
+      reason: 'libvisio marker 39/40 is two triangles',
+    );
   });
 
   test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {
@@ -458,6 +523,28 @@ void main() {
           color: VsdxColor.black,
           weightInches: 0.08,
           compoundType: 2,
+        ),
+      ),
+    );
+    built = built.addShape(
+      box(
+        'CompoundThinThick',
+        const VsdxFill(foreground: VsdxColor(0xFFCCCCCC), pattern: 1),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 3,
+        ),
+      ),
+    );
+    built = built.addShape(
+      box(
+        'CompoundTriple',
+        const VsdxFill(foreground: VsdxColor(0xFFCCCCCC), pattern: 1),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 4,
         ),
       ),
     );
@@ -967,6 +1054,22 @@ void main() {
     expect(
       thickThin.geometries.where((g) => !g.noLine).length,
       greaterThan(1),
+    );
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CompoundThinThick')
+          .geometries
+          .where((g) => !g.noLine)
+          .length,
+      2,
+    );
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CompoundTriple')
+          .geometries
+          .where((g) => !g.noLine)
+          .length,
+      3,
     );
     expect(
       savedDoc.pages.first.shapes

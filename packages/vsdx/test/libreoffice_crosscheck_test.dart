@@ -612,6 +612,36 @@ void main() {
             join: VsdxLineJoin.arcs,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 29,
+          pinX: 2,
+          pinY: 3.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'CompoundThinThick',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 3,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 30,
+          pinX: 4,
+          pinY: 3.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'CompoundTriple',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 4,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -761,6 +791,22 @@ void main() {
           .commands
           .whereType<RelQuadBezTo>(),
       isNotEmpty,
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CompoundThinThick')
+          .geometries
+          .where((g) => !g.noLine)
+          .length,
+      2,
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CompoundTriple')
+          .geometries
+          .where((g) => !g.noLine)
+          .length,
+      3,
     );
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;

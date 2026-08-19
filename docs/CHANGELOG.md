@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- `CompoundType` 3 (thin-thick) and 4 (triple) now have the same LibreOffice
+  rail-bake coverage as types 1–2. libvisio has no CompoundType token, so a
+  save still emits parallel Geometry rails and zeros the cell. Arrowed 1-D
+  compound / gradient / trans bakes now use the filled marker polygons
+  `VSDContentCollector::_linePropertiesMarkerPath` defines for more
+  BeginArrow/EndArrow ids (6, 10, 12, 15, 17–18, 20–21, 38, 42), instead of
+  collapsing them to the default triangle. Newly created transparent 1-D
+  connectors round-trip as a `FillForegndTrans` ribbon plus Geometry arrows,
+  matching Draw (`tokens.txt` has no LineColorTrans / BeginArrowSize).
 - Character `Highlight` now also writes `TextBkgnd` when the text block has
   no fill of its own. libvisio's `readCharIX` skips the Highlight cell, but
   `VSDContentCollector` paints `TextBkgnd` as span `fo:background-color`, so

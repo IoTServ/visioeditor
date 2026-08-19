@@ -307,18 +307,28 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 }
 
 /// Filled arrow polygons in the 0–10 marker viewBox used by
-/// `VSDContentCollector` / SVG `_arrowMarkerBody` (tip at x=10, y=5).
+/// `VSDContentCollector::_linePropertiesMarkerPath` / SVG `_arrowMarkerBody`
+/// (tip at x=10, y=5). Extra ids beyond 2/5/8/11/13/39/40 are the filled
+/// cousins Draw would otherwise flatten to the default triangle.
 List<List<Offset2D>> _markerPolygons(int arrowId) {
   switch (arrowId) {
     case 2:
+    case 15:
       return const [
         [Offset2D(0, 2.5), Offset2D(10, 5), Offset2D(0, 7.5)],
       ];
     case 5:
+    case 17:
       return const [
         [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9), Offset2D(3, 5)],
       ];
+    case 6:
+      return const [
+        [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9), Offset2D(7, 5)],
+      ];
     case 8:
+    case 12:
+    case 18:
       return const [
         [
           Offset2D(0, 0.5),
@@ -327,7 +337,24 @@ List<List<Offset2D>> _markerPolygons(int arrowId) {
           Offset2D(2.5, 5),
         ],
       ];
+    case 10:
+    case 20:
+    case 38:
+    case 42:
+      return const [
+        [
+          Offset2D(5, 0),
+          Offset2D(8.5, 1.5),
+          Offset2D(10, 5),
+          Offset2D(8.5, 8.5),
+          Offset2D(5, 10),
+          Offset2D(1.5, 8.5),
+          Offset2D(0, 5),
+          Offset2D(1.5, 1.5),
+        ],
+      ];
     case 11:
+    case 21:
       return const [
         [Offset2D(0, 1), Offset2D(10, 1), Offset2D(10, 9), Offset2D(0, 9)],
       ];
