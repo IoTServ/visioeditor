@@ -294,6 +294,21 @@ void main() {
             endArrow: 4,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 13,
+          pinX: 2,
+          pinY: 6.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'CompoundDouble',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 1,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);

@@ -29,6 +29,7 @@ import '../model/geometry.dart';
 import '../model/hyperlink.dart';
 import '../model/image.dart';
 import '../model/layer.dart';
+import '../model/libvisio_write.dart';
 import '../model/line.dart';
 import '../model/master.dart';
 import '../model/page.dart';
@@ -2927,15 +2928,20 @@ class VsdxWriter {
       changed |= _ensureLiteralInt(
           el, 'FillPattern', fillPatternForLibvisioWrite(edited.fill));
     }
+    final baseWrite = libvisioShapeWrite(base);
+    final editedWrite = libvisioShapeWrite(edited);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
-        baseColor: base.line.color,
-        baseTheme: base.line.themeColorIndex,
-        editedColor: edited.line.color,
-        editedTheme: edited.line.themeColorIndex);
-    changed |= _patchLength(el, 'LineWeight', base.line.weightInches, edited.line.weightInches);
-    changed |= _ensureLiteralLength(el, 'LineWeight', edited.line.weightInches);
-    changed |= _patchInt(el, 'LinePattern', base.line.pattern, edited.line.pattern);
-    changed |= _ensureLiteralInt(el, 'LinePattern', edited.line.pattern);
+        baseColor: baseWrite.line.color,
+        baseTheme: baseWrite.line.themeColorIndex,
+        editedColor: editedWrite.line.color,
+        editedTheme: editedWrite.line.themeColorIndex);
+    changed |= _patchLength(el, 'LineWeight', baseWrite.line.weightInches,
+        editedWrite.line.weightInches);
+    changed |=
+        _ensureLiteralLength(el, 'LineWeight', editedWrite.line.weightInches);
+    changed |= _patchInt(
+        el, 'LinePattern', baseWrite.line.pattern, editedWrite.line.pattern);
+    changed |= _ensureLiteralInt(el, 'LinePattern', editedWrite.line.pattern);
     changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
     changed |= _ensureLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
     changed |= _patchInt(el, 'BeginArrow', base.line.beginArrow, edited.line.beginArrow);
@@ -2985,10 +2991,10 @@ class VsdxWriter {
         el, 'SoftEdgesSize', base.line.softEdgesInches, edited.line.softEdgesInches);
     changed |=
         _ensureLiteralLength(el, 'SoftEdgesSize', edited.line.softEdgesInches);
-    changed |= _patchInt(
-        el, 'CompoundType', base.line.compoundType, edited.line.compoundType);
+    changed |= _patchInt(el, 'CompoundType', baseWrite.line.compoundType,
+        editedWrite.line.compoundType);
     changed |=
-        _ensureLiteralInt(el, 'CompoundType', edited.line.compoundType);
+        _ensureLiteralInt(el, 'CompoundType', editedWrite.line.compoundType);
     changed |= _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
     // Text block transform (TxtPin / TxtWidth / TxtAngle / margins) +
     // HideText / TextBkgnd + drop shadow / glow / reflection.
@@ -5063,12 +5069,14 @@ class VsdxWriter {
   }
 
   bool _patchGeometry(XmlElement el, VsdxShape base, VsdxShape edited) {
-    final needsLibvisioRewrite = _shapeNeedsLibvisioGeometryRewrite(edited);
+    final editedWrite = libvisioShapeWrite(edited);
+    final needsLibvisioRewrite = _shapeNeedsLibvisioGeometryRewrite(edited) ||
+        editedWrite.geometryRewritten;
     if (!needsLibvisioRewrite &&
         _geometriesEqual(base.geometries, edited.geometries)) {
       return _scrubGeometryInh(el, edited);
     }
-    if (!edited.geometries.every(_canRebuild)) return false;
+    if (!editedWrite.geometries.every(_canRebuild)) return false;
     // Prefer in-place V= updates so Width*/Height*/Scratch formulas and
     // unmodelled cells (NoSnap, A–D on NURBS, …) survive resize. CubBezTo
     // and other rows libvisio drops must be rebuilt, not patched in place.
@@ -5098,7 +5106,7 @@ class VsdxWriter {
     }
     var ix = 0;
     final sections = <XmlElement>[
-      for (final g in edited.geometries)
+      for (final g in editedWrite.geometries)
         if (_buildGeometrySection(
               g,
               ix++,
@@ -7328,6 +7336,7 @@ class VsdxWriter {
     if (s.hasImage) {
       return _buildPictureElement(s, imageRels, opaqueById: opaqueById);
     }
+    final write = libvisioShapeWrite(s);
     // Drop stale THEMEVAL keys left after theme→solid / no-fill edits so a
     // group rebuild cannot resurrect them (patch path already scrubbed).
     final staleTheme = _staleThemeFormulaKeys(s);
@@ -7496,21 +7505,26 @@ class VsdxWriter {
       ..add(_cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)))
       ..add(_cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)));
     // --- Line ----------------------------------------------------------------
-    if (s.line.color != null) {
-      children.add(_cell('LineColor', _hex(s.line.color!),
+    if (write.line.color != null) {
+      children.add(_cell('LineColor', _hex(write.line.color!),
           formula: formulaOf('LineColor')));
-    } else if (s.line.themeColorIndex != null) {
+    } else if (write.line.themeColorIndex != null) {
       children.add(_cell('LineColor', '0',
           formula: formulaOf('LineColor') ?? 'THEMEVAL()'));
-      children
-          .add(_cell('QuickStyleLineColor', s.line.themeColorIndex!.toString()));
+      children.add(
+          _cell('QuickStyleLineColor', write.line.themeColorIndex!.toString()));
     } else if (formulaOf('LineColor') != null) {
       children.add(_cell('LineColor', '0', formula: formulaOf('LineColor')));
     }
     children
-      ..add(_cell('LineWeight', _fmt(s.line.weightInches)))
-      ..add(_cell('LinePattern', s.line.pattern.toString(),
-          formula: formulaOf('LinePattern')))
+      ..add(_cell('LineWeight', _fmt(write.line.weightInches)))
+      ..add(_cell(
+        'LinePattern',
+        write.line.pattern.toString(),
+        formula: write.line.pattern == s.line.pattern
+            ? formulaOf('LinePattern')
+            : null,
+      ))
       // Always emit LineCap (Visio/Edraw "No Style" default is 0 = round).
       ..add(_cell('LineCap', _lineCapInt(s.line.cap).toString()))
       ..add(_cell('LineColorTrans', _fmt(s.line.transparency)));
@@ -7532,7 +7546,7 @@ class VsdxWriter {
       ..add(_cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)))
       // Always emit CompoundType (incl. 0) so StyleSheet inheritance cannot
       // revive double-line after the user cleared compound on a rebuild path.
-      ..add(_cell('CompoundType', s.line.compoundType.toString()));
+      ..add(_cell('CompoundType', write.line.compoundType.toString()));
     // Always emit LayerMember (incl. empty) so clearing layers survives
     // group rebuild — absent cell would re-inherit Master membership.
     children.add(_cell('LayerMember', s.layerMemberIds.join(';')));
@@ -7730,7 +7744,7 @@ class VsdxWriter {
       children.add(_buildLineGradientSection(s.line.gradient!));
     }
     var ix = 0;
-    for (final g in s.geometries) {
+    for (final g in write.geometries) {
       final section = _buildGeometrySection(
         g,
         ix++,
@@ -8085,6 +8099,7 @@ class VsdxWriter {
     final namedBg = (bgSlot != null && fgSlot != null && fgSlot != bgSlot)
         ? ThemeSlot.themeValName(bgSlot)
         : null;
+    final write = libvisioShapeWrite(s);
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX), formula: _nonInhFormula(s.formulas['PinX'])),
       _cell('PinY', _fmt(s.pinY), formula: _nonInhFormula(s.formulas['PinY'])),
@@ -8162,14 +8177,14 @@ class VsdxWriter {
       ],
       _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)),
       _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)),
-      _cell('LinePattern', s.line.pattern.toString()),
-      _cell('LineWeight', _fmt(s.line.weightInches)),
+      _cell('LinePattern', write.line.pattern.toString()),
+      _cell('LineWeight', _fmt(write.line.weightInches)),
       _cell('LineCap', _lineCapInt(s.line.cap).toString()),
-      if (s.line.color != null)
-        _cell('LineColor', _hex(s.line.color!))
-      else if (s.line.themeColorIndex != null) ...[
+      if (write.line.color != null)
+        _cell('LineColor', _hex(write.line.color!))
+      else if (write.line.themeColorIndex != null) ...[
         _cell('LineColor', '0', formula: 'THEMEVAL()'),
-        _cell('QuickStyleLineColor', s.line.themeColorIndex!.toString()),
+        _cell('QuickStyleLineColor', write.line.themeColorIndex!.toString()),
       ],
       _cell('LineColorTrans', _fmt(s.line.transparency)),
       // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
@@ -8185,7 +8200,7 @@ class VsdxWriter {
       // StyleSheet inheritance cannot revive effects after Foreign rebuild.
       _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
       _cell('Rounding', _fmt(s.line.roundingInches)),
-      _cell('CompoundType', s.line.compoundType.toString()),
+      _cell('CompoundType', write.line.compoundType.toString()),
       // Always emit (incl. empty) — mirrors normal shape rebuild.
       _cell('LayerMember', s.layerMemberIds.join(';')),
       _cell('FlipX', s.flipX ? '1' : '0'),
@@ -8401,7 +8416,7 @@ class VsdxWriter {
     // Fall back to a Width×Height rectangle when the model has none.
     var gIx = 0;
     var emittedGeom = false;
-    for (final g in s.geometries) {
+    for (final g in write.geometries) {
       if (!_canRebuild(g)) continue;
       final section = _buildGeometrySection(
         g,
@@ -8788,6 +8803,7 @@ class VsdxWriter {
   /// Draw paint sharp corners. Bake the fillet, matching `_bakeLegacyRounding`
   /// for VSD/VDX.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
+    if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
     if (shape.line.roundingInches <= 1e-12) return false;
     for (final geometry in shape.geometries) {

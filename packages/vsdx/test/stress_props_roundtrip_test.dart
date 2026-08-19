@@ -100,7 +100,8 @@ void main() {
     expect(s1.line.beginArrow, 4);
     expect(s1.line.endArrow, 5);
     expect(s1.line.softEdgesInches, closeTo(0.04, 1e-6));
-    expect(s1.line.compoundType, 1);
+    expect(s1.line.compoundType, 0);
+    expect(s1.geometries.where((g) => !g.noLine).length, greaterThan(1));
     expect(s1.shadow.enabled, isTrue);
     expect(s1.shadow.offsetXInches, closeTo(0.12, 1e-6));
     expect(s1.glow.enabled, isTrue);

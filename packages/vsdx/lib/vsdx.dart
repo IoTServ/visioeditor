@@ -37,6 +37,7 @@ export 'src/model/spline.dart';
 export 'src/model/hyperlink.dart';
 export 'src/model/image.dart';
 export 'src/model/layer.dart';
+export 'src/model/libvisio_write.dart';
 export 'src/model/line.dart';
 export 'src/model/master.dart';
 export 'src/model/obstacle_router.dart';

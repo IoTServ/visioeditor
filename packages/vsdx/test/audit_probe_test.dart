@@ -142,7 +142,8 @@ void main() {
     expect(rectAfter.fill.themeBackgroundIndex, ThemeSlot.accent3);
     expect(rectAfter.line.themeColorIndex, ThemeSlot.accent2);
     expect(rectAfter.line.softEdgesInches, closeTo(0.05, 1e-6));
-    expect(rectAfter.line.compoundType, 1);
+    expect(rectAfter.line.compoundType, 0);
+    expect(rectAfter.geometries.where((g) => !g.noLine).length, greaterThan(1));
     expect(rectAfter.glow.enabled, isTrue);
     expect(rectAfter.shadow.enabled, isTrue);
     expect(rectAfter.richText.textBlock.verticalAlign, VsdxVertAlign.top);

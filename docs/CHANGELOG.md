@@ -596,6 +596,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   nearest classic FillPattern 25–40 and bakes filleted RelQuadBezTo rows;
   classic FillPattern 25–40 also paint here even when the model has no stop
   section yet.
+- `CompoundType` 1–4 and unknown `LinePattern` ids now survive a save into
+  LibreOffice. libvisio's VSDX token map has no CompoundType cell, and its
+  `_lineProperties` switch treats custom / 0xFE dashes as solid, so Draw
+  used to stroke a single full-width line. A 2-D save now emits parallel
+  Geometry rails (and zeros CompoundType so Visio does not restroke the
+  original path) and snaps custom dash arrays onto the built-in 2–23 table.
+  A LineGradient without LineColor also writes the first stop colour so
+  Draw has a stroke to paint.
 - Rendering is now checked per shape, not just per page. A page-level mean
   error cannot see a single geometry, fill or master that silently
   disappears: the average barely moves. The corpus now maps every shape

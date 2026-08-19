@@ -1,10 +1,13 @@
 /// Fill, line and Rounding types must paint here, and a save must emit the
 /// cells / rows LibreOffice's libvisio importer still collects.
 ///
-/// `VSDXParser` has no FillGradient token and no shape-level Rounding, so a
-/// modern gradient with FillPattern=1, or a polyline with only a Rounding
-/// cell, disappears in Draw. The writer rewrites those to classic FillPattern
-/// 25–40 and baked RelQuadBezTo corners.
+/// `VSDXParser` has no FillGradient token, no shape-level Rounding, and no
+/// CompoundType token. A modern gradient with FillPattern=1, a polyline with
+/// only a Rounding cell, or a CompoundType>0 stroke disappears in Draw. The
+/// writer rewrites those to classic FillPattern 25–40, baked RelQuadBezTo
+/// corners, and parallel Geometry rails. Classic FillPattern 25–40 also paint
+/// here even when the model has no stop section yet. Unknown LinePattern ids
+/// snap to the built-in 2–23 table `_lineProperties` actually dashes.
 library;
 
 import 'package:test/test.dart';
@@ -74,6 +77,43 @@ void main() {
         ),
       ),
     );
+    built = built.addShape(
+      box(
+        'CompoundDouble',
+        const VsdxFill(foreground: VsdxColor(0xFFCCCCCC), pattern: 1),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 1,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShape(
+        id: nextId++,
+        name: 'LineGradient',
+        pinX: 5,
+        pinY: 2,
+        width: 2,
+        height: 0.2,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[MoveTo(0, 0.1), LineTo(2, 0.1)],
+          ),
+        ],
+        line: const VsdxLine(
+          pattern: 1,
+          weightInches: 0.06,
+          gradient: VsdxGradient(
+            stops: [
+              VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+            ],
+          ),
+        ),
+      ),
+    );
     for (final pattern in <int>[2, 10, 23]) {
       built = built.addShape(
         VsdxShape(
@@ -113,6 +153,16 @@ void main() {
         .readPartXml('/visio/pages/page1.xml')!
         .toXmlString();
     expect(xml, contains('T="RelQuadBezTo"'), reason: 'Rounding bakes for LO');
+    expect(xml, contains('N="CompoundType" V="0"'),
+        reason: 'CompoundType 1 bakes to rails; cell must be 0 so Visio '
+            'does not restroke the original path');
+    expect(
+      xml.contains('N="LineGradientEnabled" V="1"'),
+      isTrue,
+      reason: 'LineGradient cells stay for Visio; LO uses LineColor',
+    );
+    expect(xml, contains('N="LineColor" V="#FF0000"'),
+        reason: 'LineGradient without LineColor must emit a stop colour for LO');
     expect(
       xml.contains('N="FillPattern" V="1"') &&
           xml.contains('N="FillGradientEnabled" V="1"'),

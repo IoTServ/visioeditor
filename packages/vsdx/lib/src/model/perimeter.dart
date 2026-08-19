@@ -61,6 +61,33 @@ abstract final class ShapePerimeter {
     return pts.length >= 2 ? pts : null;
   }
 
+  /// Sample one Geometry section into vertices. Empty sections stay empty —
+  /// this does not fall back to the Width×Height box.
+  static List<Offset2D>? sampledGeometryVertices(
+    VsdxGeometry geometry, {
+    required double width,
+    required double height,
+  }) {
+    if (geometry.commands.isEmpty) return null;
+    final probe = geometry.copyWith(
+      noShow: false,
+      noSnap: false,
+      noLine: false,
+      noFill: false,
+    );
+    return sampledPathVertices(
+      VsdxShape(
+        id: 0,
+        name: '_',
+        pinX: 0,
+        pinY: 0,
+        width: width,
+        height: height,
+        geometries: [probe],
+      ),
+    );
+  }
+
   /// Nearest point on [shape]'s outline (local inches) to [local], or `null`
   /// when the outline is empty.
   static Offset2D? nearestLocal(VsdxShape shape, Offset2D local) {

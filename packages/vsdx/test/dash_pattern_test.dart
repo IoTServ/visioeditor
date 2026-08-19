@@ -74,6 +74,24 @@ void main() {
     expect(dashArrayAttr(2, weightInches: 0.01), '0.06 0.03');
     expect(dashArrayAttr(1), isEmpty);
   });
+
+  test('linePatternForLibvisioWrite snaps custom arrays onto 2–23', () {
+    expect(
+      linePatternForLibvisioWrite(
+        const VsdxLine(pattern: 2, customDashPattern: <double>[6, 3]),
+      ),
+      2,
+    );
+    expect(
+      linePatternForLibvisioWrite(
+        const VsdxLine(pattern: 254, customDashPattern: <double>[1, 3]),
+      ),
+      3,
+    );
+    expect(linePatternForLibvisioWrite(const VsdxLine(pattern: 23)), 23);
+    expect(linePatternForLibvisioWrite(const VsdxLine(pattern: 254)), 1);
+    expect(linePatternForLibvisioWrite(const VsdxLine(pattern: 0)), 0);
+  });
 }
 
 Matcher closeToList(List<double> expected, [double eps = 1e-9]) =>

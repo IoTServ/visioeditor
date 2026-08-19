@@ -6264,10 +6264,16 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
-    expect(pageXml.contains('N="CompoundType" V="1"'), isTrue);
+    expect(pageXml.contains('N="CompoundType" V="0"'), isTrue);
+    expect(
+      '<Section N="Geometry"'.allMatches(pageXml).length,
+      greaterThan(1),
+      reason: 'CompoundType 1 must bake into parallel Geometry rails for LO',
+    );
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.line.softEdgesInches, closeTo(0.05, 1e-6));
-    expect(after.line.compoundType, 1);
+    expect(after.line.compoundType, 0);
+    expect(after.geometries.where((g) => !g.noLine).length, greaterThan(1));
   });
 
   test('expanded Lock* cells written when locked', () {
