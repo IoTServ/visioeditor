@@ -600,8 +600,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (Draw's fallback for those ids is the *background* colour). Explicit
   round joins on a square/flat cap bake RelQuadBezTo fillets (half the
   line weight) so Draw does not miter them: `_lineProperties` derives
-  join from LineCap only. The Rounding cell stays 0 so Visio does not
-  fillet the already-baked corners a second time.
+  join from LineCap only. Bevel joins bake LineTo chamfers; arcs joins
+  bake the same fillets as round (matching canvas). The Rounding cell
+  stays 0 so Visio does not fillet the already-baked corners a second time.
 - Arrowed 1-D `CompoundType` / `LineGradient` / `LineColorTrans` strokes now
   bake Begin/EndArrow as filled Geometry before the rail or ribbon rewrite,
   then clear the arrow cells. libvisio hangs a marker on every open path and

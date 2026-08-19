@@ -20,8 +20,9 @@
 /// rewritten to the Asian / complex face, and a complex-only run writes
 /// `ComplexScriptSize` into `Size`. `_lineProperties` derives `stroke-linejoin`
 /// from `LineCap` only (round cap → round join, otherwise miter), so an
-/// explicit round join on a square/flat cap is baked with the same RelQuadBezTo
-/// fillets as shape-level Rounding.
+/// explicit round / arcs join on a square/flat cap is baked with the same
+/// RelQuadBezTo fillets as shape-level Rounding, and a bevel join becomes a
+/// LineTo chamfer. The Rounding cell stays 0 so Visio does not restroke.
 library;
 
 import 'dart:math' as math;
@@ -550,22 +551,41 @@ int linePatternForLibvisioWrite(VsdxLine line) {
   return 1;
 }
 
-/// Fillet radius Draw will actually paint.
+/// Fillet / chamfer radius Draw will actually paint.
 ///
 /// Shape-level `Rounding` is not in `readShapeProperties` (only stylesheet
-/// `readLine`). Explicit draw.io round joins are also dropped: `_lineProperties`
-/// maps join from `LineCap`, so a square/flat cap becomes a miter. Bake those
-/// at half the line weight, without writing a Rounding cell Visio would
-/// apply a second time on top of the fillets.
+/// `readLine`). Explicit draw.io joins are also dropped: `_lineProperties`
+/// maps join from `LineCap`, so a square/flat cap becomes a miter. Bake
+/// round / arcs as RelQuadBezTo and bevel as a LineTo chamfer, at half the
+/// line weight, without writing a Rounding cell Visio would apply a second
+/// time on top of the geometry. An already-authored Rounding cell wins over
+/// a bevel chamfer so Visio's round corners stay round.
 double roundingForLibvisioWrite(VsdxLine line) {
   var radius = line.roundingInches;
-  if (line.join == VsdxLineJoin.round && line.cap != LineCap.round) {
-    final joinRadius =
-        (line.weightInches > 1e-9 ? line.weightInches : 0.01) / 2;
-    if (joinRadius > radius) radius = joinRadius;
+  if (line.cap == LineCap.round) return radius;
+  final joinRadius = (line.weightInches > 1e-9 ? line.weightInches : 0.01) / 2;
+  switch (line.join) {
+    case VsdxLineJoin.round:
+    case VsdxLineJoin.arcs:
+      if (joinRadius > radius) radius = joinRadius;
+    case VsdxLineJoin.bevel:
+      if (radius <= 1e-12) radius = joinRadius;
+    case VsdxLineJoin.miter:
+    case VsdxLineJoin.miterClip:
+    case null:
+      break;
   }
   return radius;
 }
+
+/// `true` when the baked corner must be a LineTo chamfer, not RelQuadBezTo.
+///
+/// Only bevel, and only when there is no shape-level Rounding (that cell
+/// still means a Visio fillet). Round / arcs keep the quadratic.
+bool chamferForLibvisioWrite(VsdxLine line) =>
+    line.roundingInches <= 1e-12 &&
+    line.cap != LineCap.round &&
+    line.join == VsdxLineJoin.bevel;
 
 /// Closest of libvisio's dash ids 2–23 for a draw.io / custom array.
 int nearestLibvisioLinePattern(List<double> custom) {

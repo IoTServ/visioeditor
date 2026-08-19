@@ -5138,6 +5138,7 @@ class VsdxWriter {
               width: edited.width,
               height: edited.height,
               roundingInches: roundingForLibvisioWrite(edited.line),
+              chamfer: chamferForLibvisioWrite(edited.line),
             )
             case final s?)
           s,
@@ -7777,6 +7778,7 @@ class VsdxWriter {
         width: s.width,
         height: s.height,
         roundingInches: roundingForLibvisioWrite(s.line),
+        chamfer: chamferForLibvisioWrite(s.line),
       );
       if (section != null) children.add(section);
     }
@@ -8454,6 +8456,7 @@ class VsdxWriter {
         width: s.width,
         height: s.height,
         roundingInches: roundingForLibvisioWrite(s.line),
+        chamfer: chamferForLibvisioWrite(s.line),
       );
       if (section != null) {
         children.add(section);
@@ -8831,8 +8834,8 @@ class VsdxWriter {
   /// libvisio's VSDX shape switch has no `XML_ROUNDING` (only the stylesheet
   /// `readLine` path collects it). Leaving a polyline + Rounding cell makes
   /// Draw paint sharp corners. Bake the fillet, matching `_bakeLegacyRounding`
-  /// for VSD/VDX. Explicit round joins on a non-round cap use the same path:
-  /// `_lineProperties` would otherwise emit miter.
+  /// for VSD/VDX. Explicit round / arcs / bevel joins on a non-round cap use
+  /// the same path: `_lineProperties` would otherwise emit miter.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
@@ -8846,6 +8849,7 @@ class VsdxWriter {
         width: shape.width,
         height: shape.height,
         radius: radius,
+        chamfer: chamferForLibvisioWrite(shape.line),
       );
       if (!identical(baked, geometry)) return true;
     }
@@ -8858,12 +8862,14 @@ class VsdxWriter {
     double width = 1,
     double height = 1,
     double roundingInches = 0,
+    bool chamfer = false,
   }) {
     final geometry = bakePolylineRounding(
       g,
       width: width,
       height: height,
       radius: roundingInches,
+      chamfer: chamfer,
     );
     final baked = !identical(geometry, g);
     final rows = <XmlNode>[];

@@ -85,6 +85,7 @@ FilletPath? filletPolylinePath(
   List<Offset2D> points,
   double radius, {
   bool closed = false,
+  bool chamfer = false,
 }) {
   if (radius <= 1e-12 || points.length < 3) return null;
   final n = points.length;
@@ -99,6 +100,10 @@ FilletPath? filletPolylinePath(
               radius,
             ),
   ];
+  FilletPathSegment cornerEdge(_FilletCorner corner) => (
+        end: corner.end,
+        control: chamfer ? null : corner.control,
+      );
   final segments = <FilletPathSegment>[];
   if (!closed) {
     for (var i = 1; i < n - 1; i++) {
@@ -108,7 +113,7 @@ FilletPath? filletPolylinePath(
       } else {
         segments
           ..add((end: corner.start, control: null))
-          ..add((end: corner.end, control: corner.control));
+          ..add(cornerEdge(corner));
       }
     }
     segments.add((end: points.last, control: null));
@@ -125,7 +130,7 @@ FilletPath? filletPolylinePath(
     } else {
       segments
         ..add((end: corner.start, control: null))
-        ..add((end: corner.end, control: corner.control));
+        ..add(cornerEdge(corner));
     }
   }
   return (start: start, segments: segments, closed: true);
@@ -143,6 +148,7 @@ VsdxGeometry bakePolylineRounding(
   required double width,
   required double height,
   required double radius,
+  bool chamfer = false,
 }) {
   if (radius <= 1e-12 || width.abs() <= 1e-12 || height.abs() <= 1e-12) {
     return geometry;
@@ -214,7 +220,12 @@ VsdxGeometry bakePolylineRounding(
   } else {
     closed = polylineLooksClosed(points, noFill: geometry.noFill);
   }
-  final fillet = filletPolylinePath(points, radius, closed: closed);
+  final fillet = filletPolylinePath(
+    points,
+    radius,
+    closed: closed,
+    chamfer: chamfer,
+  );
   if (fillet == null) return geometry;
 
   return geometry.copyWith(

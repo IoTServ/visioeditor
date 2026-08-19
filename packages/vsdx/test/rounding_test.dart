@@ -64,6 +64,23 @@ void main() {
     expect(path.segments[2].end, const Offset2D(2, 2));
   });
 
+  test('filletPolylinePath chamfers corners as LineTo', () {
+    const pts = <Offset2D>[
+      Offset2D(0, 0),
+      Offset2D(2, 0),
+      Offset2D(2, 2),
+    ];
+    final path = filletPolylinePath(pts, 0.25, chamfer: true)!;
+    expect(path.start, const Offset2D(0, 0));
+    expect(path.segments, hasLength(3));
+    expect(path.segments[0].end, const Offset2D(1.75, 0));
+    expect(path.segments[0].control, isNull);
+    expect(path.segments[1].control, isNull);
+    expect(path.segments[1].end.x, closeTo(2, 1e-9));
+    expect(path.segments[1].end.y, closeTo(0.25, 1e-9));
+    expect(path.segments[2].end, const Offset2D(2, 2));
+  });
+
   test('polylineLooksClosed treats filled open rings as closed', () {
     const pts = <Offset2D>[
       Offset2D(0, 0),
@@ -109,6 +126,29 @@ void main() {
     expect(baked.commands.whereType<RelQuadBezTo>(), hasLength(4));
     expect(baked.rowIndices, isEmpty);
     expect((baked.commands.first as MoveTo).x, closeTo(0.08, 1e-9));
+  });
+
+  test('bakePolylineRounding chamfers bevel corners as LineTo', () {
+    const geometry = VsdxGeometry(
+      noFill: true,
+      commands: <VsdxPathCommand>[
+        MoveTo(0, 0),
+        LineTo(2, 0),
+        LineTo(2, 2),
+      ],
+    );
+    final baked = bakePolylineRounding(
+      geometry,
+      width: 2,
+      height: 2,
+      radius: 0.25,
+      chamfer: true,
+    );
+    expect(baked.commands.whereType<RelQuadBezTo>(), isEmpty);
+    expect(baked.commands.whereType<LineTo>(), hasLength(3));
+    expect((baked.commands[1] as LineTo).x, closeTo(1.75, 1e-9));
+    expect((baked.commands[2] as LineTo).x, closeTo(2, 1e-9));
+    expect((baked.commands[2] as LineTo).y, closeTo(0.25, 1e-9));
   });
 
   test('bakePolylineRounding leaves already-curved geometry unchanged', () {

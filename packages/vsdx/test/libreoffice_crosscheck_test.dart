@@ -562,6 +562,56 @@ void main() {
             join: VsdxLineJoin.round,
           ),
         ),
+      ).addShape(
+        VsdxShape(
+          id: id + 27,
+          name: 'BevelJoin',
+          pinX: 6,
+          pinY: 8.2,
+          width: 1.4,
+          height: 1.4,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(1.4, 0),
+                LineTo(1.4, 1.4),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            cap: LineCap.square,
+            join: VsdxLineJoin.bevel,
+          ),
+        ),
+      ).addShape(
+        VsdxShape(
+          id: id + 28,
+          name: 'ArcsJoin',
+          pinX: 4,
+          pinY: 8.2,
+          width: 1.4,
+          height: 1.4,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(1.4, 0),
+                LineTo(1.4, 1.4),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            cap: LineCap.square,
+            join: VsdxLineJoin.arcs,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -690,6 +740,26 @@ void main() {
     expect(roundJoin.line.cap, LineCap.square);
     expect(
       roundJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+    );
+    final bevelJoin = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'BevelJoin');
+    expect(bevelJoin.line.roundingInches, closeTo(0, 1e-12));
+    expect(
+      bevelJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isEmpty,
+    );
+    expect(
+      bevelJoin.geometries.single.commands.whereType<LineTo>().length,
+      greaterThan(2),
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'ArcsJoin')
+          .geometries
+          .single
+          .commands
+          .whereType<RelQuadBezTo>(),
       isNotEmpty,
     );
     var tiffDocument = parser.parse(blank);

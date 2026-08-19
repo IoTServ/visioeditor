@@ -28,7 +28,8 @@
 /// the face and size Draw will actually load. Mixed Latin+CJK runs keep
 /// `Font`. Unknown `FillPattern` ids above 40 snap to solid `1`. Explicit
 /// round joins on a square/flat cap bake RelQuadBezTo — `_lineProperties`
-/// would otherwise emit miter from LineCap.
+/// would otherwise emit miter from LineCap. Bevel joins bake LineTo chamfers;
+/// arcs joins bake the same fillets as round (canvas `canvasStrokeJoin`).
 library;
 
 import 'dart:io';
@@ -227,6 +228,64 @@ void main() {
       )),
       0,
     );
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.bevel,
+        weightInches: 0.08,
+      )),
+      closeTo(0.04, 1e-12),
+    );
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.arcs,
+        weightInches: 0.08,
+      )),
+      closeTo(0.04, 1e-12),
+    );
+    expect(
+      chamferForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.bevel,
+        weightInches: 0.08,
+      )),
+      isTrue,
+    );
+    expect(
+      chamferForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.round,
+        weightInches: 0.08,
+      )),
+      isFalse,
+    );
+    expect(
+      chamferForLibvisioWrite(const VsdxLine(
+        cap: LineCap.round,
+        join: VsdxLineJoin.bevel,
+        weightInches: 0.08,
+      )),
+      isFalse,
+    );
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.bevel,
+        roundingInches: 0.15,
+        weightInches: 0.08,
+      )),
+      closeTo(0.15, 1e-12),
+    );
+    expect(
+      chamferForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.bevel,
+        roundingInches: 0.15,
+        weightInches: 0.08,
+      )),
+      isFalse,
+    );
   });
 
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
@@ -310,6 +369,58 @@ void main() {
           weightInches: 0.08,
           cap: LineCap.square,
           join: VsdxLineJoin.round,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShape(
+        id: nextId++,
+        name: 'BevelJoin',
+        pinX: 8,
+        pinY: 3.2,
+        width: 1.4,
+        height: 1.4,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              LineTo(1.4, 0),
+              LineTo(1.4, 1.4),
+            ],
+          ),
+        ],
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          cap: LineCap.square,
+          join: VsdxLineJoin.bevel,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShape(
+        id: nextId++,
+        name: 'ArcsJoin',
+        pinX: 6.4,
+        pinY: 1.6,
+        width: 1.4,
+        height: 1.4,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              LineTo(1.4, 0),
+              LineTo(1.4, 1.4),
+            ],
+          ),
+        ],
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          cap: LineCap.square,
+          join: VsdxLineJoin.arcs,
         ),
       ),
     );
@@ -936,12 +1047,36 @@ void main() {
     final roundJoin =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
     expect(roundJoin.line.roundingInches, closeTo(0, 1e-12),
-        reason: 'round join must not write a Rounding cell Visio would restroke');
+        reason:
+            'round join must not write a Rounding cell Visio would restroke');
     expect(roundJoin.line.cap, LineCap.square);
     expect(
       roundJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
       isNotEmpty,
       reason: '_lineProperties would miter a square cap; fillets are collected',
+    );
+    final bevelJoin =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'BevelJoin');
+    expect(bevelJoin.line.roundingInches, closeTo(0, 1e-12),
+        reason:
+            'bevel join must not write a Rounding cell Visio would restroke');
+    expect(bevelJoin.line.cap, LineCap.square);
+    expect(
+      bevelJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isEmpty,
+      reason: 'bevel corners bake as LineTo chamfers, not RelQuadBezTo',
+    );
+    expect(
+      bevelJoin.geometries.single.commands.whereType<LineTo>().length,
+      greaterThan(2),
+    );
+    final arcsJoin =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'ArcsJoin');
+    expect(arcsJoin.line.roundingInches, closeTo(0, 1e-12));
+    expect(
+      arcsJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+      reason: 'canvas treats arcs join as round; Draw would otherwise miter',
     );
     final collected = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'CollectedChar')
