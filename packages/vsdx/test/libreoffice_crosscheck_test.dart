@@ -370,6 +370,65 @@ void main() {
             transparency: 0.5,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 18,
+          ax: 5,
+          ay: 6.2,
+          bx: 8,
+          by: 6.2,
+          name: 'ArrowedCompound1D',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 1,
+            beginArrow: 4,
+            endArrow: 13,
+            beginArrowSizeInches: 0.25,
+            endArrowSizeInches: 0.25,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 19,
+          ax: 1,
+          ay: 4.8,
+          bx: 4,
+          by: 4.8,
+          name: 'ArrowedLineGradient1D',
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.06,
+            beginArrow: 4,
+            endArrow: 13,
+            beginArrowSizeInches: 0.25,
+            endArrowSizeInches: 0.25,
+            gradient: VsdxGradient(
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 20,
+          ax: 5,
+          ay: 4.8,
+          bx: 8,
+          by: 4.8,
+          name: 'ArrowedLineColorTrans1D',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            transparency: 0.5,
+            beginArrow: 4,
+            endArrow: 13,
+            beginArrowSizeInches: 0.25,
+            endArrowSizeInches: 0.25,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -433,6 +492,27 @@ void main() {
     expect(lineColorTrans1d.line.pattern, 0);
     expect(lineColorTrans1d.fill.foregroundTransparency, closeTo(0.5, 1e-9));
     expect(lineColorTrans1d.geometries.any((g) => !g.noFill), isTrue);
+    final arrowedCompound = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'ArrowedCompound1D');
+    expect(arrowedCompound.is1D, isTrue);
+    expect(arrowedCompound.line.beginArrow, 0);
+    expect(arrowedCompound.line.compoundType, 0);
+    expect(
+      arrowedCompound.geometries.where((g) => !g.noLine).length,
+      greaterThan(1),
+    );
+    expect(
+      arrowedCompound.geometries.where((g) => !g.noFill).length,
+      greaterThanOrEqualTo(2),
+    );
+    final arrowedGradient = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'ArrowedLineGradient1D');
+    expect(arrowedGradient.line.beginArrow, 0);
+    expect(arrowedGradient.geometries.any((g) => !g.noFill), isTrue);
+    final arrowedTrans = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'ArrowedLineColorTrans1D');
+    expect(arrowedTrans.line.beginArrow, 0);
+    expect(arrowedTrans.fill.foregroundTransparency, closeTo(0.5, 1e-9));
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';

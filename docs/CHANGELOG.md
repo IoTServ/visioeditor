@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Arrowed 1-D `CompoundType` / `LineGradient` / `LineColorTrans` strokes now
+  bake Begin/EndArrow as filled Geometry before the rail or ribbon rewrite,
+  then clear the arrow cells. libvisio hangs a marker on every open path and
+  does not collect `BeginArrowSize`, so a double-line connector with arrows
+  used to either skip the rails or duplicate arrowheads, and a gradient or
+  transparent connector with arrows used to flatten to an opaque solid.
+  Ordinary arrowed connectors (no compound / gradient / trans) still keep
+  `BeginArrow` so Draw can use its built-in markers.
 - Arrow-less 1-D / unfilled 2-D `LineColorTrans` strokes now bake a filled
   ribbon with `FillForegndTrans` when saved for LibreOffice. libvisio's
   VSDX token map has no LineColorTrans cell, and `xmlStringToColour`

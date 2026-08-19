@@ -2947,10 +2947,10 @@ class VsdxWriter {
     changed |= _ensureLiteralInt(el, 'LinePattern', editedWrite.line.pattern);
     changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
     changed |= _ensureLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
-    changed |= _patchInt(el, 'BeginArrow', base.line.beginArrow, edited.line.beginArrow);
-    changed |= _ensureLiteralInt(el, 'BeginArrow', edited.line.beginArrow);
-    changed |= _patchInt(el, 'EndArrow', base.line.endArrow, edited.line.endArrow);
-    changed |= _ensureLiteralInt(el, 'EndArrow', edited.line.endArrow);
+    changed |= _patchInt(el, 'BeginArrow', baseWrite.line.beginArrow, editedWrite.line.beginArrow);
+    changed |= _ensureLiteralInt(el, 'BeginArrow', editedWrite.line.beginArrow);
+    changed |= _patchInt(el, 'EndArrow', baseWrite.line.endArrow, editedWrite.line.endArrow);
+    changed |= _ensureLiteralInt(el, 'EndArrow', editedWrite.line.endArrow);
     changed |= _patchInt(
         el,
         'BeginArrowSize',
@@ -7545,14 +7545,14 @@ class VsdxWriter {
     // Always emit arrows (incl. 0) so StyleSheet cannot revive arrowheads
     // after the user cleared them on a rebuild path (patch already forces 0).
     children
-      ..add(_cell('BeginArrow', s.line.beginArrow.toString()))
+      ..add(_cell('BeginArrow', write.line.beginArrow.toString()))
       ..add(_cell(
           'BeginArrowSize',
-          _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()))
-      ..add(_cell('EndArrow', s.line.endArrow.toString()))
+          _arrowSizeToBucket(write.line.beginArrowSizeInches).toString()))
+      ..add(_cell('EndArrow', write.line.endArrow.toString()))
       ..add(_cell(
           'EndArrowSize',
-          _arrowSizeToBucket(s.line.endArrowSizeInches).toString()));
+          _arrowSizeToBucket(write.line.endArrowSizeInches).toString()));
     // Always emit SoftEdges/Rounding (incl. 0) so StyleSheet cannot revive
     // feathering after a group rebuild cleared the effect in the model.
     children
@@ -8205,14 +8205,14 @@ class VsdxWriter {
       ],
       _cell('LineColorTrans', _fmt(s.line.transparency)),
       // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
-      _cell('BeginArrow', s.line.beginArrow.toString()),
+      _cell('BeginArrow', write.line.beginArrow.toString()),
       _cell(
           'BeginArrowSize',
-          _arrowSizeToBucket(s.line.beginArrowSizeInches).toString()),
-      _cell('EndArrow', s.line.endArrow.toString()),
+          _arrowSizeToBucket(write.line.beginArrowSizeInches).toString()),
+      _cell('EndArrow', write.line.endArrow.toString()),
       _cell(
           'EndArrowSize',
-          _arrowSizeToBucket(s.line.endArrowSizeInches).toString()),
+          _arrowSizeToBucket(write.line.endArrowSizeInches).toString()),
       // SoftEdges / Rounding / CompoundType — always emit (incl. 0) so
       // StyleSheet inheritance cannot revive effects after Foreign rebuild.
       _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
@@ -8822,6 +8822,7 @@ class VsdxWriter {
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
+    if (shapeNeedsLibvisioArrowedStrokeBake(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
     if (shape.line.roundingInches <= 1e-12) return false;
     for (final geometry in shape.geometries) {

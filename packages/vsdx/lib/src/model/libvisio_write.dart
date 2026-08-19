@@ -8,8 +8,13 @@
 /// stroke. A save therefore has to emit parallel Geometry rails, a built-in
 /// pattern 2–23, and — for an unfilled stroke with a line gradient or
 /// LineColorTrans — a filled ribbon whose FillPattern 25–40 / FillForegndTrans
-/// libvisio *does* collect.
+/// libvisio *does* collect. Arrowed 1-D connectors that also need those
+/// rewrites bake Begin/EndArrow as filled Geometry so Draw does not hang a
+/// marker on every open rail (and so BeginArrowSize, which is not a token,
+/// still has a size).
 library;
+
+import 'dart:math' as math;
 
 import '../export/compound_stroke.dart';
 import '../utils/color.dart';
@@ -43,11 +48,24 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   var fill = shape.fill;
   var geometryRewritten = false;
 
-  final baked = bakeCompoundTypeForLibvisio(shape);
+  var working = shape;
+  List<VsdxGeometry> arrowGeoms = const <VsdxGeometry>[];
+  if (shapeNeedsLibvisioArrowedStrokeBake(shape)) {
+    arrowGeoms = bakeArrowGeometriesForLibvisio(shape);
+    working = shape.copyWith(
+      line: shape.line.copyWith(beginArrow: 0, endArrow: 0),
+    );
+    geometries = working.geometries;
+    line = working.line;
+    if (arrowGeoms.isNotEmpty) geometryRewritten = true;
+  }
+
+  final baked = bakeCompoundTypeForLibvisio(working);
   if (baked != null) {
     geometries = baked.geometries;
     line = baked.line;
     geometryRewritten = true;
+    working = working.copyWith(geometries: geometries, line: line);
   }
 
   final pattern = linePatternForLibvisioWrite(line);
@@ -61,7 +79,7 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   }
 
   final ribbon = bakeStrokeRibbonForLibvisio(
-    shape: shape,
+    shape: working,
     geometries: geometries,
     line: line,
   );
@@ -70,6 +88,19 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     line = ribbon.line;
     fill = ribbon.fill;
     geometryRewritten = true;
+  }
+
+  if (arrowGeoms.isNotEmpty) {
+    geometries = <VsdxGeometry>[...geometries, ...arrowGeoms];
+    if (!fill.hasFill) {
+      fill = VsdxFill(
+        foreground: line.color ?? const VsdxColor(0xFF000000),
+        pattern: 1,
+        themeForegroundIndex: line.color == null ? line.themeColorIndex : null,
+        foregroundTransparency: line.transparency.clamp(0.0, 1.0),
+      );
+    }
+    line = line.copyWith(beginArrow: 0, endArrow: 0);
   }
 
   return LibvisioShapeWrite(
@@ -103,11 +134,32 @@ bool _shapePaintsFill(VsdxShape shape, List<VsdxGeometry> geometries) {
 bool _hasArrowheads(VsdxLine line) =>
     line.beginArrow != 0 || line.endArrow != 0;
 
+VsdxShape _withoutArrowheads(VsdxShape shape) => shape.copyWith(
+      line: shape.line.copyWith(beginArrow: 0, endArrow: 0),
+    );
+
+/// Arrowed 1-D that also needs rails / a ribbon: bake markers as Geometry.
+///
+/// libvisio hangs `draw:marker-*` on every open path, so CompoundType rails
+/// would duplicate arrowheads, and a closed LineGradient / LineColorTrans
+/// ribbon cannot carry shape-level markers. `tokens.txt` also has no
+/// BeginArrowSize cell — marker width follows line weight — so baking the
+/// polygon at [VsdxLine.beginArrowSizeInches] is the size Draw will paint.
+bool shapeNeedsLibvisioArrowedStrokeBake(VsdxShape shape) {
+  if (!_hasArrowheads(shape.line)) return false;
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  if (_strokeTips(shape) == null) return false;
+  final stripped = _withoutArrowheads(shape);
+  return shapeNeedsLibvisioCompoundBake(stripped) ||
+      shapeNeedsLibvisioStrokeRibbon(stripped);
+}
+
 /// `true` when CompoundType would otherwise vanish in Draw.
 ///
-/// 1-D connectors with arrowheads are left alone: libvisio hangs a marker on
-/// every open path, so splitting a connector into rails duplicates the arrow.
-/// Arrow-less 1-D double-lines bake the same way 2-D shapes do.
+/// 1-D connectors with arrowheads are left alone unless
+/// [shapeNeedsLibvisioArrowedStrokeBake] will turn the markers into Geometry
+/// first: libvisio hangs a marker on every open path, so splitting a
+/// connector into rails would otherwise duplicate the arrow.
 bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
   if (shape.is1D && _hasArrowheads(shape.line)) return false;
   if (shape.line.compoundType <= 0 || !shape.line.hasLine) return false;
@@ -189,10 +241,12 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
 /// `tokens.txt` has no LineGradient or LineColorTrans cell, and
 /// `xmlStringToColour` always stores Colour.a = 0, so `VSDContentCollector`
 /// paints every VSDX stroke opaque. Arrowheads stay shape-level markers and
-/// cannot follow a filled ribbon, so connectors with arrows keep LineColor.
-/// Arrow-less 1-D strokes bake the same ribbon as 2-D: XForm1D / glue cells
-/// are untouched, matching CompoundType. Filled shapes already occupy
-/// FillPattern, so they keep LineColor (Draw will show an opaque stroke).
+/// cannot follow a filled ribbon, so connectors with arrows keep LineColor
+/// unless [shapeNeedsLibvisioArrowedStrokeBake] turns the markers into
+/// Geometry first. Arrow-less 1-D strokes bake the same ribbon as 2-D:
+/// XForm1D / glue cells are untouched, matching CompoundType. Filled
+/// shapes already occupy FillPattern, so they keep LineColor (Draw will
+/// show an opaque stroke).
 bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
   if (_hasArrowheads(shape.line)) return false;
   if (!shape.line.hasLine) return false;
@@ -211,6 +265,153 @@ bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
 /// Back-compat name for the LineGradient half of [shapeNeedsLibvisioStrokeRibbon].
 bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
     shape.line.hasGradient && shapeNeedsLibvisioStrokeRibbon(shape);
+
+({Offset2D begin, Offset2D beginFrom, Offset2D end, Offset2D endFrom})?
+    _strokeTips(VsdxShape shape) {
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) continue;
+    var beginFrom = points[1];
+    var endFrom = points[points.length - 2];
+    if ((beginFrom.x - points.first.x).abs() < 1e-12 &&
+        (beginFrom.y - points.first.y).abs() < 1e-12 &&
+        points.length > 2) {
+      beginFrom = points[2];
+    }
+    if ((endFrom.x - points.last.x).abs() < 1e-12 &&
+        (endFrom.y - points.last.y).abs() < 1e-12 &&
+        points.length > 2) {
+      endFrom = points[points.length - 3];
+    }
+    return (
+      begin: points.first,
+      beginFrom: beginFrom,
+      end: points.last,
+      endFrom: endFrom,
+    );
+  }
+  return null;
+}
+
+/// Filled arrow polygons in the 0–10 marker viewBox used by
+/// `VSDContentCollector` / SVG `_arrowMarkerBody` (tip at x=10, y=5).
+List<List<Offset2D>> _markerPolygons(int arrowId) {
+  switch (arrowId) {
+    case 2:
+      return const [
+        [Offset2D(0, 2.5), Offset2D(10, 5), Offset2D(0, 7.5)],
+      ];
+    case 5:
+      return const [
+        [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9), Offset2D(3, 5)],
+      ];
+    case 8:
+      return const [
+        [
+          Offset2D(0, 0.5),
+          Offset2D(10, 5),
+          Offset2D(0, 9.5),
+          Offset2D(2.5, 5),
+        ],
+      ];
+    case 11:
+      return const [
+        [Offset2D(0, 1), Offset2D(10, 1), Offset2D(10, 9), Offset2D(0, 9)],
+      ];
+    case 13:
+      return const [
+        [Offset2D(0, 1.667), Offset2D(10, 5), Offset2D(0, 8.333)],
+      ];
+    case 39:
+    case 40:
+      return const [
+        [Offset2D(4, 1), Offset2D(10, 5), Offset2D(4, 9)],
+        [Offset2D(0, 1), Offset2D(6, 5), Offset2D(0, 9)],
+      ];
+    default:
+      return const [
+        [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9)],
+      ];
+  }
+}
+
+bool _centeredMarker(int arrowId) =>
+    arrowId == 9 ||
+    arrowId == 10 ||
+    arrowId == 11 ||
+    arrowId == 20 ||
+    arrowId == 21;
+
+Offset2D _markerWorld(
+  Offset2D local, {
+  required Offset2D tip,
+  required double ux,
+  required double uy,
+  required double scale,
+  required double refX,
+}) {
+  final x = (local.x - refX) * scale;
+  final y = (local.y - 5) * scale;
+  return Offset2D(
+    tip.x + x * ux - y * uy,
+    tip.y + x * uy + y * ux,
+  );
+}
+
+/// Shape-local filled polygons for BeginArrow / EndArrow.
+List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
+  final tips = _strokeTips(shape);
+  if (tips == null) return const <VsdxGeometry>[];
+  final out = <VsdxGeometry>[];
+  void add(int id, double size, Offset2D tip, Offset2D from) {
+    if (id == 0) return;
+    final dx = tip.x - from.x;
+    final dy = tip.y - from.y;
+    final len = math.sqrt(dx * dx + dy * dy);
+    if (len < 1e-12) return;
+    final ux = dx / len;
+    final uy = dy / len;
+    final mw = size <= 0 ? 0.125 : size;
+    final scale = mw / 10;
+    final refX = _centeredMarker(id) ? 5.0 : 10.0;
+    for (final poly in _markerPolygons(id)) {
+      final world = <Offset2D>[
+        for (final p in poly)
+          _markerWorld(
+            p,
+            tip: tip,
+            ux: ux,
+            uy: uy,
+            scale: scale,
+            refX: refX,
+          ),
+      ];
+      if (world.length < 3) continue;
+      out.add(
+        VsdxGeometry(
+          noFill: false,
+          noLine: true,
+          commands: polylineCommands(world, closed: true),
+        ),
+      );
+    }
+  }
+
+  add(
+    shape.line.beginArrow,
+    shape.line.beginArrowSizeInches,
+    tips.begin,
+    tips.beginFrom,
+  );
+  add(
+    shape.line.endArrow,
+    shape.line.endArrowSizeInches,
+    tips.end,
+    tips.endFrom,
+  );
+  return out;
+}
 
 /// Expand an unfilled gradient or transparent stroke into a closed ribbon
 /// FillPattern 25–40 / FillForegndTrans can paint. Compound rails, when
