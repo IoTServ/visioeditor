@@ -1590,8 +1590,7 @@ class VsdxToSvgSerializer {
     // libvisio attaches the shadow style to both librevenge paths, but the
     // line path has draw:fill=none and LibreOffice does not manufacture a
     // stroked shadow for it. Only collected fill geometry casts the shadow.
-    if (!imageSilhouette &&
-        (shape.is1D || noFill || !shape.fill.hasFill)) {
+    if (!imageSilhouette && (shape.is1D || noFill || !shape.fill.hasFill)) {
       return;
     }
     final hex = _hex(base);
@@ -2461,14 +2460,15 @@ class VsdxToSvgSerializer {
                   '${_n(ex)} ${_n(ey)} ',
                 );
               }
-              cubic(cx + ax + k * bx, cy + ay + k * by,
-                  cx + bx + k * ax, cy + by + k * ay, cx + bx, cy + by);
-              cubic(cx + bx - k * ax, cy + by - k * ay,
-                  cx - ax + k * bx, cy - ay + k * by, cx - ax, cy - ay);
-              cubic(cx - ax - k * bx, cy - ay - k * by,
-                  cx - bx - k * ax, cy - by - k * ay, cx - bx, cy - by);
-              cubic(cx - bx + k * ax, cy - by + k * ay,
-                  cx + ax - k * bx, cy + ay - k * by, cx + ax, cy + ay);
+
+              cubic(cx + ax + k * bx, cy + ay + k * by, cx + bx + k * ax,
+                  cy + by + k * ay, cx + bx, cy + by);
+              cubic(cx + bx - k * ax, cy + by - k * ay, cx - ax + k * bx,
+                  cy - ay + k * by, cx - ax, cy - ay);
+              cubic(cx - ax - k * bx, cy - ay - k * by, cx - bx - k * ax,
+                  cy - by - k * ay, cx - bx, cy - by);
+              cubic(cx - bx + k * ax, cy - by + k * ay, cx + ax - k * bx,
+                  cy + ay - k * by, cx + ax, cy + ay);
               out.write('Z ');
             }
           }
@@ -2579,8 +2579,7 @@ class VsdxToSvgSerializer {
     );
     if (clipped == null) return null;
     return <Offset2D>[
-      for (final endpoint in clipped)
-        page.pageToLocalDeep(shape.id, endpoint),
+      for (final endpoint in clipped) page.pageToLocalDeep(shape.id, endpoint),
     ];
   }
 
@@ -2732,10 +2731,9 @@ class VsdxToSvgSerializer {
           bg == null ? 0.0 : _combinedOpacity(bg, fill.backgroundTransparency);
       final bgHex = bg == null ? '#ffffff' : _hex(bg);
       final id = 'pat-$paintId';
-      final isDiagonal = hatchSpec.angleDegrees == 45 ||
-          hatchSpec.angleDegrees == 315;
-      final tile = hatchSpec.distanceInches *
-          (isDiagonal ? math.sqrt2 : 1);
+      final isDiagonal =
+          hatchSpec.angleDegrees == 45 || hatchSpec.angleDegrees == 315;
+      final tile = hatchSpec.distanceInches * (isDiagonal ? math.sqrt2 : 1);
       if (hatchSpec.style == VsdxHatchStyle.triple) {
         final axisId = '$id-axis';
         final axisTile = hatchSpec.distanceInches;
@@ -2793,8 +2791,7 @@ class VsdxToSvgSerializer {
     final diagonalBase =
         'stroke="$color" stroke-opacity="${_n(opacity * 0.5)}" fill="none"';
     final axis = '$base stroke-width="${_n(axisWidth)}"';
-    final diagonal =
-        '$diagonalBase stroke-width="${_n(diagonalWidth)}"';
+    final diagonal = '$diagonalBase stroke-width="${_n(diagonalWidth)}"';
     final t = _n(tile);
     final h = _n(tile / 2);
     final horizontal = '<line x1="0" y1="$h" x2="$t" y2="$h" $axis/>';
@@ -2802,10 +2799,8 @@ class VsdxToSvgSerializer {
     // The page-to-SVG transform flips Visio's upward Y axis. Define the
     // diagonals in local coordinates so their rendered angles still match
     // libvisio's 45-degree (rising) and 315-degree (falling) hatches.
-    final rising =
-        '<line x1="0" y1="0" x2="$t" y2="$t" $diagonal/>';
-    final falling =
-        '<line x1="0" y1="$t" x2="$t" y2="0" $diagonal/>';
+    final rising = '<line x1="0" y1="0" x2="$t" y2="$t" $diagonal/>';
+    final falling = '<line x1="0" y1="$t" x2="$t" y2="0" $diagonal/>';
     if (spec.style == VsdxHatchStyle.triple) {
       final axes = diagonalOnly ? '' : '$horizontal$vertical';
       final diagonals = axisOnly ? '' : '$rising$falling';
@@ -3055,10 +3050,7 @@ class VsdxToSvgSerializer {
       24 => ('M 7 1 V 9', false),
       25 => ('M 7 1 V 9 M 4.5 1 V 9', false),
       26 => ('M 7 1 V 9 M 4.5 1 V 9', false),
-      27 => (
-          'M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9',
-          false
-        ),
+      27 => ('M 0 5 L 8 1 M 0 5 L 8 5 M 0 5 L 8 9', false),
       28 => (
           'M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9',
           false,
@@ -3082,10 +3074,7 @@ class VsdxToSvgSerializer {
           'M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0',
           true,
         ),
-      39 => (
-          'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
-          true
-        ),
+      39 => ('M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z', true),
       40 => (
           'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z',
           true,
@@ -3125,12 +3114,9 @@ class VsdxToSvgSerializer {
     return switch (d) {
       'M 0 1 L 10 5 L 0 9' => 'M 10 1 L 0 5 L 10 9',
       'M 0 1 L 10 5 L 0 9 Z' => 'M 10 1 L 0 5 L 10 9 Z',
-      'M 0 1 L 10 5 L 0 9 L 3 5 Z' =>
-        'M 10 1 L 0 5 L 10 9 L 7 5 Z',
-      'M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z' =>
-        'M 10 1 L 0 5 L 10 9 Q 3 5 10 1 Z',
-      'M 0 -6 L 10 16 M 5 -6 V 16' =>
-        'M 10 -6 L 0 16 M 5 -6 V 16',
+      'M 0 1 L 10 5 L 0 9 L 3 5 Z' => 'M 10 1 L 0 5 L 10 9 L 7 5 Z',
+      'M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z' => 'M 10 1 L 0 5 L 10 9 Q 3 5 10 1 Z',
+      'M 0 -6 L 10 16 M 5 -6 V 16' => 'M 10 -6 L 0 16 M 5 -6 V 16',
       'M 0 2.5 L 10 5 L 0 7.5 Z' => 'M 10 2.5 L 0 5 L 10 7.5 Z',
       'M 1.5 -0.5 L 10 5 L 1.5 10.5 Z' => 'M 8.5 -0.5 L 0 5 L 8.5 10.5 Z',
       'M 0 1 L 10 5 L 0 9 L 2 5 Z' => 'M 10 1 L 0 5 L 10 9 L 8 5 Z',
@@ -3168,8 +3154,7 @@ class VsdxToSvgSerializer {
       'M 0 1 L 10 5 L 0 9 Z M -2 0.5 L 0 1 L 0 9 L -2 9.5 Z' =>
         'M 10 1 L 0 5 L 10 9 Z M 12 0.5 L 10 1 L 10 9 L 12 9.5 Z',
       'M 0 1 L 10 5 L 0 9 Z M 7 3 L 3 7' => 'M 10 1 L 0 5 L 10 9 Z M 3 3 L 7 7',
-      'M 0 1.667 L 10 5 L 0 8.333 Z' =>
-        'M 10 1.667 L 0 5 L 10 8.333 Z',
+      'M 0 1.667 L 10 5 L 0 8.333 Z' => 'M 10 1.667 L 0 5 L 10 8.333 Z',
       'M 4 1 L 10 5 L 4 9 Z M 0 1 L 6 5 L 0 9 Z' =>
         'M 6 1 L 0 5 L 6 9 Z M 10 1 L 4 5 L 10 9 Z',
       'M 10 5 L 2 1 M 10 5 L 0 5 M 10 5 L 2 9' =>
@@ -3587,8 +3572,7 @@ class VsdxToSvgSerializer {
     var dcMatrix = const _MetafileSvgMatrix.identity();
     var dcClips = <_MetafileSvgClip>[];
     final savedDc = <_MetafileSvgDcState>[];
-    final outerClipPath =
-        'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
+    final outerClipPath = 'M ${_n(drawing.minX)} ${_n(drawing.minY)} '
         'H ${_n(drawing.maxX)} V ${_n(drawing.maxY)} '
         'H ${_n(drawing.minX)} Z';
 
@@ -3632,11 +3616,12 @@ class VsdxToSvgSerializer {
 
     List<List<MetafilePoint>> transformedClipContours(
       MetafileClipPathOp op,
-    ) => <List<MetafilePoint>>[
-      dcMatrix.transformPoints(op.points),
-      for (final contour in op.additionalContours)
-        dcMatrix.transformPoints(contour.points),
-    ];
+    ) =>
+        <List<MetafilePoint>>[
+          dcMatrix.transformPoints(op.points),
+          for (final contour in op.additionalContours)
+            dcMatrix.transformPoints(contour.points),
+        ];
 
     void openPaintGroups() {
       for (final clip in dcClips) {
@@ -3773,13 +3758,11 @@ class VsdxToSvgSerializer {
           );
           transforms.add('scale(${flipX ? -1 : 1} ${flipY ? -1 : 1})');
         }
-        final transformAttr = transforms.isEmpty
-            ? ''
-            : ' transform="${transforms.join(' ')}"';
+        final transformAttr =
+            transforms.isEmpty ? '' : ' transform="${transforms.join(' ')}"';
         final bitmapOpacity = op.opacity.clamp(0.0, 1.0);
-        final bitmapOpacityAttr = bitmapOpacity < 1.0 - 1e-9
-            ? ' opacity="${_n(bitmapOpacity)}"'
-            : '';
+        final bitmapOpacityAttr =
+            bitmapOpacity < 1.0 - 1e-9 ? ' opacity="${_n(bitmapOpacity)}"' : '';
         final href = base64Encode(op.bmpBytes);
         final imageRendering = op.filter == MetafileBitmapFilter.nearest
             ? ' style="image-rendering:pixelated"'
@@ -3873,9 +3856,8 @@ class VsdxToSvgSerializer {
           op,
           indent: '$indent  ',
           unflipGlyphs: true,
-          clipId: op.clipRect == null
-              ? null
-              : 'wmf-text-clip-$idScope-$opIndex',
+          clipId:
+              op.clipRect == null ? null : 'wmf-text-clip-$idScope-$opIndex',
         );
         closePaintGroups();
       }
@@ -3899,11 +3881,13 @@ class VsdxToSvgSerializer {
       final secondWeight = i / subdivisions;
       final thirdWeight = j / subdivisions;
       final firstWeight = 1 - secondWeight - thirdWeight;
-      int channel(int shift) => (
-            (((vertices[0].argb >> shift) & 0xff) * firstWeight) +
-                (((vertices[1].argb >> shift) & 0xff) * secondWeight) +
-                (((vertices[2].argb >> shift) & 0xff) * thirdWeight)
-          ).round().clamp(0, 255).toInt();
+      int channel(int shift) =>
+          ((((vertices[0].argb >> shift) & 0xff) * firstWeight) +
+                  (((vertices[1].argb >> shift) & 0xff) * secondWeight) +
+                  (((vertices[2].argb >> shift) & 0xff) * thirdWeight))
+              .round()
+              .clamp(0, 255)
+              .toInt();
       return (
         x: vertices[0].point.x * firstWeight +
             vertices[1].point.x * secondWeight +
@@ -3911,10 +3895,7 @@ class VsdxToSvgSerializer {
         y: vertices[0].point.y * firstWeight +
             vertices[1].point.y * secondWeight +
             vertices[2].point.y * thirdWeight,
-        argb: 0xff000000 |
-            (channel(16) << 16) |
-            (channel(8) << 8) |
-            channel(0),
+        argb: 0xff000000 | (channel(16) << 16) | (channel(8) << 8) | channel(0),
       );
     }
 
@@ -3933,8 +3914,8 @@ class VsdxToSvgSerializer {
                   ((c.argb >> 8) & 0xff)) /
               3)
           .round();
-      final blue = (((a.argb & 0xff) + (b.argb & 0xff) + (c.argb & 0xff)) / 3)
-          .round();
+      final blue =
+          (((a.argb & 0xff) + (b.argb & 0xff) + (c.argb & 0xff)) / 3).round();
       final color = 0xff000000 | (red << 16) | (green << 8) | blue;
       buf.writeln(
         '$indent<path d="M ${_n(a.x)} ${_n(a.y)} '
@@ -3966,8 +3947,8 @@ class VsdxToSvgSerializer {
     if (op.points.isEmpty) return;
     if (op.rasterOperation == MetafileRasterOperation.nop) return;
     final invert = op.rasterOperation == MetafileRasterOperation.invert;
-    final difference = invert ||
-        op.rasterOperation == MetafileRasterOperation.xor;
+    final difference =
+        invert || op.rasterOperation == MetafileRasterOperation.xor;
     final fill = invert
         ? (op.fill ? '#ffffff' : 'none')
         : (fillOverride ?? (op.fill ? _argbCss(op.fillArgb) : 'none'));
@@ -4153,9 +4134,8 @@ class VsdxToSvgSerializer {
     };
     final glyphs = op.text.runes.toList(growable: false);
     final wordSpacing = metafileTextWordSpacing(op);
-    final wordSpacingAttr = wordSpacing == 0
-        ? ''
-        : ' word-spacing="${_n(wordSpacing)}"';
+    final wordSpacingAttr =
+        wordSpacing == 0 ? '' : ' word-spacing="${_n(wordSpacing)}"';
     final xAdvances = op.advancesX;
     final yAdvances = op.advancesY;
     final hasAdvances = xAdvances != null &&
@@ -4199,8 +4179,7 @@ class VsdxToSvgSerializer {
         : 'translate(${_n(op.x)} ${_n(op.y)})$rotation';
     var backgroundRect = '';
     if (background != null && opaqueRect == null) {
-      backgroundRect =
-          '<rect x="${_n(alignedX)}" y="${_n(textTop)}" '
+      backgroundRect = '<rect x="${_n(alignedX)}" y="${_n(textTop)}" '
           'width="${_n(textWidth)}" height="${_n(size)}" '
           'fill="${_argbCss(background)}"/>';
     }
@@ -4216,8 +4195,7 @@ class VsdxToSvgSerializer {
           '${_esc(String.fromCharCode(glyphs[i]))}</tspan>',
         );
         x += xAdvances[i];
-        if (glyphs[i] == 0x20 &&
-            justifiedBreaks < op.justificationBreakCount) {
+        if (glyphs[i] == 0x20 && justifiedBreaks < op.justificationBreakCount) {
           x += wordSpacing;
           justifiedBreaks++;
         }
@@ -4759,9 +4737,7 @@ class VsdxToSvgSerializer {
       final bandRight = layoutW - layoutMr - style.indentRightInches;
       final tabbed = layout.segs.any((seg) => seg.$1.contains('\t'));
       var (anchor, xBody) = switch (horizontalAlign) {
-        VsdxHorzAlign.left ||
-        VsdxHorzAlign.justify ||
-        VsdxHorzAlign.full => (
+        VsdxHorzAlign.left || VsdxHorzAlign.justify || VsdxHorzAlign.full => (
             'start',
             textBandX,
           ),
@@ -4860,9 +4836,7 @@ class VsdxToSvgSerializer {
             raw: raw,
             style: run.charStyle,
             theme: theme,
-            xAttr: si == 0
-                ? 'x="${_n(xBody * _svgTextUnitScale)}"'
-                : null,
+            xAttr: si == 0 ? 'x="${_n(xBody * _svgTextUnitScale)}"' : null,
             coordinateScale: _svgTextUnitScale,
           );
         }
@@ -4878,8 +4852,7 @@ class VsdxToSvgSerializer {
           natural += _estSvgTextWidth(raw, run.charStyle);
         }
         if (natural > 1e-6 && natural < bandW * 0.98) {
-          justifyAttr =
-              ' textLength="${_n(bandW * _svgTextUnitScale)}" '
+          justifyAttr = ' textLength="${_n(bandW * _svgTextUnitScale)}" '
               'lengthAdjust="spacing"';
         }
       }
@@ -4957,8 +4930,7 @@ class VsdxToSvgSerializer {
                   tabSets: tabSets,
                   defaultTabStopInches: defaultTabStopInches,
                   firstLineMaxWidth: math.max(0.04, bandRight - firstX),
-                  continuationMaxWidth:
-                      math.max(0.04, bandRight - restX),
+                  continuationMaxWidth: math.max(0.04, bandRight - restX),
                 )
               : _wrapSvgSegs(
                   p.segs,
@@ -5148,9 +5120,7 @@ class VsdxToSvgSerializer {
           raw: raw,
           style: run.charStyle,
           theme: theme,
-          xAttr: i == 0
-              ? 'x="${_n(x * _svgTextUnitScale)}"'
-              : null,
+          xAttr: i == 0 ? 'x="${_n(x * _svgTextUnitScale)}"' : null,
           coordinateScale: _svgTextUnitScale,
         );
       }
@@ -5280,30 +5250,27 @@ class VsdxToSvgSerializer {
     // especially in its bold face. Account for that before deciding line and
     // tab-field wraps; emitted SVG still lets the renderer use exact metrics.
     final family = (style.fontFamily ?? '').toLowerCase();
-    final faceWidthFactor = family.contains('dejavu sans')
-        ? (style.style.bold ? 1.28 : 1.06)
-        : 1.0;
+    final faceWidthFactor =
+        family.contains('dejavu sans') ? (style.style.bold ? 1.28 : 1.06) : 1.0;
     for (var i = 0; i < runes.length; i++) {
       final r = runes[i];
       final runeFs = isVisioComplexScriptRune(r) ? complexFs : fs;
       // Match canvas / SVG synthetic small-caps (lowercase → 0.78× capitals).
-      final chFs =
-          smallCaps && r >= 0x61 && r <= 0x7a ? runeFs * 0.78 : runeFs;
+      final chFs = smallCaps && r >= 0x61 && r <= 0x7a ? runeFs * 0.78 : runeFs;
       if (r >= 0x2E80) {
         w += chFs; // CJK / wide ideographs
       } else {
         // SVG export cannot query the installed font. A uniform 0.55 em
         // over-counts narrow glyphs enough to wrap valid Visio labels that
         // LibreOffice and Canvas keep on one line.
-        final measuredRune = smallCaps && r >= 0x61 && r <= 0x7a
-            ? r - 0x20
-            : r;
+        final measuredRune = smallCaps && r >= 0x61 && r <= 0x7a ? r - 0x20 : r;
         w += chFs * _latinAdvanceFactor(measuredRune) * faceWidthFactor;
       }
       if (i + 1 < runes.length) {
         // Flutter applies tracking between glyphs. Complex-script tspans use
         // their own size, so their FontScale contribution must do the same.
-        w += style.letterSpacingInches + runeFs * (scale - 1.0) * 0.55;
+        w += style.letterSpacingInches +
+            runeFs * (scale - 1.0) * kLibvisioMeanLatinAdvance;
       }
     }
     return w;
@@ -5313,7 +5280,14 @@ class VsdxToSvgSerializer {
   double _latinAdvanceFactor(int rune) {
     if (rune >= 0x30 && rune <= 0x39) return 0.556;
     return switch (rune) {
-      0x20 || 0x09 || 0x21 || 0x2c || 0x2e || 0x2f || 0x3a || 0x3b ||
+      0x20 ||
+      0x09 ||
+      0x21 ||
+      0x2c ||
+      0x2e ||
+      0x2f ||
+      0x3a ||
+      0x3b ||
       0x5c =>
         0.278,
       0x22 => 0.355,
@@ -5321,12 +5295,18 @@ class VsdxToSvgSerializer {
       0x25 => 0.889,
       0x26 => 0.667,
       0x27 => 0.191,
-      0x28 || 0x29 || 0x2d || 0x5b || 0x5d || 0x60 || 0x7b || 0x7d =>
-        0.333,
+      0x28 || 0x29 || 0x2d || 0x5b || 0x5d || 0x60 || 0x7b || 0x7d => 0.333,
       0x2a => 0.389,
       0x2b || 0x3c || 0x3d || 0x3e || 0x7e => 0.584,
       0x40 => 1.015,
-      0x41 || 0x42 || 0x45 || 0x4b || 0x50 || 0x53 || 0x56 || 0x58 ||
+      0x41 ||
+      0x42 ||
+      0x45 ||
+      0x4b ||
+      0x50 ||
+      0x53 ||
+      0x56 ||
+      0x58 ||
       0x59 =>
         0.667,
       0x43 || 0x44 || 0x48 || 0x4e || 0x52 || 0x55 => 0.722,
@@ -5337,8 +5317,17 @@ class VsdxToSvgSerializer {
       0x4d => 0.833,
       0x57 => 0.944,
       0x5e => 0.469,
-      0x61 || 0x62 || 0x64 || 0x65 || 0x67 || 0x68 || 0x6e || 0x6f ||
-      0x70 || 0x71 || 0x75 =>
+      0x61 ||
+      0x62 ||
+      0x64 ||
+      0x65 ||
+      0x67 ||
+      0x68 ||
+      0x6e ||
+      0x6f ||
+      0x70 ||
+      0x71 ||
+      0x75 =>
         0.556,
       0x63 || 0x6b || 0x73 || 0x76 || 0x78 || 0x79 || 0x7a => 0.500,
       0x66 || 0x74 => 0.278,
@@ -5373,8 +5362,7 @@ class VsdxToSvgSerializer {
           parts[i],
           run.copyWith(
             text: parts[i],
-            tabIndices:
-                run.tabIndices.skip(tabOffset).take(tabCount).toList(),
+            tabIndices: run.tabIndices.skip(tabOffset).take(tabCount).toList(),
           ),
         ));
         tabOffset += tabCount;
@@ -5542,8 +5530,7 @@ class VsdxToSvgSerializer {
           if (!sawDecimal) {
             final dot = next.text.indexOf('.');
             if (dot < 0) {
-              decimalPrefix +=
-                  _estSvgTextWidth(next.text, next.run.charStyle);
+              decimalPrefix += _estSvgTextWidth(next.text, next.run.charStyle);
             } else {
               decimalPrefix += _estSvgTextWidth(
                 next.text.substring(0, dot),
@@ -5570,9 +5557,7 @@ class VsdxToSvgSerializer {
         raw: token.text,
         style: token.run.charStyle,
         theme: theme,
-        xAttr: forceX
-            ? 'x="${_n((originX + x) * coordinateScale)}"'
-            : null,
+        xAttr: forceX ? 'x="${_n((originX + x) * coordinateScale)}"' : null,
         coordinateScale: coordinateScale,
       );
       x += _estSvgTextWidth(token.text, token.run.charStyle);
@@ -5710,9 +5695,7 @@ class VsdxToSvgSerializer {
     );
 
     final baselineOffset =
-        style.effectiveFontSizeInchesForText(plain) *
-        0.35 *
-        _svgTextUnitScale;
+        style.effectiveFontSizeInchesForText(plain) * 0.35 * _svgTextUnitScale;
 
     buf.writeln('$indent<g transform="$xf">');
     buf.writeln(
@@ -5778,13 +5761,13 @@ class VsdxToSvgSerializer {
       for (final part in chunks) {
         final partStyle = switch (part.script) {
           2 when hasComplexOverride => style.copyWith(
-                fontFamily: style.complexScriptFont ?? style.fontFamily,
-                fontSizeInches:
-                    style.complexScriptSizeInches ?? style.fontSizeInches,
-              ),
+              fontFamily: style.complexScriptFont ?? style.fontFamily,
+              fontSizeInches:
+                  style.complexScriptSizeInches ?? style.fontSizeInches,
+            ),
           1 when hasAsianOverride => style.copyWith(
-                fontFamily: style.asianFont,
-              ),
+              fontFamily: style.asianFont,
+            ),
           _ => style,
         };
         _writeStyledTspans(
@@ -5905,11 +5888,11 @@ class VsdxToSvgSerializer {
     if (fontSizeOverride != null) fs = fontSizeOverride;
     // FontScale is a *width* scale in Visio — do not multiply font-size (that
     // also grows glyph height). Approximate with letter-spacing using the same
-    // mean Latin advance (0.55×size) used by [_estSvgTextWidth].
+    // mean Latin advance used by [_estSvgTextWidth] / LibreOffice FontScale bake.
     var letterSpacing = c.letterSpacingInches;
     final fontScale = c.fontScale <= 0 ? 1.0 : c.fontScale.clamp(0.1, 4.0);
     if ((fontScale - 1.0).abs() > 1e-6) {
-      letterSpacing += fs * (fontScale - 1.0) * 0.55;
+      letterSpacing += fs * (fontScale - 1.0) * kLibvisioMeanLatinAdvance;
     }
     // Match canvas fontFallback: Latin face then AsianFont for CJK glyphs.
     final family = _svgFontFamily(
@@ -5945,8 +5928,7 @@ class VsdxToSvgSerializer {
     if (lang != null && lang.isNotEmpty) {
       attrs.write(' xml:lang="${_esc(lang.replaceAll('_', '-'))}"');
     }
-    if (text != null &&
-        isVisioRightToLeftText(text, langId: c.langId)) {
+    if (text != null && isVisioRightToLeftText(text, langId: c.langId)) {
       attrs.write(' direction="rtl" unicode-bidi="isolate"');
     }
     // Prefer synthetic small-caps tspans (canvas parity). Keep CSS variant

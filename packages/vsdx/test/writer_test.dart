@@ -102,11 +102,9 @@ void main() {
 
     for (final testCase in cases) {
       final raw = _fixture(testCase.fixture);
-      final before =
-          _shapeCellFormulas(raw, testCase.shapeId, testCase.cells);
+      final before = _shapeCellFormulas(raw, testCase.shapeId, testCase.cells);
       final out = writer.write(originalBytes: raw, edited: parser.parse(raw));
-      final after =
-          _shapeCellFormulas(out, testCase.shapeId, testCase.cells);
+      final after = _shapeCellFormulas(out, testCase.shapeId, testCase.cells);
       expect(
         after,
         before,
@@ -374,8 +372,7 @@ void main() {
         Offset2D(4, 1.5),
       ],
     );
-    final edited =
-        doc.replacePage(0, doc.pages.first.addShape(stroke));
+    final edited = doc.replacePage(0, doc.pages.first.addShape(stroke));
     final out = writer.write(originalBytes: blank, edited: edited);
     final again = parser.parse(out).pages.first.findShapeById(id)!;
     expect(again.is1D, isTrue);
@@ -384,8 +381,7 @@ void main() {
     expect(again.endX, closeTo(4, 1e-6));
     expect(again.geometries.single.commands.length, 3);
     expect(
-      again.geometries.single.commands
-          .every((c) => c is MoveTo || c is LineTo),
+      again.geometries.single.commands.every((c) => c is MoveTo || c is LineTo),
       isTrue,
     );
   });
@@ -406,7 +402,11 @@ void main() {
     final doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
     final shape = VsdxShapeFactory.rectangle(
-      id: id, pinX: 4, pinY: 5, width: 1.5, height: 1.0,
+      id: id,
+      pinX: 4,
+      pinY: 5,
+      width: 1.5,
+      height: 1.0,
     ).copyWith(
       fill: const VsdxFill(foreground: VsdxColor(0xFF42A5F5), pattern: 1),
     );
@@ -434,8 +434,7 @@ void main() {
       width: 1.2,
       height: 0.5,
     ).copyWith(text: 'Text');
-    final edited =
-        doc.replacePage(0, doc.pages.first.addShape(shape));
+    final edited = doc.replacePage(0, doc.pages.first.addShape(shape));
     final out = writer.write(originalBytes: blank, edited: edited);
     final pageXml = VsdxPackage.open(out)
         .readPartXml('/visio/pages/page1.xml')!
@@ -495,8 +494,7 @@ void main() {
 
   test('heal injects missing docProps/core.xml on save', () {
     // test5_master references core in .rels but the part is absent.
-    final bytes =
-        File('test/fixtures/test5_master.vsdx').readAsBytesSync();
+    final bytes = File('test/fixtures/test5_master.vsdx').readAsBytesSync();
     expect(
       VsdxPackage.open(bytes).readPartBytes('/docProps/core.xml'),
       isNull,
@@ -526,8 +524,7 @@ void main() {
       final texts = sh.findElements('Text');
       if (texts.isEmpty || texts.first.innerText.trim().isEmpty) continue;
       final hasChar = sh.childElements.any(
-        (c) =>
-            c.name.local == 'Section' && c.getAttribute('N') == 'Character',
+        (c) => c.name.local == 'Section' && c.getAttribute('N') == 'Character',
       );
       if (!hasChar) issues.add('id=${sh.getAttribute('ID')}');
     }
@@ -540,8 +537,18 @@ void main() {
     final id = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_caption_test.png';
     final png = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-      0x00, 0x00, 0x00, 0x00,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
     ]);
     final shape = VsdxShapeFactory.picture(
       id: id,
@@ -574,7 +581,11 @@ void main() {
     final doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
     final shape = VsdxShapeFactory.rectangle(
-      id: id, pinX: 4, pinY: 5, width: 1.6, height: 0.9,
+      id: id,
+      pinX: 4,
+      pinY: 5,
+      width: 1.6,
+      height: 0.9,
     ).copyWith(text: '开始');
     final out = writer.write(
       originalBytes: blank,
@@ -586,9 +597,8 @@ void main() {
     expect(pageXml, contains('Microsoft YaHei'));
     expect(pageXml, contains('zh-CN'));
     expect(pageXml, contains('开始'));
-    final docXml = VsdxPackage.open(out)
-        .readPartXml('/visio/document.xml')!
-        .toXmlString();
+    final docXml =
+        VsdxPackage.open(out).readPartXml('/visio/document.xml')!.toXmlString();
     expect(docXml, contains('Microsoft YaHei'));
   });
 
@@ -600,7 +610,11 @@ void main() {
     final withText = doc0.replacePage(
       0,
       doc0.pages.first.addShape(VsdxShapeFactory.rectangle(
-        id: id, pinX: 4, pinY: 5, width: 1.2, height: 0.5,
+        id: id,
+        pinX: 4,
+        pinY: 5,
+        width: 1.2,
+        height: 0.5,
       ).copyWith(text: 'Text')),
     );
     final mid = writer.write(originalBytes: blank, edited: withText);
@@ -630,7 +644,12 @@ void main() {
     );
     final reopened = parser.parse(stripped);
     expect(
-      reopened.pages.first.findShapeById(id)!.richText.runs.first.paraStyle
+      reopened.pages.first
+          .findShapeById(id)!
+          .richText
+          .runs
+          .first
+          .paraStyle
           .horizontalAlign,
       VsdxHorzAlign.left,
     );
@@ -667,7 +686,11 @@ void main() {
     final edited = base.replacePage(
       0,
       base.pages.first.addShape(VsdxShapeFactory.rectangle(
-        id: id, pinX: 4.25, pinY: 9.75, width: 1.5, height: 1.0,
+        id: id,
+        pinX: 4.25,
+        pinY: 9.75,
+        width: 1.5,
+        height: 1.0,
       ).copyWith(text: 'Hi')),
     );
     // First write builds shapes with LocPin into stripped blank…
@@ -675,9 +698,8 @@ void main() {
     // …then parse + no-op save must still restore StyleSheets on document.xml.
     final midDoc = parser.parse(mid);
     final out = writer.write(originalBytes: mid, edited: midDoc);
-    final outDoc = VsdxPackage.open(out)
-        .readPartXml('/visio/document.xml')!
-        .toXmlString();
+    final outDoc =
+        VsdxPackage.open(out).readPartXml('/visio/document.xml')!.toXmlString();
     expect(outDoc, contains('<StyleSheets>'));
     final pageXml = VsdxPackage.open(out)
         .readPartXml('/visio/pages/page1.xml')!
@@ -728,7 +750,8 @@ void main() {
         (s) => s.resizeTo(pinX: s.pinX, pinY: s.pinY, width: 3, height: 1),
       ),
     );
-    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: resized));
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: resized));
     final s2 = r2.pages.first.findShapeById(id)!;
     expect(s2.width, closeTo(3, 1e-4));
     final xs = s2.geometries
@@ -849,13 +872,13 @@ void main() {
         ),
       ),
     );
-    final after =
-        parser.parse(writer.write(originalBytes: blank, edited: doc))
-            .pages
-            .first
-            .findShapeById(id)!
-            .richText
-            .textBlock;
+    final after = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!
+        .richText
+        .textBlock;
     expect(after.pinXInches, closeTo(0.25, 1e-6));
     expect(after.pinYInches, closeTo(0.5, 1e-6));
     expect(after.locPinXInches, closeTo(0.1, 1e-6));
@@ -960,8 +983,18 @@ void main() {
     final id = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_caption_below.png';
     final png = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
-      0x00, 0x00, 0x00, 0x00,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      0x00,
+      0x00,
+      0x00,
+      0x00,
     ]);
     const labelH = 0.22;
     final shape = VsdxShapeFactory.picture(
@@ -1020,7 +1053,14 @@ void main() {
     final id = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_neg_pin.png';
     final png = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
     ]);
     const labelH = 0.22;
     // Legacy model used negative TxtPinY; export must rewrite for Edraw.
@@ -1052,15 +1092,17 @@ void main() {
           ),
         )
         .replacePage(0, doc.pages.first.addShape(shape));
-    final pageXml = VsdxPackage.open(writer.write(originalBytes: blank, edited: doc))
-        .readPartXml('/visio/pages/page1.xml')!
-        .toXmlString();
+    final pageXml =
+        VsdxPackage.open(writer.write(originalBytes: blank, edited: doc))
+            .readPartXml('/visio/pages/page1.xml')!
+            .toXmlString();
     expect(pageXml, isNot(contains('N="TxtPinY" V="-')));
     expect(pageXml, contains('N="TxtPinY" V="0"'));
     expect(pageXml, contains('N="TxtLocPinY" V="0.22"'));
   });
 
-  test('clearing Txt* formulas scrubs SETATREF from XML even when V matches', () {
+  test('clearing Txt* formulas scrubs SETATREF from XML even when V matches',
+      () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -1208,12 +1250,14 @@ void main() {
     final b = page.nextFreeShapeId();
     page = page.addShape(VsdxShapeFactory.rectangle(
         id: b, pinX: 3, pinY: 3, width: 1, height: 1));
-    final bytes1 = writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
+    final bytes1 =
+        writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
     final r1 = parser.parse(bytes1);
     expect(r1.pages.first.shapes.map((s) => s.id).toList(), [a, b]);
 
     final edited = r1.replacePage(0, r1.pages.first.sendToBack(b));
-    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: edited));
     expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a]);
   });
 
@@ -1257,7 +1301,8 @@ void main() {
 
     // Bring the backmost shape one step forward: [a,b,c] -> [b,a,c].
     final edited = r1.replacePage(0, r1.pages.first.bringForward(a));
-    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: edited));
     expect(r2.pages.first.shapes.map((s) => s.id).toList(), [b, a, c]);
   });
 
@@ -1280,8 +1325,7 @@ void main() {
     expect(group.children.map((s) => s.id).toList(), [a, b]);
 
     // Bring the first child forward inside the group: [a,b] -> [b,a].
-    final edited =
-        r1.replacePage(0, r1.pages.first.bringForward(a));
+    final edited = r1.replacePage(0, r1.pages.first.bringForward(a));
     expect(
       edited.pages.first.findShapeById(gid)!.children.map((s) => s.id).toList(),
       [b, a],
@@ -1305,7 +1349,8 @@ void main() {
     final b = page.nextFreeShapeId();
     page = page.addShape(VsdxShapeFactory.rectangle(
         id: b, pinX: 5, pinY: 5, width: 1, height: 1));
-    final bytes1 = writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
+    final bytes1 =
+        writer.write(originalBytes: blank, edited: doc.replacePage(0, page));
     final r1 = parser.parse(bytes1);
 
     // Group A + B into a new group shape.
@@ -1327,8 +1372,7 @@ void main() {
     expect(p2.findShapeById(a), isNotNull); // recursion still finds it
 
     // Ungroup → children promoted back to their original page positions.
-    final ungrouped =
-        parser.parse(bytes2).replacePage(0, p2.ungroup(gid));
+    final ungrouped = parser.parse(bytes2).replacePage(0, p2.ungroup(gid));
     final p3 = parser
         .parse(writer.write(originalBytes: bytes2, edited: ungrouped))
         .pages
@@ -1389,7 +1433,8 @@ void main() {
       ],
     );
     doc = doc.replacePage(0, doc.pages.first.addShape(diamond));
-    final reopened = parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final reopened =
+        parser.parse(writer.write(originalBytes: blank, edited: doc));
     final s = reopened.pages.first.findShapeById(id);
     expect(s, isNotNull);
     expect(s!.geometries, isNotEmpty);
@@ -1462,7 +1507,8 @@ void main() {
             style: const VsdxFontStyle(bold: true),
             color: const VsdxColor(0xFF112233),
           ),
-          paraStyle: r.paraStyle.copyWith(horizontalAlign: VsdxHorzAlign.center),
+          paraStyle:
+              r.paraStyle.copyWith(horizontalAlign: VsdxHorzAlign.center),
         ),
     ];
     final edited = r1.replacePage(
@@ -1472,7 +1518,8 @@ void main() {
         (s) => s.copyWith(richText: s.richText.copyWith(runs: newRuns)),
       ),
     );
-    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: edited));
     final rt = r2.pages.first.findShapeById(id)!.richText;
     expect(rt.runs, isNotEmpty);
     expect(rt.runs.first.charStyle.fontSizeInches, closeTo(0.5, 1e-3));
@@ -1606,9 +1653,15 @@ void main() {
         .addShape(VsdxShapeFactory.line(id: connId, ax: 2, ay: 2, bx: 6, by: 5))
         .copyWith(connects: [
       VsdxConnect(
-          fromSheetId: connId, fromCell: 'BeginX', toSheetId: aId, toCell: 'PinX'),
+          fromSheetId: connId,
+          fromCell: 'BeginX',
+          toSheetId: aId,
+          toCell: 'PinX'),
       VsdxConnect(
-          fromSheetId: connId, fromCell: 'EndX', toSheetId: bId, toCell: 'PinX'),
+          fromSheetId: connId,
+          fromCell: 'EndX',
+          toSheetId: bId,
+          toCell: 'PinX'),
     ]).rerouteConnectors();
     // Make the connector curved, then bake it in.
     page = page.setConnectorStyle({connId}, straight: false, curved: true);
@@ -1627,7 +1680,8 @@ void main() {
     );
   });
 
-  test('a rounded connector bakes its fillets into round-tripping geometry', () {
+  test('a rounded connector bakes its fillets into round-tripping geometry',
+      () {
     final blank = writer.emptyDocument();
     final doc = parser.parse(blank);
     var page = doc.pages.first;
@@ -1642,9 +1696,15 @@ void main() {
         .addShape(VsdxShapeFactory.line(id: connId, ax: 2, ay: 2, bx: 6, by: 5))
         .copyWith(connects: [
       VsdxConnect(
-          fromSheetId: connId, fromCell: 'BeginX', toSheetId: aId, toCell: 'PinX'),
+          fromSheetId: connId,
+          fromCell: 'BeginX',
+          toSheetId: aId,
+          toCell: 'PinX'),
       VsdxConnect(
-          fromSheetId: connId, fromCell: 'EndX', toSheetId: bId, toCell: 'PinX'),
+          fromSheetId: connId,
+          fromCell: 'EndX',
+          toSheetId: bId,
+          toCell: 'PinX'),
     ]).rerouteConnectors();
     final elbow = page.findShapeById(connId)!.geometries.first.commands.length;
     // Round the elbow corners, then bake it in.
@@ -1727,11 +1787,10 @@ void main() {
         .firstWhere((e) =>
             e.name.local == 'Shape' &&
             e.getAttribute('ID') == target.id.toString());
-    final lineCapCell = targetXml.descendants
-        .whereType<XmlElement>()
-        .firstWhere(
-          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'LineCap',
-        );
+    final lineCapCell =
+        targetXml.descendants.whereType<XmlElement>().firstWhere(
+              (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'LineCap',
+            );
     expect(
       lineCapCell.getAttribute('V'),
       '2',
@@ -1771,14 +1830,12 @@ void main() {
           pinY: 2,
           width: 1,
           height: 1,
-        )
-            .copyWith(
-              layerMemberIds: const <int>[0, 2],
-              userCells: const <VsdxUserCell>[
-                VsdxUserCell(name: 'visVersion', value: '1', prompt: 'ver'),
-              ],
-            )
-            .withTooltip('Review owner\nbefore approval'),
+        ).copyWith(
+          layerMemberIds: const <int>[0, 2],
+          userCells: const <VsdxUserCell>[
+            VsdxUserCell(name: 'visVersion', value: '1', prompt: 'ver'),
+          ],
+        ).withTooltip('Review owner\nbefore approval'),
       ),
     );
     final after = parser
@@ -1839,7 +1896,21 @@ void main() {
         .richText
         .runs
         .first;
-    expect(run.charStyle.letterSpacingInches, closeTo(0.02, 1e-6));
+    expect(run.charStyle.letterSpacingInches, closeTo(0, 1e-6));
+    expect(
+      run.charStyle.fontScale,
+      closeTo(
+        fontScaleForLibvisioWrite(
+          const VsdxCharStyle(
+            letterSpacingInches: 0.02,
+            position: VsdxTextPosition.superscript,
+            transparency: 0.3,
+          ),
+          'Hi',
+        ),
+        1e-9,
+      ),
+    );
     expect(run.charStyle.position, VsdxTextPosition.superscript);
     expect(run.charStyle.transparency, closeTo(0, 1e-6));
     expect(
@@ -1902,11 +1973,11 @@ void main() {
     final names = s2.userProperties.map((p) => p.name).toSet();
     expect(names, <String>{'Cost', 'Status'}); // Owner removed
     expect(s2.userProperties.firstWhere((p) => p.name == 'Cost').value, '99');
-    expect(
-        s2.userProperties.firstWhere((p) => p.name == 'Status').value, 'Active');
+    expect(s2.userProperties.firstWhere((p) => p.name == 'Status').value,
+        'Active');
     // The edited "Cost" row kept its label from the original.
-    expect(
-        s2.userProperties.firstWhere((p) => p.name == 'Cost').label, 'Unit cost');
+    expect(s2.userProperties.firstWhere((p) => p.name == 'Cost').label,
+        'Unit cost');
   });
 
   test('page size and background colour round-trip', () {
@@ -2002,10 +2073,10 @@ void main() {
         edited: cleared,
       ),
     );
-    expect(again.pages.firstWhere((p) => p.id == fg.id).backgroundPageId,
-        isNull);
-    expect(again.pages.firstWhere((p) => p.id == bgId).isBackgroundPage,
-        isFalse);
+    expect(
+        again.pages.firstWhere((p) => p.id == fg.id).backgroundPageId, isNull);
+    expect(
+        again.pages.firstWhere((p) => p.id == bgId).isBackgroundPage, isFalse);
   });
 
   test('font / underline / vertical align + shadow round-trip', () {
@@ -2126,11 +2197,10 @@ void main() {
     expect(after.richText.textBlock.hideText, isTrue);
     expect(after.richText.textBlock.backgroundColor?.value, 0xFFFFFF00);
     expect(after.line.roundingInches, closeTo(0, 1e-6),
-        reason: 'Rounding is baked into Geometry; the cell must stay 0 for Visio');
+        reason:
+            'Rounding is baked into Geometry; the cell must stay 0 for Visio');
     expect(
-      after.geometries
-          .expand((g) => g.commands)
-          .whereType<RelQuadBezTo>(),
+      after.geometries.expand((g) => g.commands).whereType<RelQuadBezTo>(),
       isNotEmpty,
     );
     expect(after.glow.enabled, isTrue);
@@ -2163,8 +2233,15 @@ void main() {
     );
     final withBg = writer.write(originalBytes: blank, edited: doc);
     expect(
-      parser.parse(withBg).pages.first.findShapeById(id)!.richText.textBlock
-          .backgroundColor?.value,
+      parser
+          .parse(withBg)
+          .pages
+          .first
+          .findShapeById(id)!
+          .richText
+          .textBlock
+          .backgroundColor
+          ?.value,
       0xFFFFFF00,
     );
     // copyWith(backgroundColor: null) must NOT clear — use the explicit API.
@@ -2214,8 +2291,8 @@ void main() {
       ZipDecoder()
           .decodeBytes(out)
           .files
-          .firstWhere((f) =>
-              f.name.contains('pages/page') && f.name.endsWith('.xml'))
+          .firstWhere(
+              (f) => f.name.contains('pages/page') && f.name.endsWith('.xml'))
           .content as List<int>,
     );
     expect(outXml.contains('<cp'), isTrue);
@@ -2376,8 +2453,8 @@ void main() {
     final reopened2 = parser.parse(out2);
     final s2 = reopened2.pages.first.findShapeById(id)!;
     expect(s2.imagePartName, isNotNull);
-    expect(reopened2.images.findByPart(s2.imagePartName!)!.bytes,
-        equals(payload));
+    expect(
+        reopened2.images.findByPart(s2.imagePartName!)!.bytes, equals(payload));
   });
 
   test('picture Foreign XML has ImgWidth/ImgHeight for Edraw/Visio', () {
@@ -2388,7 +2465,18 @@ void main() {
     const part = '/visio/media/image_edraw.png';
     // Minimal valid-looking PNG header bytes (content is irrelevant to XML).
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: id,
@@ -2422,7 +2510,8 @@ void main() {
     expect(pageXml, contains('Section N="Geometry"'));
     expect(archive.findFile('visio/media/image_edraw.png'), isNotNull);
     final rels = utf8.decode(
-      archive.findFile('visio/pages/_rels/page1.xml.rels')!.content as List<int>,
+      archive.findFile('visio/pages/_rels/page1.xml.rels')!.content
+          as List<int>,
     );
     expect(rels, contains('relationships/image'));
     expect(rels, contains('../media/image_edraw.png'));
@@ -2435,7 +2524,18 @@ void main() {
     final id = page.nextFreeShapeId();
     const part = '/visio/media/image_crop.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      9,
+      8,
+      7,
+      6,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: id,
@@ -2484,10 +2584,8 @@ void main() {
     );
     final out2 = writer.write(originalBytes: patchedBytes, edited: doc);
     final outXml = utf8.decode(
-      ZipDecoder()
-          .decodeBytes(out2)
-          .findFile('visio/pages/page1.xml')!
-          .content as List<int>,
+      ZipDecoder().decodeBytes(out2).findFile('visio/pages/page1.xml')!.content
+          as List<int>,
     );
     expect(
       outXml,
@@ -2503,7 +2601,18 @@ void main() {
     final id = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_abs_crop.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     // Absolute crop: V≠Width and no F= (common Visio / hand-authored crop).
     final pic = VsdxShapeFactory.picture(
@@ -2536,10 +2645,8 @@ void main() {
     );
     final out2 = writer.write(originalBytes: out1, edited: doc);
     final outXml = utf8.decode(
-      ZipDecoder()
-          .decodeBytes(out2)
-          .findFile('visio/pages/page1.xml')!
-          .content as List<int>,
+      ZipDecoder().decodeBytes(out2).findFile('visio/pages/page1.xml')!.content
+          as List<int>,
     );
     expect(outXml, isNot(contains('N="ImgWidth" V="2" F="Width*1"')),
         reason: 'must not invent full-frame Width*1 over absolute crop');
@@ -2558,7 +2665,18 @@ void main() {
     final id = page.nextFreeShapeId();
     const part = '/visio/media/image_offset_crop.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      9,
+      8,
+      7,
+      6,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: id,
@@ -2584,8 +2702,8 @@ void main() {
         .replacePage(0, page.addShape(pic));
     final out1 = writer.write(originalBytes: blank, edited: doc);
     doc = parser.parse(out1);
-    expect(doc.pages.first.findShapeById(id)!.formulas['ImgOffsetX'],
-        'Width*0.1');
+    expect(
+        doc.pages.first.findShapeById(id)!.formulas['ImgOffsetX'], 'Width*0.1');
     // Trigger a patch rewrite (move the picture) without changing formulas.
     doc = doc.replacePage(
       0,
@@ -2596,10 +2714,8 @@ void main() {
     );
     final out2 = writer.write(originalBytes: out1, edited: doc);
     final outXml = utf8.decode(
-      ZipDecoder()
-          .decodeBytes(out2)
-          .findFile('visio/pages/page1.xml')!
-          .content as List<int>,
+      ZipDecoder().decodeBytes(out2).findFile('visio/pages/page1.xml')!.content
+          as List<int>,
     );
     expect(
       outXml,
@@ -2622,7 +2738,18 @@ void main() {
     final id = page.nextFreeShapeId();
     const part = '/visio/media/image_resize.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      9,
+      8,
+      7,
+      6,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: id,
@@ -2648,10 +2775,8 @@ void main() {
     doc = doc.replacePage(0, page.updateShapeById(id, (_) => resized));
     final out2 = writer.write(originalBytes: out1, edited: doc);
     final pageXml = utf8.decode(
-      ZipDecoder()
-          .decodeBytes(out2)
-          .findFile('visio/pages/page1.xml')!
-          .content as List<int>,
+      ZipDecoder().decodeBytes(out2).findFile('visio/pages/page1.xml')!.content
+          as List<int>,
     );
     String? cellV(String name) {
       final m = RegExp(
@@ -2674,8 +2799,10 @@ void main() {
     final id = page.nextFreeShapeId();
     const part1 = '/visio/media/image_a.png';
     const part2 = '/visio/media/image_b.png';
-    final bytesA = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 1, 1, 1, 1]);
-    final bytesB = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 2, 2, 2, 2]);
+    final bytesA =
+        Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 1, 1, 1, 1]);
+    final bytesB =
+        Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 2, 2, 2, 2]);
     final pic = VsdxShapeFactory.picture(
       id: id,
       pinX: 1,
@@ -2826,8 +2953,7 @@ void main() {
         id: page.nextFreeShapeId(), pinX: 6, pinY: 8, width: 1, height: 1);
     page = page.addShape(cRect);
     final connId = page.nextFreeShapeId();
-    final conn =
-        VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
+    final conn = VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
     page = page.addShape(conn).copyWith(connects: <VsdxConnect>[
       VsdxConnect(
           fromSheetId: connId,
@@ -2849,8 +2975,8 @@ void main() {
     // 1) Reconnect the END from b to c.
     final reconnected = doc.replacePage(
       0,
-      doc.pages.first
-          .setConnectorEndpoint(connId, begin: false, targetShapeId: cRect.id, x: 6, y: 8),
+      doc.pages.first.setConnectorEndpoint(connId,
+          begin: false, targetShapeId: cRect.id, x: 6, y: 8),
     );
     final bytes1 = writer.write(originalBytes: blank, edited: reconnected);
     final r1 = parser.parse(bytes1);
@@ -2868,10 +2994,11 @@ void main() {
     // 2) Detach the END → its connect row is gone; the begin stays glued.
     final detached = r1.replacePage(
       0,
-      r1.pages.first
-          .setConnectorEndpoint(connId, begin: false, targetShapeId: null, x: 7, y: 9),
+      r1.pages.first.setConnectorEndpoint(connId,
+          begin: false, targetShapeId: null, x: 7, y: 9),
     );
-    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: detached));
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: detached));
     final conns2 =
         r2.pages.first.connects.where((e) => e.fromSheetId == connId).toList();
     expect(conns2.where((e) => e.isEnd), isEmpty);
@@ -2925,10 +3052,11 @@ void main() {
         id: page.nextFreeShapeId(), pinX: 6, pinY: 5, width: 2, height: 2);
     page = page.addShape(b);
     // Materialise glue points in the model (writer no longer invents them).
-    page = page.materializeConnectionPoints(a.id).materializeConnectionPoints(b.id);
+    page = page
+        .materializeConnectionPoints(a.id)
+        .materializeConnectionPoints(b.id);
     final connId = page.nextFreeShapeId();
-    final conn =
-        VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
+    final conn = VsdxShapeFactory.line(id: connId, ax: 2, ay: 5, bx: 6, by: 5);
     page = page.addShape(conn).copyWith(connects: <VsdxConnect>[
       VsdxConnect(
           fromSheetId: connId,
@@ -2957,7 +3085,8 @@ void main() {
         y: 6,
       ),
     );
-    final r2 = parser.parse(writer.write(originalBytes: bytes1, edited: edited));
+    final r2 =
+        parser.parse(writer.write(originalBytes: bytes1, edited: edited));
     final rb = r2.pages.first.findShapeById(b.id)!;
     expect(rb.connectionPoints.length, 5); // standard set round-tripped
     final endConnect = r2.pages.first.connects
@@ -3086,7 +3215,8 @@ void main() {
     );
   });
 
-  test('drawio-parity stencil shapes (tape / stored / bpmn / uml) round-trip', () {
+  test('drawio-parity stencil shapes (tape / stored / bpmn / uml) round-trip',
+      () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     var page = doc.pages.first;
@@ -3159,11 +3289,14 @@ void main() {
             .whereType<EllipticalArcTo>(),
         isNotEmpty);
     expect(r.pages.first.findShapeById(weakId)!.geometries.length, 2);
-    expect(r.pages.first.findShapeById(poolId)!.geometries.length, greaterThanOrEqualTo(1));
-    expect(r.pages.first.findShapeById(layerId)!.geometries.length, greaterThanOrEqualTo(2));
+    expect(r.pages.first.findShapeById(poolId)!.geometries.length,
+        greaterThanOrEqualTo(1));
+    expect(r.pages.first.findShapeById(layerId)!.geometries.length,
+        greaterThanOrEqualTo(2));
   });
 
-  test('drawio-parity misc shapes (parallelepiped / callout / list / image / '
+  test(
+      'drawio-parity misc shapes (parallelepiped / callout / list / image / '
       'partial rectangle) round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -3234,7 +3367,8 @@ void main() {
     expect(prV.geometries.single.commands.whereType<MoveTo>().length, 2);
   });
 
-  test('drawio-parity network shapes (server / firewall / mobile / monitor / '
+  test(
+      'drawio-parity network shapes (server / firewall / mobile / monitor / '
       'laptop / printer / wireless / router) round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -3282,8 +3416,8 @@ void main() {
         greaterThan(3));
     // Mobile: rounded body carries corner arcs + round home button.
     final mob = r.pages.first.findShapeById(mobId)!;
-    expect(mob.geometries.first.commands.whereType<EllipticalArcTo>(),
-        isNotEmpty);
+    expect(
+        mob.geometries.first.commands.whereType<EllipticalArcTo>(), isNotEmpty);
     expect(mob.geometries.expand((g) => g.commands).whereType<EllipseCmd>(),
         isNotEmpty);
     expect(r.pages.first.findShapeById(monId)!.geometries.length, 4);
@@ -3301,7 +3435,8 @@ void main() {
     expect(r.pages.first.findShapeById(rtrId)!.geometries.length, 3);
   });
 
-  test('drawio-parity network+/mockup/electrical/signs starter shapes round-trip',
+  test(
+      'drawio-parity network+/mockup/electrical/signs starter shapes round-trip',
       () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -3366,7 +3501,8 @@ void main() {
             .commands
             .whereType<EllipticalArcTo>(),
         isNotEmpty);
-    expect(r.pages.first.findShapeById(resId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first.findShapeById(resId)!.geometries.single.noFill, isTrue);
     expect(
         r.pages.first
             .findShapeById(capId)!
@@ -3377,12 +3513,14 @@ void main() {
             .length,
         greaterThanOrEqualTo(3));
     expect(r.pages.first.findShapeById(diodeId)!.geometries.length, 2);
-    expect(r.pages.first.findShapeById(gndId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first.findShapeById(gndId)!.geometries.single.noFill, isTrue);
     expect(r.pages.first.findShapeById(warnId)!.geometries.length, 2);
     expect(r.pages.first.findShapeById(aidId)!.geometries.length, 2);
   });
 
-  test('drawio-parity batch64 expansions (tablet/search/fuse/biohazard) round-trip',
+  test(
+      'drawio-parity batch64 expansions (tablet/search/fuse/biohazard) round-trip',
       () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -3432,10 +3570,13 @@ void main() {
             .expand((g) => g.commands)
             .whereType<EllipseCmd>(),
         isNotEmpty);
-    expect(r.pages.first.findShapeById(loadId)!.geometries.single.noFill, isTrue);
-    expect(r.pages.first.findShapeById(fuseId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first.findShapeById(loadId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first.findShapeById(fuseId)!.geometries.single.noFill, isTrue);
     expect(r.pages.first.findShapeById(invId)!.geometries.length, 3);
-    expect(r.pages.first.findShapeById(smokeId)!.geometries.length, greaterThan(1));
+    expect(r.pages.first.findShapeById(smokeId)!.geometries.length,
+        greaterThan(1));
     expect(
         r.pages.first
             .findShapeById(bioId)!
@@ -3484,7 +3625,8 @@ void main() {
             .expand((g) => g.commands)
             .whereType<EllipticalArcTo>(),
         isNotEmpty);
-    expect(r.pages.first.findShapeById(bufId)!.geometries.length, greaterThan(1));
+    expect(
+        r.pages.first.findShapeById(bufId)!.geometries.length, greaterThan(1));
     expect(
         r.pages.first
             .findShapeById(doorId)!
@@ -3561,7 +3703,8 @@ void main() {
             .whereType<EllipseCmd>()
             .length,
         greaterThanOrEqualTo(3));
-    expect(r.pages.first.findShapeById(parkId)!.geometries.single.noFill, isTrue);
+    expect(
+        r.pages.first.findShapeById(parkId)!.geometries.single.noFill, isTrue);
     expect(
         r.pages.first
             .findShapeById(colId)!
@@ -3757,8 +3900,7 @@ void main() {
         isNotEmpty);
     expect(r.pages.first.findShapeById(dtId)!.geometries.length,
         greaterThanOrEqualTo(3));
-    expect(
-        r.pages.first.findShapeById(invId)!.geometries.length,
+    expect(r.pages.first.findShapeById(invId)!.geometries.length,
         greaterThanOrEqualTo(3));
     expect(r.pages.first.findShapeById(ec2Id)!.geometries.length, 4);
     expect(
@@ -3916,8 +4058,7 @@ void main() {
         isNotEmpty);
   });
 
-  test('drawio-parity batch72 GCP starter (compute/gke/pubsub) round-trip',
-      () {
+  test('drawio-parity batch72 GCP starter (compute/gke/pubsub) round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     var page = doc.pages.first;
@@ -3988,7 +4129,8 @@ void main() {
         isNotEmpty);
   });
 
-  test('drawio-parity batch83 Oracle expansion (api-gw/fastconnect/devops) round-trip',
+  test(
+      'drawio-parity batch83 Oracle expansion (api-gw/fastconnect/devops) round-trip',
       () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -4078,7 +4220,8 @@ void main() {
         greaterThanOrEqualTo(3));
   });
 
-  test('drawio-parity batch82 IBM expansion (schematics/satellite/aspera) round-trip',
+  test(
+      'drawio-parity batch82 IBM expansion (schematics/satellite/aspera) round-trip',
       () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -4232,8 +4375,7 @@ void main() {
     expect(r.pages.first.findShapeById(dtsId)!.geometries.length, 2);
   });
 
-  test('drawio-parity batch80 Oracle starter (adb/oke/exadata) round-trip',
-      () {
+  test('drawio-parity batch80 Oracle starter (adb/oke/exadata) round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     var page = doc.pages.first;
@@ -4625,7 +4767,8 @@ void main() {
     expect(r.pages.first.findShapeById(coreId)!.geometries.length, 4);
   });
 
-  test('drawio-parity batch75 GCP expansion (dataflow/firestore/vertex) round-trip',
+  test(
+      'drawio-parity batch75 GCP expansion (dataflow/firestore/vertex) round-trip',
       () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -4861,7 +5004,8 @@ void main() {
   // reopen. An unfilled 1-D with LineColorTrans also bakes a FillForegndTrans
   // ribbon and arrow Geometry because libvisio has no LineColorTrans token
   // and sizes markers from line weight, not BeginArrowSize.
-  test('newly emitted shapes preserve style / text / LocPin (buildShape parity)',
+  test(
+      'newly emitted shapes preserve style / text / LocPin (buildShape parity)',
       () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -4944,7 +5088,8 @@ void main() {
     expect(conn.line.endArrow, 0);
     expect(conn.line.pattern, 0);
     expect(conn.fill.foregroundTransparency, closeTo(0.3, 1e-4));
-    expect(conn.geometries.where((g) => !g.noFill).length, greaterThanOrEqualTo(2));
+    expect(conn.geometries.where((g) => !g.noFill).length,
+        greaterThanOrEqualTo(2));
 
     final label = rp.findShapeById(labelId)!;
     expect(label.richText.textBlock.verticalAlign, VsdxVertAlign.bottom);
@@ -5045,8 +5190,8 @@ void main() {
       'ID="${shape.id}"[\\s\\S]*?(?=<Shape |</Shapes>)',
     ).firstMatch(pageXml)?.group(0);
     expect(shapeXml, isNotNull);
-    final locPinX = RegExp(r'<Cell[^>]*N="LocPinX"[^>]*/?>')
-        .firstMatch(shapeXml!);
+    final locPinX =
+        RegExp(r'<Cell[^>]*N="LocPinX"[^>]*/?>').firstMatch(shapeXml!);
     if (locPinX != null) {
       expect(locPinX.group(0)!.contains('F="'), isTrue,
           reason: 'LocPinX should retain F= after proportional resize');
@@ -5089,7 +5234,8 @@ void main() {
       'ID="${shape.id}"[\\s\\S]*?(?=<Shape |</Shapes>)',
     ).firstMatch(pageXml)!.group(0)!;
     expect(shapeXml.contains('N="FontScale"'), isTrue);
-    expect(shapeXml.contains('N="AsianFont"') || shapeXml.contains('N="LangID"'),
+    expect(
+        shapeXml.contains('N="AsianFont"') || shapeXml.contains('N="LangID"'),
         isTrue);
   });
 
@@ -5151,8 +5297,8 @@ void main() {
         connectionPoints: VsdxPage.defaultConnectionPoints(s.width, s.height),
       ),
     );
-    final out = writer.write(
-        originalBytes: bytes1, edited: doc.replacePage(0, page));
+    final out =
+        writer.write(originalBytes: bytes1, edited: doc.replacePage(0, page));
     final after = parser.parse(out).pages.first.findShapeById(2)!;
     expect(after.connectionPoints.length, 5);
     expect(after.connectionPoints[0].dirY, closeTo(1, 1e-9));
@@ -5251,9 +5397,8 @@ void main() {
     // grouping — writer must re-emit Control/Scratch with formulas.
     final bytes = _fixture('test5_master.vsdx');
     final doc = parser.parse(bytes);
-    final withControl = doc.pages.first.shapes
-        .where((s) => s.controls.isNotEmpty)
-        .toList();
+    final withControl =
+        doc.pages.first.shapes.where((s) => s.controls.isNotEmpty).toList();
     expect(withControl, isNotEmpty);
     final c0 = withControl.first.controls.first;
     expect(c0.name, 'TextPosition');
@@ -5376,7 +5521,8 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('<tp IX="0"/>') || pageXml.contains("<tp IX=\"0\"/>"),
+    expect(
+        pageXml.contains('<tp IX="0"/>') || pageXml.contains("<tp IX=\"0\"/>"),
         isTrue);
     expect(pageXml, contains('\t'));
     final after = parser.parse(out).pages.first.findShapeById(id)!;
@@ -5457,6 +5603,7 @@ void main() {
         walk(c);
       }
     }
+
     for (final s in doc.pages.first.shapes) {
       walk(s);
     }
@@ -5538,8 +5685,10 @@ void main() {
     );
     expect(pageXml.contains('N="Field"'), isTrue);
     expect(pageXml.contains('F="PAGENUMBER()"'), isTrue);
-    expect(pageXml.contains('<fld IX="0">42</fld>') ||
-        pageXml.contains("<fld IX=\"0\">42</fld>"), isTrue);
+    expect(
+        pageXml.contains('<fld IX="0">42</fld>') ||
+            pageXml.contains("<fld IX=\"0\">42</fld>"),
+        isTrue);
 
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.fields, isNotEmpty);
@@ -5883,8 +6032,8 @@ void main() {
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.richText.tabSets, hasLength(2));
     expect(after.richText.tabSets[1].stops, hasLength(2));
-    expect(after.richText.tabSets[1].stops[0].positionInches,
-        closeTo(1.25, 1e-6));
+    expect(
+        after.richText.tabSets[1].stops[0].positionInches, closeTo(1.25, 1e-6));
     expect(after.richText.runs.first.tabIndices, [0, 1]);
   });
 
@@ -5946,8 +6095,7 @@ void main() {
             runs: [
               VsdxTextRun(
                 text: 'Hi',
-                charStyle:
-                    VsdxCharStyle.defaults.copyWith(themeColorIndex: 3),
+                charStyle: VsdxCharStyle.defaults.copyWith(themeColorIndex: 3),
               ),
             ],
           ),
@@ -5957,7 +6105,12 @@ void main() {
     final mid = writer.write(originalBytes: blank, edited: doc);
     doc = parser.parse(mid);
     expect(
-      doc.pages.first.findShapeById(id)!.richText.runs.first.charStyle
+      doc.pages.first
+          .findShapeById(id)!
+          .richText
+          .runs
+          .first
+          .charStyle
           .themeColorIndex,
       3,
     );
@@ -6173,14 +6326,14 @@ void main() {
     final doc = parser.parse(bytes);
     VsdxShape? withCtrl;
     void walk(VsdxShape s) {
-      if (s.controls.isNotEmpty &&
-          s.controls.any((c) => c.useVisioDynNames)) {
+      if (s.controls.isNotEmpty && s.controls.any((c) => c.useVisioDynNames)) {
         withCtrl ??= s;
       }
       for (final c in s.children) {
         walk(c);
       }
     }
+
     for (final s in doc.pages.first.shapes) {
       walk(s);
     }
@@ -6450,12 +6603,21 @@ void main() {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final a = VsdxShapeFactory.rectangle(
-      id: 1, pinX: 1, pinY: 2, width: 1, height: 1,
+      id: 1,
+      pinX: 1,
+      pinY: 2,
+      width: 1,
+      height: 1,
     );
     final b = VsdxShapeFactory.rectangle(
-      id: 2, pinX: 4, pinY: 2, width: 1, height: 1,
+      id: 2,
+      pinX: 4,
+      pinY: 2,
+      width: 1,
+      height: 1,
     );
-    final conn = VsdxShapeFactory.line(id: 3, ax: 1, ay: 2, bx: 4, by: 2).copyWith(
+    final conn =
+        VsdxShapeFactory.line(id: 3, ax: 1, ay: 2, bx: 4, by: 2).copyWith(
       formulas: const <String, String>{
         'BegTrigger': '_XFTRIGGER(Sheet.1!EventXFMod)',
         'EndTrigger': '_XFTRIGGER(Sheet.2!EventXFMod)',
@@ -6728,7 +6890,8 @@ void main() {
           s.formulas['TxtPinX']?.contains('SETATREF') == true &&
           s.formulas.containsKey('TxtWidth'),
     );
-    expect(src.formulas['TxtPinX'], contains('SETATREF(Controls.TextPosition)'));
+    expect(
+        src.formulas['TxtPinX'], contains('SETATREF(Controls.TextPosition)'));
 
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);
@@ -6745,7 +6908,8 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('SETATREF(Controls.TextPosition)'), isTrue);
-    expect(pageXml.contains('TEXTWIDTH(TheText)') || pageXml.contains('TxtWidth'),
+    expect(
+        pageXml.contains('TEXTWIDTH(TheText)') || pageXml.contains('TxtWidth'),
         isTrue);
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.formulas['TxtPinX'], src.formulas['TxtPinX']);
@@ -7013,11 +7177,14 @@ void main() {
     expect(pageXml.contains('N="FillGradient"'), isTrue);
     expect(
       RegExp(r'N="GradientStopColor"[^>]*F="THEMEVAL').hasMatch(pageXml) ||
-          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"').hasMatch(pageXml),
+          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"')
+              .hasMatch(pageXml),
       isTrue,
-      reason: 'theme gradient stops must bind via THEMEVAL like Character Color',
+      reason:
+          'theme gradient stops must bind via THEMEVAL like Character Color',
     );
-    expect(pageXml.contains('N="GradientStopColor" V="1"') ||
+    expect(
+        pageXml.contains('N="GradientStopColor" V="1"') ||
             pageXml.contains('V="1" N="GradientStopColor"'),
         isTrue);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
@@ -7060,7 +7227,8 @@ void main() {
     expect(pageXml.contains('N="LineGradient"'), isTrue);
     expect(
       RegExp(r'N="GradientStopColor"[^>]*F="THEMEVAL').hasMatch(pageXml) ||
-          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"').hasMatch(pageXml),
+          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"')
+              .hasMatch(pageXml),
       isTrue,
     );
     final after = parser.parse(out).pages.first.findShapeById(id)!;
@@ -7388,10 +7556,7 @@ void main() {
           .decodeBytes(out)
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
-    ))
-        .descendants
-        .whereType<XmlElement>()
-        .firstWhere(
+    )).descendants.whereType<XmlElement>().firstWhere(
           (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'ShadowBlur',
         );
     expect(double.parse(cell.getAttribute('V')!), closeTo(0.09, 1e-6));
@@ -7848,8 +8013,7 @@ void main() {
           .descendants
           .whereType<XmlElement>()
           .firstWhere(
-            (e) =>
-                e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
           );
       expect(cell.getAttribute('F'), isNull, reason: entry.key);
       expect(double.parse(cell.getAttribute('V')!), closeTo(entry.value, 1e-6),
@@ -7946,7 +8110,18 @@ void main() {
     final gid = otherId + 1;
     const part = '/visio/media/image_soft_group.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -8224,7 +8399,15 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('ExtraInfo'), isFalse);
-    expect(parser.parse(out).pages.first.findShapeById(id)!.hyperlinks.first.extraInfo,
+    expect(
+        parser
+            .parse(out)
+            .pages
+            .first
+            .findShapeById(id)!
+            .hyperlinks
+            .first
+            .extraInfo,
         isNull);
   });
 
@@ -8794,7 +8977,8 @@ void main() {
     expect(after.status, 1);
   });
 
-  test('theme colours keep THEMEVAL on rebuild; stale pattern formulas scrub', () {
+  test('theme colours keep THEMEVAL on rebuild; stale pattern formulas scrub',
+      () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
     final id = doc.pages.first.nextFreeShapeId();
@@ -8855,7 +9039,18 @@ void main() {
     final picId = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_dual_theme.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -9075,7 +9270,18 @@ void main() {
     final gid = otherId + 1;
     const part = '/visio/media/image_user_group.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -9103,9 +9309,7 @@ void main() {
         )
         .replacePage(
           0,
-          doc.pages.first
-              .addShape(pic)
-              .addShape(
+          doc.pages.first.addShape(pic).addShape(
                 VsdxShapeFactory.rectangle(
                   id: otherId,
                   pinX: 4,
@@ -9301,7 +9505,18 @@ void main() {
     final gid = otherId + 1;
     const part = '/visio/media/image_field_group.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -9333,9 +9548,7 @@ void main() {
         )
         .replacePage(
           0,
-          doc.pages.first
-              .addShape(pic)
-              .addShape(
+          doc.pages.first.addShape(pic).addShape(
                 VsdxShapeFactory.rectangle(
                   id: otherId,
                   pinX: 4,
@@ -9447,7 +9660,18 @@ void main() {
     final gid = otherId + 1;
     const part = '/visio/media/image_meta_group.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -9472,9 +9696,7 @@ void main() {
         )
         .replacePage(
           0,
-          doc.pages.first
-              .addShape(pic)
-              .addShape(
+          doc.pages.first.addShape(pic).addShape(
                 VsdxShapeFactory.rectangle(
                   id: otherId,
                   pinX: 4,
@@ -9570,7 +9792,8 @@ void main() {
     expect(match.group(0)!.contains('V="3"'), isTrue);
   });
 
-  test('GlueType / DynFeedback F=Inh scrubbed when connector props unchanged', () {
+  test('GlueType / DynFeedback F=Inh scrubbed when connector props unchanged',
+      () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -9740,7 +9963,8 @@ void main() {
     }
   });
 
-  test('Control / Scratch / Field / Character F=Inh scrubbed when model equal', () {
+  test('Control / Scratch / Field / Character F=Inh scrubbed when model equal',
+      () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -9790,8 +10014,9 @@ void main() {
       RegExp(r'<Cell N="Value" V="42"[^/]*/>'),
       '<Cell N="Value" V="42" U="STR" F="Inh"/>',
     );
-    final sizeMatch = RegExp(r'<Section N="Character">[\s\S]*?<Cell N="Size"[^/]*/>')
-        .firstMatch(pageXml);
+    final sizeMatch =
+        RegExp(r'<Section N="Character">[\s\S]*?<Cell N="Size"[^/]*/>')
+            .firstMatch(pageXml);
     if (sizeMatch != null) {
       final old = sizeMatch.group(0)!;
       pageXml = pageXml.replaceFirst(
@@ -10190,8 +10415,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'AsianFont',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'AsianFont',
         );
     expect(cell.getAttribute('F'), isNull);
     expect(cell.getAttribute('V'), 'Microsoft YaHei');
@@ -10329,14 +10553,14 @@ void main() {
       0,
       doc.pages.first
           .addShape(
-            VsdxShapeFactory.rectangle(
-              id: otherId,
-              pinX: 4,
-              pinY: 1,
-              width: 1,
-              height: 1,
-            ),
-          )
+        VsdxShapeFactory.rectangle(
+          id: otherId,
+          pinX: 4,
+          pinY: 1,
+          width: 1,
+          height: 1,
+        ),
+      )
           .group({id, otherId}, groupId: gid),
     );
     final out = writer.write(originalBytes: mid, edited: doc);
@@ -10360,7 +10584,18 @@ void main() {
     final gid = otherId + 1;
     const part = '/visio/media/image_crop_group.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 5, 6, 7, 8,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      5,
+      6,
+      7,
+      8,
     ]);
     doc = doc
         .copyWith(
@@ -10399,14 +10634,14 @@ void main() {
       0,
       doc.pages.first
           .addShape(
-            VsdxShapeFactory.rectangle(
-              id: otherId,
-              pinX: 5,
-              pinY: 2,
-              width: 1,
-              height: 1,
-            ),
-          )
+        VsdxShapeFactory.rectangle(
+          id: otherId,
+          pinX: 5,
+          pinY: 2,
+          width: 1,
+          height: 1,
+        ),
+      )
           .group({picId, otherId}, groupId: gid),
     );
     final out = writer.write(originalBytes: cropped, edited: doc);
@@ -10466,7 +10701,7 @@ void main() {
     pageXml = pageXml.replaceFirst(
       RegExp('<Shape ID="$a"[^>]*>\\s*<Cell '),
       '<Shape ID="$a" NameU="Sheet.$a" Name="Sheet.$a" Type="Shape">'
-          '<Cell N="LockTextEdit" V="1"/><Cell ',
+      '<Cell N="LockTextEdit" V="1"/><Cell ',
     );
     final tainted = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(tainted);
@@ -10509,7 +10744,7 @@ void main() {
     pageXml = pageXml.replaceFirst(
       RegExp('<Shape ID="$id"[^>]*>\\s*<Cell '),
       '<Shape ID="$id" NameU="Sheet.$id" Name="Sheet.$id" Type="Shape">'
-          '<Cell N="LockTextEdit" V="1"/><Cell ',
+      '<Cell N="LockTextEdit" V="1"/><Cell ',
     );
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
@@ -10912,7 +11147,18 @@ void main() {
     final picId = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_inh_tone.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      9,
+      8,
+      7,
+      6,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -11368,7 +11614,18 @@ void main() {
     final picId = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_inh_wh.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 5, 4, 3, 2,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      5,
+      4,
+      3,
+      2,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -11430,7 +11687,18 @@ void main() {
     final picId = doc.pages.first.nextFreeShapeId();
     const part = '/visio/media/image_inh_crop.png';
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 9, 8, 7, 6,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      9,
+      8,
+      7,
+      6,
     ]);
     final pic = VsdxShapeFactory.picture(
       id: picId,
@@ -11483,9 +11751,11 @@ void main() {
     expect(w.group(0)!.contains('F="Inh"'), isFalse);
     expect(h.group(0)!.contains('F="Inh"'), isFalse);
     expect(w.group(0)!.contains('Width*1'), isFalse);
-    expect(double.parse(RegExp(r'V="([^"]+)"').firstMatch(w.group(0)!)!.group(1)!),
+    expect(
+        double.parse(RegExp(r'V="([^"]+)"').firstMatch(w.group(0)!)!.group(1)!),
         closeTo(0.5, 1e-6));
-    expect(double.parse(RegExp(r'V="([^"]+)"').firstMatch(h.group(0)!)!.group(1)!),
+    expect(
+        double.parse(RegExp(r'V="([^"]+)"').firstMatch(h.group(0)!)!.group(1)!),
         closeTo(0.4, 1e-6));
   });
 
@@ -11599,7 +11869,8 @@ void main() {
           .content as List<int>,
     );
     final begin = RegExp(r'<Cell N="BeginX"[^/]*/>').firstMatch(pageXml)!;
-    expect(begin.group(0)!.contains('F="Inh"'), isFalse, reason: begin.group(0));
+    expect(begin.group(0)!.contains('F="Inh"'), isFalse,
+        reason: begin.group(0));
     final pin = RegExp(r'<Cell N="PinX"[^/]*/>').firstMatch(pageXml)!;
     // Connector ensure may replace Inh with (BeginX+EndX)*0.5 — never Inh.
     expect(pin.group(0)!.contains('F="Inh"'), isFalse, reason: pin.group(0));
@@ -11699,8 +11970,7 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
-    final soft =
-        RegExp(r'<Cell N="SoftEdgesSize"[^/]*/>').firstMatch(pageXml);
+    final soft = RegExp(r'<Cell N="SoftEdgesSize"[^/]*/>').firstMatch(pageXml);
     expect(soft, isNotNull);
     expect(soft!.group(0)!.contains('F="Inh"'), isFalse);
   });
@@ -11774,8 +12044,7 @@ void main() {
           .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
           .content as List<int>,
     );
-    final shdw =
-        RegExp(r'<Cell N="ShdwOffsetX"[^/]*/>').firstMatch(pagesXml);
+    final shdw = RegExp(r'<Cell N="ShdwOffsetX"[^/]*/>').firstMatch(pagesXml);
     expect(shdw, isNotNull);
     expect(shdw!.group(0)!.contains('F="Inh"'), isFalse);
   });
@@ -11842,8 +12111,7 @@ void main() {
     expect(doc.settings.gridDensityY, 3);
 
     final archive = ZipDecoder().decodeBytes(mid);
-    final docFile =
-        archive.firstWhere((f) => f.name.endsWith('document.xml'));
+    final docFile = archive.firstWhere((f) => f.name.endsWith('document.xml'));
     var docXml = utf8.decode(docFile.content as List<int>);
     docXml = docXml.replaceFirst(
       RegExp(r'<Cell N="PageColor"[^/]*/>'),
@@ -11883,7 +12151,8 @@ void main() {
     final widthMatch =
         RegExp(r'<Cell N="PageWidth"[^/]*/>').firstMatch(pagesXml);
     expect(widthMatch, isNotNull);
-    final v = RegExp(r'V="([^"]*)"').firstMatch(widthMatch!.group(0)!)!.group(1)!;
+    final v =
+        RegExp(r'V="([^"]*)"').firstMatch(widthMatch!.group(0)!)!.group(1)!;
     pagesXml = pagesXml.replaceFirst(
       RegExp(r'<Cell N="PageWidth"[^/]*/>'),
       '<Cell N="PageWidth" V="$v" F="Inh"/>',
@@ -11898,8 +12167,7 @@ void main() {
           .firstWhere((f) => f.name.endsWith('pages/pages.xml'))
           .content as List<int>,
     );
-    final cell =
-        RegExp(r'<Cell N="PageWidth"[^/]*/>').firstMatch(pagesXml);
+    final cell = RegExp(r'<Cell N="PageWidth"[^/]*/>').firstMatch(pagesXml);
     expect(cell, isNotNull);
     expect(cell!.group(0)!.contains('F="Inh"'), isFalse);
   });
@@ -12371,7 +12639,7 @@ void main() {
         .whereType<XmlElement>()
         .firstWhere(
           (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'Color',
-    );
+        );
     expect(colorCell.getAttribute('F'), isNull);
     expect(colorCell.getAttribute('V'), '#FF0000');
     expect(
@@ -12653,7 +12921,13 @@ void main() {
       isFalse,
     );
     expect(
-      parser.parse(out).pages.first.findShapeById(id)!.hyperlinks.first
+      parser
+          .parse(out)
+          .pages
+          .first
+          .findShapeById(id)!
+          .hyperlinks
+          .first
           .description,
       isNull,
     );
@@ -12688,8 +12962,8 @@ void main() {
     doc = parser.parse(mid);
     expect(doc.pages.first.findShapeById(id)!.hyperlinks.first.subAddress,
         'page2');
-    expect(doc.pages.first.findShapeById(id)!.hyperlinks.first.extraInfo,
-        'utm=1');
+    expect(
+        doc.pages.first.findShapeById(id)!.hyperlinks.first.extraInfo, 'utm=1');
     final archive = ZipDecoder().decodeBytes(mid);
     final pageFile =
         archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
@@ -13081,7 +13355,8 @@ void main() {
     );
     var mid = writer.write(originalBytes: blank, edited: doc);
     doc = parser.parse(mid);
-    expect(doc.pages.first.findShapeById(id)!.userProperties.first.label, isNull);
+    expect(
+        doc.pages.first.findShapeById(id)!.userProperties.first.label, isNull);
     final archive = ZipDecoder().decodeBytes(mid);
     final pageFile =
         archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
@@ -13517,11 +13792,11 @@ void main() {
     pageXml = pageXml.replaceFirst(
       RegExp(r'<Section N="Tabs"><Row IX="0">[\s\S]*?</Row></Section>'),
       '<Section N="Tabs"><Row IX="0">'
-          '<Cell N="Position0" V="0.5"/>'
-          '<Cell N="Alignment0" V="0"/>'
-          '<Cell N="Position1" V="0.5" F="Inh"/>'
-          '<Cell N="Alignment1" V="0"/>'
-          '</Row></Section>',
+      '<Cell N="Position0" V="0.5"/>'
+      '<Cell N="Alignment0" V="0"/>'
+      '<Cell N="Position1" V="0.5" F="Inh"/>'
+      '<Cell N="Alignment1" V="0"/>'
+      '</Row></Section>',
     );
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = doc.replacePage(
@@ -13581,11 +13856,11 @@ void main() {
     pageXml = pageXml.replaceFirst(
       RegExp(r'<Section N="Tabs"><Row IX="0">[\s\S]*?</Row></Section>'),
       '<Section N="Tabs"><Row IX="0">'
-          '<Cell N="Position0" V="0.5"/>'
-          '<Cell N="Alignment0" V="0"/>'
-          '<Cell N="Position1" V="0.5"/>'
-          '<Cell N="Alignment1" V="0"/>'
-          '</Row></Section>',
+      '<Cell N="Position0" V="0.5"/>'
+      '<Cell N="Alignment0" V="0"/>'
+      '<Cell N="Position1" V="0.5"/>'
+      '<Cell N="Alignment1" V="0"/>'
+      '</Row></Section>',
     );
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
@@ -13806,13 +14081,13 @@ void main() {
       pageXml = pageXml.replaceFirst(
         RegExp(r'<Section N="Tabs">[\s\S]*?</Section>'),
         '<Section N="Tabs"><Row IX="0">'
-            '<Cell N="Position0" V="0.25"/>'
-            '<Cell N="Alignment0" V="0"/>'
-            '<Cell N="Position1" V="0.5"/>'
-            '<Cell N="Alignment1" V="1"/>'
-            '<Cell N="Position2" V="0.75"/>'
-            '<Cell N="Alignment2" V="2"/>'
-            '</Row></Section>',
+        '<Cell N="Position0" V="0.25"/>'
+        '<Cell N="Alignment0" V="0"/>'
+        '<Cell N="Position1" V="0.5"/>'
+        '<Cell N="Alignment1" V="1"/>'
+        '<Cell N="Position2" V="0.75"/>'
+        '<Cell N="Alignment2" V="2"/>'
+        '</Row></Section>',
       );
     } else {
       pageXml = pageXml.replaceFirst(
@@ -13914,7 +14189,7 @@ void main() {
       pageXml = pageXml.replaceFirst(
         RegExp(r'(<Cell N="FillGradientEnabled"[^/]*/>)'),
         r'$1<Cell N="FillGradientDir" V="4" F="Inh"/>'
-            '<Cell N="FillGradientAngle" V="0.5" F="Inh"/>',
+        '<Cell N="FillGradientAngle" V="0.5" F="Inh"/>',
       );
     } else {
       pageXml = pageXml.replaceFirst(
@@ -14119,8 +14394,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'FillPattern',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'FillPattern',
         );
     expect(cell.getAttribute('V'), '1');
     expect(cell.getAttribute('F'), isNull);
@@ -14234,8 +14508,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'HideText',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'HideText',
         );
     expect(cell.getAttribute('V'), '1');
     expect(cell.getAttribute('F'), isNull);
@@ -14290,8 +14563,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'FillForegnd',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'FillForegnd',
         );
     expect(cell.getAttribute('V')!.toUpperCase(), '#336699');
     expect(cell.getAttribute('F'), isNull);
@@ -14341,8 +14613,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'ThemeIndex',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'ThemeIndex',
         );
     expect(cell.getAttribute('V'), '2');
     expect(cell.getAttribute('F'), isNull);
@@ -14400,8 +14671,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'TextBkgnd',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'TextBkgnd',
         );
     expect(cell.getAttribute('V')!.toUpperCase(), '#FFCC00');
     expect(cell.getAttribute('F'), isNull);
@@ -14453,8 +14723,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'LockMoveX',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'LockMoveX',
         );
     expect(cell.getAttribute('V'), '0');
     expect(cell.getAttribute('F'), isNull);
@@ -14505,8 +14774,7 @@ void main() {
         .whereType<XmlElement>()
         .firstWhere(
           (e) =>
-              e.name.local == 'Cell' &&
-              e.getAttribute('N') == 'EventDblClick',
+              e.name.local == 'Cell' && e.getAttribute('N') == 'EventDblClick',
         );
     expect(cell.getAttribute('V'), 'OPENTEXTWIN()');
   });
@@ -14558,8 +14826,7 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Cell' && e.getAttribute('N') == 'FillForegnd',
+          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'FillForegnd',
         );
     expect(cell.getAttribute('V')!.toUpperCase(), '#FFFFFF');
     expect(cell.getAttribute('F'), isNull);
@@ -14626,8 +14893,7 @@ void main() {
               e.getAttribute('Type') == 'Group',
         );
     final hasPattern = outGroup.childElements.any(
-      (c) =>
-          c.name.local == 'Cell' && c.getAttribute('N') == 'FillPattern',
+      (c) => c.name.local == 'Cell' && c.getAttribute('N') == 'FillPattern',
     );
     expect(hasPattern, isFalse);
   });
@@ -14659,13 +14925,11 @@ void main() {
     expect(after.pinX, closeTo(edited.pinX, 1e-6));
     expect(after.pinY, closeTo(edited.pinY, 1e-6));
 
-    final pageXml = VsdxPackage.open(out)
-        .readPartXml('/visio/pages/page1.xml')!;
-    XmlElement pin(String name) => pageXml.descendants
-        .whereType<XmlElement>()
-        .firstWhere((element) =>
-            element.name.local == 'Cell' &&
-            element.getAttribute('N') == name);
+    final pageXml =
+        VsdxPackage.open(out).readPartXml('/visio/pages/page1.xml')!;
+    XmlElement pin(String name) =>
+        pageXml.descendants.whereType<XmlElement>().firstWhere((element) =>
+            element.name.local == 'Cell' && element.getAttribute('N') == name);
     expect(pin('PinX').getAttribute('F'), isNull);
     expect(pin('PinY').getAttribute('F'), isNull);
   });

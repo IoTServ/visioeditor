@@ -65,8 +65,8 @@ Locale? visioLocaleForLangId(String? langId) {
 
 TextDirection visioTextDirection(String text, {String? langId}) =>
     isVisioRightToLeftText(text, langId: langId)
-        ? TextDirection.rtl
-        : TextDirection.ltr;
+    ? TextDirection.rtl
+    : TextDirection.ltr;
 
 /// Flutter Canvas supports three joins. Preserve draw.io's richer value in
 /// the model/SVG while using the closest on-canvas appearance for SVG 2-only
@@ -658,8 +658,7 @@ class VsdxPainter extends CustomPainter {
             widthInches: shape.width,
             heightInches: shape.height,
             roundingInches: rounding,
-            infiniteLineResolver: (p, q) =>
-                _infiniteLineEndpoints(shape, p, q),
+            infiniteLineResolver: (p, q) => _infiniteLineEndpoints(shape, p, q),
           )
         : null;
     final compoundFill = compoundPath != null;
@@ -705,8 +704,7 @@ class VsdxPainter extends CustomPainter {
         widthInches: shape.width,
         heightInches: shape.height,
         roundingInches: rounding,
-        infiniteLineResolver: (p, q) =>
-            _infiniteLineEndpoints(shape, p, q),
+        infiniteLineResolver: (p, q) => _infiniteLineEndpoints(shape, p, q),
       );
       // Compound fill already painted effects+fill; skip re-fill. Still paint
       // effects for NoFill stroke decorations (dividers, inner borders).
@@ -1297,8 +1295,7 @@ class VsdxPainter extends CustomPainter {
     );
     if (clipped == null) return null;
     return <Offset2D>[
-      for (final endpoint in clipped)
-        ctx.pageToLocalDeep(shape.id, endpoint),
+      for (final endpoint in clipped) ctx.pageToLocalDeep(shape.id, endpoint),
     ];
   }
 
@@ -1370,8 +1367,7 @@ class VsdxPainter extends CustomPainter {
           canvas.drawPath(path, Paint()..color = bg);
         }
         canvas.drawPath(path, hatch);
-        final overlay =
-            patterns.overlayPaintFor(fill.pattern, foreground: fg);
+        final overlay = patterns.overlayPaintFor(fill.pattern, foreground: fg);
         if (overlay != null) canvas.drawPath(path, overlay);
         return;
       }
@@ -1676,7 +1672,8 @@ class VsdxPainter extends CustomPainter {
         const Color(0x99000000);
     // libvisio maps FillForegndTrans to the whole graphic style's opacity,
     // so LibreOffice also composes it into the drop shadow.
-    final alpha = (1 - shadow.transparency).clamp(0.0, 1.0) *
+    final alpha =
+        (1 - shadow.transparency).clamp(0.0, 1.0) *
         (1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0));
     if (alpha <= 0) return;
     // libvisio/LibreOffice produces shadows from collected fill geometry, not
@@ -1881,18 +1878,20 @@ class VsdxPainter extends CustomPainter {
       for (final tangents in subpaths) {
         final start = Offset(tangents.start.x, tangents.start.y);
         final end = Offset(tangents.end.x, tangents.end.y);
-        out.add(_LineEndpoints(
-          start,
-          end,
-          beginTangent: Offset(
-            start.dx + tangents.startForward.x,
-            start.dy + tangents.startForward.y,
+        out.add(
+          _LineEndpoints(
+            start,
+            end,
+            beginTangent: Offset(
+              start.dx + tangents.startForward.x,
+              start.dy + tangents.startForward.y,
+            ),
+            endTangent: Offset(
+              end.dx - tangents.endForward.x,
+              end.dy - tangents.endForward.y,
+            ),
           ),
-          endTangent: Offset(
-            end.dx - tangents.endForward.x,
-            end.dy - tangents.endForward.y,
-          ),
-        ));
+        );
       }
     }
     return out;
@@ -2371,8 +2370,7 @@ class VsdxPainter extends CustomPainter {
     // "Blue 2" frame fill behind transparent bitmap/metafile pixels.
     canvas.drawRect(
       imgRect,
-      Paint()
-        ..color = const Color(libreOfficeForeignObjectBackgroundArgb),
+      Paint()..color = const Color(libreOfficeForeignObjectBackgroundArgb),
     );
     if (needsTone) {
       // Blur sigma in layer pixels; Brightness/Contrast are Visio 0…1 with 0.5
@@ -2681,9 +2679,9 @@ class VsdxPainter extends CustomPainter {
       hasRich ? rich.plainText : label!,
       langId: hasRich
           ? rich.runs
-              .map((run) => run.charStyle.langId)
-              .whereType<String>()
-              .firstOrNull
+                .map((run) => run.charStyle.langId)
+                .whereType<String>()
+                .firstOrNull
           : null,
     );
 
@@ -2871,8 +2869,9 @@ class VsdxPainter extends CustomPainter {
         canvas,
         spans: spans,
         plain: hasRich ? rich.plainText : label!,
-        charStyle:
-            hasRich && rich.runs.isNotEmpty ? rich.runs.first.charStyle : null,
+        charStyle: hasRich && rich.runs.isNotEmpty
+            ? rich.runs.first.charStyle
+            : null,
         scale: s,
         twPx: twPx,
         thPx: thPx,
@@ -3144,7 +3143,8 @@ class VsdxPainter extends CustomPainter {
       probe.tp.dispose();
     }
     var top = mtPx;
-    final rightToLeft = visioTextDirection(
+    final rightToLeft =
+        visioTextDirection(
           runs.map((run) => run.text).join(),
           langId: runs
               .map((run) => run.charStyle.langId)
@@ -3230,7 +3230,8 @@ class VsdxPainter extends CustomPainter {
     required double scale,
     required Color? backgroundColor,
   }) {
-    final rightToLeft = visioTextDirection(
+    final rightToLeft =
+        visioTextDirection(
           runs.map((run) => run.text).join(),
           langId: runs
               .map((run) => run.charStyle.langId)
@@ -3385,16 +3386,11 @@ class VsdxPainter extends CustomPainter {
         openTypePos: !applyPosDy,
         backgroundColor: backgroundColor,
       ),
-      textDirection: visioTextDirection(
-        text,
-        langId: run.charStyle.langId,
-      ),
+      textDirection: visioTextDirection(text, langId: run.charStyle.langId),
       maxLines: 1,
     )..layout();
-    final base = math.max(
-          run.charStyle.effectiveFontSizeInchesForText(text),
-          0.04,
-        ) *
+    final base =
+        math.max(run.charStyle.effectiveFontSizeInchesForText(text), 0.04) *
         scale;
     final dy = !applyPosDy
         ? 0.0
@@ -3472,19 +3468,17 @@ class VsdxPainter extends CustomPainter {
       }
       final bodyBaseline =
           body.computeDistanceToActualBaseline(TextBaseline.alphabetic) +
-              bodyDy;
-      final bulletBaseline =
-          bullet.computeDistanceToActualBaseline(TextBaseline.alphabetic);
+          bodyDy;
+      final bulletBaseline = bullet.computeDistanceToActualBaseline(
+        TextBaseline.alphabetic,
+      );
       final commonBaseline = math.max(bodyBaseline, bulletBaseline);
       final bodyTop = commonBaseline - bodyBaseline;
       final bulletTop = commonBaseline - bulletBaseline;
       return (
         bodyTop: bodyTop,
         bulletTop: bulletTop,
-        height: math.max(
-          bodyTop + bodyHeight,
-          bulletTop + bullet.height,
-        ),
+        height: math.max(bodyTop + bodyHeight, bulletTop + bullet.height),
       );
     }
 
@@ -3513,19 +3507,17 @@ class VsdxPainter extends CustomPainter {
         final bodyFontInches = bodyRun == null
             ? 0.14
             : (bodyStyle.fontSizeInches > 0
-                ? bodyStyle.effectiveFontSizeInchesForText(bodyRun.text)
-                : 0.14);
+                  ? bodyStyle.effectiveFontSizeInchesForText(bodyRun.text)
+                  : 0.14);
         final fontPx =
             style.effectiveBulletFontSizeInches(bodyFontInches) * scale;
         final bulletBase =
             _colourOrTheme(bodyStyle.color, bodyStyle.themeColorIndex) ??
-                Colors.black;
-        final bulletAlpha =
-            (1 - bodyStyle.transparency).clamp(0.0, 1.0);
+            Colors.black;
+        final bulletAlpha = (1 - bodyStyle.transparency).clamp(0.0, 1.0);
         double? bulletLineHeight;
         if (style.lineSpacingAbsoluteInches > 0 && fontPx > 0) {
-          bulletLineHeight =
-              style.lineSpacingAbsoluteInches * scale / fontPx;
+          bulletLineHeight = style.lineSpacingAbsoluteInches * scale / fontPx;
         } else if (style.lineSpacingSolid) {
           bulletLineHeight = 1.0;
         } else if (style.lineSpacing > 0) {
@@ -3536,9 +3528,7 @@ class VsdxPainter extends CustomPainter {
           text: TextSpan(
             text: glyph,
             style: TextStyle(
-              color: bulletBase.withValues(
-                alpha: bulletBase.a * bulletAlpha,
-              ),
+              color: bulletBase.withValues(alpha: bulletBase.a * bulletAlpha),
               fontSize: fontPx,
               fontFamily: style.bulletFont ?? bodyStyle.fontFamily,
               height: bulletLineHeight,
@@ -3626,7 +3616,8 @@ class VsdxPainter extends CustomPainter {
         continue;
       }
       if (needsLineWrap) {
-        final rightToLeft = visioTextDirection(
+        final rightToLeft =
+            visioTextDirection(
               para.runs.map((run) => run.text).join(),
               langId: para.runs
                   .map((run) => run.charStyle.langId)
@@ -3776,7 +3767,8 @@ class VsdxPainter extends CustomPainter {
     List<double> offsets,
     double width,
     double height,
-  }) _layoutTabbedCanvasLine(
+  })
+  _layoutTabbedCanvasLine(
     List<VsdxTextRun> runs, {
     required List<VsdxTabSet> tabSets,
     required double defaultTabStopInches,
@@ -3798,13 +3790,16 @@ class VsdxPainter extends CustomPainter {
 
   /// Wrap a tabbed paragraph at a tab boundary when its following field no
   /// longer fits the text band, matching LibreOffice's libvisio text object.
-  List<({
-    List<TextPainter> painters,
-    List<double> dys,
-    List<double> offsets,
-    double width,
-    double height,
-  })> _layoutTabbedCanvasLines(
+  List<
+    ({
+      List<TextPainter> painters,
+      List<double> dys,
+      List<double> offsets,
+      double width,
+      double height,
+    })
+  >
+  _layoutTabbedCanvasLines(
     List<VsdxTextRun> runs, {
     required List<VsdxTabSet> tabSets,
     required double defaultTabStopInches,
@@ -3814,7 +3809,16 @@ class VsdxPainter extends CustomPainter {
     required double firstLineMaxWidth,
     required double continuationMaxWidth,
   }) {
-    final tokens = <({TextPainter? painter, double dy, int? tabSetIx, String text, VsdxTextRun run})>[];
+    final tokens =
+        <
+          ({
+            TextPainter? painter,
+            double dy,
+            int? tabSetIx,
+            String text,
+            VsdxTextRun run,
+          })
+        >[];
     for (final run in runs) {
       var start = 0;
       var tab = 0;
@@ -3829,7 +3833,13 @@ class VsdxPainter extends CustomPainter {
             applyPosDy: applyPosDy,
             backgroundColor: backgroundColor,
           );
-          tokens.add((painter: piece.tp, dy: piece.dy, tabSetIx: null, text: text, run: run));
+          tokens.add((
+            painter: piece.tp,
+            dy: piece.dy,
+            tabSetIx: null,
+            text: text,
+            run: run,
+          ));
         }
         tokens.add((
           painter: null,
@@ -3850,17 +3860,26 @@ class VsdxPainter extends CustomPainter {
           applyPosDy: applyPosDy,
           backgroundColor: backgroundColor,
         );
-        tokens.add((painter: piece.tp, dy: piece.dy, tabSetIx: null, text: text, run: run));
+        tokens.add((
+          painter: piece.tp,
+          dy: piece.dy,
+          tabSetIx: null,
+          text: text,
+          run: run,
+        ));
       }
     }
 
-    final lines = <({
-      List<TextPainter> painters,
-      List<double> dys,
-      List<double> offsets,
-      double width,
-      double height,
-    })>[];
+    final lines =
+        <
+          ({
+            List<TextPainter> painters,
+            List<double> dys,
+            List<double> offsets,
+            double width,
+            double height,
+          })
+        >[];
     var painters = <TextPainter>[];
     var dys = <double>[];
     var offsets = <double>[];
@@ -3916,7 +3935,8 @@ class VsdxPainter extends CustomPainter {
             }
           }
         }
-        final fieldX = visioTabFieldStart(
+        final fieldX =
+            visioTabFieldStart(
               tabSets: tabSets,
               tabSetIx: tabSetIx,
               currentPosition: x / scale,
@@ -3925,7 +3945,8 @@ class VsdxPainter extends CustomPainter {
               defaultTabStop: defaultTabStopInches,
             ) *
             scale;
-        if (painters.isNotEmpty && lineLimit.isFinite &&
+        if (painters.isNotEmpty &&
+            lineLimit.isFinite &&
             fieldX + following > lineLimit + 1e-6) {
           finishLine();
           // The wrapping tab is consumed; its field begins at the next line's
@@ -3999,10 +4020,12 @@ class VsdxPainter extends CustomPainter {
         style = run.paraStyle;
         // Keep empty segments so consecutive `\n\n` yield blank paragraphs.
         final tabCount = '\t'.allMatches(parts[i]).length;
-        cur.add(run.copyWith(
-          text: parts[i],
-          tabIndices: run.tabIndices.skip(tabOffset).take(tabCount).toList(),
-        ));
+        cur.add(
+          run.copyWith(
+            text: parts[i],
+            tabIndices: run.tabIndices.skip(tabOffset).take(tabCount).toList(),
+          ),
+        );
         tabOffset += tabCount;
       }
     }
@@ -4030,17 +4053,16 @@ class VsdxPainter extends CustomPainter {
   /// Flutter rounds [TextPainter.height] to logical pixels, while libvisio
   /// passes `fo:line-height` to LibreOffice as a continuous document value.
   /// Returning `null` delegates to the font's natural un-authored height.
-  static double? authoredLineHeightPx(
-    List<VsdxTextRun> runs,
-    double scale,
-  ) {
+  static double? authoredLineHeightPx(List<VsdxTextRun> runs, double scale) {
     double? height;
     for (final run in runs) {
       if (run.text.isEmpty) continue;
-      var fontSize = math.max(
-        run.charStyle.effectiveFontSizeInchesForText(run.text),
-        0.04,
-      ) * scale;
+      var fontSize =
+          math.max(
+            run.charStyle.effectiveFontSizeInchesForText(run.text),
+            0.04,
+          ) *
+          scale;
       if (run.charStyle.position != VsdxTextPosition.normal) {
         fontSize *= 0.7;
       }
@@ -4048,12 +4070,13 @@ class VsdxPainter extends CustomPainter {
       final candidate = para.lineSpacingAbsoluteInches > 0
           ? para.lineSpacingAbsoluteInches * scale
           : para.lineSpacingSolid
-              ? fontSize
-              : para.lineSpacing > 0
-                  ? fontSize * para.lineSpacing *
-                      kLibreOfficeFontCellLineHeightFactor
-                  : null;
-      if (candidate != null && candidate.isFinite && candidate > 0 &&
+          ? fontSize
+          : para.lineSpacing > 0
+          ? fontSize * para.lineSpacing * kLibreOfficeFontCellLineHeightFactor
+          : null;
+      if (candidate != null &&
+          candidate.isFinite &&
+          candidate > 0 &&
           (height == null || candidate > height)) {
         height = candidate;
       }
@@ -4172,11 +4195,12 @@ class VsdxPainter extends CustomPainter {
             ? 0.0
             : run.charStyle.letterSpacingInches * scale;
         // Approximate FontScale as extra tracking. Use the same mean Latin
-        // advance (0.55×size) as SVG [_estSvgTextWidth] / letter-spacing.
+        // advance as SVG [_estSvgTextWidth] / letter-spacing.
         if ((widthScale - 1.0).abs() < 1e-6) {
           return base == 0 ? null : base;
         }
-        return base + scaledSize * (widthScale - 1.0) * 0.55;
+        return base +
+            scaledSize * (widthScale - 1.0) * kLibvisioMeanLatinAdvance;
       }(),
       height: lineHeight,
       fontFeatures: features.isEmpty ? null : features,
@@ -4186,11 +4210,13 @@ class VsdxPainter extends CustomPainter {
     final hasComplexText = rawText.runes.any(isVisioComplexScriptRune);
     final asianFontName = run.charStyle.asianFont?.trim();
     final latinFontName = run.charStyle.fontFamily?.trim();
-    final hasAsianOverride = hasAsianText &&
+    final hasAsianOverride =
+        hasAsianText &&
         (asianFontName?.isNotEmpty ?? false) &&
         (latinFontName == null ||
             asianFontName!.toLowerCase() != latinFontName.toLowerCase());
-    final hasComplexOverride = hasComplexText &&
+    final hasComplexOverride =
+        hasComplexText &&
         ((run.charStyle.complexScriptFont?.isNotEmpty ?? false) ||
             run.charStyle.complexScriptSizeInches != null);
     if (hasAsianOverride || hasComplexOverride) {
@@ -4215,7 +4241,8 @@ class VsdxPainter extends CustomPainter {
               'Arial',
           asianFont: run.charStyle.asianFont,
         );
-        final complexBaseSize = math.max(
+        final complexBaseSize =
+            math.max(
               run.charStyle.complexScriptSizeInches ??
                   run.charStyle.fontSizeInches,
               0.04,
@@ -4231,8 +4258,9 @@ class VsdxPainter extends CustomPainter {
               ? null
               : complexFont.familyFallback,
           fontSize: complexSize,
-          letterSpacing: baseTracking +
-              complexSize * (widthScale - 1.0) * 0.55,
+          letterSpacing:
+              baseTracking +
+              complexSize * (widthScale - 1.0) * kLibvisioMeanLatinAdvance,
         );
       }
       return TextSpan(
@@ -4286,8 +4314,8 @@ class VsdxPainter extends CustomPainter {
       final next = isVisioComplexScriptRune(rune)
           ? 2
           : isVisioAsianScriptRune(rune)
-              ? 1
-              : 0;
+          ? 1
+          : 0;
       if (script >= 0 && script != next) flush();
       script = next;
       buf.writeCharCode(rune);
@@ -4373,10 +4401,7 @@ class VsdxPainter extends CustomPainter {
     final painters = <TextPainter>[];
     var totalW = 0.0;
     final textRunes = text.runes.toList();
-    if (visioTextDirection(
-          text,
-          langId: charStyle?.langId,
-        ) ==
+    if (visioTextDirection(text, langId: charStyle?.langId) ==
         TextDirection.rtl) {
       textRunes.setAll(0, textRunes.reversed);
     }
@@ -4390,10 +4415,7 @@ class VsdxPainter extends CustomPainter {
                 scale,
                 backgroundColor: backgroundColor,
               ),
-        textDirection: visioTextDirection(
-          ch,
-          langId: glyphStyle?.langId,
-        ),
+        textDirection: visioTextDirection(ch, langId: glyphStyle?.langId),
         maxLines: 1,
       )..layout();
       chars.add(ch);

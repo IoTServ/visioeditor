@@ -48,6 +48,10 @@
 /// NoLine shape bakes a LineWeight halo, then GlowSize is written 0.
 /// Filled shapes that already paint a stroke keep their outline — stealing
 /// Line would drop CompoundType / dashes that Draw *does* collect.
+/// `Letterspace` is not a token; canvas / SVG already fold FontScale into
+/// tracking at 0.55×Size, and `readCharIX` *does* collect FontScale as
+/// `style:text-scale`, so a save adds Letterspace into FontScale and
+/// writes Letterspace 0.
 library;
 
 import 'dart:math' as math;
@@ -1825,6 +1829,43 @@ double fontSizeForLibvisioWrite(VsdxCharStyle style, String text) {
   return style.fontSizeInches;
 }
 
+/// Mean Latin advance used by canvas / SVG to fold FontScale into tracking.
+///
+/// `_drawText` and `svg_serializer` add `Size * (FontScale-1) * 0.55` to
+/// letter-spacing. Baking the inverse into FontScale keeps that appearance
+/// here after reopen; Draw collects FontScale (`style:text-scale`) and
+/// ignores Letterspace.
+const kLibvisioMeanLatinAdvance = 0.55;
+
+/// `FontScale` Draw will collect. Letterspace is not a token, so extra
+/// tracking is folded into this scale with [kLibvisioMeanLatinAdvance].
+/// Super/subscript use the same 0.7× Size canvas and SVG apply before
+/// adding FontScale tracking.
+double fontScaleForLibvisioWrite(VsdxCharStyle style, [String text = '']) {
+  var fs = fontSizeForLibvisioWrite(style, text);
+  switch (style.position) {
+    case VsdxTextPosition.superscript:
+    case VsdxTextPosition.subscript:
+      fs *= 0.7;
+    case VsdxTextPosition.normal:
+      break;
+  }
+  var scale = style.fontScale;
+  if (style.letterSpacingInches.abs() > 1e-12 && fs > 1e-9) {
+    scale += style.letterSpacingInches / (fs * kLibvisioMeanLatinAdvance);
+  }
+  return scale;
+}
+
+/// `Letterspace` cell. Zeroed when [fontScaleForLibvisioWrite] absorbed it.
+double letterSpacingForLibvisioWrite(VsdxCharStyle style, [String text = '']) {
+  if ((fontScaleForLibvisioWrite(style, text) - style.fontScale).abs() >
+      1e-12) {
+    return 0;
+  }
+  return style.letterSpacingInches;
+}
+
 bool shapeNeedsLibvisioFontBake(VsdxShape shape) {
   if (shape.richText.textBlock.hideText) return false;
   for (final run in shape.richText.runs) {
@@ -1840,6 +1881,18 @@ bool shapeNeedsLibvisioFontBake(VsdxShape shape) {
     }
     if (charTransparencyForLibvisioWrite(run.charStyle) !=
         run.charStyle.transparency) {
+      return true;
+    }
+    if ((fontScaleForLibvisioWrite(run.charStyle, run.text) -
+                run.charStyle.fontScale)
+            .abs() >
+        1e-12) {
+      return true;
+    }
+    if ((letterSpacingForLibvisioWrite(run.charStyle, run.text) -
+                run.charStyle.letterSpacingInches)
+            .abs() >
+        1e-12) {
       return true;
     }
   }

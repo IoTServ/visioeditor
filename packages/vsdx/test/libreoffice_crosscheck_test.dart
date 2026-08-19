@@ -902,6 +902,29 @@ void main() {
                 ],
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 43,
+              pinX: 4.3,
+              pinY: 9.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'Letterspace',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: 'Hi',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: 'Hi',
+                    charStyle: VsdxCharStyle(letterSpacingInches: 0.02),
+                  ),
+                ],
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1042,6 +1065,24 @@ void main() {
     expect(
       overline.richText.runs.single.text,
       contains(kLibvisioCombiningOverline),
+    );
+    final letterspace = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Letterspace')
+        .richText
+        .runs
+        .single
+        .charStyle;
+    expect(letterspace.letterSpacingInches, closeTo(0, 1e-6),
+        reason: 'Letterspace is not a token; tracking bakes into FontScale');
+    expect(
+      letterspace.fontScale,
+      closeTo(
+        fontScaleForLibvisioWrite(
+          const VsdxCharStyle(letterSpacingInches: 0.02),
+          'Hi',
+        ),
+        1e-9,
+      ),
     );
     expect(
       reopenedDoc.pages.first.shapes

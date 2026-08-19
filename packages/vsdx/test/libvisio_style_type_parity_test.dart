@@ -35,11 +35,14 @@
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
 /// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
-/// actually load. Mixed Latin+CJK runs keep `Font`. Unknown `FillPattern`
-/// ids above 40 snap to solid `1`. Explicit round joins on a square/flat
-/// cap bake RelQuadBezTo — `_lineProperties` would otherwise emit miter
-/// from LineCap. Bevel joins bake LineTo chamfers; arcs joins bake the
-/// same fillets as round (canvas `canvasStrokeJoin`).
+/// actually load. Mixed Latin+CJK runs keep `Font`. Character `Letterspace`
+/// is not a token; canvas / SVG already fold FontScale into tracking at
+/// 0.55×Size, so a save adds Letterspace into FontScale and writes
+/// Letterspace 0. Unknown `FillPattern` ids above 40 snap to solid `1`.
+/// Explicit round joins on a square/flat cap bake RelQuadBezTo —
+/// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
+/// bake LineTo chamfers; arcs joins bake the same fillets as round
+/// (canvas `canvasStrokeJoin`).
 library;
 
 import 'dart:io';
@@ -521,6 +524,17 @@ void main() {
     expect(fontFamilyForLibvisioWrite(latinUi, 'سلام'), 'Times New Roman');
     expect(fontSizeForLibvisioWrite(latinUi, 'سلام'), closeTo(18 / 72, 1e-12));
     expect(fontSizeForLibvisioWrite(latinUi, '你好'), closeTo(12 / 72, 1e-12));
+    const spacedStyle = VsdxCharStyle(letterSpacingInches: 0.02);
+    final spaced = box('Letterspace', 'Hi', spacedStyle);
+    expect(shapeNeedsLibvisioFontBake(spaced), isTrue);
+    expect(letterSpacingForLibvisioWrite(spacedStyle, 'Hi'), 0);
+    expect(
+      fontScaleForLibvisioWrite(spacedStyle, 'Hi'),
+      closeTo(
+        1 + 0.02 / ((12 / 72) * kLibvisioMeanLatinAdvance),
+        1e-12,
+      ),
+    );
     final latin = box('Hi', 'Hi', latinUi);
     expect(shapeNeedsLibvisioFontBake(latin), isFalse);
     expect(fontFamilyForLibvisioWrite(latinUi, 'Hi'), 'Arial');
@@ -1261,6 +1275,28 @@ void main() {
       ),
     );
     built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 3,
+        pinY: 5,
+        width: 1.8,
+        height: 0.8,
+        name: 'Letterspace',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+      ).copyWith(
+        text: 'Hi',
+        richText: const VsdxRichText(
+          runs: [
+            VsdxTextRun(
+              text: 'Hi',
+              charStyle: VsdxCharStyle(letterSpacingInches: 0.02),
+            ),
+          ],
+        ),
+      ),
+    );
+    built = built.addShape(
       box(
         'FillUnknown',
         const VsdxFill(
@@ -1310,6 +1346,9 @@ void main() {
         reason: 'Character Highlight colour');
     expect(svg, contains('text-decoration="overline"'),
         reason: 'Character Overline is skipped by readCharIX but still paints');
+    expect(svg, contains('letter-spacing="'),
+        reason:
+            'Character Letterspace still paints here; FontScale bake is for Draw');
     expect(svg, contains('stroke-linecap="round"'));
     expect(svg, contains('stroke-linecap="square"'));
     expect(svg, contains('stroke-linecap="butt"'),
@@ -1686,6 +1725,25 @@ void main() {
           .enabled,
       isTrue,
     );
+    final letterspace = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Letterspace')
+        .richText
+        .runs
+        .single
+        .charStyle;
+    expect(letterspace.letterSpacingInches, closeTo(0, 1e-9),
+        reason: 'Letterspace is not a token; tracking bakes into FontScale');
+    expect(
+      letterspace.fontScale,
+      closeTo(
+        fontScaleForLibvisioWrite(
+          const VsdxCharStyle(letterSpacingInches: 0.02),
+          'Hi',
+        ),
+        1e-9,
+      ),
+    );
+    expect(xml.contains('N="Letterspace" V="0.02"'), isFalse);
     // RVNGSVGDrawingGenerator never emits span fo:background-color (vsd2xhtml
     // tspans are fill-only). vsd2raw still records the property Draw uses.
     _expectVsd2rawCollected(saved, <String>[
@@ -1695,6 +1753,7 @@ void main() {
       'fo:text-transform: uppercase',
       'style:text-position: super',
       'style:text-underline-type: double',
+      'style:text-scale',
       'text:bullet-char',
       'draw:shadow',
     ]);

@@ -588,6 +588,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   collector for those cells, so a save bakes hops as `ArcTo` / `MoveTo` /
   `LineTo` (then `ConLineJumpCode=1`) and bakes picture tone into a PNG
   with the cells reset. Unchanged packages stay byte-identical.
+- Character `Letterspace` now survives a save into LibreOffice. The cell is
+  not a token, but `FontScale` is collected as `style:text-scale`. A save
+  folds tracking into FontScale with the same 0.55×Size mean Latin advance
+  canvas and SVG already use, then writes Letterspace 0. Draw sees glyph
+  width scaling; reopen here still paints as tracking.
 - Character `Overline` and `Glow*` now survive a save into LibreOffice.
   libvisio's `readCharIX` has an empty `Overline` case, so a save inserts
   combining U+0305 marks and clears the cell. Glow cells are not tokens:

@@ -4634,14 +4634,14 @@ class VsdxWriter {
     } else {
       changed |= _writeValueIfNeeded(_ensureCell(row, 'Highlight'), '0');
     }
-    changed |= _writeValueIfNeeded(
-        _ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
+    changed |= _writeValueIfNeeded(_ensureCell(row, 'Letterspace'),
+        _fmt(letterSpacingForLibvisioWrite(c, text)));
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
-    changed |=
-        _writeValueIfNeeded(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
+    changed |= _writeValueIfNeeded(_ensureCell(row, 'FontScale'),
+        _fmt(fontScaleForLibvisioWrite(c, text)));
     changed |= _writeValueIfNeeded(_ensureCell(row, 'ColorTrans'),
         _fmt(charTransparencyForLibvisioWrite(c)));
     if (c.langId != null && c.langId!.isNotEmpty) {
@@ -4844,11 +4844,13 @@ class VsdxWriter {
     _writeValue(_ensureCell(row, 'Overline'), c.overline ? '1' : '0');
     _writeValue(_ensureCell(row, 'Highlight'),
         c.highlight != null ? _hex(c.highlight!) : '0');
-    _writeValue(_ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
+    _writeValue(_ensureCell(row, 'Letterspace'),
+        _fmt(letterSpacingForLibvisioWrite(c, text)));
     _writeValue(
         _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
     _writeValue(_ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
-    _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
+    _writeValue(_ensureCell(row, 'FontScale'),
+        _fmt(fontScaleForLibvisioWrite(c, text)));
     _writeValue(_ensureCell(row, 'ColorTrans'),
         _fmt(charTransparencyForLibvisioWrite(c)));
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
@@ -7911,11 +7913,11 @@ class VsdxWriter {
       ..add(_cell('DoubleStrikethrough', c.doubleStrikethrough ? '1' : '0'))
       ..add(_cell('Overline', c.overline ? '1' : '0'))
       ..add(_cell('Highlight', c.highlight != null ? _hex(c.highlight!) : '0'))
-      ..add(_cell('Letterspace', _fmt(c.letterSpacingInches)))
+      ..add(_cell('Letterspace', _fmt(letterSpacingForLibvisioWrite(c, text))))
       ..add(_cell('Pos', _textPositionInt(c.position).toString()))
       ..add(_cell('Case', _textCaseInt(c.textCase).toString()))
       ..add(_cell('ColorTrans', _fmt(charTransparencyForLibvisioWrite(c))))
-      ..add(_cell('FontScale', _fmt(c.fontScale)));
+      ..add(_cell('FontScale', _fmt(fontScaleForLibvisioWrite(c, text))));
     final lang = c.langId ?? (cjk ? 'zh-CN' : null);
     if (lang != null && lang.isNotEmpty) {
       cells.add(_cell('LangID', lang));
