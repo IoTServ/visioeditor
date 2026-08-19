@@ -192,6 +192,7 @@ VsdxShape _expectedWritten(VsdxShape shape) {
 List<double> _coords(VsdxPathCommand c) => switch (c) {
       MoveTo(:final x, :final y) => [x, y],
       LineTo(:final x, :final y) => [x, y],
+      ArcTo(:final x, :final y, :final bow) => [x, y, bow],
       EllipticalArcTo(:final x, :final y, :final controlX, :final controlY) =>
         [x, y, controlX, controlY],
       EllipseCmd(:final cx, :final cy, :final aX, :final aY, :final bX, :final bY) =>
@@ -440,6 +441,7 @@ String _connectKey(VsdxConnect c) =>
     '[${c.fromPart}/${c.toPart}]';
 
 List<String> _diffPage(VsdxPage a, VsdxPage b) {
+  a = bakeLineJumpsForLibvisioWrite(a);
   final out = <String>[];
   if (!_close(a.widthInches, b.widthInches)) {
     out.add('page.width: ${a.widthInches} -> ${b.widthInches}');

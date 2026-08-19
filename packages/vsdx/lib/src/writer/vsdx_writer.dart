@@ -88,6 +88,9 @@ class VsdxWriter {
         _documentPatchInputsEqual(baseline, edited)) {
       return Uint8List.fromList(originalBytes);
     }
+    // Hops and image tone are not VSDX tokens. Materialise them so Draw
+    // paints the same picture Visio shows, then patch against that model.
+    final writable = documentForLibvisioWrite(edited);
     final pkg = VsdxPackage.open(originalBytes);
     final resolver = RelationshipResolver(pkg);
     final patched = <String, Uint8List>{}; // archive name (no slash) -> bytes
@@ -102,7 +105,7 @@ class VsdxWriter {
       var docDirty = false;
       if (_ensureDocumentStyles(docXml)) docDirty = true;
       if (_patchDocumentSettings(
-          docXml, baseline.settings, edited.settings)) {
+          docXml, baseline.settings, writable.settings)) {
         docDirty = true;
       }
       if (docDirty) {
@@ -113,7 +116,7 @@ class VsdxWriter {
     final pagesPart = resolver.singleTargetOfType(docPart, VsdxRelType.pages);
     final pagesXml = pagesPart == null ? null : pkg.readPartXml(pagesPart);
     if (pagesPart == null || pagesXml == null) {
-      _healMissingCore(pkg, patched, edited);
+      _healMissingCore(pkg, patched, writable);
       return _rezip(originalBytes, patched, removed);
     }
 
@@ -126,7 +129,7 @@ class VsdxWriter {
     final baselineById = <int, VsdxPage>{
       for (final p in baseline.pages) p.id: p,
     };
-    final editedIds = <int>{for (final p in edited.pages) p.id};
+    final editedIds = <int>{for (final p in writable.pages) p.id};
 
     // [Content_Types].xml is read up-front: inserting an image needs to
     // register a media content-type default while patching page content parts.
@@ -134,7 +137,7 @@ class VsdxWriter {
     var ctDirty = false;
 
     // 1) Patch the content parts of pages kept from the baseline (by ID).
-    for (final ep in edited.pages) {
+    for (final ep in writable.pages) {
       final bp = baselineById[ep.id];
       final part = partByBaselineId[ep.id];
       if (bp == null || part == null) continue;
@@ -145,7 +148,7 @@ class VsdxWriter {
       // builder needs for the fresh <ForeignData> references.
       final imageRels = _prepareImageParts(
         pkg: pkg,
-        edited: edited,
+        edited: writable,
         rebuiltImageShapes: _imageShapesNeedingRels(bp, ep),
         pagePart: part,
         patched: patched,
@@ -178,7 +181,7 @@ class VsdxWriter {
     }
 
     // 2a) Kept pages: name + layer flags.
-    for (final ep in edited.pages) {
+    for (final ep in writable.pages) {
       final bp = baselineById[ep.id];
       final el = pageElById[ep.id];
       if (bp == null || el == null) continue;
@@ -220,7 +223,7 @@ class VsdxWriter {
     // 2c) Added pages (new part + <Page> + relationship + content-type).
     var nextNum = _maxPageNumber(pagePartByIndex.values) + 1;
     var nextRId = pagesRelsXml == null ? 1 : _maxRelId(pagesRelsXml) + 1;
-    for (final ep in edited.pages) {
+    for (final ep in writable.pages) {
       if (baselineById.containsKey(ep.id)) continue;
       final sourceEp = visioSourceScalePage(ep);
       final fileName = 'page$nextNum.xml';
@@ -242,7 +245,7 @@ class VsdxWriter {
       // the rels part) before serialising the shapes that reference them.
       final imageRels = _prepareImageParts(
         pkg: pkg,
-        edited: edited,
+        edited: writable,
         rebuiltImageShapes: _imageShapes(ep),
         pagePart: '/$partName',
         patched: patched,
@@ -257,7 +260,7 @@ class VsdxWriter {
     }
 
     // 2d) Reorder <Page> elements to the edited page order.
-    if (_reorderPages(root, edited.pages)) pagesDirty = true;
+    if (_reorderPages(root, writable.pages)) pagesDirty = true;
 
     if (pagesDirty) {
       patched[_noSlash(pagesPart)] =
@@ -276,7 +279,7 @@ class VsdxWriter {
       resolver: resolver,
       docPart: docPart,
       baseline: baseline.theme,
-      edited: edited.theme,
+      edited: writable.theme,
       patched: patched,
       ctXml: ctXml,
       markCtDirty: () => ctDirty = true,
@@ -287,7 +290,7 @@ class VsdxWriter {
     _healMissingCore(
       pkg,
       patched,
-      edited,
+      writable,
       ctXml: ctXml,
       markCtDirty: () => ctDirty = true,
     );
@@ -296,7 +299,7 @@ class VsdxWriter {
     // replaceImage / delete-picture do not leave orphaned zip entries.
     _pruneUnreferencedMedia(
       pkg: pkg,
-      edited: edited,
+      edited: writable,
       removed: removed,
       patched: patched,
     );

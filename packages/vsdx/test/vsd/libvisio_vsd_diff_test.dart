@@ -216,9 +216,10 @@ void main() {
               'even when direct legacy VSD import in libvisio omits fields',
         );
       }
+      final expectedDoc = documentForLibvisioWrite(doc);
       expect(reopened.pages, hasLength(doc.pages.length));
       for (var pageIndex = 0; pageIndex < doc.pages.length; pageIndex++) {
-        final beforePage = doc.pages[pageIndex];
+        final beforePage = expectedDoc.pages[pageIndex];
         final afterPage = reopened.pages[pageIndex];
         expect(afterPage.name, beforePage.name,
             reason: '${fixture.path} page $pageIndex name after synthesis');

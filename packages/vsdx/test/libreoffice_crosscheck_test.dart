@@ -747,6 +747,47 @@ void main() {
             runs: [VsdxTextRun(text: 'Hi')],
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 37,
+          ax: 0.4,
+          ay: 10.5,
+          bx: 3.2,
+          by: 10.5,
+          name: 'JumpUnder',
+        ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 38,
+          ax: 1.8,
+          ay: 10.95,
+          bx: 1.8,
+          by: 10.05,
+          name: 'JumpOver',
+        ),
+      ).addShape(
+        VsdxShapeFactory.picture(
+          id: id + 39,
+          pinX: 7.2,
+          pinY: 10.5,
+          width: 1.2,
+          height: 0.8,
+          imagePartName: '/visio/media/image_lo_tone.png',
+          name: 'PictureTone',
+        ).copyWith(
+          imageTransparency: 0.4,
+          imageBrightness: 0.7,
+          imageContrast: 0.35,
+        ),
+      ),
+    );
+    doc = doc.copyWith(
+      images: doc.images.withImage(
+        VsdxImage(
+          partName: '/visio/media/image_lo_tone.png',
+          bytes: _solidPng(),
+          mimeType: 'image/png',
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -761,8 +802,8 @@ void main() {
     );
     expect(
       reopenedCommands.whereType<ArcTo>(),
-      hasLength(2),
-      reason: 'ArcTo and rewritten RelArcTo must survive the VSDX writer',
+      hasLength(greaterThanOrEqualTo(2)),
+      reason: 'ArcTo, rewritten RelArcTo, and baked line jumps',
     );
     expect(
       reopenedCommands.whereType<RelCubBezTo>(),
@@ -847,6 +888,20 @@ void main() {
       textBkgndTrans.richText.textBlock.backgroundColor,
       colourForLibvisioAlpha(const VsdxColor(0xFF0000FF), 0.5),
     );
+    final jumpOver = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'JumpOver');
+    expect(jumpOver.connectorProps?.conLineJumpCode, 1);
+    expect(
+      jumpOver.geometries.expand((g) => g.commands).whereType<ArcTo>(),
+      isNotEmpty,
+      reason: 'ConLineJump hops bake to ArcTo so Draw can paint them',
+    );
+    final pictureTone = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'PictureTone');
+    expect(pictureTone.imageTransparency, closeTo(0, 1e-6));
+    expect(pictureTone.imageBrightness, closeTo(0.5, 1e-6));
+    expect(pictureTone.imageContrast, closeTo(0.5, 1e-6));
+    expect(pictureTone.imagePartName, isNot('/visio/media/image_lo_tone.png'));
     expect(
       reopenedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'CJK')
@@ -1456,6 +1511,16 @@ String? _resolveExecutable(String name) {
 /// Baseline little-endian, single-strip RGB TIFF understood by libtiff,
 /// LibreOffice and the pure-Dart decoder. Keeping this fixture uncompressed
 /// avoids coupling the interop assertion to any particular TIFF compressor.
+Uint8List _solidPng() {
+  final image = raster.Image(width: 8, height: 8);
+  for (var y = 0; y < 8; y++) {
+    for (var x = 0; x < 8; x++) {
+      image.setPixelRgba(x, y, 255, 0, 0, 255);
+    }
+  }
+  return raster.encodePng(image);
+}
+
 Uint8List _uncompressedRgbTiff({required int width, required int height}) {
   final out = BytesBuilder(copy: false);
   void u16(int value) {

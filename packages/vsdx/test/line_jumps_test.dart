@@ -20,6 +20,66 @@ void main() {
     expect(lineJumpsEnabledForCode(4), isTrue);
   });
 
+  test('polylineWithJumpsCommands bakes a negative-bow ArcTo for the default hop',
+      () {
+    final route = <Offset2D>[const Offset2D(0, 1), const Offset2D(4, 1)];
+    final unders = <List<Offset2D>>[
+      <Offset2D>[const Offset2D(2, 0), const Offset2D(2, 2)],
+    ];
+    final cmds = polylineWithJumpsCommands(route, unders, 0.2);
+    expect(cmds, isNotNull);
+    final arc = cmds!.whereType<ArcTo>().single;
+    expect(arc.bow, closeTo(lineJumpArcBow(0.2, 1), 1e-9));
+    expect(arc.bow, lessThan(0),
+        reason: 'left-hand hop is negative bow in Y-up (libvisio sweep=bow<0)');
+  });
+
+  test('bakeLineJumpsForLibvisioWrite writes ArcTo and ConLineJumpCode Never',
+      () {
+    final h = VsdxShapeFactory.line(id: 1, ax: 1, ay: 3, bx: 5, by: 3);
+    final v = VsdxShapeFactory.line(id: 2, ax: 3, ay: 5, bx: 3, by: 1);
+    final page = VsdxPage(
+      id: 0,
+      name: 'P',
+      widthInches: 8,
+      heightInches: 11,
+      shapes: <VsdxShape>[h, v],
+      pageSheet: const VsdxPageSheet(lineJumpCode: 4),
+    );
+    final baked = bakeLineJumpsForLibvisioWrite(page);
+    final afterV = baked.findShapeById(2)!;
+    expect(afterV.connectorProps?.conLineJumpCode, 1);
+    expect(
+      afterV.geometries.single.commands.whereType<ArcTo>(),
+      isNotEmpty,
+    );
+    final again = bakeLineJumpsForLibvisioWrite(baked);
+    expect(identical(again, baked), isTrue,
+        reason: 'Never after bake must not hop a second time');
+  });
+
+  test('writer round-trip bakes hops so LibreOffice can paint them', () {
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(
+        pageSheet: const VsdxPageSheet(lineJumpCode: 4),
+      ).addShape(
+        VsdxShapeFactory.line(id: id, ax: 1, ay: 3, bx: 5, by: 3),
+      ).addShape(
+        VsdxShapeFactory.line(id: id + 1, ax: 3, ay: 5, bx: 3, by: 1),
+      ),
+    );
+    final out = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(out).pages.first.findShapeById(id + 1)!;
+    expect(after.connectorProps?.conLineJumpCode, 1);
+    expect(after.geometries.single.commands.whereType<ArcTo>(), isNotEmpty);
+  });
+
   test('polylineWithJumpsSvg inserts an arc at a crossing', () {
     final route = <Offset2D>[const Offset2D(0, 1), const Offset2D(4, 1)];
     final unders = <List<Offset2D>>[

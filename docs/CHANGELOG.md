@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- `ConLineJump*` hops and Image Properties (Transparency / Brightness /
+  Contrast / Blur) now survive a save into LibreOffice. libvisio has no
+  collector for those cells, so a save bakes hops as `ArcTo` / `MoveTo` /
+  `LineTo` (then `ConLineJumpCode=1`) and bakes picture tone into a PNG
+  with the cells reset. Unchanged packages stay byte-identical.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

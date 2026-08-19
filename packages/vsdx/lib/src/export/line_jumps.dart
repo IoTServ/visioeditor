@@ -2,12 +2,17 @@
 ///
 /// Where one connector crosses another, draw a small hop so the upper
 /// connector jumps over the lower one instead of forming an ambiguous "+".
-/// Render-only — never mutates model geometry.
+/// Overlay hops are render-only. [bakeLineJumpsForLibvisioWrite] materialises
+/// the same hops as Geometry so LibreOffice can paint them (`tokens.txt` has
+/// no `ConLineJump*` cells).
 library;
 
 import 'dart:math' as math;
 
 import '../model/geometry.dart';
+import '../model/page.dart';
+import '../model/shape.dart';
+import '../model/sheet_sections.dart';
 
 /// Default hop radius in inches (matches the canvas default closely).
 const double kDefaultLineJumpRadiusInches = 0.07;
@@ -405,4 +410,257 @@ String polylineSvg(
 String _defaultFormat(double v) {
   if (v == v.roundToDouble()) return v.toInt().toString();
   return v.toStringAsFixed(4);
+}
+
+/// Visio `ArcTo` bow for a hop matching [polylineWithJumpsSvg].
+///
+/// libvisio uses `sweep = (bow < 0)`. A positive [hopSign] is the left-hand
+/// (CCW) hop, whose sagitta sits on the chord's left in Y-up coordinates —
+/// that is a **negative** bow (see `sampleArcByBow`).
+double lineJumpArcBow(double hopR, double hopSign) => -hopR * hopSign;
+
+/// Shape-local MoveTo/LineTo/ArcTo for [route] with the same hops as
+/// [polylineWithJumpsSvg]. Returns `null` when no hop is actually inserted
+/// so callers can keep authored NURBS/curves.
+List<VsdxPathCommand>? polylineWithJumpsCommands(
+  List<Offset2D> route,
+  List<List<Offset2D>> unders,
+  double r, {
+  double? radiusY,
+  int? pageJumpCode,
+  int? style,
+  int? pageStyle,
+  String? customStyle,
+  int? dirX,
+  int? dirY,
+}) {
+  if (route.isEmpty) return null;
+  final mode = LineJumpRenderStyle.resolve(
+    conStyle: style,
+    pageStyle: pageStyle,
+    customStyle: customStyle,
+  );
+  final out = <VsdxPathCommand>[MoveTo(route.first.x, route.first.y)];
+  var hopped = false;
+  for (var i = 0; i + 1 < route.length; i++) {
+    final a = route[i];
+    final b = route[i + 1];
+    final sdx = b.x - a.x;
+    final sdy = b.y - a.y;
+    final len = math.sqrt(sdx * sdx + sdy * sdy);
+    if (len < 1e-9) continue;
+
+    final horiz = sdx.abs() >= sdy.abs();
+    final segR = (!horiz && radiusY != null) ? radiusY : r;
+    if (!lineJumpAppliesToSegment(pageJumpCode, sdx, sdy)) {
+      out.add(LineTo(b.x, b.y));
+      continue;
+    }
+
+    final ts = <double>[];
+    for (final poly in unders) {
+      for (var j = 0; j + 1 < poly.length; j++) {
+        final p = segmentIntersection(a, b, poly[j], poly[j + 1]);
+        if (p != null) {
+          final dx = p.x - a.x;
+          final dy = p.y - a.y;
+          ts.add(math.sqrt(dx * dx + dy * dy) / len);
+        }
+      }
+    }
+    ts.sort();
+
+    if (len < segR * 0.5) {
+      out.add(LineTo(b.x, b.y));
+      continue;
+    }
+    final hopR = math.min(segR, len * 0.45);
+    if (hopR < 1e-6) {
+      out.add(LineTo(b.x, b.y));
+      continue;
+    }
+    final half = hopR / len;
+    var cursor = 0.0;
+    final ux = sdx / len;
+    final uy = sdy / len;
+    final hopSign = lineJumpHopSign(
+      sdx: sdx,
+      sdy: sdy,
+      dirX: dirX,
+      dirY: dirY,
+    );
+    final px = -uy * hopR * hopSign;
+    final py = ux * hopR * hopSign;
+    for (final t in ts) {
+      if (t - half <= cursor + 1e-6) continue;
+      if (t + half >= 1 - 1e-6) break;
+      final inX = a.x + sdx * (t - half);
+      final inY = a.y + sdy * (t - half);
+      final outX = a.x + sdx * (t + half);
+      final outY = a.y + sdy * (t + half);
+      out.add(LineTo(inX, inY));
+      switch (mode) {
+        case LineJumpRenderStyle.gap:
+          out.add(MoveTo(outX, outY));
+        case LineJumpRenderStyle.square:
+          out.add(LineTo(inX + px, inY + py));
+          out.add(LineTo(outX + px, outY + py));
+          out.add(LineTo(outX, outY));
+        case LineJumpRenderStyle.line:
+          out.add(MoveTo(inX + px, inY + py));
+          out.add(LineTo(inX - px, inY - py));
+          out.add(MoveTo(outX - px, outY - py));
+          out.add(LineTo(outX + px, outY + py));
+          out.add(MoveTo(outX, outY));
+        case LineJumpRenderStyle.arc:
+          out.add(ArcTo(
+            x: outX,
+            y: outY,
+            bow: lineJumpArcBow(hopR, hopSign),
+          ));
+      }
+      hopped = true;
+      cursor = t + half;
+    }
+    out.add(LineTo(b.x, b.y));
+  }
+  return hopped ? out : null;
+}
+
+/// Bake overlay hops into connector Geometry and set `ConLineJumpCode=1`
+/// (Never) so Visio / this editor do not hop a second time. LibreOffice
+/// never collects `ConLineJump*`; ArcTo / MoveTo / LineTo *are* tokens.
+VsdxPage bakeLineJumpsForLibvisioWrite(VsdxPage page) {
+  final sheet = page.pageSheet;
+  final pageCode = sheet.lineJumpCode;
+  final routes = <List<Offset2D>>[];
+  final codes = <int?>[];
+  final ids = <int>[];
+  void collect(List<VsdxShape> list) {
+    for (final s in list) {
+      if (s.isGlueableConnector) {
+        final route = page.drawnConnectorPagePolyline(s);
+        if (route.length >= 2) {
+          ids.add(s.id);
+          routes.add(route);
+          codes.add(s.connectorProps?.conLineJumpCode);
+        }
+      }
+      if (!s.collapsed) collect(s.children);
+    }
+  }
+
+  collect(page.shapes);
+  if (routes.isEmpty) return page;
+
+  final hopped = <int, VsdxShape>{};
+  for (var z = 0; z < ids.length; z++) {
+    final shape = page.findShapeById(ids[z]);
+    if (shape == null) continue;
+    if (!lineJumpShapeMayHop(
+      k: z,
+      routeCount: routes.length,
+      pageJumpCode: pageCode,
+      selfConCode: shape.connectorProps?.conLineJumpCode,
+      peerConCodes: codes,
+    )) {
+      continue;
+    }
+    final peerIdx = lineJumpPeerIndices(
+      k: z,
+      routeCount: routes.length,
+      pageJumpCode: pageCode,
+      selfConCode: shape.connectorProps?.conLineJumpCode,
+      peerConCodes: codes,
+    );
+    if (peerIdx.isEmpty) continue;
+    final pageRoute = routes[z];
+    final localRoute = <Offset2D>[
+      for (final p in pageRoute) page.pageToLocalDeep(shape.id, p),
+    ];
+    if (localRoute.length < 2) continue;
+    final unders = <List<Offset2D>>[
+      for (final i in peerIdx)
+        <Offset2D>[
+          for (final p in routes[i]) page.pageToLocalDeep(shape.id, p),
+        ],
+    ];
+    if (polylineCrossings(localRoute, unders).isEmpty) continue;
+    final customRadius = shape.drawioLineJumpSizeInches;
+    final rx = customRadius ??
+        resolveLineJumpRadius(
+          uiRadius: kDefaultLineJumpRadiusInches,
+          lineToLineInches: sheet.lineToLineXInches,
+          jumpFactor: sheet.lineJumpFactorX,
+        );
+    final ry = customRadius ??
+        resolveLineJumpRadius(
+          uiRadius: kDefaultLineJumpRadiusInches,
+          lineToLineInches: sheet.lineToLineYInches,
+          jumpFactor: sheet.lineJumpFactorY,
+        );
+    final commands = polylineWithJumpsCommands(
+      localRoute,
+      unders,
+      rx,
+      radiusY: ry,
+      pageJumpCode: pageCode,
+      style: shape.connectorProps?.conLineJumpStyle,
+      pageStyle: sheet.lineJumpStyle,
+      customStyle: shape.drawioLineJumpStyle,
+      dirX: effectiveLineJumpDir(
+        shape.connectorProps?.conLineJumpDirX,
+        sheet.lineJumpDirX,
+      ),
+      dirY: effectiveLineJumpDir(
+        shape.connectorProps?.conLineJumpDirY,
+        sheet.lineJumpDirY,
+      ),
+    );
+    if (commands == null) continue;
+    VsdxGeometry? src;
+    for (final g in shape.geometries) {
+      if (!g.noShow) {
+        src = g;
+        break;
+      }
+    }
+    src ??= shape.geometries.isEmpty ? null : shape.geometries.first;
+    final props = shape.connectorProps ?? const VsdxConnectorProps();
+    hopped[shape.id] = shape.copyWith(
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          commands: commands,
+          noFill: src?.noFill ?? true,
+          noLine: src?.noLine ?? false,
+          noShow: false,
+          noSnap: src?.noSnap ?? false,
+          noQuickDrag: src?.noQuickDrag ?? false,
+          ix: src?.ix ?? 0,
+        ),
+      ],
+      connectorProps: props.copyWith(conLineJumpCode: 1),
+    );
+  }
+  if (hopped.isEmpty) return page;
+
+  VsdxShape rewrite(VsdxShape s) {
+    final children = <VsdxShape>[for (final c in s.children) rewrite(c)];
+    var next = hopped[s.id] ?? s;
+    var childrenChanged = children.length != s.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], s.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) next = next.copyWith(children: children);
+    return next;
+  }
+
+  return page.copyWith(
+    shapes: <VsdxShape>[for (final s in page.shapes) rewrite(s)],
+  );
 }

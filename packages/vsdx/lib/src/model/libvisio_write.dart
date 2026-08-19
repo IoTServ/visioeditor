@@ -37,23 +37,179 @@
 /// filled-shape LineColorTrans, and ShdwForegndTrans are not tokens —
 /// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
 /// those into RGB toward white and writes Trans=0. Theme-bound colours
-/// with no resolved RGB are left alone so THEMEVAL() survives.
+/// with no resolved RGB are left alone so THEMEVAL() survives. Page
+/// `ConLineJump*` cells are not tokens either, so a save bakes hops as
+/// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
+/// Transparency / Brightness / Contrast / Blur are likewise missing;
+/// a save bakes them into a PNG and zeros the cells.
 library;
 
 import 'dart:math' as math;
 
 import '../export/compound_stroke.dart';
+import '../export/line_jumps.dart';
 import '../utils/color.dart';
 import 'dash_pattern.dart';
+import 'document.dart';
 import 'effects.dart';
 import 'fill.dart';
 import 'geometry.dart';
+import 'image.dart';
 import 'layer.dart';
 import 'line.dart';
+import 'page.dart';
 import 'perimeter.dart';
 import 'rich_text.dart';
 import 'rounding.dart';
 import 'shape.dart';
+
+/// Rewrite hops and image adjustments the VSDX token map cannot collect.
+VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
+  var pagesChanged = false;
+  final pages = <VsdxPage>[];
+  for (final page in document.pages) {
+    final next = bakeLineJumpsForLibvisioWrite(page);
+    pagesChanged |= !identical(next, page);
+    pages.add(next);
+  }
+  final hopped =
+      pagesChanged ? document.copyWith(pages: pages) : document;
+  return bakeImageAdjustmentsForLibvisioWrite(hopped);
+}
+
+/// Bake Image Properties into PNG pixels and reset the cells Draw ignores.
+VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  final cache = <String, String>{};
+  var changed = false;
+
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_tone_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_tone_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
+  VsdxShape rewrite(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) rewrite(child),
+    ];
+    var next = shape;
+    if (shape.hasImage &&
+        visioImageAdjustmentsNeedBake(
+          transparency: shape.imageTransparency,
+          blur: shape.imageBlur,
+          brightness: shape.imageBrightness,
+          contrast: shape.imageContrast,
+        )) {
+      final part = shape.imagePartName;
+      final source = part == null
+          ? null
+          : (document.images.findByPart(part) ??
+              document.images.findByPart(
+                part.startsWith('/') ? part.substring(1) : '/$part',
+              ));
+      if (source != null) {
+        final key =
+            '$part|${shape.imageTransparency}|${shape.imageBlur}|'
+            '${shape.imageBrightness}|${shape.imageContrast}|'
+            '${shape.effectiveImgWidth}';
+        var bakedPart = cache[key];
+        if (bakedPart == null) {
+          final png = bakeVisioImageAdjustmentsPng(
+            image: source,
+            transparency: shape.imageTransparency,
+            blur: shape.imageBlur,
+            brightness: shape.imageBrightness,
+            contrast: shape.imageContrast,
+            displayWidthInches: shape.effectiveImgWidth,
+          );
+          if (png != null) {
+            bakedPart = allocatePart(shape.id);
+            cache[key] = bakedPart;
+            registry = registry.withImage(
+              VsdxImage(
+                partName: bakedPart,
+                bytes: png,
+                mimeType: 'image/png',
+              ),
+            );
+          }
+        }
+        if (bakedPart != null) {
+          next = shape.copyWith(
+            imagePartName: bakedPart,
+            foreignType: VsdxImage.foreignTypeFor(
+              mimeType: 'image/png',
+              partName: bakedPart,
+            ),
+            foreignCompressionType: VsdxImage.compressionTypeFor(
+              mimeType: 'image/png',
+              partName: bakedPart,
+            ),
+            imageTransparency: 0,
+            imageBlur: 0,
+            imageBrightness: 0.5,
+            imageContrast: 0.5,
+          );
+          changed = true;
+        }
+      }
+    }
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) {
+      next = next.copyWith(children: children);
+      changed = true;
+    }
+    return next;
+  }
+
+  if (document.pages.isEmpty && document.images.length == 0) {
+    return document;
+  }
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) rewrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!changed && !pagesChanged) return document;
+  return document.copyWith(
+    pages: pagesChanged ? pages : document.pages,
+    images: registry,
+  );
+}
 
 /// Cells and Geometry the writer should emit so Draw paints this shape.
 class LibvisioShapeWrite {

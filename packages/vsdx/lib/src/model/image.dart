@@ -9,6 +9,7 @@
 /// master / page instances).
 library;
 
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as raster;
@@ -238,5 +239,96 @@ class ImageRegistry {
     if (!_byPartName.containsKey(partName)) return this;
     final next = Map<String, VsdxImage>.of(_byPartName)..remove(partName);
     return ImageRegistry(Map<String, VsdxImage>.unmodifiable(next));
+  }
+}
+
+/// `true` when Image Properties cells would change LibreOffice's paint
+/// (`tokens.txt` has no Transparency / Brightness / Contrast / Blur).
+bool visioImageAdjustmentsNeedBake({
+  required double transparency,
+  required double blur,
+  required double brightness,
+  required double contrast,
+}) {
+  return transparency > 1e-6 ||
+      blur > 1e-6 ||
+      (brightness - 0.5).abs() > 1e-3 ||
+      (contrast - 0.5).abs() > 1e-3;
+}
+
+/// Bake Visio Image Properties into PNG pixels so Draw paints the same
+/// picture. libvisio never collects those cells; it draws the raw Foreign
+/// bitmap. Returns `null` when the blob cannot be decoded or nothing
+/// changes.
+Uint8List? bakeVisioImageAdjustmentsPng({
+  required VsdxImage image,
+  required double transparency,
+  required double blur,
+  required double brightness,
+  required double contrast,
+  required double displayWidthInches,
+}) {
+  if (!visioImageAdjustmentsNeedBake(
+    transparency: transparency,
+    blur: blur,
+    brightness: brightness,
+    contrast: contrast,
+  )) {
+    return null;
+  }
+  final payload = image.rasterForRendering();
+  if (payload == null) return null;
+  raster.Image? decoded;
+  try {
+    decoded = raster.decodeImage(payload.bytes);
+  } catch (_) {
+    return null;
+  }
+  if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+    return null;
+  }
+  raster.Image work;
+  try {
+    work = decoded.clone();
+    if (work.numChannels < 4) {
+      work = work.convert(numChannels: 4);
+    }
+  } catch (_) {
+    return null;
+  }
+  final trans = transparency.clamp(0.0, 1.0);
+  final blurClamped = blur.clamp(0.0, 1.0);
+  final bright = brightness.clamp(0.0, 1.0);
+  final contrastClamped = contrast.clamp(0.0, 1.0);
+  try {
+    if (blurClamped > 1e-6) {
+      final displayed = math.max(displayWidthInches.abs(), 1e-6);
+      final sigmaPx = 0.08 * blurClamped / displayed * work.width;
+      final radius = math.max(1, (sigmaPx * 1.5).round());
+      work = raster.gaussianBlur(work, radius: radius);
+    }
+    final c = 1.0 + (contrastClamped - 0.5) * 2.0;
+    final b = (bright - 0.5) * 2.0;
+    final t = (1.0 - c) * 0.5 + b;
+    final tone = (bright - 0.5).abs() > 1e-3 ||
+        (contrastClamped - 0.5).abs() > 1e-3 ||
+        trans > 1e-6;
+    if (tone) {
+      for (final pixel in work) {
+        if ((bright - 0.5).abs() > 1e-3 ||
+            (contrastClamped - 0.5).abs() > 1e-3) {
+          pixel.rNormalized = (c * pixel.rNormalized + t).clamp(0.0, 1.0);
+          pixel.gNormalized = (c * pixel.gNormalized + t).clamp(0.0, 1.0);
+          pixel.bNormalized = (c * pixel.bNormalized + t).clamp(0.0, 1.0);
+        }
+        if (trans > 1e-6) {
+          pixel.aNormalized =
+              (pixel.aNormalized * (1.0 - trans)).clamp(0.0, 1.0);
+        }
+      }
+    }
+    return raster.encodePng(work);
+  } catch (_) {
+    return null;
   }
 }
