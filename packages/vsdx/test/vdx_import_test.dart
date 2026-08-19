@@ -190,13 +190,12 @@ void main() {
         _commandTypes(curves),
         containsAll(<Type>[
           ArcTo,
+          CubBezTo,
+          QuadBezTo,
           EllipseCmd,
           EllipticalArcTo,
         ]),
       );
-      expect(_commandTypes(curves), isNot(contains(CubBezTo)));
-      expect(_commandTypes(curves), isNot(contains(QuadBezTo)),
-          reason: 'VDX ignores row names absent from libvisio DiagramML');
       final group = page.findShapeById(3)!;
       expect(
           group.children.map((shape) => shape.id), orderedEquals(<int>[4, 5]));
@@ -232,13 +231,12 @@ void main() {
           RelLineTo,
           RelCubBezTo,
           RelQuadBezTo,
+          RelArcTo,
           RelEllipticalArcTo,
         ]),
       );
       expect(_commandTypes(inheritedStyle), isNot(contains(PolylineTo)),
           reason: 'legacy Rounding is baked for libvisio VSDX reopen');
-      expect(_commandTypes(inheritedStyle), isNot(contains(RelArcTo)),
-          reason: 'RelArcTo is a VSDX row, not a libvisio VDX element');
       final advancedGeometry = page.findShapeById(10)!;
       expect(
         _commandTypes(advancedGeometry),
@@ -278,8 +276,9 @@ void main() {
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"').allMatches(svg),
-        hasLength(3),
-        reason: 'all three libvisio VDX Geometry sections are open',
+        hasLength(2),
+        reason: 'RelArcTo closes Geometry 0; the polyline and elliptical '
+            'arc sections stay open',
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"').allMatches(svg),
@@ -438,8 +437,24 @@ void main() {
       expect(childNames.lastIndexOf('Section'),
           lessThan(childNames.indexOf('ForeignData')));
       expect(
+        _commandTypes(reopened.pages.single.findShapeById(2)!),
+        containsAll(<Type>[
+          RelCubBezTo,
+          RelQuadBezTo,
+          ArcTo,
+          EllipseCmd,
+          EllipticalArcTo,
+        ]),
+        reason: 'CubBezTo/QuadBezTo become Rel* so libvisio can collect them',
+      );
+      expect(
+        _commandTypes(reopened.pages.single.findShapeById(2)!),
+        isNot(contains(CubBezTo)),
+      );
+      expect(
         _commandTypes(reopened.pages.single.findShapeById(7)!),
-        containsAll(<Type>[RelQuadBezTo, RelEllipticalArcTo]),
+        containsAll(<Type>[RelQuadBezTo, RelEllipticalArcTo, ArcTo]),
+        reason: 'RelArcTo is written as ArcTo for LibreOffice',
       );
       expect(
         _commandTypes(reopened.pages.single.findShapeById(10)!),
@@ -495,8 +510,8 @@ void main() {
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-7-[012]\)"')
             .allMatches(reopenedSvg),
-        hasLength(3),
-        reason: 'VDX open Geometry endings survive the VSDX round-trip',
+        hasLength(2),
+        reason: 'RelArcTo closes Geometry 0; the other two sections stay open',
       );
       expect(
         RegExp(r'marker-end="url\(#arrow-end-p0-10-[012]\)"')

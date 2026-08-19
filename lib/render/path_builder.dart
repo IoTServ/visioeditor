@@ -2,10 +2,9 @@
 /// [Path] expressed in the **same units** the painter uses (also inches,
 /// because the painter is operating after `canvas.scale(pxPerInch, …)`).
 ///
-/// The math here is the M3 minimum viable subset — straight segments,
-/// `Rel*To` fractions, ArcTo (chord+bow) and full Ellipse. More exotic
-/// curves (EllipticalArcTo, NURBS, Splines) follow in subsequent M3
-/// iterations.
+/// Covers the full MS-VSDX / libvisio command set: Move/Line (and Rel*),
+/// ArcTo / RelArcTo, Ellipse, EllipticalArcTo, CubBezTo / QuadBezTo (and
+/// Rel*), PolylineTo, InfiniteLine, SplineStart/Knot, and NURBS.
 library;
 
 import 'dart:math' as math;

@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- DiagramML `CubBezTo` / `QuadBezTo` / `RelArcTo` (and the other VSDX-era
+  Rel* rows libvisio's token map does not name) now parse and paint, and a
+  save rewrites them to the RelCubBezTo / RelQuadBezTo / ArcTo / PolylineTo
+  / InfiniteLine / Spline / NURBS rows LibreOffice actually collects. A
+  VDX coverage drawing that used to lose its Béziers on import now round-
+  trips through Draw.
 - Rendering is now checked per shape, not just per page. A page-level mean
   error cannot see a single geometry, fill or master that silently
   disappears: the average barely moves. The corpus now maps every shape

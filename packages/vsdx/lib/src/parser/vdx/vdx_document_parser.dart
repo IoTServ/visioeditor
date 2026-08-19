@@ -733,13 +733,12 @@ XmlElement _geometrySection(XmlElement source) {
   );
 }
 
-// Keep this list aligned with VSDXMLParserBase::readGeometry() in libvisio.
-// DiagramML represents commands as named elements, and its vocabulary is not
-// identical to the newer VSDX Geometry row types. In particular CubBezTo,
-// QuadBezTo, and RelArcTo are VSDX extensions: libvisio ignores those names in
-// a VDX stream. Converting arbitrary child elements into VSDX rows made invalid
-// extensions visible after import and produced geometry LibreOffice never
-// collected. The shared VSDX parser still supports those row types normally.
+// Named DiagramML geometry elements, including VSDX-era row types that
+// libvisio's VDX token switch skips (CubBezTo, QuadBezTo, RelArcTo, Rel*).
+// Dropping those names used to match LibreOffice's importer, but it also
+// meant we never drew the curves. We parse them into the shared model and
+// [forLibvisioWrite] remaps them to row types libvisio *does* collect when
+// the synthesised `.vsdx` is saved, so Draw paints the same geometry.
 const _libvisioVdxGeometryRows = <String>{
   'MoveTo',
   'LineTo',
@@ -749,11 +748,19 @@ const _libvisioVdxGeometryRows = <String>{
   'InfiniteLine',
   'EllipticalArcTo',
   'Ellipse',
+  'CubBezTo',
+  'QuadBezTo',
   'RelCubBezTo',
   'RelEllipticalArcTo',
   'RelMoveTo',
   'RelLineTo',
   'RelQuadBezTo',
+  'RelArcTo',
+  'RelPolylineTo',
+  'RelInfiniteLine',
+  'RelSplineStart',
+  'RelSplineKnot',
+  'RelNURBSTo',
   'SplineStart',
   'SplineKnot',
 };

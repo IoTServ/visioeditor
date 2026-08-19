@@ -39,13 +39,17 @@ const _maxMeanAbsoluteError = 0.03;
 /// shows *more*. libvisio's field formatter has no case for units, currency
 /// or percentages, so opening the legacy binary drops those values; our
 /// synthesised VSDX carries them as text and LibreOffice then draws them.
-/// Pixel equality is the wrong expectation for these — the structural
-/// round-trip suite covers them instead.
+/// `vdx_all_types.vdx` is the geometry counterpart: DiagramML CubBezTo /
+/// QuadBezTo / RelArcTo are absent from libvisio's VDX switch, so Draw
+/// skips those curves in the source and paints them once we rewrite the
+/// rows as RelCubBezTo / RelQuadBezTo / ArcTo. Pixel equality is the wrong
+/// expectation for these — the structural round-trip suite covers them.
 const _recoversFieldText = <String>{
   'Visio5TextFieldsWithUnits.vsd',
   'Visio6TextFieldsWithUnits.vsd',
   'Visio11TextFieldsWithUnits.vsd',
   'Visio11TextFieldsWithCurrency.vsd',
+  'vdx_all_types.vdx',
 };
 
 void main() {

@@ -722,4 +722,50 @@ void main() {
       expect(restored[1].noFill, isTrue);
     });
   });
+
+  group('forLibvisioWrite', () {
+    test('CubBezTo / QuadBezTo become Rel* fractions', () {
+      final cubic = forLibvisioWrite(
+        const CubBezTo(x: 2, y: 1, x1: 0.5, y1: 0.25, x2: 1.5, y2: 0.75),
+        width: 2,
+        height: 1,
+      ) as RelCubBezTo;
+      expect(cubic.fx, closeTo(1, 1e-9));
+      expect(cubic.fy, closeTo(1, 1e-9));
+      expect(cubic.fx1, closeTo(0.25, 1e-9));
+      expect(cubic.fy1, closeTo(0.25, 1e-9));
+      final quad = forLibvisioWrite(
+        const QuadBezTo(x: 2, y: 1, x1: 1, y1: 0),
+        width: 2,
+        height: 1,
+      ) as RelQuadBezTo;
+      expect(quad.fx, closeTo(1, 1e-9));
+      expect(quad.fy1, closeTo(0, 1e-9));
+    });
+
+    test('RelArcTo / RelPolylineTo / RelNURBSTo bake to absolute rows', () {
+      final arc = forLibvisioWrite(
+        const RelArcTo(fx: 1, fy: 0, fbow: 0.1),
+        width: 3,
+        height: 1,
+      ) as ArcTo;
+      expect(arc.x, closeTo(3, 1e-9));
+      expect(arc.bow, closeTo(0.1 * (3 + 1) / 2, 1e-9));
+      final poly = forLibvisioWrite(
+        const PolylineTo(
+          x: 1,
+          y: 0,
+          vertices: <Offset2D>[Offset2D(0.5, 0.5)],
+          relative: true,
+        ),
+        width: 2,
+        height: 2,
+      ) as PolylineTo;
+      expect(poly.relative, isFalse);
+      expect(poly.x, closeTo(2, 1e-9));
+      expect(commandNeedsLibvisioRewrite(const RelArcTo(fx: 1, fy: 0, fbow: 0.1)),
+          isTrue);
+      expect(commandNeedsLibvisioRewrite(const MoveTo(0, 0)), isFalse);
+    });
+  });
 }

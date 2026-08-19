@@ -5057,13 +5057,20 @@ class VsdxWriter {
   }
 
   bool _patchGeometry(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_geometriesEqual(base.geometries, edited.geometries)) {
+    final needsLibvisioRewrite =
+        _geometryNeedsLibvisioRewrite(edited.geometries);
+    if (!needsLibvisioRewrite &&
+        _geometriesEqual(base.geometries, edited.geometries)) {
       return _scrubGeometryInh(el, edited);
     }
     if (!edited.geometries.every(_canRebuild)) return false;
     // Prefer in-place V= updates so Width*/Height*/Scratch formulas and
-    // unmodelled cells (NoSnap, A–D on NURBS, …) survive resize.
-    if (_tryPatchGeometryInPlace(el, base, edited)) return true;
+    // unmodelled cells (NoSnap, A–D on NURBS, …) survive resize. CubBezTo
+    // and other rows libvisio drops must be rebuilt, not patched in place.
+    if (!needsLibvisioRewrite &&
+        _tryPatchGeometryInPlace(el, base, edited)) {
+      return true;
+    }
     final existing = <XmlElement>[
       for (final child in el.childElements)
         if (child.name.local == 'Section' &&
@@ -5087,7 +5094,14 @@ class VsdxWriter {
     var ix = 0;
     final sections = <XmlElement>[
       for (final g in edited.geometries)
-        if (_buildGeometrySection(g, ix++) case final s?) s,
+        if (_buildGeometrySection(
+              g,
+              ix++,
+              width: edited.width,
+              height: edited.height,
+            )
+            case final s?)
+          s,
     ];
     el.children.insertAll(insertAt, sections);
     return true;
@@ -7707,7 +7721,12 @@ class VsdxWriter {
     }
     var ix = 0;
     for (final g in s.geometries) {
-      final section = _buildGeometrySection(g, ix++);
+      final section = _buildGeometrySection(
+        g,
+        ix++,
+        width: s.width,
+        height: s.height,
+      );
       if (section != null) children.add(section);
     }
     if (s.userProperties.isNotEmpty) {
@@ -8373,7 +8392,12 @@ class VsdxWriter {
     var emittedGeom = false;
     for (final g in s.geometries) {
       if (!_canRebuild(g)) continue;
-      final section = _buildGeometrySection(g, gIx++);
+      final section = _buildGeometrySection(
+        g,
+        gIx++,
+        width: s.width,
+        height: s.height,
+      );
       if (section != null) {
         children.add(section);
         emittedGeom = true;
@@ -8397,7 +8421,12 @@ class VsdxWriter {
           const LineTo(0, 0),
         ],
       );
-      final section = _buildGeometrySection(frame, 0);
+      final section = _buildGeometrySection(
+        frame,
+        0,
+        width: s.width,
+        height: s.height,
+      );
       if (section != null) children.add(section);
     }
     if (s.userProperties.isNotEmpty) {
@@ -8733,7 +8762,21 @@ class VsdxWriter {
     );
   }
 
-  XmlElement? _buildGeometrySection(VsdxGeometry g, int ix) {
+  static bool _geometryNeedsLibvisioRewrite(List<VsdxGeometry> geos) {
+    for (final g in geos) {
+      for (final c in g.commands) {
+        if (commandNeedsLibvisioRewrite(c)) return true;
+      }
+    }
+    return false;
+  }
+
+  XmlElement? _buildGeometrySection(
+    VsdxGeometry g,
+    int ix, {
+    double width = 1,
+    double height = 1,
+  }) {
     final rows = <XmlNode>[];
     // Always emit NoFill/NoLine/NoShow/NoSnap/NoQuickDrag. Visio defaults
     // missing NoFill to 0 (filled), but 万兴图示 treats a missing cell as
@@ -8751,9 +8794,19 @@ class VsdxWriter {
         g.rowIndices.isNotEmpty;
     var rowIx = 1;
     var cmdIx = 0;
-    for (final cmd in g.commands) {
+    for (final original in g.commands) {
       final thisIx = useSourceIx ? g.rowIndices[cmdIx] : rowIx;
-      final row = _buildRow(cmd, thisIx, formulas: g.formulasAt(cmdIx));
+      final cmd = forLibvisioWrite(
+        original,
+        width: width,
+        height: height,
+      );
+      // Rel* / CubBezTo formulas assume the original cell units; drop them
+      // when the row type changes so baked V= is what Visio and libvisio see.
+      final formulas = commandNeedsLibvisioRewrite(original)
+          ? const <String, String>{}
+          : g.formulasAt(cmdIx);
+      final row = _buildRow(cmd, thisIx, formulas: formulas);
       if (row != null) {
         rows.add(row);
         rowIx++;

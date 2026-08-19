@@ -1605,3 +1605,131 @@ List<VsdxGeometry> preserveGeometryFlags(
       ),
   ];
 }
+
+double _axisFraction(double value, double span) =>
+    span.abs() < 1e-12 ? 0.0 : value / span;
+
+/// Whether [cmd] is a VSDX row type LibreOffice's libvisio importer drops.
+///
+/// `VSDXParser::getElementToken` maps `Row T=` through `tokens.txt`. That
+/// table has RelCubBezTo / RelQuadBezTo / ArcTo / PolylineTo / InfiniteLine /
+/// SplineStart / SplineKnot / NURBSTo, but not CubBezTo, QuadBezTo, RelArcTo,
+/// RelPolylineTo, RelInfiniteLine, RelSpline* or RelNURBSTo. Those rows are
+/// skipped in `readGeometry`'s default branch, so a save that keeps the
+/// original `T=` looks empty in Draw.
+bool commandNeedsLibvisioRewrite(VsdxPathCommand cmd) => switch (cmd) {
+      CubBezTo() || QuadBezTo() || RelArcTo() => true,
+      PolylineTo(:final relative) => relative,
+      InfiniteLineCmd(:final relative) => relative,
+      SplineStart(:final relative) => relative,
+      SplineKnot(:final relative) => relative,
+      NurbsTo(:final relative) => relative,
+      _ => false,
+    };
+
+/// Map [cmd] onto a row type libvisio collects, baking Rel* endpoints into
+/// local inches (or CubBezTo/QuadBezTo into Rel*) at the current [width] /
+/// [height]. Appearance at this size is preserved; LibreOffice can then
+/// draw the path.
+VsdxPathCommand forLibvisioWrite(
+  VsdxPathCommand cmd, {
+  required double width,
+  required double height,
+}) {
+  final w = width;
+  final h = height;
+  switch (cmd) {
+    case CubBezTo(
+        :final x,
+        :final y,
+        :final x1,
+        :final y1,
+        :final x2,
+        :final y2,
+      ):
+      return RelCubBezTo(
+        fx: _axisFraction(x, w),
+        fy: _axisFraction(y, h),
+        fx1: _axisFraction(x1, w),
+        fy1: _axisFraction(y1, h),
+        fx2: _axisFraction(x2, w),
+        fy2: _axisFraction(y2, h),
+      );
+    case QuadBezTo(:final x, :final y, :final x1, :final y1):
+      return RelQuadBezTo(
+        fx: _axisFraction(x, w),
+        fy: _axisFraction(y, h),
+        fx1: _axisFraction(x1, w),
+        fy1: _axisFraction(y1, h),
+      );
+    case RelArcTo(:final fx, :final fy, :final fbow):
+      // Same bow scaling the SVG / canvas path builders use.
+      return ArcTo(x: fx * w, y: fy * h, bow: fbow * (w + h) / 2);
+    case PolylineTo(
+        :final x,
+        :final y,
+        :final vertices,
+        :final relative,
+        :final vertsRelative,
+        :final vertsYRelative,
+      ) when relative:
+      return PolylineTo(
+        x: x * w,
+        y: y * h,
+        vertices: vertices,
+        vertsRelative: vertsRelative,
+        vertsYRelative: vertsYRelative,
+      );
+    case InfiniteLineCmd(
+        :final x,
+        :final y,
+        :final a,
+        :final b,
+        :final relative,
+      ) when relative:
+      return InfiniteLineCmd(x: x * w, y: y * h, a: a * w, b: b * h);
+    case SplineStart(
+        :final x,
+        :final y,
+        :final a,
+        :final b,
+        :final c,
+        :final degree,
+        :final relative,
+      ) when relative:
+      return SplineStart(
+        x: x * w,
+        y: y * h,
+        a: a,
+        b: b,
+        c: c,
+        degree: degree,
+      );
+    case SplineKnot(:final x, :final y, :final knot, :final relative)
+        when relative:
+      return SplineKnot(x: x * w, y: y * h, knot: knot);
+    case NurbsTo(
+        :final x,
+        :final y,
+        :final controlPoints,
+        :final weights,
+        :final knots,
+        :final degree,
+        :final relative,
+        :final cpRelative,
+        :final cpYRelative,
+      ) when relative:
+      return NurbsTo(
+        x: x * w,
+        y: y * h,
+        controlPoints: controlPoints,
+        weights: weights,
+        knots: knots,
+        degree: degree,
+        cpRelative: cpRelative,
+        cpYRelative: cpYRelative,
+      );
+    default:
+      return cmd;
+  }
+}

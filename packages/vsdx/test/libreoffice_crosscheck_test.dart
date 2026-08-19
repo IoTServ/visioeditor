@@ -176,6 +176,60 @@ void main() {
             ),
           ],
         ),
+      ).addShape(
+        VsdxShape(
+          id: id + 6,
+          name: 'CubBezTo',
+          pinX: 2,
+          pinY: 6,
+          width: 2,
+          height: 1,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                CubBezTo(x: 2, y: 0, x1: 0.5, y1: 1, x2: 1.5, y2: 1),
+              ],
+            ),
+          ],
+        ),
+      ).addShape(
+        VsdxShape(
+          id: id + 7,
+          name: 'QuadBezTo',
+          pinX: 4.5,
+          pinY: 6,
+          width: 2,
+          height: 1,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                QuadBezTo(x: 2, y: 0, x1: 1, y1: 1),
+              ],
+            ),
+          ],
+        ),
+      ).addShape(
+        VsdxShape(
+          id: id + 8,
+          name: 'RelArcTo',
+          pinX: 7,
+          pinY: 5,
+          width: 2,
+          height: 1,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                RelMoveTo(0, 0),
+                RelArcTo(fx: 1, fy: 0, fbow: 0.2),
+              ],
+            ),
+          ],
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -193,9 +247,22 @@ void main() {
     );
     expect(
       reopenedCommands.whereType<ArcTo>(),
-      hasLength(1),
-      reason: 'ArcTo must survive the VSDX writer round-trip',
+      hasLength(2),
+      reason: 'ArcTo and rewritten RelArcTo must survive the VSDX writer',
     );
+    expect(
+      reopenedCommands.whereType<RelCubBezTo>(),
+      isNotEmpty,
+      reason: 'CubBezTo is rewritten to RelCubBezTo for LibreOffice',
+    );
+    expect(reopenedCommands.whereType<CubBezTo>(), isEmpty);
+    expect(
+      reopenedCommands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+      reason: 'QuadBezTo is rewritten to RelQuadBezTo for LibreOffice',
+    );
+    expect(reopenedCommands.whereType<QuadBezTo>(), isEmpty);
+    expect(reopenedCommands.whereType<RelArcTo>(), isEmpty);
     expect(
       reopenedCommands.whereType<EllipticalArcTo>(),
       hasLength(1),

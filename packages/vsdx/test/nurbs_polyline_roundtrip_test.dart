@@ -90,6 +90,16 @@ void main() {
       );
       final loaded = parser.parse(saved);
       final sid = loaded.pages.first.shapes.first.id;
+      final loadedPoly = loaded.pages.first
+          .findShapeById(sid)!
+          .geometries
+          .first
+          .commands
+          .whereType<PolylineTo>()
+          .single;
+      expect(loadedPoly.relative, isFalse);
+      expect(loadedPoly.x, closeTo(2.0, 1e-9));
+      expect(loadedPoly.vertices.first.x, closeTo(0.5, 1e-9));
       final resized = loaded.replacePage(
         0,
         loaded.pages.first.updateShapeById(
@@ -97,7 +107,7 @@ void main() {
           (s) => s.resizeTo(pinX: 3, pinY: 3, width: 4, height: 4),
         ),
       );
-      // Double size: Rel endpoint stays fractional; inch verts scale ×2.
+      // Double size: baked endpoint and inch verts both scale ×2.
       final polyBefore = resized.pages.first
           .findShapeById(sid)!
           .geometries
@@ -115,7 +125,7 @@ void main() {
       final poly = round.pages.first.shapes.first.geometries.first.commands
           .whereType<PolylineTo>()
           .single;
-      expect(poly.relative, isTrue);
+      expect(poly.relative, isFalse);
       expect(poly.vertsRelative, isFalse);
       expect(poly.vertices.first.x, closeTo(1.0, 1e-6));
       expect(poly.vertices.first.y, closeTo(1.0, 1e-6));
@@ -165,13 +175,18 @@ void main() {
       final pageXml = VsdxPackage.open(out)
           .readPartXml('/visio/pages/page1.xml')!
           .toXmlString();
-      expect(pageXml, contains('RelPolylineTo'));
+      // RelPolylineTo is not in libvisio's VSDX token map; write PolylineTo
+      // with the endpoint baked to local inches so LibreOffice still draws it.
+      expect(pageXml, isNot(contains('RelPolylineTo')));
+      expect(pageXml, contains('T="PolylineTo"'));
       expect(pageXml, contains('POLYLINE(1,1'));
       final round = parser.parse(out);
       final poly = round.pages.first.shapes.first.geometries.first.commands
           .whereType<PolylineTo>()
           .single;
-      expect(poly.relative, isTrue);
+      expect(poly.relative, isFalse);
+      expect(poly.x, closeTo(2.0, 1e-9));
+      expect(poly.y, closeTo(0.0, 1e-9));
       expect(poly.vertsRelative, isFalse);
       expect(poly.vertsYRelative, isFalse);
     });
