@@ -588,6 +588,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   collector for those cells, so a save bakes hops as `ArcTo` / `MoveTo` /
   `LineTo` (then `ConLineJumpCode=1`) and bakes picture tone into a PNG
   with the cells reset. Unchanged packages stay byte-identical.
+- Character `Overline` and `Glow*` now survive a save into LibreOffice.
+  libvisio's `readCharIX` has an empty `Overline` case, so a save inserts
+  combining U+0305 marks and clears the cell. Glow cells are not tokens:
+  an unfilled stroke bakes a `FillForegndTrans` ribbon and a filled NoLine
+  shape bakes a `LineWeight` halo, then `GlowSize` is written 0. Filled
+  shapes that already paint a stroke keep their outline.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

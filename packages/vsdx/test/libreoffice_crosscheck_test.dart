@@ -138,648 +138,771 @@ void main() {
     );
     doc = doc.replacePage(
       0,
-      pageWithDegenerateEllipse.addShape(
-        VsdxShape(
-          id: id + 5,
-          name: 'HighDegreeNURBS',
-          pinX: 5.5,
-          pinY: 6.5,
-          width: 9,
-          height: 1,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0.5),
-                NurbsTo(
-                  x: 9,
-                  y: 0.5,
-                  controlPoints: <Offset2D>[
-                    Offset2D(1, 1),
-                    Offset2D(2, 0),
-                    Offset2D(3, 1),
-                    Offset2D(4, 0),
-                    Offset2D(5, 1),
-                    Offset2D(6, 0),
-                    Offset2D(7, 1),
-                    Offset2D(8, 0),
+      pageWithDegenerateEllipse
+          .addShape(
+            VsdxShape(
+              id: id + 5,
+              name: 'HighDegreeNURBS',
+              pinX: 5.5,
+              pinY: 6.5,
+              width: 9,
+              height: 1,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0.5),
+                    NurbsTo(
+                      x: 9,
+                      y: 0.5,
+                      controlPoints: <Offset2D>[
+                        Offset2D(1, 1),
+                        Offset2D(2, 0),
+                        Offset2D(3, 1),
+                        Offset2D(4, 0),
+                        Offset2D(5, 1),
+                        Offset2D(6, 0),
+                        Offset2D(7, 1),
+                        Offset2D(8, 0),
+                      ],
+                      weights: <double>[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+                      knots: <double>[
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0,
+                        0.5,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                      ],
+                      degree: 9,
+                    ),
                   ],
-                  weights: <double>[1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
-                  knots: <double>[
-                    0, 0, 0, 0, 0, 0, 0, 0, 0,
-                    0.5,
-                    1, 1, 1, 1, 1, 1, 1, 1, 1,
+                ),
+              ],
+            ),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 6,
+              name: 'CubBezTo',
+              pinX: 2,
+              pinY: 6,
+              width: 2,
+              height: 1,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    CubBezTo(x: 2, y: 0, x1: 0.5, y1: 1, x2: 1.5, y2: 1),
                   ],
-                  degree: 9,
                 ),
               ],
             ),
-          ],
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 6,
-          name: 'CubBezTo',
-          pinX: 2,
-          pinY: 6,
-          width: 2,
-          height: 1,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                CubBezTo(x: 2, y: 0, x1: 0.5, y1: 1, x2: 1.5, y2: 1),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 7,
+              name: 'QuadBezTo',
+              pinX: 4.5,
+              pinY: 6,
+              width: 2,
+              height: 1,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    QuadBezTo(x: 2, y: 0, x1: 1, y1: 1),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 7,
-          name: 'QuadBezTo',
-          pinX: 4.5,
-          pinY: 6,
-          width: 2,
-          height: 1,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                QuadBezTo(x: 2, y: 0, x1: 1, y1: 1),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 8,
+              name: 'RelArcTo',
+              pinX: 7,
+              pinY: 5,
+              width: 2,
+              height: 1,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    RelMoveTo(0, 0),
+                    RelArcTo(fx: 1, fy: 0, fbow: 0.2),
+                  ],
+                ),
               ],
             ),
-          ],
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 8,
-          name: 'RelArcTo',
-          pinX: 7,
-          pinY: 5,
-          width: 2,
-          height: 1,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                RelMoveTo(0, 0),
-                RelArcTo(fx: 1, fy: 0, fbow: 0.2),
-              ],
-            ),
-          ],
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 9,
-          pinX: 2,
-          pinY: 7.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'HatchFill',
-          fill: const VsdxFill(
-            foreground: VsdxColor(0xFFFF0000),
-            background: VsdxColor(0xFF0000FF),
-            pattern: 2,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 10,
-          pinX: 4,
-          pinY: 7.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'ClassicRadialFill',
-          fill: const VsdxFill(
-            foreground: VsdxColor(0xFFFF0000),
-            background: VsdxColor(0xFF0000FF),
-            pattern: 40,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 11,
-          pinX: 6,
-          pinY: 7.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'FillGradient',
-          fill: const VsdxFill(
-            foreground: VsdxColor(0xFFFF0000),
-            background: VsdxColor(0xFF0000FF),
-            pattern: 1,
-            gradient: VsdxGradient(
-              stops: [
-                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
-                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
-              ],
-            ),
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 12,
-          pinX: 8,
-          pinY: 7.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'Rounding',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFF00), pattern: 1),
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            roundingInches: 0.15,
-            pattern: 2,
-            endArrow: 4,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 13,
-          pinX: 2,
-          pinY: 6.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'CompoundDouble',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 1,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 14,
-          ax: 4,
-          ay: 6.5,
-          bx: 7,
-          by: 6.5,
-          name: 'Compound1D',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 1,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 15,
-          ax: 1,
-          ay: 5.5,
-          bx: 4,
-          by: 5.5,
-          name: 'LineGradient1D',
-          line: const VsdxLine(
-            pattern: 1,
-            weightInches: 0.06,
-            gradient: VsdxGradient(
-              stops: [
-                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
-                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
-              ],
-            ),
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 16,
-          ax: 5,
-          ay: 5.5,
-          bx: 8,
-          by: 5.5,
-          name: 'CapFlat',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            cap: LineCap.extended,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 17,
-          ax: 1,
-          ay: 6.2,
-          bx: 4,
-          by: 6.2,
-          name: 'LineColorTrans1D',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            transparency: 0.5,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 18,
-          ax: 5,
-          ay: 6.2,
-          bx: 8,
-          by: 6.2,
-          name: 'ArrowedCompound1D',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 1,
-            beginArrow: 4,
-            endArrow: 13,
-            beginArrowSizeInches: 0.25,
-            endArrowSizeInches: 0.25,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 19,
-          ax: 1,
-          ay: 4.8,
-          bx: 4,
-          by: 4.8,
-          name: 'ArrowedLineGradient1D',
-          line: const VsdxLine(
-            pattern: 1,
-            weightInches: 0.06,
-            beginArrow: 4,
-            endArrow: 13,
-            beginArrowSizeInches: 0.25,
-            endArrowSizeInches: 0.25,
-            gradient: VsdxGradient(
-              stops: [
-                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
-                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
-              ],
-            ),
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 20,
-          ax: 5,
-          ay: 4.8,
-          bx: 8,
-          by: 4.8,
-          name: 'ArrowedLineColorTrans1D',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            transparency: 0.5,
-            beginArrow: 4,
-            endArrow: 13,
-            beginArrowSizeInches: 0.25,
-            endArrowSizeInches: 0.25,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 21,
-          pinX: 8,
-          pinY: 3.5,
-          width: 1.4,
-          height: 0.7,
-          name: 'Highlight',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
-          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
-        ).copyWith(
-          text: 'Hi',
-          richText: const VsdxRichText(
-            runs: [
-              VsdxTextRun(
-                text: 'Hi',
-                charStyle: VsdxCharStyle(highlight: VsdxColor(0xFFFF00FF)),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 9,
+              pinX: 2,
+              pinY: 7.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'HatchFill',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF0000),
+                background: VsdxColor(0xFF0000FF),
+                pattern: 2,
               ),
-            ],
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 22,
-          pinX: 8,
-          pinY: 2.5,
-          width: 1.4,
-          height: 0.7,
-          name: 'CJK',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
-          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
-        ).copyWith(
-          text: '你好',
-          richText: const VsdxRichText(
-            runs: [
-              VsdxTextRun(
-                text: '你好',
-                charStyle: VsdxCharStyle(
-                  fontFamily: 'Arial',
-                  asianFont: 'Microsoft YaHei',
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 10,
+              pinX: 4,
+              pinY: 7.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'ClassicRadialFill',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF0000),
+                background: VsdxColor(0xFF0000FF),
+                pattern: 40,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 11,
+              pinX: 6,
+              pinY: 7.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'FillGradient',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF0000),
+                background: VsdxColor(0xFF0000FF),
+                pattern: 1,
+                gradient: VsdxGradient(
+                  stops: [
+                    VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                    VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 23,
-          pinX: 6,
-          pinY: 2.5,
-          width: 1.4,
-          height: 0.7,
-          name: 'Hangul',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
-          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
-        ).copyWith(
-          text: '안녕',
-          richText: const VsdxRichText(
-            runs: [
-              VsdxTextRun(
-                text: '안녕',
-                charStyle: VsdxCharStyle(
-                  fontFamily: 'Arial',
-                  asianFont: 'Microsoft YaHei',
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 12,
+              pinX: 8,
+              pinY: 7.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'Rounding',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFF00), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                roundingInches: 0.15,
+                pattern: 2,
+                endArrow: 4,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 13,
+              pinX: 2,
+              pinY: 6.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'CompoundDouble',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 1,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 14,
+              ax: 4,
+              ay: 6.5,
+              bx: 7,
+              by: 6.5,
+              name: 'Compound1D',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 1,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 15,
+              ax: 1,
+              ay: 5.5,
+              bx: 4,
+              by: 5.5,
+              name: 'LineGradient1D',
+              line: const VsdxLine(
+                pattern: 1,
+                weightInches: 0.06,
+                gradient: VsdxGradient(
+                  stops: [
+                    VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                    VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 24,
-          pinX: 4,
-          pinY: 2.5,
-          width: 1.4,
-          height: 0.7,
-          name: 'Arabic',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
-          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
-        ).copyWith(
-          text: 'سلام',
-          richText: const VsdxRichText(
-            runs: [
-              VsdxTextRun(
-                text: 'سلام',
-                charStyle: VsdxCharStyle(
-                  fontFamily: 'Arial',
-                  complexScriptFont: 'Times New Roman',
-                  complexScriptSizeInches: 18 / 72,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 16,
+              ax: 5,
+              ay: 5.5,
+              bx: 8,
+              by: 5.5,
+              name: 'CapFlat',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                cap: LineCap.extended,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 17,
+              ax: 1,
+              ay: 6.2,
+              bx: 4,
+              by: 6.2,
+              name: 'LineColorTrans1D',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                transparency: 0.5,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 18,
+              ax: 5,
+              ay: 6.2,
+              bx: 8,
+              by: 6.2,
+              name: 'ArrowedCompound1D',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 1,
+                beginArrow: 4,
+                endArrow: 13,
+                beginArrowSizeInches: 0.25,
+                endArrowSizeInches: 0.25,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 19,
+              ax: 1,
+              ay: 4.8,
+              bx: 4,
+              by: 4.8,
+              name: 'ArrowedLineGradient1D',
+              line: const VsdxLine(
+                pattern: 1,
+                weightInches: 0.06,
+                beginArrow: 4,
+                endArrow: 13,
+                beginArrowSizeInches: 0.25,
+                endArrowSizeInches: 0.25,
+                gradient: VsdxGradient(
+                  stops: [
+                    VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                    VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+                  ],
                 ),
               ),
-            ],
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 25,
-          pinX: 2,
-          pinY: 8.2,
-          width: 1.5,
-          height: 0.8,
-          name: 'FillUnknown',
-          fill: const VsdxFill(
-            foreground: VsdxColor(0xFFFF0000),
-            background: VsdxColor(0xFF0000FF),
-            pattern: 41,
-          ),
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 26,
-          name: 'RoundJoin',
-          pinX: 8,
-          pinY: 8.2,
-          width: 1.4,
-          height: 1.4,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                LineTo(1.4, 0),
-                LineTo(1.4, 1.4),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 20,
+              ax: 5,
+              ay: 4.8,
+              bx: 8,
+              by: 4.8,
+              name: 'ArrowedLineColorTrans1D',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                transparency: 0.5,
+                beginArrow: 4,
+                endArrow: 13,
+                beginArrowSizeInches: 0.25,
+                endArrowSizeInches: 0.25,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 21,
+              pinX: 8,
+              pinY: 3.5,
+              width: 1.4,
+              height: 0.7,
+              name: 'Highlight',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: 'Hi',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: 'Hi',
+                    charStyle: VsdxCharStyle(highlight: VsdxColor(0xFFFF00FF)),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 22,
+              pinX: 8,
+              pinY: 2.5,
+              width: 1.4,
+              height: 0.7,
+              name: 'CJK',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: '你好',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: '你好',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      asianFont: 'Microsoft YaHei',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 23,
+              pinX: 6,
+              pinY: 2.5,
+              width: 1.4,
+              height: 0.7,
+              name: 'Hangul',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: '안녕',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: '안녕',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      asianFont: 'Microsoft YaHei',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 24,
+              pinX: 4,
+              pinY: 2.5,
+              width: 1.4,
+              height: 0.7,
+              name: 'Arabic',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: 'سلام',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: 'سلام',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      complexScriptFont: 'Times New Roman',
+                      complexScriptSizeInches: 18 / 72,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 25,
+              pinX: 2,
+              pinY: 8.2,
+              width: 1.5,
+              height: 0.8,
+              name: 'FillUnknown',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF0000),
+                background: VsdxColor(0xFF0000FF),
+                pattern: 41,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 26,
+              name: 'RoundJoin',
+              pinX: 8,
+              pinY: 8.2,
+              width: 1.4,
+              height: 1.4,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    LineTo(1.4, 0),
+                    LineTo(1.4, 1.4),
+                  ],
+                ),
               ],
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                cap: LineCap.square,
+                join: VsdxLineJoin.round,
+              ),
             ),
-          ],
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            cap: LineCap.square,
-            join: VsdxLineJoin.round,
-          ),
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 27,
-          name: 'BevelJoin',
-          pinX: 6,
-          pinY: 8.2,
-          width: 1.4,
-          height: 1.4,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                LineTo(1.4, 0),
-                LineTo(1.4, 1.4),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 27,
+              name: 'BevelJoin',
+              pinX: 6,
+              pinY: 8.2,
+              width: 1.4,
+              height: 1.4,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    LineTo(1.4, 0),
+                    LineTo(1.4, 1.4),
+                  ],
+                ),
               ],
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                cap: LineCap.square,
+                join: VsdxLineJoin.bevel,
+              ),
             ),
-          ],
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            cap: LineCap.square,
-            join: VsdxLineJoin.bevel,
-          ),
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 28,
-          name: 'ArcsJoin',
-          pinX: 4,
-          pinY: 8.2,
-          width: 1.4,
-          height: 1.4,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                LineTo(1.4, 0),
-                LineTo(1.4, 1.4),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 28,
+              name: 'ArcsJoin',
+              pinX: 4,
+              pinY: 8.2,
+              width: 1.4,
+              height: 1.4,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    LineTo(1.4, 0),
+                    LineTo(1.4, 1.4),
+                  ],
+                ),
               ],
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                cap: LineCap.square,
+                join: VsdxLineJoin.arcs,
+              ),
             ),
-          ],
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            cap: LineCap.square,
-            join: VsdxLineJoin.arcs,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 29,
-          pinX: 2,
-          pinY: 3.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'CompoundThinThick',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 3,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 30,
-          pinX: 4,
-          pinY: 3.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'CompoundTriple',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 4,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 31,
-          ax: 1,
-          ay: 0.4,
-          bx: 4,
-          by: 0.4,
-          name: 'CompoundThinThick1D',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 3,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 32,
-          ax: 5,
-          ay: 0.4,
-          bx: 8,
-          by: 0.4,
-          name: 'CompoundTriple1D',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            compoundType: 4,
-          ),
-        ),
-      ).addShape(
-        VsdxShape(
-          id: id + 33,
-          name: 'BevelRoundCap',
-          pinX: 6,
-          pinY: 9.5,
-          width: 1.4,
-          height: 1.4,
-          geometries: const <VsdxGeometry>[
-            VsdxGeometry(
-              noFill: true,
-              commands: <VsdxPathCommand>[
-                MoveTo(0, 0),
-                LineTo(1.4, 0),
-                LineTo(1.4, 1.4),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 29,
+              pinX: 2,
+              pinY: 3.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'CompoundThinThick',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 3,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 30,
+              pinX: 4,
+              pinY: 3.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'CompoundTriple',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 4,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 31,
+              ax: 1,
+              ay: 0.4,
+              bx: 4,
+              by: 0.4,
+              name: 'CompoundThinThick1D',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 3,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 32,
+              ax: 5,
+              ay: 0.4,
+              bx: 8,
+              by: 0.4,
+              name: 'CompoundTriple1D',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                compoundType: 4,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShape(
+              id: id + 33,
+              name: 'BevelRoundCap',
+              pinX: 6,
+              pinY: 9.5,
+              width: 1.4,
+              height: 1.4,
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    LineTo(1.4, 0),
+                    LineTo(1.4, 1.4),
+                  ],
+                ),
               ],
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.08,
+                cap: LineCap.round,
+                join: VsdxLineJoin.bevel,
+              ),
             ),
-          ],
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.08,
-            cap: LineCap.round,
-            join: VsdxLineJoin.bevel,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 34,
-          pinX: 3.5,
-          pinY: 9.5,
-          width: 1.5,
-          height: 0.8,
-          name: 'FilledLineTrans',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.04,
-            transparency: 0.4,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 35,
-          ax: 1,
-          ay: 9.9,
-          bx: 4,
-          by: 9.9,
-          name: 'LargeArrow',
-          line: const VsdxLine(
-            color: VsdxColor.black,
-            weightInches: 0.01,
-            beginArrow: 4,
-            endArrow: 1,
-            beginArrowSizeInches: 0.35,
-            endArrowSizeInches: 0.35,
-          ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.rectangle(
-          id: id + 36,
-          pinX: 6,
-          pinY: 1.6,
-          width: 1.4,
-          height: 0.7,
-          name: 'TextBkgndTrans',
-          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
-          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
-        ).copyWith(
-          text: 'Hi',
-          richText: const VsdxRichText(
-            textBlock: VsdxTextBlock(
-              backgroundColor: VsdxColor(0xFF0000FF),
-              backgroundTransparency: 0.5,
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 34,
+              pinX: 3.5,
+              pinY: 9.5,
+              width: 1.5,
+              height: 0.8,
+              name: 'FilledLineTrans',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.04,
+                transparency: 0.4,
+              ),
             ),
-            runs: [VsdxTextRun(text: 'Hi')],
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 35,
+              ax: 1,
+              ay: 9.9,
+              bx: 4,
+              by: 9.9,
+              name: 'LargeArrow',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.01,
+                beginArrow: 4,
+                endArrow: 1,
+                beginArrowSizeInches: 0.35,
+                endArrowSizeInches: 0.35,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 36,
+              pinX: 6,
+              pinY: 1.6,
+              width: 1.4,
+              height: 0.7,
+              name: 'TextBkgndTrans',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: 'Hi',
+              richText: const VsdxRichText(
+                textBlock: VsdxTextBlock(
+                  backgroundColor: VsdxColor(0xFF0000FF),
+                  backgroundTransparency: 0.5,
+                ),
+                runs: [VsdxTextRun(text: 'Hi')],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 37,
+              ax: 0.4,
+              ay: 10.5,
+              bx: 3.2,
+              by: 10.5,
+              name: 'JumpUnder',
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 38,
+              ax: 1.8,
+              ay: 10.95,
+              bx: 1.8,
+              by: 10.05,
+              name: 'JumpOver',
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.picture(
+              id: id + 39,
+              pinX: 7.2,
+              pinY: 10.5,
+              width: 1.2,
+              height: 0.8,
+              imagePartName: '/visio/media/image_lo_tone.png',
+              name: 'PictureTone',
+            ).copyWith(
+              imageTransparency: 0.4,
+              imageBrightness: 0.7,
+              imageContrast: 0.35,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 40,
+              ax: 4.2,
+              ay: 10.5,
+              bx: 6.4,
+              by: 10.5,
+              name: 'GlowStroke',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.04,
+              ),
+            ).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFFFF00FF),
+                sizeInches: 0.08,
+                transparency: 0.5,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 41,
+              pinX: 0.9,
+              pinY: 9.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'GlowNoLine',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+              line: const VsdxLine(pattern: 0),
+            ).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFFFF00FF),
+                sizeInches: 0.08,
+                transparency: 0.5,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 42,
+              pinX: 2.6,
+              pinY: 9.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'Overline',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: 'AB',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: 'AB',
+                    charStyle: VsdxCharStyle(overline: true),
+                  ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 37,
-          ax: 0.4,
-          ay: 10.5,
-          bx: 3.2,
-          by: 10.5,
-          name: 'JumpUnder',
-        ),
-      ).addShape(
-        VsdxShapeFactory.line(
-          id: id + 38,
-          ax: 1.8,
-          ay: 10.95,
-          bx: 1.8,
-          by: 10.05,
-          name: 'JumpOver',
-        ),
-      ).addShape(
-        VsdxShapeFactory.picture(
-          id: id + 39,
-          pinX: 7.2,
-          pinY: 10.5,
-          width: 1.2,
-          height: 0.8,
-          imagePartName: '/visio/media/image_lo_tone.png',
-          name: 'PictureTone',
-        ).copyWith(
-          imageTransparency: 0.4,
-          imageBrightness: 0.7,
-          imageContrast: 0.35,
-        ),
-      ),
     );
     doc = doc.copyWith(
       images: doc.images.withImage(
@@ -872,9 +995,10 @@ void main() {
         .firstWhere((s) => s.name == 'ArrowedLineColorTrans1D');
     expect(arrowedTrans.line.beginArrow, 0);
     expect(arrowedTrans.fill.foregroundTransparency, closeTo(0.5, 1e-9));
-    final highlight = reopenedDoc.pages.first.shapes
-        .firstWhere((s) => s.name == 'Highlight');
-    expect(highlight.richText.runs.single.charStyle.highlight?.value, 0xFFFF00FF);
+    final highlight =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Highlight');
+    expect(
+        highlight.richText.runs.single.charStyle.highlight?.value, 0xFFFF00FF);
     expect(highlight.richText.textBlock.backgroundColor?.value, 0xFFFF00FF);
     final largeArrow = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'LargeArrow');
@@ -888,8 +1012,8 @@ void main() {
       textBkgndTrans.richText.textBlock.backgroundColor,
       colourForLibvisioAlpha(const VsdxColor(0xFF0000FF), 0.5),
     );
-    final jumpOver = reopenedDoc.pages.first.shapes
-        .firstWhere((s) => s.name == 'JumpOver');
+    final jumpOver =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'JumpOver');
     expect(jumpOver.connectorProps?.conLineJumpCode, 1);
     expect(
       jumpOver.geometries.expand((g) => g.commands).whereType<ArcTo>(),
@@ -902,6 +1026,23 @@ void main() {
     expect(pictureTone.imageBrightness, closeTo(0.5, 1e-6));
     expect(pictureTone.imageContrast, closeTo(0.5, 1e-6));
     expect(pictureTone.imagePartName, isNot('/visio/media/image_lo_tone.png'));
+    final glowStroke = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'GlowStroke');
+    expect(glowStroke.glow.enabled, isFalse);
+    expect(glowStroke.fill.hasFill, isTrue);
+    expect(glowStroke.geometries.any((g) => !g.noFill), isTrue);
+    final glowNoLine = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'GlowNoLine');
+    expect(glowNoLine.glow.enabled, isFalse);
+    expect(glowNoLine.line.hasLine, isTrue);
+    expect(glowNoLine.line.weightInches, closeTo(0.16, 1e-9));
+    final overline =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
+    expect(overline.richText.runs.single.charStyle.overline, isFalse);
+    expect(
+      overline.richText.runs.single.text,
+      contains(kLibvisioCombiningOverline),
+    );
     expect(
       reopenedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'CJK')
@@ -937,15 +1078,15 @@ void main() {
           .pattern,
       1,
     );
-    final roundJoin = reopenedDoc.pages.first.shapes
-        .firstWhere((s) => s.name == 'RoundJoin');
+    final roundJoin =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
     expect(roundJoin.line.cap, LineCap.square);
     expect(
       roundJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
       isNotEmpty,
     );
-    final bevelJoin = reopenedDoc.pages.first.shapes
-        .firstWhere((s) => s.name == 'BevelJoin');
+    final bevelJoin =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'BevelJoin');
     expect(bevelJoin.line.roundingInches, closeTo(0, 1e-12));
     expect(
       bevelJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
@@ -996,8 +1137,8 @@ void main() {
           .length,
       3,
     );
-    final rounding = reopenedDoc.pages.first.shapes
-        .firstWhere((s) => s.name == 'Rounding');
+    final rounding =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Rounding');
     expect(rounding.line.roundingInches, closeTo(0, 1e-12));
     expect(
       rounding.geometries.single.commands.whereType<RelQuadBezTo>(),
@@ -1452,14 +1593,12 @@ void main() {
           int darkPixels(double x0, double y0, double x1, double y1) {
             final left = (x0 / page.widthInches * rendered.width).round();
             final right = (x1 / page.widthInches * rendered.width).round();
-            final top = ((page.heightInches - y1) /
-                    page.heightInches *
-                    rendered.height)
-                .round();
-            final bottom = ((page.heightInches - y0) /
-                    page.heightInches *
-                    rendered.height)
-                .round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
             var count = 0;
             for (var y = top; y < bottom; y++) {
               for (var x = left; x < right; x++) {
@@ -1591,8 +1730,7 @@ String? _resolveSoffice() {
       if (path.isNotEmpty) return path;
     }
   }
-  const mac =
-      '/Applications/LibreOffice.app/Contents/MacOS/soffice';
+  const mac = '/Applications/LibreOffice.app/Contents/MacOS/soffice';
   if (File(mac).existsSync()) return mac;
   return null;
 }

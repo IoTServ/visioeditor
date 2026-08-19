@@ -120,7 +120,8 @@ class VsdxWriter {
       return _rezip(originalBytes, patched, removed);
     }
 
-    final pagePartByIndex = _resolvePagePartsFrom(pagesXml, pagesPart, resolver);
+    final pagePartByIndex =
+        _resolvePagePartsFrom(pagesXml, pagesPart, resolver);
     final partByBaselineId = <int, String>{};
     for (var i = 0; i < baseline.pages.length; i++) {
       final part = pagePartByIndex[i];
@@ -538,7 +539,8 @@ class VsdxWriter {
   // --- pages.xml helpers -----------------------------------------------------
 
   bool _patchLayerRows(XmlElement pageEl, VsdxPage bp, VsdxPage ep) {
-    final pageSheet = _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
+    final pageSheet =
+        _firstChild(pageEl, 'PageSheet') ?? _ensurePageSheet(pageEl);
     XmlElement? section;
     for (final s in pageSheet.childElements) {
       if (s.name.local == 'Section' && s.getAttribute('N') == 'Layer') {
@@ -610,8 +612,7 @@ class VsdxWriter {
       } else {
         // Model has no colour — still scrub residual F=Inh or drop the cell.
         final colorCell = _findCell(row, 'Color');
-        if (colorCell != null &&
-            isInhFormula(colorCell.getAttribute('F'))) {
+        if (colorCell != null && isInhFormula(colorCell.getAttribute('F'))) {
           _removeNamedCells(row, const ['Color']);
           changed = true;
         }
@@ -628,8 +629,7 @@ class VsdxWriter {
       } else {
         // Model has no NameUniv — still scrub residual F=Inh (same as Color).
         final univCell = _findCell(row, 'NameUniv');
-        if (univCell != null &&
-            isInhFormula(univCell.getAttribute('F'))) {
+        if (univCell != null && isInhFormula(univCell.getAttribute('F'))) {
           _removeNamedCells(row, const ['NameUniv']);
           changed = true;
         }
@@ -639,8 +639,8 @@ class VsdxWriter {
         _fmt(write.colorTrans),
         (write.colorTrans - baseWrite.colorTrans).abs() > _epsilon,
       );
-      changed |= sync(
-          'Status', layer.status.toString(), layer.status != base.status);
+      changed |=
+          sync('Status', layer.status.toString(), layer.status != base.status);
     }
     // Drop Layer rows that no longer exist in the edited model (delete layer).
     final keep = <int>{for (final l in ep.layers) l.id};
@@ -715,11 +715,12 @@ class VsdxWriter {
       changed |= _patchPageSheetCells(sheet, bp.pageSheet, ep.pageSheet);
     }
     if (needView) {
-      changed |= _patchDoubleAttr(pageEl, 'ViewScale', bp.viewScale, ep.viewScale);
       changed |=
-          _patchDoubleAttr(pageEl, 'ViewCenterX', bp.viewCenterX, ep.viewCenterX);
-      changed |=
-          _patchDoubleAttr(pageEl, 'ViewCenterY', bp.viewCenterY, ep.viewCenterY);
+          _patchDoubleAttr(pageEl, 'ViewScale', bp.viewScale, ep.viewScale);
+      changed |= _patchDoubleAttr(
+          pageEl, 'ViewCenterX', bp.viewCenterX, ep.viewCenterX);
+      changed |= _patchDoubleAttr(
+          pageEl, 'ViewCenterY', bp.viewCenterY, ep.viewCenterY);
     }
     // Visio pages.xml: Background="1" marks a background page; BackPage="N"
     // references that page's ID from a foreground page (drawio "Background").
@@ -746,9 +747,7 @@ class VsdxWriter {
   bool _patchDoubleAttr(
       XmlElement el, String name, double? base, double? edited) {
     if (base == edited) return false;
-    if (base != null &&
-        edited != null &&
-        (base - edited).abs() <= _epsilon) {
+    if (base != null && edited != null && (base - edited).abs() <= _epsilon) {
       return false;
     }
     if (edited == null) {
@@ -768,13 +767,11 @@ class VsdxWriter {
       changed = true;
     }
     if (pageEl.getAttribute('ViewCenterX') == null) {
-      pageEl.setAttribute(
-          'ViewCenterX', _fmt(page.viewCenterX ?? center.$1));
+      pageEl.setAttribute('ViewCenterX', _fmt(page.viewCenterX ?? center.$1));
       changed = true;
     }
     if (pageEl.getAttribute('ViewCenterY') == null) {
-      pageEl.setAttribute(
-          'ViewCenterY', _fmt(page.viewCenterY ?? center.$2));
+      pageEl.setAttribute('ViewCenterY', _fmt(page.viewCenterY ?? center.$2));
       changed = true;
     }
     return changed;
@@ -826,8 +823,7 @@ class VsdxWriter {
     raw('PageScale', _fmt(base.pageScale), _fmt(edited.pageScale),
         baseUnit: base.pageScaleUnit, editedUnit: edited.pageScaleUnit);
     raw('DrawingScale', _fmt(base.drawingScale), _fmt(edited.drawingScale),
-        baseUnit: base.drawingScaleUnit,
-        editedUnit: edited.drawingScaleUnit);
+        baseUnit: base.drawingScaleUnit, editedUnit: edited.drawingScaleUnit);
     raw('DrawingSizeType', base.drawingSizeType.toString(),
         edited.drawingSizeType.toString());
     raw('DrawingScaleType', base.drawingScaleType.toString(),
@@ -880,30 +876,28 @@ class VsdxWriter {
       changed |= dropOptional('PageLineJumpDirY', null, base.lineJumpDirY);
     }
     if (edited.lineToLineXInches != null) {
-      len('LineToLineX', base.lineToLineXInches ?? 0, edited.lineToLineXInches!);
+      len('LineToLineX', base.lineToLineXInches ?? 0,
+          edited.lineToLineXInches!);
     } else {
-      changed |=
-          dropOptional('LineToLineX', null, base.lineToLineXInches);
+      changed |= dropOptional('LineToLineX', null, base.lineToLineXInches);
     }
     if (edited.lineToLineYInches != null) {
-      len('LineToLineY', base.lineToLineYInches ?? 0, edited.lineToLineYInches!);
+      len('LineToLineY', base.lineToLineYInches ?? 0,
+          edited.lineToLineYInches!);
     } else {
-      changed |=
-          dropOptional('LineToLineY', null, base.lineToLineYInches);
+      changed |= dropOptional('LineToLineY', null, base.lineToLineYInches);
     }
     if (edited.lineJumpFactorX != null) {
       raw('LineJumpFactorX', _fmt(base.lineJumpFactorX ?? -1),
           _fmt(edited.lineJumpFactorX!));
     } else {
-      changed |=
-          dropOptional('LineJumpFactorX', null, base.lineJumpFactorX);
+      changed |= dropOptional('LineJumpFactorX', null, base.lineJumpFactorX);
     }
     if (edited.lineJumpFactorY != null) {
       raw('LineJumpFactorY', _fmt(base.lineJumpFactorY ?? -1),
           _fmt(edited.lineJumpFactorY!));
     } else {
-      changed |=
-          dropOptional('LineJumpFactorY', null, base.lineJumpFactorY);
+      changed |= dropOptional('LineJumpFactorY', null, base.lineJumpFactorY);
     }
     len('PageLeftMargin', base.marginLeftInches, edited.marginLeftInches);
     len('PageRightMargin', base.marginRightInches, edited.marginRightInches);
@@ -915,15 +909,15 @@ class VsdxWriter {
       raw('VariationColorIndex', (base.variationColorIndex ?? -1).toString(),
           edited.variationColorIndex.toString());
     } else {
-      changed |= dropOptional(
-          'VariationColorIndex', null, base.variationColorIndex);
+      changed |=
+          dropOptional('VariationColorIndex', null, base.variationColorIndex);
     }
     if (edited.variationStyleIndex != null) {
       raw('VariationStyleIndex', (base.variationStyleIndex ?? -1).toString(),
           edited.variationStyleIndex.toString());
     } else {
-      changed |= dropOptional(
-          'VariationStyleIndex', null, base.variationStyleIndex);
+      changed |=
+          dropOptional('VariationStyleIndex', null, base.variationStyleIndex);
     }
     return changed;
   }
@@ -1065,7 +1059,8 @@ class VsdxWriter {
     return max;
   }
 
-  void _addPageRelationship(XmlDocument relsXml, String rId, String targetFile) {
+  void _addPageRelationship(
+      XmlDocument relsXml, String rId, String targetFile) {
     relsXml.rootElement.children.add(XmlElement(XmlName('Relationship'), [
       XmlAttribute(XmlName('Id'), rId),
       XmlAttribute(XmlName('Type'),
@@ -1077,8 +1072,7 @@ class VsdxWriter {
   void _addPageOverride(XmlDocument ctXml, String partName) {
     ctXml.rootElement.children.add(XmlElement(XmlName('Override'), [
       XmlAttribute(XmlName('PartName'), partName),
-      XmlAttribute(
-          XmlName('ContentType'), 'application/vnd.ms-visio.page+xml'),
+      XmlAttribute(XmlName('ContentType'), 'application/vnd.ms-visio.page+xml'),
     ]));
   }
 
@@ -1091,7 +1085,8 @@ class VsdxWriter {
       ..._pageSheetExtraCells(ep.pageSheet),
       if (ep.layers.isNotEmpty) _buildLayerSection(ep.layers),
     ];
-    final pageSheet = XmlElement(XmlName('PageSheet'), const [], pageSheetChildren);
+    final pageSheet =
+        XmlElement(XmlName('PageSheet'), const [], pageSheetChildren);
     final rel = XmlElement(
       XmlName('Rel'),
       <XmlAttribute>[XmlAttribute(XmlName('id', 'r'), rId)],
@@ -1151,7 +1146,8 @@ class VsdxWriter {
         XmlName('Section'),
         <XmlAttribute>[XmlAttribute(XmlName('N'), 'Layer')],
         [
-          for (final layer in layers) _buildLayerRow(layerForLibvisioWrite(layer)),
+          for (final layer in layers)
+            _buildLayerRow(layerForLibvisioWrite(layer)),
         ],
       );
 
@@ -1281,8 +1277,7 @@ class VsdxWriter {
       if (s.hasImage) {
         final isNew = !baseParent.containsKey(s.id);
         final reparented = !isNew && baseParent[s.id] != parent;
-        final partChanged =
-            !isNew && baseImagePart[s.id] != s.imagePartName;
+        final partChanged = !isNew && baseImagePart[s.id] != s.imagePartName;
         if (isNew || reparented || partChanged) out.add(s);
       }
       for (final c in s.children) {
@@ -1414,7 +1409,8 @@ class VsdxWriter {
   static String _mediaTargetFrom(String pagePart, String mediaPart) {
     final media = _noSlash(mediaPart);
     final page = _noSlash(pagePart);
-    final pageDir = page.contains('/') ? page.substring(0, page.lastIndexOf('/')) : '';
+    final pageDir =
+        page.contains('/') ? page.substring(0, page.lastIndexOf('/')) : '';
     // Both live under visio/; the page sits one folder deeper (visio/pages),
     // so a single `..` hop reaches visio/ then down into media/.
     if (pageDir == 'visio/pages' && media.startsWith('visio/media/')) {
@@ -1467,8 +1463,7 @@ class VsdxWriter {
       utf8.encode(ThemeSerializer.emit(edited, name: name)),
     );
 
-    if (ctXml != null &&
-        _ensureThemeOverride(ctXml, '/$_defaultThemePart')) {
+    if (ctXml != null && _ensureThemeOverride(ctXml, '/$_defaultThemePart')) {
       markCtDirty();
     }
 
@@ -1533,7 +1528,8 @@ class VsdxWriter {
         return false; // already covered
       }
     }
-    final mime = mimeType.isNotEmpty ? mimeType : VsdxImage.mimeForExtension(ext);
+    final mime =
+        mimeType.isNotEmpty ? mimeType : VsdxImage.mimeForExtension(ext);
     if (mime.isEmpty) return false;
     ctXml.rootElement.children.insert(
       0,
@@ -1594,8 +1590,7 @@ class VsdxWriter {
   /// don't render as tofu (□□) in 万兴图示.
   static const String _defaultAsianFont = 'Microsoft YaHei';
 
-  static const String _minimalStylesXml =
-      '<FaceNames>'
+  static const String _minimalStylesXml = '<FaceNames>'
       '<FaceName NameU="Arial" UnicodeRanges="-459292017 -1073730379 9 0" CharSets="1610612799 0" Panose="2 11 6 4 2 2 2 2 2 4" Flags="325"/>'
       '<FaceName NameU="Calibri" UnicodeRanges="-469750017 -1073732485 9 0" CharSets="536871423 0" Panose="2 15 5 2 2 2 4 3 2 4" Flags="325"/>'
       '<FaceName NameU="Microsoft YaHei" UnicodeRanges="-2147483648 0 0 0" CharSets="262145 0" Panose="2 11 5 3 2 2 2 2 2 4" Flags="325"/>'
@@ -1655,7 +1650,8 @@ class VsdxWriter {
       if (c.name.local == 'FaceNames') hasFaces = true;
     }
     if (hasSheets && hasFaces) return false;
-    final wrap = XmlDocument.parse('<Wrap>$_minimalStylesXml</Wrap>').rootElement;
+    final wrap =
+        XmlDocument.parse('<Wrap>$_minimalStylesXml</Wrap>').rootElement;
     if (!hasFaces) {
       for (final n in wrap.childElements) {
         if (n.name.local == 'FaceNames') {
@@ -1695,8 +1691,7 @@ class VsdxWriter {
     }
     final hasInh = settings != null &&
         settings.childElements.any(
-          (e) =>
-              e.name.local == 'Cell' && isInhFormula(e.getAttribute('F')),
+          (e) => e.name.local == 'Cell' && isInhFormula(e.getAttribute('F')),
         );
     final need = base != edited || hasInh;
     if (!need) return false;
@@ -1738,8 +1733,7 @@ class VsdxWriter {
     if (edited.defaultPageBackgroundColor != null) {
       final want = _hex(edited.defaultPageBackgroundColor!);
       final c = _ensureCell(sheet, 'PageColor');
-      if (c.getAttribute('V') != want ||
-          isInhFormula(c.getAttribute('F'))) {
+      if (c.getAttribute('V') != want || isInhFormula(c.getAttribute('F'))) {
         _writeValue(c, want);
         changed = true;
       }
@@ -1751,14 +1745,11 @@ class VsdxWriter {
       }
     }
 
+    changed |= _ensureLiteralInt(sheet, 'GlueType', edited.glueType);
     changed |=
-        _ensureLiteralInt(sheet, 'GlueType', edited.glueType);
-    changed |= _ensureLiteralInt(
-        sheet, 'SnapEnabled', edited.snapEnabled ? 1 : 0);
-    changed |=
-        _ensureLiteralInt(sheet, 'GridDensityX', edited.gridDensityX);
-    changed |=
-        _ensureLiteralInt(sheet, 'GridDensityY', edited.gridDensityY);
+        _ensureLiteralInt(sheet, 'SnapEnabled', edited.snapEnabled ? 1 : 0);
+    changed |= _ensureLiteralInt(sheet, 'GridDensityX', edited.gridDensityX);
+    changed |= _ensureLiteralInt(sheet, 'GridDensityY', edited.gridDensityY);
     return changed;
   }
 
@@ -1782,19 +1773,18 @@ class VsdxWriter {
     String? template,
   }) {
     const decl = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>';
-    final creatorXml = VsdxWriter._xmlEscape(creator ?? 'Editor for Visio Diagrams');
+    final creatorXml =
+        VsdxWriter._xmlEscape(creator ?? 'Editor for Visio Diagrams');
     final titleXml = (title != null && title.isNotEmpty)
         ? '<dc:title>${VsdxWriter._xmlEscape(title)}</dc:title>'
         : '';
-    String core(String tag, String? value) =>
-        value == null || value.isEmpty
-            ? ''
-            : '<$tag>${VsdxWriter._xmlEscape(value)}</$tag>';
-    String date(String tag, String? value) =>
-        value == null || value.isEmpty
-            ? ''
-            : '<dcterms:$tag xsi:type="dcterms:W3CDTF">'
-                '${VsdxWriter._xmlEscape(value)}</dcterms:$tag>';
+    String core(String tag, String? value) => value == null || value.isEmpty
+        ? ''
+        : '<$tag>${VsdxWriter._xmlEscape(value)}</$tag>';
+    String date(String tag, String? value) => value == null || value.isEmpty
+        ? ''
+        : '<dcterms:$tag xsi:type="dcterms:W3CDTF">'
+            '${VsdxWriter._xmlEscape(value)}</dcterms:$tag>';
     final parts = <String, String>{
       '[Content_Types].xml': '$decl\n'
           '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
@@ -2505,8 +2495,8 @@ class VsdxWriter {
     }
     if (!_listEqual(a.fillStyleColors, b.fillStyleColors)) return false;
     for (var i = 0; i < a.variationFillStyleIndices.length; i++) {
-      if (!_listEqual(a.variationFillStyleIndices[i],
-          b.variationFillStyleIndices[i])) {
+      if (!_listEqual(
+          a.variationFillStyleIndices[i], b.variationFillStyleIndices[i])) {
         return false;
       }
     }
@@ -2704,7 +2694,8 @@ class VsdxWriter {
       if (preserveUnchangedPackage ||
           (!_shapeNeedsLibvisioGeometryRewrite(edited) &&
               !shapeNeedsLibvisioTextBlockBake(edited) &&
-              !shapeNeedsLibvisioFontBake(edited))) {
+              !shapeNeedsLibvisioFontBake(edited) &&
+              !shapeNeedsLibvisioGlowBake(edited))) {
         return false;
       }
     }
@@ -2714,8 +2705,8 @@ class VsdxWriter {
     // For connectors (ObjType=2), Width/Height are End−Begin (may be signed).
     // Preserve / restore those formulas after the numeric V= patch so 万兴图示
     // keeps the Visio 1-D convention instead of treating size as an AABB.
-    final connectorXForm = edited.is1D &&
-        (edited.objType == null || edited.objType == 2);
+    final connectorXForm =
+        edited.is1D && (edited.objType == null || edited.objType == 2);
     changed |= _patchLength(
       el,
       'Width',
@@ -2743,16 +2734,16 @@ class VsdxWriter {
       'LocPinX',
       base.effectiveLocPinX,
       edited.effectiveLocPinX,
-      preserveFormula: _sameRatio(
-          base.effectiveLocPinX, base.width, edited.effectiveLocPinX, edited.width),
+      preserveFormula: _sameRatio(base.effectiveLocPinX, base.width,
+          edited.effectiveLocPinX, edited.width),
     );
     changed |= _patchLength(
       el,
       'LocPinY',
       base.effectiveLocPinY,
       edited.effectiveLocPinY,
-      preserveFormula: _sameRatio(
-          base.effectiveLocPinY, base.height, edited.effectiveLocPinY, edited.height),
+      preserveFormula: _sameRatio(base.effectiveLocPinY, base.height,
+          edited.effectiveLocPinY, edited.height),
     );
     // Older exports omitted LocPin; Edraw then pins at (0,0). Back-fill on save.
     changed |= _ensureLocPinPresent(el, edited);
@@ -2768,8 +2759,7 @@ class VsdxWriter {
     if (_nonInhFormula(edited.formulas['Angle']) == null) {
       changed |= _ensureLiteralLength(el, 'Angle', edited.angleRad);
     } else {
-      changed |=
-          _syncCellFormulaAttr(el, 'Angle', edited.formulas['Angle']);
+      changed |= _syncCellFormulaAttr(el, 'Angle', edited.formulas['Angle']);
     }
     // Honour the *edited* model for Begin/End F= — baseline XML PAR(PNT…)
     // must not survive after glue detach / reconnect cleared those formulas.
@@ -2790,7 +2780,9 @@ class VsdxWriter {
       } else {
         final c = _findCell(el, name);
         final raw = (c?.getAttribute('F') ?? '').trim().toUpperCase();
-        if (raw == 'INH' || raw.startsWith('INH(') || edited.formulas[name] != null) {
+        if (raw == 'INH' ||
+            raw.startsWith('INH(') ||
+            edited.formulas[name] != null) {
           changed |= _clearCellFormulaAttr(el, name);
         }
       }
@@ -2905,12 +2897,12 @@ class VsdxWriter {
         editedTheme: editedWrite.fill.themeBackgroundIndex,
         writeQuickStyle: editedWrite.fill.themeForegroundIndex == null,
         themeValFormula: () {
-          final bg = editedWrite.fill.themeBackgroundIndex;
-          final fg = editedWrite.fill.themeForegroundIndex;
-          if (bg == null || fg == null || fg == bg) return null;
-          final name = ThemeSlot.themeValName(bg);
-          return name == null ? null : 'THEMEVAL("$name")';
-        }());
+      final bg = editedWrite.fill.themeBackgroundIndex;
+      final fg = editedWrite.fill.themeForegroundIndex;
+      if (bg == null || fg == null || fg == bg) return null;
+      final name = ThemeSlot.themeValName(bg);
+      return name == null ? null : 'THEMEVAL("$name")';
+    }());
     changed |= _patchInt(
         el,
         'FillPattern',
@@ -2936,11 +2928,15 @@ class VsdxWriter {
     changed |= _patchInt(
         el, 'LinePattern', baseWrite.line.pattern, editedWrite.line.pattern);
     changed |= _ensureLiteralInt(el, 'LinePattern', editedWrite.line.pattern);
-    changed |= _patchInt(el, 'LineCap', _lineCapInt(baseWrite.line.cap), _lineCapInt(editedWrite.line.cap));
-    changed |= _ensureLiteralInt(el, 'LineCap', _lineCapInt(editedWrite.line.cap));
-    changed |= _patchInt(el, 'BeginArrow', baseWrite.line.beginArrow, editedWrite.line.beginArrow);
+    changed |= _patchInt(el, 'LineCap', _lineCapInt(baseWrite.line.cap),
+        _lineCapInt(editedWrite.line.cap));
+    changed |=
+        _ensureLiteralInt(el, 'LineCap', _lineCapInt(editedWrite.line.cap));
+    changed |= _patchInt(el, 'BeginArrow', baseWrite.line.beginArrow,
+        editedWrite.line.beginArrow);
     changed |= _ensureLiteralInt(el, 'BeginArrow', editedWrite.line.beginArrow);
-    changed |= _patchInt(el, 'EndArrow', baseWrite.line.endArrow, editedWrite.line.endArrow);
+    changed |= _patchInt(
+        el, 'EndArrow', baseWrite.line.endArrow, editedWrite.line.endArrow);
     changed |= _ensureLiteralInt(el, 'EndArrow', editedWrite.line.endArrow);
     changed |= _patchInt(
         el,
@@ -2955,41 +2951,44 @@ class VsdxWriter {
     // Arrow sizes: scrub Inh whether the arrow is on or off (StyleSheet can
     // still revive size companions when Begin/EndArrow is literal 0).
     // Use ensure (not force) so a missing cell is injected from the model.
-    changed |= _ensureLiteralInt(
-        el,
-        'BeginArrowSize',
+    changed |= _ensureLiteralInt(el, 'BeginArrowSize',
         _arrowSizeToBucket(edited.line.beginArrowSizeInches));
     changed |= _ensureLiteralInt(
+        el, 'EndArrowSize', _arrowSizeToBucket(edited.line.endArrowSizeInches));
+    changed |= _patchRatio(
         el,
-        'EndArrowSize',
-        _arrowSizeToBucket(edited.line.endArrowSizeInches));
-    changed |= _patchRatio(el, 'FillForegndTrans',
-        baseWrite.fill.foregroundTransparency, editedWrite.fill.foregroundTransparency);
+        'FillForegndTrans',
+        baseWrite.fill.foregroundTransparency,
+        editedWrite.fill.foregroundTransparency);
     changed |= _ensureLiteralLength(
         el, 'FillForegndTrans', editedWrite.fill.foregroundTransparency);
-    changed |= _patchRatio(el, 'FillBkgndTrans',
-        baseWrite.fill.backgroundTransparency, editedWrite.fill.backgroundTransparency);
+    changed |= _patchRatio(
+        el,
+        'FillBkgndTrans',
+        baseWrite.fill.backgroundTransparency,
+        editedWrite.fill.backgroundTransparency);
     changed |= _ensureLiteralLength(
         el, 'FillBkgndTrans', editedWrite.fill.backgroundTransparency);
-    changed |= _patchRatio(
-        el, 'LineColorTrans', baseWrite.line.transparency, editedWrite.line.transparency);
-    changed |=
-        _ensureLiteralLength(el, 'LineColorTrans', editedWrite.line.transparency);
-    changed |= _patchLength(
-        el, 'Rounding', baseWrite.line.roundingInches, editedWrite.line.roundingInches);
+    changed |= _patchRatio(el, 'LineColorTrans', baseWrite.line.transparency,
+        editedWrite.line.transparency);
+    changed |= _ensureLiteralLength(
+        el, 'LineColorTrans', editedWrite.line.transparency);
+    changed |= _patchLength(el, 'Rounding', baseWrite.line.roundingInches,
+        editedWrite.line.roundingInches);
     // Ensure missing SoftEdges/Rounding/CompoundType cells (rebuild always
     // emits them; StyleSheet can revive 0 defaults when cells are absent).
     changed |=
         _ensureLiteralLength(el, 'Rounding', editedWrite.line.roundingInches);
-    changed |= _patchLength(
-        el, 'SoftEdgesSize', base.line.softEdgesInches, edited.line.softEdgesInches);
+    changed |= _patchLength(el, 'SoftEdgesSize', base.line.softEdgesInches,
+        edited.line.softEdgesInches);
     changed |=
         _ensureLiteralLength(el, 'SoftEdgesSize', edited.line.softEdgesInches);
     changed |= _patchInt(el, 'CompoundType', baseWrite.line.compoundType,
         editedWrite.line.compoundType);
     changed |=
         _ensureLiteralInt(el, 'CompoundType', editedWrite.line.compoundType);
-    changed |= _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
+    changed |=
+        _patchLayerMember(el, base.layerMemberIds, edited.layerMemberIds);
     // Text block transform (TxtPin / TxtWidth / TxtAngle / margins) +
     // HideText / TextBkgnd + drop shadow / glow / reflection.
     changed |= _patchTextBlock(
@@ -3004,7 +3003,7 @@ class VsdxWriter {
       shadowForLibvisioWrite(base.shadow),
       shadowWrite,
     );
-    changed |= _patchGlow(el, base.glow, edited.glow);
+    changed |= _patchGlow(el, base.glow, glowForLibvisioWrite(edited));
     changed |= _patchReflection(el, base.reflection, edited.reflection);
     // Effects: force literal cell values without F= so StyleSheet Inh cannot
     // override enable bits / companions whether the effect is on or off
@@ -3024,14 +3023,13 @@ class VsdxWriter {
       // Shadow still on — drop F=Inh on pattern so inheritance cannot clear it.
       changed |=
           _ensureLiteralInt(el, 'ShadowPattern', edited.shadow.xmlPattern);
-      changed |=
-          _ensureLiteralInt(el, 'ShdwPattern', edited.shadow.xmlPattern);
+      changed |= _ensureLiteralInt(el, 'ShdwPattern', edited.shadow.xmlPattern);
     }
     // Keep companion V= (re-enable), scrub F=Inh on or off.
-    changed |= _ensureLiteralLength(
-        el, 'ShadowOffsetX', edited.shadow.offsetXInches);
-    changed |= _ensureLiteralLength(
-        el, 'ShadowOffsetY', edited.shadow.offsetYInches);
+    changed |=
+        _ensureLiteralLength(el, 'ShadowOffsetX', edited.shadow.offsetXInches);
+    changed |=
+        _ensureLiteralLength(el, 'ShadowOffsetY', edited.shadow.offsetYInches);
     // LibreOffice/libvisio consumes the canonical ShapeSheet spellings.
     // Keep the newer aliases too, but never emit one without its interoperable
     // companion.
@@ -3039,19 +3037,17 @@ class VsdxWriter {
         el, 'ShapeShdwOffsetX', edited.shadow.offsetXInches);
     changed |= _ensureLiteralLength(
         el, 'ShapeShdwOffsetY', edited.shadow.offsetYInches);
-    changed |=
-        _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
+    changed |= _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
     changed |= _ensureLiteralLength(
         el, 'ShadowForegndTrans', shadowWrite.transparency);
-    changed |= _ensureLiteralLength(
-        el, 'ShdwForegndTrans', shadowWrite.transparency);
+    changed |=
+        _ensureLiteralLength(el, 'ShdwForegndTrans', shadowWrite.transparency);
     // Colour companions: scrub F=Inh even when the effect model is unchanged
     // (Trans/Size already scrubbed above; colour was previously skipped).
     // Unbound (null color + null theme): drop residual cells / Inh so a
     // stylesheet cannot revive ShadowForegnd on reopen (rebuild omits them).
     if (shadowWrite.color != null) {
-      changed |=
-          _forceLiteralColor(el, 'ShadowForegnd', shadowWrite.color!);
+      changed |= _forceLiteralColor(el, 'ShadowForegnd', shadowWrite.color!);
       changed |= _forceLiteralColor(el, 'ShdwForegnd', shadowWrite.color!);
     } else if (shadowWrite.themeColorIndex != null) {
       // Theme-bound: rewrite THEMEVAL if F=Inh (solid path uses forceLiteral).
@@ -3080,25 +3076,25 @@ class VsdxWriter {
         'QuickStyleShadowColor',
       ]);
     }
-    if (!edited.glow.enabled) {
+    final glowWrite = glowForLibvisioWrite(edited);
+    if (!glowWrite.enabled) {
       changed |= _forceLiteralZeroLength(el, 'GlowSize');
     } else {
-      changed |=
-          _ensureLiteralLength(el, 'GlowSize', edited.glow.sizeInches);
+      changed |= _ensureLiteralLength(el, 'GlowSize', glowWrite.sizeInches);
     }
     changed |=
-        _ensureLiteralLength(el, 'GlowColorTrans', edited.glow.transparency);
-    if (edited.glow.color != null) {
-      changed |= _forceLiteralColor(el, 'GlowColor', edited.glow.color!);
-    } else if (edited.glow.themeColorIndex != null) {
+        _ensureLiteralLength(el, 'GlowColorTrans', glowWrite.transparency);
+    if (glowWrite.color != null) {
+      changed |= _forceLiteralColor(el, 'GlowColor', glowWrite.color!);
+    } else if (glowWrite.themeColorIndex != null) {
       changed |= _patchColorOrTheme(
         el,
         'GlowColor',
         'QuickStyleEffectColor',
         baseColor: null,
-        baseTheme: edited.glow.themeColorIndex,
+        baseTheme: glowWrite.themeColorIndex,
         editedColor: null,
-        editedTheme: edited.glow.themeColorIndex,
+        editedTheme: glowWrite.themeColorIndex,
       );
     } else {
       changed |= _patchColorOrTheme(
@@ -3170,8 +3166,8 @@ class VsdxWriter {
     changed |= _patchConnectorProps(el, base, edited);
     // ShapeSheet inheritance attrs (MasterShape / LineStyle / FillStyle / TextStyle).
     changed |= _patchIntAttr(el, 'Master', base.masterId, edited.masterId);
-    changed |=
-        _patchIntAttr(el, 'MasterShape', base.masterShapeId, edited.masterShapeId);
+    changed |= _patchIntAttr(
+        el, 'MasterShape', base.masterShapeId, edited.masterShapeId);
     changed |=
         _patchIntAttr(el, 'LineStyle', base.lineStyleId, edited.lineStyleId);
     changed |=
@@ -3381,13 +3377,13 @@ class VsdxWriter {
   Set<String> _staleThemeFormulaKeys(VsdxShape s) {
     final out = <String>{};
     bool isThemeVal(String? f) =>
-        f != null &&
-        RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(f);
+        f != null && RegExp(r'THEMEVAL\s*\(', caseSensitive: false).hasMatch(f);
     bool isInh(String? f) {
       if (f == null) return false;
       final u = f.trim().toUpperCase();
       return u == 'INH' || u.startsWith('INH(');
     }
+
     if ((isThemeVal(s.formulas['FillForegnd']) &&
             (s.fill.foreground != null ||
                 s.fill.themeForegroundIndex == null)) ||
@@ -3475,10 +3471,10 @@ class VsdxWriter {
     changed |= _dropOptionalConnectorInt(el, 'ConFixedCode', e?.conFixedCode);
     changed |= _dropOptionalConnectorInt(el, 'DynFeedback', e?.dynFeedback);
     if (e != null) {
-      changed |= _patchBool(el, 'NoLiveDynamics', b?.noLiveDynamics ?? false,
-          e.noLiveDynamics);
-      changed |= _forceLiteralInt(
-          el, 'NoLiveDynamics', e.noLiveDynamics ? 1 : 0);
+      changed |= _patchBool(
+          el, 'NoLiveDynamics', b?.noLiveDynamics ?? false, e.noLiveDynamics);
+      changed |=
+          _forceLiteralInt(el, 'NoLiveDynamics', e.noLiveDynamics ? 1 : 0);
     }
     changed |=
         _dropOptionalConnectorInt(el, 'ConLineJumpCode', e?.conLineJumpCode);
@@ -3557,9 +3553,8 @@ class VsdxWriter {
     for (var i = 0; i < edited.connectionPoints.length; i++) {
       final p = edited.connectionPoints[i];
       if (i < rows.length) {
-        final old = i < base.connectionPoints.length
-            ? base.connectionPoints[i]
-            : null;
+        final old =
+            i < base.connectionPoints.length ? base.connectionPoints[i] : null;
         final xCell = _ensureCell(rows[i], 'X');
         final yCell = _ensureCell(rows[i], 'Y');
         final keepX = old != null &&
@@ -3630,12 +3625,14 @@ class VsdxWriter {
     final rows =
         section.childElements.where((r) => r.name.local == 'Row').toList();
     var changed = false;
-    for (var i = 0; i < edited.connectionPoints.length && i < rows.length; i++) {
+    for (var i = 0;
+        i < edited.connectionPoints.length && i < rows.length;
+        i++) {
       final p = edited.connectionPoints[i];
-      changed |= _scrubFormulaOrLiteral(
-          rows[i], 'X', _fmt(p.x), formula: p.xFormula);
-      changed |= _scrubFormulaOrLiteral(
-          rows[i], 'Y', _fmt(p.y), formula: p.yFormula);
+      changed |=
+          _scrubFormulaOrLiteral(rows[i], 'X', _fmt(p.x), formula: p.xFormula);
+      changed |=
+          _scrubFormulaOrLiteral(rows[i], 'Y', _fmt(p.y), formula: p.yFormula);
       final dirXCell = _ensureCell(rows[i], 'DirX');
       final dirYCell = _ensureCell(rows[i], 'DirY');
       changed |= _writeValueIfNeeded(dirXCell, _fmt(p.dirX));
@@ -3725,8 +3722,7 @@ class VsdxWriter {
 
     final rowByName = <String, XmlElement>{};
     for (final row in _rowsOf(section)) {
-      final n =
-          row.getAttribute('N') ?? 'Row${row.getAttribute('IX') ?? ''}';
+      final n = row.getAttribute('N') ?? 'Row${row.getAttribute('IX') ?? ''}';
       rowByName[n] = row;
     }
     final editedNames = <String>{for (final p in edited.userProperties) p.name};
@@ -3764,8 +3760,7 @@ class VsdxWriter {
         _writeValue(_ensureCell(row, 'Format'), p.format!,
             preserveFormula: p.formatFormula != null);
       } else if (p.formatFormula != null) {
-        _writeValue(_ensureCell(row, 'Format'), '',
-            preserveFormula: true);
+        _writeValue(_ensureCell(row, 'Format'), '', preserveFormula: true);
       } else {
         _removeNamedCells(row, const ['Format']);
       }
@@ -3922,28 +3917,28 @@ class VsdxWriter {
     for (final r in edited.controls) {
       final row = rowByName[r.name];
       if (row == null) continue;
-      changed |= _scrubFormulaOrLiteral(
-          row, 'X', _fmt(r.x), formula: r.xFormula);
-      changed |= _scrubFormulaOrLiteral(
-          row, 'Y', _fmt(r.y), formula: r.yFormula);
+      changed |=
+          _scrubFormulaOrLiteral(row, 'X', _fmt(r.x), formula: r.xFormula);
+      changed |=
+          _scrubFormulaOrLiteral(row, 'Y', _fmt(r.y), formula: r.yFormula);
       if (r.useVisioDynNames) {
-        changed |= _scrubFormulaOrLiteral(
-            row, 'XDyn', _fmt(r.dynX), formula: r.dynXFormula);
-        changed |= _scrubFormulaOrLiteral(
-            row, 'YDyn', _fmt(r.dynY), formula: r.dynYFormula);
-        changed |= _scrubFormulaOrLiteral(
-            row, 'XCon', _fmt(r.conX), formula: r.conXFormula);
-        changed |= _scrubFormulaOrLiteral(
-            row, 'YCon', _fmt(r.conY), formula: r.conYFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'XDyn', _fmt(r.dynX),
+            formula: r.dynXFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'YDyn', _fmt(r.dynY),
+            formula: r.dynYFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'XCon', _fmt(r.conX),
+            formula: r.conXFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'YCon', _fmt(r.conY),
+            formula: r.conYFormula);
       } else {
-        changed |= _scrubFormulaOrLiteral(
-            row, 'DynX', _fmt(r.dynX), formula: r.dynXFormula);
-        changed |= _scrubFormulaOrLiteral(
-            row, 'DynY', _fmt(r.dynY), formula: r.dynYFormula);
-        changed |= _scrubFormulaOrLiteral(
-            row, 'ConX', _fmt(r.conX), formula: r.conXFormula);
-        changed |= _scrubFormulaOrLiteral(
-            row, 'ConY', _fmt(r.conY), formula: r.conYFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'DynX', _fmt(r.dynX),
+            formula: r.dynXFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'DynY', _fmt(r.dynY),
+            formula: r.dynYFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'ConX', _fmt(r.conX),
+            formula: r.conXFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'ConY', _fmt(r.conY),
+            formula: r.conYFormula);
       }
       changed |= _writeValueIfNeeded(
           _ensureCell(row, 'CanGlue'), r.canGlue ? '1' : '0');
@@ -3997,21 +3992,21 @@ class VsdxWriter {
     for (final r in edited.scratch) {
       final row = rowByIx[r.ix];
       if (row == null) continue;
-      changed |= _scrubFormulaOrLiteral(
-          row, 'X', _fmt(r.x), formula: r.xFormula);
-      changed |= _scrubFormulaOrLiteral(
-          row, 'Y', _fmt(r.y), formula: r.yFormula);
-      changed |= _scrubFormulaOrLiteral(
-          row, 'A', _fmt(r.a), formula: r.aFormula);
-      changed |= _scrubFormulaOrLiteral(
-          row, 'B', _fmt(r.b), formula: r.bFormula);
+      changed |=
+          _scrubFormulaOrLiteral(row, 'X', _fmt(r.x), formula: r.xFormula);
+      changed |=
+          _scrubFormulaOrLiteral(row, 'Y', _fmt(r.y), formula: r.yFormula);
+      changed |=
+          _scrubFormulaOrLiteral(row, 'A', _fmt(r.a), formula: r.aFormula);
+      changed |=
+          _scrubFormulaOrLiteral(row, 'B', _fmt(r.b), formula: r.bFormula);
       if (r.c != 0 || r.cFormula != null || _findCell(row, 'C') != null) {
-        changed |= _scrubFormulaOrLiteral(
-            row, 'C', _fmt(r.c), formula: r.cFormula);
+        changed |=
+            _scrubFormulaOrLiteral(row, 'C', _fmt(r.c), formula: r.cFormula);
       }
       if (r.d != 0 || r.dFormula != null || _findCell(row, 'D') != null) {
-        changed |= _scrubFormulaOrLiteral(
-            row, 'D', _fmt(r.d), formula: r.dFormula);
+        changed |=
+            _scrubFormulaOrLiteral(row, 'D', _fmt(r.d), formula: r.dFormula);
       }
     }
     return changed;
@@ -4058,10 +4053,10 @@ class VsdxWriter {
     for (final r in edited.fields) {
       final row = rowByIx[r.ix];
       if (row == null) continue;
-      changed |= _scrubFormulaOrLiteral(
-          row, 'Value', r.value ?? '', formula: r.valueFormula);
-      changed |= _scrubFormulaOrLiteral(
-          row, 'Format', r.format ?? '', formula: r.formatFormula);
+      changed |= _scrubFormulaOrLiteral(row, 'Value', r.value ?? '',
+          formula: r.valueFormula);
+      changed |= _scrubFormulaOrLiteral(row, 'Format', r.format ?? '',
+          formula: r.formatFormula);
       changed |=
           _writeValueIfNeeded(_ensureCell(row, 'Type'), r.type.toString());
       if (r.uiCat != null) {
@@ -4248,16 +4243,14 @@ class VsdxWriter {
     if (section == null) return false;
     final rowByName = <String, XmlElement>{};
     for (final row in _rowsOf(section)) {
-      final n =
-          row.getAttribute('N') ?? 'Row${row.getAttribute('IX') ?? ''}';
+      final n = row.getAttribute('N') ?? 'Row${row.getAttribute('IX') ?? ''}';
       rowByName[n] = row;
     }
     var changed = false;
     for (final p in edited.userProperties) {
       final row = rowByName[p.name];
       if (row == null) continue;
-      changed |= _writeValueIfNeeded(
-          _ensureCell(row, 'Value'), p.value ?? '');
+      changed |= _writeValueIfNeeded(_ensureCell(row, 'Value'), p.value ?? '');
       if (p.valueFormula != null) {
         final cell = _ensureCell(row, 'Value');
         final f = _nonInhFormula(p.valueFormula);
@@ -4283,14 +4276,13 @@ class VsdxWriter {
         changed |= _removeInhOrDrop(row, 'Prompt');
       }
       if (p.format != null || p.formatFormula != null) {
-        changed |= _scrubFormulaOrLiteral(
-            row, 'Format', p.format ?? '', formula: p.formatFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'Format', p.format ?? '',
+            formula: p.formatFormula);
       } else {
         changed |= _removeInhOrDrop(row, 'Format');
       }
       if (p.sortKey != null) {
-        changed |=
-            _writeValueIfNeeded(_ensureCell(row, 'SortKey'), p.sortKey!);
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'SortKey'), p.sortKey!);
       } else {
         changed |= _removeInhOrDrop(row, 'SortKey');
       }
@@ -4339,8 +4331,7 @@ class VsdxWriter {
     for (final c in edited.userCells) {
       final row = rowByName[c.name];
       if (row == null) continue;
-      changed |=
-          _writeValueIfNeeded(_ensureCell(row, 'Value'), c.value ?? '');
+      changed |= _writeValueIfNeeded(_ensureCell(row, 'Value'), c.value ?? '');
       if (c.valueFormula != null) {
         final cell = _ensureCell(row, 'Value');
         final f = _nonInhFormula(c.valueFormula);
@@ -4401,8 +4392,8 @@ class VsdxWriter {
       changed |= _writeValueIfNeeded(
           _ensureCell(row, 'SubAddress'), h.subAddress ?? '');
       if (h.description != null) {
-        changed |=
-            _writeValueIfNeeded(_ensureCell(row, 'Description'), h.description!);
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Description'), h.description!);
       } else {
         changed |= _removeInhOrDrop(row, 'Description');
       }
@@ -4418,8 +4409,7 @@ class VsdxWriter {
         changed |= _removeInhOrDrop(row, 'Frame');
       }
       if (h.sortKey != null) {
-        changed |=
-            _writeValueIfNeeded(_ensureCell(row, 'SortKey'), h.sortKey!);
+        changed |= _writeValueIfNeeded(_ensureCell(row, 'SortKey'), h.sortKey!);
       } else {
         changed |= _removeInhOrDrop(row, 'SortKey');
       }
@@ -4481,8 +4471,8 @@ class VsdxWriter {
         changed |= _removeInhOrDrop(row, 'Menu');
       }
       if (r.action != null || r.actionFormula != null) {
-        changed |= _scrubFormulaOrLiteral(
-            row, 'Action', r.action ?? '0', formula: r.actionFormula);
+        changed |= _scrubFormulaOrLiteral(row, 'Action', r.action ?? '0',
+            formula: r.actionFormula);
       } else {
         changed |= _removeInhOrDrop(row, 'Action');
       }
@@ -4580,8 +4570,10 @@ class VsdxWriter {
     }
     if (charSection == null && paraSection == null) return false;
     var changed = false;
-    final charRows = charSection == null ? const <XmlElement>[] : _rowsOf(charSection);
-    final paraRows = paraSection == null ? const <XmlElement>[] : _rowsOf(paraSection);
+    final charRows =
+        charSection == null ? const <XmlElement>[] : _rowsOf(charSection);
+    final paraRows =
+        paraSection == null ? const <XmlElement>[] : _rowsOf(paraSection);
     for (var i = 0; i < runs.length; i++) {
       if (i < charRows.length) {
         changed |= _scrubCharRowInh(
@@ -4650,8 +4642,7 @@ class VsdxWriter {
         _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
     changed |=
         _writeValueIfNeeded(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
-    changed |= _writeValueIfNeeded(
-        _ensureCell(row, 'ColorTrans'),
+    changed |= _writeValueIfNeeded(_ensureCell(row, 'ColorTrans'),
         _fmt(charTransparencyForLibvisioWrite(c)));
     if (c.langId != null && c.langId!.isNotEmpty) {
       changed |= _writeValueIfNeeded(_ensureCell(row, 'LangID'), c.langId!);
@@ -4717,11 +4708,10 @@ class VsdxWriter {
     } else {
       changed |= _removeInhOrDrop(row, 'BulletFontSize');
     }
-    changed |= _writeValueIfNeeded(
-        _ensureCell(row, 'TextPosAfterBullet'),
+    changed |= _writeValueIfNeeded(_ensureCell(row, 'TextPosAfterBullet'),
         _fmt(p.textPosAfterBulletInches));
-    changed |= _writeValueIfNeeded(
-        _ensureCell(row, 'Flags'), p.flags.toString());
+    changed |=
+        _writeValueIfNeeded(_ensureCell(row, 'Flags'), p.flags.toString());
     return changed;
   }
 
@@ -4796,8 +4786,8 @@ class VsdxWriter {
         // Visio PositionN / AlignmentN are 1-based. Always scrub to that
         // scheme so a Position0+Position1 pair cannot parse as two stops.
         final n1 = i + 1;
-        changed |= _writeValueIfNeeded(_ensureCell(row, 'Position$n1'),
-            _fmt(set.stops[i].positionInches));
+        changed |= _writeValueIfNeeded(
+            _ensureCell(row, 'Position$n1'), _fmt(set.stops[i].positionInches));
         changed |= _writeValueIfNeeded(_ensureCell(row, 'Alignment$n1'),
             set.stops[i].alignment.toString());
       }
@@ -4847,18 +4837,17 @@ class VsdxWriter {
     _writeValue(_ensureCell(row, 'Strikethru'), c.strikethrough ? '1' : '0');
     // Always write these managed cells so clearing a style (e.g. DblUnderline
     // true→false) on the patch path actually removes the effect from XML.
-    _writeValue(_ensureCell(row, 'DblUnderline'), c.doubleUnderline ? '1' : '0');
+    _writeValue(
+        _ensureCell(row, 'DblUnderline'), c.doubleUnderline ? '1' : '0');
     _writeValue(_ensureCell(row, 'DoubleStrikethrough'),
         c.doubleStrikethrough ? '1' : '0');
     _writeValue(_ensureCell(row, 'Overline'), c.overline ? '1' : '0');
-    _writeValue(
-        _ensureCell(row, 'Highlight'),
+    _writeValue(_ensureCell(row, 'Highlight'),
         c.highlight != null ? _hex(c.highlight!) : '0');
     _writeValue(_ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
     _writeValue(
         _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
-    _writeValue(
-        _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
+    _writeValue(_ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
     _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
     _writeValue(_ensureCell(row, 'ColorTrans'),
         _fmt(charTransparencyForLibvisioWrite(c)));
@@ -5103,8 +5092,7 @@ class VsdxWriter {
     // Prefer in-place V= updates so Width*/Height*/Scratch formulas and
     // unmodelled cells (NoSnap, A–D on NURBS, …) survive resize. CubBezTo
     // and other rows libvisio drops must be rebuilt, not patched in place.
-    if (!needsLibvisioRewrite &&
-        _tryPatchGeometryInPlace(el, base, edited)) {
+    if (!needsLibvisioRewrite && _tryPatchGeometryInPlace(el, base, edited)) {
       return true;
     }
     final existing = <XmlElement>[
@@ -5131,13 +5119,13 @@ class VsdxWriter {
     final sections = <XmlElement>[
       for (final g in editedWrite.geometries)
         if (_buildGeometrySection(
-              g,
-              ix++,
-              width: edited.width,
-              height: edited.height,
-              roundingInches: roundingForLibvisioWrite(edited.line),
-              chamfer: chamferForLibvisioWrite(edited.line),
-            )
+          g,
+          ix++,
+          width: edited.width,
+          height: edited.height,
+          roundingInches: roundingForLibvisioWrite(edited.line),
+          chamfer: chamferForLibvisioWrite(edited.line),
+        )
             case final s?)
           s,
     ];
@@ -5232,8 +5220,8 @@ class VsdxWriter {
             }
             continue;
           }
-          var keep = _formulaFitsScale(
-              cell.getAttribute('F'), oldV, newV, sx: sx, sy: sy);
+          var keep = _formulaFitsScale(cell.getAttribute('F'), oldV, newV,
+              sx: sx, sy: sy);
           // C (angle) / D (eccentricity) are not Width/Height scales — keeping
           // a constant F= would undo resized V in Visio/Edraw.
           if ((ce is EllipticalArcTo || ce is RelEllipticalArcTo) &&
@@ -5274,12 +5262,14 @@ class VsdxWriter {
         EllipseCmd() => 'Ellipse',
         EllipticalArcTo() => 'EllipticalArcTo',
         RelEllipticalArcTo() => 'RelEllipticalArcTo',
-        PolylineTo(:final relative) => relative ? 'RelPolylineTo' : 'PolylineTo',
+        PolylineTo(:final relative) =>
+          relative ? 'RelPolylineTo' : 'PolylineTo',
         InfiniteLineCmd(:final relative) =>
           relative ? 'RelInfiniteLine' : 'InfiniteLine',
         SplineStart(:final relative) =>
           relative ? 'RelSplineStart' : 'SplineStart',
-        SplineKnot(:final relative) => relative ? 'RelSplineKnot' : 'SplineKnot',
+        SplineKnot(:final relative) =>
+          relative ? 'RelSplineKnot' : 'SplineKnot',
         NurbsTo(:final relative) => relative ? 'RelNURBSTo' : 'NURBSTo',
       };
 
@@ -5308,13 +5298,24 @@ class VsdxWriter {
           :final fy2,
         ) =>
           {'X': fx, 'Y': fy, 'A': fx1, 'B': fy1, 'C': fx2, 'D': fy2},
-        QuadBezTo(:final x, :final y, :final x1, :final y1) =>
-          {'X': x, 'Y': y, 'A': x1, 'B': y1},
-        RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1) =>
-          {'X': fx, 'Y': fy, 'A': fx1, 'B': fy1},
+        QuadBezTo(:final x, :final y, :final x1, :final y1) => {
+            'X': x,
+            'Y': y,
+            'A': x1,
+            'B': y1
+          },
+        RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1) => {
+            'X': fx,
+            'Y': fy,
+            'A': fx1,
+            'B': fy1
+          },
         ArcTo(:final x, :final y, :final bow) => {'X': x, 'Y': y, 'A': bow},
-        RelArcTo(:final fx, :final fy, :final fbow) =>
-          {'X': fx, 'Y': fy, 'A': fbow},
+        RelArcTo(:final fx, :final fy, :final fbow) => {
+            'X': fx,
+            'Y': fy,
+            'A': fbow
+          },
         EllipseCmd(
           :final cx,
           :final cy,
@@ -5357,8 +5358,12 @@ class VsdxWriter {
             'D': eccentricity,
           },
         PolylineTo(:final x, :final y) => {'X': x, 'Y': y},
-        InfiniteLineCmd(:final x, :final y, :final a, :final b) =>
-          {'X': x, 'Y': y, 'A': a, 'B': b},
+        InfiniteLineCmd(:final x, :final y, :final a, :final b) => {
+            'X': x,
+            'Y': y,
+            'A': a,
+            'B': b
+          },
         SplineStart(
           :final x,
           :final y,
@@ -5368,8 +5373,11 @@ class VsdxWriter {
           :final degree,
         ) =>
           {'X': x, 'Y': y, 'A': a, 'B': b, 'C': c, 'D': degree.toDouble()},
-        SplineKnot(:final x, :final y, :final knot) =>
-          {'X': x, 'Y': y, 'A': knot},
+        SplineKnot(:final x, :final y, :final knot) => {
+            'X': x,
+            'Y': y,
+            'A': knot
+          },
         NurbsTo(
           :final x,
           :final y,
@@ -5449,9 +5457,8 @@ class VsdxWriter {
       final knot = fullK
           ? knots[i + 1]
           : (i < knots.length ? knots[i] : (i + 1).toDouble());
-      final weight = fullW
-          ? weights[i + 1]
-          : (i < weights.length ? weights[i] : 1.0);
+      final weight =
+          fullW ? weights[i + 1] : (i < weights.length ? weights[i] : 1.0);
       buf.write(',${_fmt(p.x)},${_fmt(p.y)},${_fmt(knot)},${_fmt(weight)}');
     }
     buf.write(')');
@@ -5508,7 +5515,8 @@ class VsdxWriter {
     return true;
   }
 
-  bool _patchColor(XmlElement shape, String cell, VsdxColor? base, VsdxColor? value) {
+  bool _patchColor(
+      XmlElement shape, String cell, VsdxColor? base, VsdxColor? value) {
     if (value == null) return false;
     if (base != null && base.value == value.value) return false;
     // An explicit colour edit overrides any inherited THEMEVAL()/formula, so
@@ -5584,8 +5592,7 @@ class VsdxWriter {
       _writeValue(c, '0', preserveFormula: true);
       c.setAttribute('F', wantF);
       if (writeQuickStyle) {
-        _writeValue(
-            _ensureCell(shape, quickStyleCell), editedTheme.toString());
+        _writeValue(_ensureCell(shape, quickStyleCell), editedTheme.toString());
       }
       return true;
     }
@@ -5653,8 +5660,9 @@ class VsdxWriter {
   /// emit `<tp IX="0"/>` to select its tab set, then retain the U+0009 text
   /// character that libvisio turns into `insertTab()`.
   bool _patchTextContent(XmlElement el, VsdxShape base, VsdxShape edited) {
-    final basePlain =
-        base.richText.runs.isNotEmpty ? base.richText.plainText : (base.text ?? '');
+    final basePlain = base.richText.runs.isNotEmpty
+        ? base.richText.plainText
+        : (base.text ?? '');
     final editedPlain = edited.richText.runs.isNotEmpty
         ? edited.richText.plainText
         : (edited.text ?? '');
@@ -5746,8 +5754,7 @@ class VsdxWriter {
           langId: cjk ? 'zh-CN' : null,
         ),
         // Match the canvas (centred labels) and Edraw flowchart defaults.
-        paraStyle:
-            const VsdxParaStyle(horizontalAlign: VsdxHorzAlign.center),
+        paraStyle: const VsdxParaStyle(horizontalAlign: VsdxHorzAlign.center),
       ),
     ];
   }
@@ -5777,8 +5784,9 @@ class VsdxWriter {
     }
 
     while (si < spans.length || i < text.length) {
-      final nextField =
-          si < spans.length ? spans[si].start.clamp(0, text.length) : text.length;
+      final nextField = si < spans.length
+          ? spans[si].start.clamp(0, text.length)
+          : text.length;
       if (i < nextField) {
         emitPlain(text.substring(i, nextField));
         i = nextField;
@@ -5818,8 +5826,7 @@ class VsdxWriter {
     for (var i = 0; i < parts.length; i++) {
       if (parts[i].isNotEmpty) out.add(XmlText(parts[i]));
       if (i < parts.length - 1) {
-        final ix =
-            ti < tabIndices.length ? tabIndices[ti++] : 0;
+        final ix = ti < tabIndices.length ? tabIndices[ti++] : 0;
         out.add(XmlElement(
           XmlName('tp'),
           <XmlAttribute>[XmlAttribute(XmlName('IX'), ix.toString())],
@@ -5841,10 +5848,9 @@ class VsdxWriter {
       return false;
     }
     var changed = false;
-    changed |= _patchInt(
-        el, 'ShadowPattern', base.xmlPattern, edited.xmlPattern);
-    changed |= _patchInt(
-        el, 'ShdwPattern', base.xmlPattern, edited.xmlPattern);
+    changed |=
+        _patchInt(el, 'ShadowPattern', base.xmlPattern, edited.xmlPattern);
+    changed |= _patchInt(el, 'ShdwPattern', base.xmlPattern, edited.xmlPattern);
     // Sync companions whether on or off so enable→edit→disable→save keeps
     // colour / offsets (rebuild already did; patch previously skipped).
     final forceCompanions = !edited.enabled || !base.enabled;
@@ -5873,14 +5879,12 @@ class VsdxWriter {
     }
     if (forceCompanions ||
         (base.offsetXInches - edited.offsetXInches).abs() > _epsilon) {
-      _writeValue(
-          _ensureCell(el, 'ShadowOffsetX'), _fmt(edited.offsetXInches));
+      _writeValue(_ensureCell(el, 'ShadowOffsetX'), _fmt(edited.offsetXInches));
       changed = true;
     }
     if (forceCompanions ||
         (base.offsetYInches - edited.offsetYInches).abs() > _epsilon) {
-      _writeValue(
-          _ensureCell(el, 'ShadowOffsetY'), _fmt(edited.offsetYInches));
+      _writeValue(_ensureCell(el, 'ShadowOffsetY'), _fmt(edited.offsetYInches));
       changed = true;
     }
     if (forceCompanions ||
@@ -5942,15 +5946,13 @@ class VsdxWriter {
           editedTheme: edited.themeColorIndex,
         );
       }
-      _writeValue(
-          _ensureCell(el, 'GlowColorTrans'), _fmt(edited.transparency));
+      _writeValue(_ensureCell(el, 'GlowColorTrans'), _fmt(edited.transparency));
       return changed;
     }
     // Re-enable after Size=0: force Size/Color/Trans so stale GlowColor cannot
     // resurrect over a default (null-colour) model — same rule as Shadow.
     final reenable = !base.enabled;
-    if (reenable ||
-        (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
+    if (reenable || (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
       _writeValue(_ensureCell(el, 'GlowSize'), _fmt(edited.sizeInches));
       changed = true;
     }
@@ -5978,8 +5980,7 @@ class VsdxWriter {
     }
     if (reenable ||
         (base.transparency - edited.transparency).abs() > _epsilon) {
-      _writeValue(
-          _ensureCell(el, 'GlowColorTrans'), _fmt(edited.transparency));
+      _writeValue(_ensureCell(el, 'GlowColorTrans'), _fmt(edited.transparency));
       changed = true;
     }
     return changed;
@@ -6001,17 +6002,15 @@ class VsdxWriter {
       // disable→save after editing companions only in memory).
       _writeValue(
           _ensureCell(el, 'ReflectionDist'), _fmt(edited.distanceInches));
+      _writeValue(_ensureCell(el, 'ReflectionBlur'), _fmt(edited.blurInches));
       _writeValue(
-          _ensureCell(el, 'ReflectionBlur'), _fmt(edited.blurInches));
-      _writeValue(_ensureCell(el, 'ReflectionTransparency'),
-          _fmt(edited.transparency));
+          _ensureCell(el, 'ReflectionTransparency'), _fmt(edited.transparency));
       return true;
     }
     // Re-enable after Size=0: force Size/Dist/Blur/Trans so stale XML cells
     // cannot resurrect prior custom values over the new model defaults.
     final reenable = !base.enabled;
-    if (reenable ||
-        (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
+    if (reenable || (base.sizeInches - edited.sizeInches).abs() > _epsilon) {
       _writeValue(_ensureCell(el, 'ReflectionSize'), _fmt(edited.sizeInches));
       changed = true;
     }
@@ -6023,12 +6022,11 @@ class VsdxWriter {
     }
     if (reenable ||
         (base.transparency - edited.transparency).abs() > _epsilon) {
-      _writeValue(_ensureCell(el, 'ReflectionTransparency'),
-          _fmt(edited.transparency));
+      _writeValue(
+          _ensureCell(el, 'ReflectionTransparency'), _fmt(edited.transparency));
       changed = true;
     }
-    if (reenable ||
-        (base.blurInches - edited.blurInches).abs() > _epsilon) {
+    if (reenable || (base.blurInches - edited.blurInches).abs() > _epsilon) {
       _writeValue(_ensureCell(el, 'ReflectionBlur'), _fmt(edited.blurInches));
       changed = true;
     }
@@ -6052,8 +6050,8 @@ class VsdxWriter {
       if (eg != null && eg.stops.isNotEmpty) {
         // Literal V=1 — do not keep F="Inh" / parametric, which would ignore V.
         _writeValue(_ensureCell(el, 'FillGradientEnabled'), '1');
-        _writeValue(_ensureCell(el, 'FillGradientDir'),
-            _gradientDirFor(eg).toString());
+        _writeValue(
+            _ensureCell(el, 'FillGradientDir'), _gradientDirFor(eg).toString());
         _writeValue(_ensureCell(el, 'FillGradientAngle'), _fmt(eg.angleRad));
         _insertBeforeTextOrShapes(el, _buildFillGradientSection(eg));
       } else {
@@ -6061,8 +6059,7 @@ class VsdxWriter {
         // deleted FillGradient section via inheritance.
         _writeValue(_ensureCell(el, 'FillGradientEnabled'), '0');
         // Rebuild omits Dir/Angle when gradient is off — drop residual cells.
-        _removeNamedCells(
-            el, const ['FillGradientDir', 'FillGradientAngle']);
+        _removeNamedCells(el, const ['FillGradientDir', 'FillGradientAngle']);
       }
       return true;
     }
@@ -6082,17 +6079,15 @@ class VsdxWriter {
         changed = true;
       }
       changed |= _ensureLiteralInt(el, 'FillGradientEnabled', 0);
-      changed |= _removeNamedCells(
-          el, const ['FillGradientDir', 'FillGradientAngle']);
+      changed |=
+          _removeNamedCells(el, const ['FillGradientDir', 'FillGradientAngle']);
       return changed;
     }
     // Gradient still on — drop F=Inh on Enabled/Dir/Angle so stylesheet
     // inheritance cannot override the local literals.
     var scrubbed = _scrubEnabledFlagCell(el, 'FillGradientEnabled');
-    scrubbed |=
-        _ensureLiteralInt(el, 'FillGradientDir', _gradientDirFor(eg));
-    scrubbed |=
-        _ensureLiteralLength(el, 'FillGradientAngle', eg.angleRad);
+    scrubbed |= _ensureLiteralInt(el, 'FillGradientDir', _gradientDirFor(eg));
+    scrubbed |= _ensureLiteralLength(el, 'FillGradientAngle', eg.angleRad);
     scrubbed |= _scrubGradientStopInh(el, 'FillGradient', eg);
     return scrubbed;
   }
@@ -6113,14 +6108,13 @@ class VsdxWriter {
       }
       if (eg != null && eg.stops.isNotEmpty) {
         _writeValue(_ensureCell(el, 'LineGradientEnabled'), '1');
-        _writeValue(_ensureCell(el, 'LineGradientDir'),
-            _gradientDirFor(eg).toString());
+        _writeValue(
+            _ensureCell(el, 'LineGradientDir'), _gradientDirFor(eg).toString());
         _writeValue(_ensureCell(el, 'LineGradientAngle'), _fmt(eg.angleRad));
         _insertBeforeTextOrShapes(el, _buildLineGradientSection(eg));
       } else {
         _writeValue(_ensureCell(el, 'LineGradientEnabled'), '0');
-        _removeNamedCells(
-            el, const ['LineGradientDir', 'LineGradientAngle']);
+        _removeNamedCells(el, const ['LineGradientDir', 'LineGradientAngle']);
       }
       return true;
     }
@@ -6137,15 +6131,13 @@ class VsdxWriter {
         changed = true;
       }
       changed |= _ensureLiteralInt(el, 'LineGradientEnabled', 0);
-      changed |= _removeNamedCells(
-          el, const ['LineGradientDir', 'LineGradientAngle']);
+      changed |=
+          _removeNamedCells(el, const ['LineGradientDir', 'LineGradientAngle']);
       return changed;
     }
     var scrubbed = _scrubEnabledFlagCell(el, 'LineGradientEnabled');
-    scrubbed |=
-        _ensureLiteralInt(el, 'LineGradientDir', _gradientDirFor(eg));
-    scrubbed |=
-        _ensureLiteralLength(el, 'LineGradientAngle', eg.angleRad);
+    scrubbed |= _ensureLiteralInt(el, 'LineGradientDir', _gradientDirFor(eg));
+    scrubbed |= _ensureLiteralLength(el, 'LineGradientAngle', eg.angleRad);
     scrubbed |= _scrubGradientStopInh(el, 'LineGradient', eg);
     return scrubbed;
   }
@@ -6205,8 +6197,7 @@ class VsdxWriter {
     }
     final f = c.getAttribute('F');
     final v = c.getAttribute('V');
-    final already =
-        (v == '1' || v == '1.0') && (f == null || f.isEmpty);
+    final already = (v == '1' || v == '1.0') && (f == null || f.isEmpty);
     if (already) return false;
     _writeValue(c, '1');
     return true;
@@ -6319,8 +6310,7 @@ class VsdxWriter {
       preserveFormula: _preserveTxtLengthFormula(
           el, 'TxtHeight', edited.heightInches, shape),
     );
-    changed |=
-        _patchAngle(el, 'TxtAngle', base.angleRad, edited.angleRad);
+    changed |= _patchAngle(el, 'TxtAngle', base.angleRad, edited.angleRad);
     // Scrub F=Inh / ensure cell even when angle stays 0 (Master π/2 revive).
     // Do not re-apply formulas['TxtAngle']=Inh via sync below.
     if (_nonInhFormula(shape.formulas['TxtAngle']) == null) {
@@ -6353,8 +6343,8 @@ class VsdxWriter {
     changed |= _ensureLiteralInt(el, 'TextDirection', edited.textDirection);
     changed |= _patchLength(el, 'DefaultTabStop', base.defaultTabStopInches,
         edited.defaultTabStopInches);
-    changed |= _ensureLiteralLength(
-        el, 'DefaultTabStop', edited.defaultTabStopInches);
+    changed |=
+        _ensureLiteralLength(el, 'DefaultTabStop', edited.defaultTabStopInches);
     final textBkgndFormula = (_cellFormula(el, 'TextBkgnd') ?? '').trim();
     final preserveTextBkgndFormula =
         base.backgroundColor?.value == edited.backgroundColor?.value &&
@@ -6376,17 +6366,13 @@ class VsdxWriter {
         changed = true;
       }
     }
-    changed |= _patchRatio(
-        el,
-        'TextBkgndTrans',
-        base.backgroundTransparency,
+    changed |= _patchRatio(el, 'TextBkgndTrans', base.backgroundTransparency,
         edited.backgroundTransparency);
     changed |= _ensureLiteralLength(
         el, 'TextBkgndTrans', edited.backgroundTransparency);
     changed |= _patchLength(
         el, 'LeftMargin', base.marginLeftInches, edited.marginLeftInches);
-    changed |=
-        _ensureLiteralLength(el, 'LeftMargin', edited.marginLeftInches);
+    changed |= _ensureLiteralLength(el, 'LeftMargin', edited.marginLeftInches);
     changed |= _patchLength(
         el, 'RightMargin', base.marginRightInches, edited.marginRightInches);
     changed |=
@@ -6432,7 +6418,8 @@ class VsdxWriter {
     if (!preserveTextBlockCoordinates) {
       b = _edrawSafeCaptionBelow(b);
     }
-    void addLen(String name, double? v, {String? defaultFormula, double? fallback}) {
+    void addLen(String name, double? v,
+        {String? defaultFormula, double? fallback}) {
       var f = _nonInhFormula(formulas[name]) ?? defaultFormula;
       final value = v ?? fallback;
       if (value == null && f == null) return;
@@ -6484,8 +6471,8 @@ class VsdxWriter {
     ));
     // Always emit VerticalAlign (incl. middle) so StyleSheet / Master cannot
     // revive a non-middle align after clear + group rebuild — mirrors HideText.
-    children.add(
-        _cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
+    children
+        .add(_cell('VerticalAlign', _vAlignInt(b.verticalAlign).toString()));
     // Always emit HideText (incl. 0) so Master HideText=1 cannot revive after
     // the user un-hides on a group-rebuild path.
     children.add(_cell('HideText', b.hideText ? '1' : '0'));
@@ -6534,8 +6521,7 @@ class VsdxWriter {
     final c = _ensureCell(shape, cell);
     final f = c.getAttribute('F');
     final v = c.getAttribute('V');
-    final already =
-        (v == '0' || v == '0.0') && (f == null || f.isEmpty);
+    final already = (v == '0' || v == '0.0') && (f == null || f.isEmpty);
     if (already) return false;
     _writeValue(c, '0');
     return true;
@@ -6750,7 +6736,8 @@ class VsdxWriter {
     return cell;
   }
 
-  bool _hasCell(XmlElement shape, String name) => _findCell(shape, name) != null;
+  bool _hasCell(XmlElement shape, String name) =>
+      _findCell(shape, name) != null;
 
   XmlElement? _findCell(XmlElement shape, String name) {
     for (final el in shape.childElements) {
@@ -6765,8 +6752,8 @@ class VsdxWriter {
   bool _ensureLineFillBasics(XmlElement el, VsdxShape s) {
     var changed = false;
     if (!_hasCell(el, 'LineCap')) {
-      _ensureCell(el, 'LineCap')
-          .setAttribute('V', _lineCapInt(libvisioShapeWrite(s).line.cap).toString());
+      _ensureCell(el, 'LineCap').setAttribute(
+          'V', _lineCapInt(libvisioShapeWrite(s).line.cap).toString());
       changed = true;
     }
     if (s.is1D && !_hasCell(el, 'ObjType')) {
@@ -6776,9 +6763,7 @@ class VsdxWriter {
     if (s.line.beginArrow != 0) {
       final cell = _findCell(el, 'BeginArrowSize');
       final v = cell?.getAttribute('V') ?? '0';
-      if (cell == null ||
-          v == '0' ||
-          isInhFormula(cell.getAttribute('F'))) {
+      if (cell == null || v == '0' || isInhFormula(cell.getAttribute('F'))) {
         changed |= _ensureLiteralInt(
           el,
           'BeginArrowSize',
@@ -6789,9 +6774,7 @@ class VsdxWriter {
     if (s.line.endArrow != 0) {
       final cell = _findCell(el, 'EndArrowSize');
       final v = cell?.getAttribute('V') ?? '0';
-      if (cell == null ||
-          v == '0' ||
-          isInhFormula(cell.getAttribute('F'))) {
+      if (cell == null || v == '0' || isInhFormula(cell.getAttribute('F'))) {
         changed |= _ensureLiteralInt(
           el,
           'EndArrowSize',
@@ -6967,7 +6950,8 @@ class VsdxWriter {
   /// Sync Geometry NoFill/NoLine to the model. Edraw treats missing NoFill as
   /// 1 (no fill), so filled shapes export hollow unless we emit V="0". Also
   /// force-updates stale cells after UI setNoFill / setNoLine.
-  bool _ensureGeometryNoFillNoLine(XmlElement el, List<VsdxGeometry> geometries) {
+  bool _ensureGeometryNoFillNoLine(
+      XmlElement el, List<VsdxGeometry> geometries) {
     final sections = <XmlElement>[
       for (final child in el.childElements)
         if (child.name.local == 'Section' &&
@@ -7075,14 +7059,13 @@ class VsdxWriter {
       final modelF = _nonInhFormula(entry.$5);
       final explicit = entry.$6;
       final curF = (cell.getAttribute('F') ?? '').replaceAll(' ', '');
-      final modelIsCustom = modelF != null &&
-          modelF.replaceAll(' ', '') != defaultFNorm;
+      final modelIsCustom =
+          modelF != null && modelF.replaceAll(' ', '') != defaultFNorm;
       // Full-frame when model says so, or when size is implicit / matches the
       // box. Empty F= with V≠size is an absolute crop — do NOT invent Width*1.
       final modelIsDefault = !modelIsCustom &&
           (modelF == null
-              ? (explicit == null ||
-                  (explicit - shapeSize).abs() <= _epsilon)
+              ? (explicit == null || (explicit - shapeSize).abs() <= _epsilon)
               : true);
       // F=Inh alone must not force full-frame when the model holds a crop —
       // scrub Inh to a literal V= instead (below).
@@ -7487,7 +7470,8 @@ class VsdxWriter {
       children.add(
           _cell('QuickStyleFillColor', fill.themeForegroundIndex!.toString()));
     } else if (formulaOf('FillForegnd') != null) {
-      children.add(_cell('FillForegnd', '0', formula: formulaOf('FillForegnd')));
+      children
+          .add(_cell('FillForegnd', '0', formula: formulaOf('FillForegnd')));
     } else if (fill.pattern != 0 && s.children.isEmpty) {
       // VSD import / defaultFill often leave foreground null while pattern=1.
       // Visio resolves via StyleSheets; 万兴图示 treats missing FillForegnd as
@@ -7512,8 +7496,7 @@ class VsdxWriter {
       // When only the background is theme-bound, emit QuickStyleFillColor so
       // parseFill can recover themeBackgroundIndex (libvisio / Visio).
       if (fgSlot == null) {
-        children.add(
-            _cell('QuickStyleFillColor', bgSlot.toString()));
+        children.add(_cell('QuickStyleFillColor', bgSlot.toString()));
       }
     } else if (formulaOf('FillBkgnd') != null) {
       children.add(_cell('FillBkgnd', '0', formula: formulaOf('FillBkgnd')));
@@ -7558,12 +7541,10 @@ class VsdxWriter {
     // after the user cleared them on a rebuild path (patch already forces 0).
     children
       ..add(_cell('BeginArrow', write.line.beginArrow.toString()))
-      ..add(_cell(
-          'BeginArrowSize',
+      ..add(_cell('BeginArrowSize',
           _arrowSizeToBucket(write.line.beginArrowSizeInches).toString()))
       ..add(_cell('EndArrow', write.line.endArrow.toString()))
-      ..add(_cell(
-          'EndArrowSize',
+      ..add(_cell('EndArrowSize',
           _arrowSizeToBucket(write.line.endArrowSizeInches).toString()));
     // Always emit SoftEdges/Rounding (incl. 0) so StyleSheet cannot revive
     // feathering after a group rebuild cleared the effect in the model.
@@ -7623,14 +7604,15 @@ class VsdxWriter {
         ..add(_cell('ShadowForegndTrans', _fmt(shadowWrite.transparency)))
         ..add(_cell('ShdwForegndTrans', _fmt(shadowWrite.transparency)));
     }
-    if (s.glow.enabled) {
-      children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
+    final glowWrite = glowForLibvisioWrite(s);
+    if (glowWrite.enabled) {
+      children.add(_cell('GlowSize', _fmt(glowWrite.sizeInches)));
       if (s.glow.color != null) {
         children.add(_cell('GlowColor', _hex(s.glow.color!)));
       } else if (s.glow.themeColorIndex != null) {
         children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
-        children.add(_cell(
-            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+        children.add(
+            _cell('QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     } else {
@@ -7640,8 +7622,8 @@ class VsdxWriter {
         children.add(_cell('GlowColor', _hex(s.glow.color!)));
       } else if (s.glow.themeColorIndex != null) {
         children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
-        children.add(_cell(
-            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+        children.add(
+            _cell('QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
@@ -7649,23 +7631,21 @@ class VsdxWriter {
       children
         ..add(_cell('ReflectionSize', _fmt(s.reflection.sizeInches)))
         ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
-        ..add(_cell(
-            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
       // Size=0 disables; keep companions for re-enable after rebuild.
       children
         ..add(_cell('ReflectionSize', '0'))
         ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
-        ..add(_cell(
-            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     }
     if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
       children
         ..add(_cell('FillGradientEnabled', '1'))
-        ..add(_cell('FillGradientDir',
-            _gradientDirFor(fill.gradient!).toString()))
+        ..add(_cell(
+            'FillGradientDir', _gradientDirFor(fill.gradient!).toString()))
         ..add(_cell('FillGradientAngle', _fmt(fill.gradient!.angleRad)));
     } else {
       children.add(_cell('FillGradientEnabled', '0'));
@@ -7828,7 +7808,8 @@ class VsdxWriter {
     }
     final isGroup = s.children.isNotEmpty;
     if (isGroup) {
-      children.add(XmlElement(XmlName('Shapes'), const <XmlAttribute>[], <XmlNode>[
+      children
+          .add(XmlElement(XmlName('Shapes'), const <XmlAttribute>[], <XmlNode>[
         for (final c in s.children)
           _buildShapeElement(c, imageRels: imageRels, opaqueById: opaqueById),
       ]));
@@ -7929,8 +7910,7 @@ class VsdxWriter {
       ..add(_cell('DblUnderline', c.doubleUnderline ? '1' : '0'))
       ..add(_cell('DoubleStrikethrough', c.doubleStrikethrough ? '1' : '0'))
       ..add(_cell('Overline', c.overline ? '1' : '0'))
-      ..add(_cell(
-          'Highlight', c.highlight != null ? _hex(c.highlight!) : '0'))
+      ..add(_cell('Highlight', c.highlight != null ? _hex(c.highlight!) : '0'))
       ..add(_cell('Letterspace', _fmt(c.letterSpacingInches)))
       ..add(_cell('Pos', _textPositionInt(c.position).toString()))
       ..add(_cell('Case', _textCaseInt(c.textCase).toString()))
@@ -8222,12 +8202,10 @@ class VsdxWriter {
       _cell('LineColorTrans', _fmt(write.line.transparency)),
       // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
       _cell('BeginArrow', write.line.beginArrow.toString()),
-      _cell(
-          'BeginArrowSize',
+      _cell('BeginArrowSize',
           _arrowSizeToBucket(write.line.beginArrowSizeInches).toString()),
       _cell('EndArrow', write.line.endArrow.toString()),
-      _cell(
-          'EndArrowSize',
+      _cell('EndArrowSize',
           _arrowSizeToBucket(write.line.endArrowSizeInches).toString()),
       // SoftEdges / Rounding / CompoundType — always emit (incl. 0) so
       // StyleSheet inheritance cannot revive effects after Foreign rebuild.
@@ -8281,14 +8259,15 @@ class VsdxWriter {
         ..add(_cell('ShadowForegndTrans', _fmt(shadowWrite.transparency)))
         ..add(_cell('ShdwForegndTrans', _fmt(shadowWrite.transparency)));
     }
-    if (s.glow.enabled) {
-      children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
+    final glowWrite = glowForLibvisioWrite(s);
+    if (glowWrite.enabled) {
+      children.add(_cell('GlowSize', _fmt(glowWrite.sizeInches)));
       if (s.glow.color != null) {
         children.add(_cell('GlowColor', _hex(s.glow.color!)));
       } else if (s.glow.themeColorIndex != null) {
         children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
-        children.add(_cell(
-            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+        children.add(
+            _cell('QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     } else {
@@ -8297,8 +8276,8 @@ class VsdxWriter {
         children.add(_cell('GlowColor', _hex(s.glow.color!)));
       } else if (s.glow.themeColorIndex != null) {
         children.add(_cell('GlowColor', '0', formula: 'THEMEVAL()'));
-        children.add(_cell(
-            'QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
+        children.add(
+            _cell('QuickStyleEffectColor', s.glow.themeColorIndex!.toString()));
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
@@ -8306,24 +8285,22 @@ class VsdxWriter {
       children
         ..add(_cell('ReflectionSize', _fmt(s.reflection.sizeInches)))
         ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
-        ..add(_cell(
-            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     } else {
       // Size=0 disables; keep companions for re-enable after Foreign rebuild.
       children
         ..add(_cell('ReflectionSize', '0'))
         ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
-        ..add(_cell(
-            'ReflectionTransparency', _fmt(s.reflection.transparency)))
+        ..add(_cell('ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     }
     // Match Shape rebuild: always emit gradient enable flags (incl. 0).
     if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
       children
         ..add(_cell('FillGradientEnabled', '1'))
-        ..add(_cell('FillGradientDir',
-            _gradientDirFor(fill.gradient!).toString()))
+        ..add(_cell(
+            'FillGradientDir', _gradientDirFor(fill.gradient!).toString()))
         ..add(_cell('FillGradientAngle', _fmt(fill.gradient!.angleRad)));
     } else {
       children.add(_cell('FillGradientEnabled', '0'));
@@ -8418,7 +8395,8 @@ class VsdxWriter {
       if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
         children.add(_buildFillGradientSection(fill.gradient!));
       }
-      if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
+      if (write.line.gradient != null &&
+          write.line.gradient!.stops.isNotEmpty) {
         children.add(_buildLineGradientSection(write.line.gradient!));
       }
       final textEl = XmlElement(XmlName('Text'));
@@ -8441,7 +8419,8 @@ class VsdxWriter {
       if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
         children.add(_buildFillGradientSection(fill.gradient!));
       }
-      if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
+      if (write.line.gradient != null &&
+          write.line.gradient!.stops.isNotEmpty) {
         children.add(_buildLineGradientSection(write.line.gradient!));
       }
     }
@@ -8686,7 +8665,8 @@ class VsdxWriter {
                 if (r.uiCat != null) _cell('UICat', r.uiCat.toString()),
                 if (r.uiCod != null) _cell('UICod', r.uiCod.toString()),
                 if (r.uiFmt != null) _cell('UIFmt', r.uiFmt.toString()),
-                if (r.calendar != null) _cell('Calendar', r.calendar.toString()),
+                if (r.calendar != null)
+                  _cell('Calendar', r.calendar.toString()),
                 if (r.objectKind != null)
                   _cell('ObjectKind', r.objectKind.toString()),
               ],
@@ -8841,6 +8821,7 @@ class VsdxWriter {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
     if (shapeNeedsLibvisioArrowedStrokeBake(shape)) return true;
+    if (shapeNeedsLibvisioGlowBake(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
     final radius = roundingForLibvisioWrite(shape.line);
     if (radius <= 1e-12) return false;
@@ -8952,14 +8933,18 @@ class VsdxWriter {
           :final x2,
           :final y2,
         ):
-        return _row('CubBezTo', ix, {
-          'X': x,
-          'Y': y,
-          'A': x1,
-          'B': y1,
-          'C': x2,
-          'D': y2,
-        }, formulas: formulas);
+        return _row(
+            'CubBezTo',
+            ix,
+            {
+              'X': x,
+              'Y': y,
+              'A': x1,
+              'B': y1,
+              'C': x2,
+              'D': y2,
+            },
+            formulas: formulas);
       case RelCubBezTo(
           :final fx,
           :final fy,
@@ -8968,24 +8953,32 @@ class VsdxWriter {
           :final fx2,
           :final fy2,
         ):
-        return _row('RelCubBezTo', ix, {
-          'X': fx,
-          'Y': fy,
-          'A': fx1,
-          'B': fy1,
-          'C': fx2,
-          'D': fy2,
-        }, formulas: formulas);
+        return _row(
+            'RelCubBezTo',
+            ix,
+            {
+              'X': fx,
+              'Y': fy,
+              'A': fx1,
+              'B': fy1,
+              'C': fx2,
+              'D': fy2,
+            },
+            formulas: formulas);
       case QuadBezTo(:final x, :final y, :final x1, :final y1):
         return _row('QuadBezTo', ix, {'X': x, 'Y': y, 'A': x1, 'B': y1},
             formulas: formulas);
       case RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1):
-        return _row('RelQuadBezTo', ix, {
-          'X': fx,
-          'Y': fy,
-          'A': fx1,
-          'B': fy1,
-        }, formulas: formulas);
+        return _row(
+            'RelQuadBezTo',
+            ix,
+            {
+              'X': fx,
+              'Y': fy,
+              'A': fx1,
+              'B': fy1,
+            },
+            formulas: formulas);
       case ArcTo(:final x, :final y, :final bow):
         return _row('ArcTo', ix, {'X': x, 'Y': y, 'A': bow},
             formulas: formulas);
@@ -9011,14 +9004,18 @@ class VsdxWriter {
           :final angle,
           :final eccentricity,
         ):
-        return _row('EllipticalArcTo', ix, {
-          'X': x,
-          'Y': y,
-          'A': controlX,
-          'B': controlY,
-          'C': angle,
-          'D': eccentricity,
-        }, formulas: formulas);
+        return _row(
+            'EllipticalArcTo',
+            ix,
+            {
+              'X': x,
+              'Y': y,
+              'A': controlX,
+              'B': controlY,
+              'C': angle,
+              'D': eccentricity,
+            },
+            formulas: formulas);
       case RelEllipticalArcTo(
           :final fx,
           :final fy,
@@ -9027,14 +9024,18 @@ class VsdxWriter {
           :final angle,
           :final eccentricity,
         ):
-        return _row('RelEllipticalArcTo', ix, {
-          'X': fx,
-          'Y': fy,
-          'A': fcx,
-          'B': fcy,
-          'C': angle,
-          'D': eccentricity,
-        }, formulas: formulas);
+        return _row(
+            'RelEllipticalArcTo',
+            ix,
+            {
+              'X': fx,
+              'Y': fy,
+              'A': fcx,
+              'B': fcy,
+              'C': angle,
+              'D': eccentricity,
+            },
+            formulas: formulas);
       case PolylineTo(
           :final x,
           :final y,
@@ -9052,12 +9053,22 @@ class VsdxWriter {
           buf.write(',${_fmt(v.x)},${_fmt(v.y)}');
         }
         buf.write(')');
-        return _rowFormula(relative ? 'RelPolylineTo' : 'PolylineTo', ix, {
-          'X': _fmt(x),
-          'Y': _fmt(y),
-          'A': buf.toString(),
-        }, formulas: formulas);
-      case InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative):
+        return _rowFormula(
+            relative ? 'RelPolylineTo' : 'PolylineTo',
+            ix,
+            {
+              'X': _fmt(x),
+              'Y': _fmt(y),
+              'A': buf.toString(),
+            },
+            formulas: formulas);
+      case InfiniteLineCmd(
+          :final x,
+          :final y,
+          :final a,
+          :final b,
+          :final relative
+        ):
         return _row(relative ? 'RelInfiniteLine' : 'InfiniteLine', ix,
             {'X': x, 'Y': y, 'A': a, 'B': b},
             formulas: formulas);
@@ -9070,14 +9081,18 @@ class VsdxWriter {
           :final degree,
           :final relative,
         ):
-        return _row(relative ? 'RelSplineStart' : 'SplineStart', ix, {
-          'X': x,
-          'Y': y,
-          'A': a,
-          'B': b,
-          'C': c,
-          'D': degree.toDouble(),
-        }, formulas: formulas);
+        return _row(
+            relative ? 'RelSplineStart' : 'SplineStart',
+            ix,
+            {
+              'X': x,
+              'Y': y,
+              'A': a,
+              'B': b,
+              'C': c,
+              'D': degree.toDouble(),
+            },
+            formulas: formulas);
       case SplineKnot(:final x, :final y, :final knot, :final relative):
         return _row(relative ? 'RelSplineKnot' : 'SplineKnot', ix,
             {'X': x, 'Y': y, 'A': knot},
@@ -9093,22 +9108,26 @@ class VsdxWriter {
           :final cpRelative,
           :final cpYRelative,
         ):
-        return _rowFormula(relative ? 'RelNURBSTo' : 'NURBSTo', ix, {
-          'X': _fmt(x),
-          'Y': _fmt(y),
-          'A': _fmt(knots.length >= 2 ? knots[knots.length - 2] : 0.0),
-          'B': _fmt(weights.isNotEmpty ? weights.last : 1.0),
-          'C': _fmt(knots.isNotEmpty ? knots.first : 0.0),
-          'D': _fmt(weights.isNotEmpty ? weights.first : 1.0),
-          'E': _nurbsEFormula(
-            controlPoints: controlPoints,
-            weights: weights,
-            knots: knots,
-            degree: degree,
-            xType: cpRelative ? 0 : 1,
-            yType: cpYRelative ? 0 : 1,
-          ),
-        }, formulas: formulas);
+        return _rowFormula(
+            relative ? 'RelNURBSTo' : 'NURBSTo',
+            ix,
+            {
+              'X': _fmt(x),
+              'Y': _fmt(y),
+              'A': _fmt(knots.length >= 2 ? knots[knots.length - 2] : 0.0),
+              'B': _fmt(weights.isNotEmpty ? weights.last : 1.0),
+              'C': _fmt(knots.isNotEmpty ? knots.first : 0.0),
+              'D': _fmt(weights.isNotEmpty ? weights.first : 1.0),
+              'E': _nurbsEFormula(
+                controlPoints: controlPoints,
+                weights: weights,
+                knots: knots,
+                degree: degree,
+                xType: cpRelative ? 0 : 1,
+                yType: cpYRelative ? 0 : 1,
+              ),
+            },
+            formulas: formulas);
     }
   }
 
@@ -9294,14 +9313,14 @@ class VsdxWriter {
     return _txtFormulaAgreesWithValue(f!, editedValue, shape);
   }
 
-  XmlElement _cell(String name, String value, {String? formula, String? unit}) =>
+  XmlElement _cell(String name, String value,
+          {String? formula, String? unit}) =>
       XmlElement(
         XmlName('Cell'),
         <XmlAttribute>[
           XmlAttribute(XmlName('N'), name),
           XmlAttribute(XmlName('V'), value),
-          if (unit != null && unit.isNotEmpty)
-            XmlAttribute(XmlName('U'), unit),
+          if (unit != null && unit.isNotEmpty) XmlAttribute(XmlName('U'), unit),
           if (formula != null && formula.isNotEmpty)
             XmlAttribute(XmlName('F'), formula),
         ],

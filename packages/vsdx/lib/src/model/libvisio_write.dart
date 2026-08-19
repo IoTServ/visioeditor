@@ -41,7 +41,13 @@
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
-/// a save bakes them into a PNG and zeros the cells.
+/// a save bakes them into a PNG and zeros the cells. Character Overline
+/// is a token whose `readCharIX` case is empty, so a save inserts U+0305
+/// combining overlines and clears the cell. Glow* cells are not tokens;
+/// an unfilled stroke bakes a FillForegndTrans ribbon and a filled
+/// NoLine shape bakes a LineWeight halo, then GlowSize is written 0.
+/// Filled shapes that already paint a stroke keep their outline — stealing
+/// Line would drop CompoundType / dashes that Draw *does* collect.
 library;
 
 import 'dart:math' as math;
@@ -72,9 +78,129 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     pagesChanged |= !identical(next, page);
     pages.add(next);
   }
-  final hopped =
-      pagesChanged ? document.copyWith(pages: pages) : document;
-  return bakeImageAdjustmentsForLibvisioWrite(hopped);
+  final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
+  return bakeImageAdjustmentsForLibvisioWrite(
+    bakeOverlineForLibvisioWrite(hopped),
+  );
+}
+
+/// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).
+const kLibvisioCombiningOverline = '\u0305';
+
+bool _isCombiningMarkRune(int rune) =>
+    (rune >= 0x0300 && rune <= 0x036F) ||
+    (rune >= 0x1AB0 && rune <= 0x1AFF) ||
+    (rune >= 0x1DC0 && rune <= 0x1DFF) ||
+    (rune >= 0x20D0 && rune <= 0x20FF) ||
+    (rune >= 0xFE20 && rune <= 0xFE2F);
+
+bool _runeTakesCombiningOverline(int rune) {
+  if (rune == 0x0305) return false;
+  if (rune == 0x09 || rune == 0x0A || rune == 0x0D) return false;
+  if (rune == 0x20 || rune == 0xA0) return false;
+  if (_isCombiningMarkRune(rune)) return false;
+  return true;
+}
+
+/// Insert U+0305 after each visible glyph so Draw paints an overline.
+String textWithCombiningOverline(String text) {
+  if (text.contains(kLibvisioCombiningOverline)) return text;
+  final buf = StringBuffer();
+  for (final rune in text.runes) {
+    buf.writeCharCode(rune);
+    if (_runeTakesCombiningOverline(rune)) {
+      buf.write(kLibvisioCombiningOverline);
+    }
+  }
+  return buf.toString();
+}
+
+bool _runNeedsLibvisioOverlineBake(VsdxTextRun run) {
+  if (!run.charStyle.overline) return false;
+  if (run.text.isEmpty) return false;
+  if (run.fieldSpans.isNotEmpty || run.tabIndices.isNotEmpty) return false;
+  if (run.text.contains(kLibvisioCombiningOverline)) return false;
+  for (final rune in run.text.runes) {
+    if (_runeTakesCombiningOverline(rune)) return true;
+  }
+  return false;
+}
+
+/// `true` when Character Overline must become combining marks for Draw.
+bool shapeNeedsLibvisioOverlineBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.fields.isNotEmpty) return false;
+  for (final run in shape.richText.runs) {
+    if (_runNeedsLibvisioOverlineBake(run)) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeOverlineShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeOverlineShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioOverlineBake(shape)) {
+    final runs = <VsdxTextRun>[
+      for (final run in shape.richText.runs)
+        if (_runNeedsLibvisioOverlineBake(run))
+          run.copyWith(
+            text: textWithCombiningOverline(run.text),
+            charStyle: run.charStyle.copyWith(overline: false),
+          )
+        else
+          run,
+    ];
+    next = shape.copyWith(
+      text: VsdxRichText(runs: runs, textBlock: shape.richText.textBlock)
+          .plainText,
+      richText: shape.richText.copyWith(runs: runs),
+    );
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Rewrite Overline into combining marks the text engine in Draw will paint.
+VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) bakeOverlineShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
 }
 
 /// Bake Image Properties into PNG pixels and reset the cells Draw ignores.
@@ -117,8 +243,7 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
                 part.startsWith('/') ? part.substring(1) : '/$part',
               ));
       if (source != null) {
-        final key =
-            '$part|${shape.imageTransparency}|${shape.imageBlur}|'
+        final key = '$part|${shape.imageTransparency}|${shape.imageBlur}|'
             '${shape.imageBrightness}|${shape.imageContrast}|'
             '${shape.effectiveImgWidth}';
         var bakedPart = cache[key];
@@ -297,8 +422,7 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   if (roundingForLibvisioWrite(sourceLine) > 1e-12) {
     line = line.copyWith(roundingInches: 0);
   }
-  if (chamferForLibvisioWrite(sourceLine) &&
-      sourceLine.cap == LineCap.round) {
+  if (chamferForLibvisioWrite(sourceLine) && sourceLine.cap == LineCap.round) {
     line = line.copyWith(cap: LineCap.extended);
   }
   if (line.transparency > 1e-9 &&
@@ -311,6 +435,19 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
       transparency: 0,
       clearThemeColorIndex: true,
     );
+  }
+
+  final glow = bakeGlowForLibvisio(
+    shape: shape,
+    geometries: geometries,
+    line: line,
+    fill: fill,
+  );
+  if (glow != null) {
+    geometries = glow.geometries;
+    line = glow.line;
+    fill = glow.fill;
+    geometryRewritten = true;
   }
 
   return LibvisioShapeWrite(
@@ -339,6 +476,145 @@ bool _shapePaintsFill(VsdxShape shape, List<VsdxGeometry> geometries) {
     if (!geometry.noShow && !geometry.noFill) return true;
   }
   return false;
+}
+
+bool _geometriesPaintFill(VsdxFill fill, List<VsdxGeometry> geometries) {
+  if (!fill.hasFill) return false;
+  for (final geometry in geometries) {
+    if (!geometry.noShow && !geometry.noFill) return true;
+  }
+  return false;
+}
+
+bool _geometriesPaintLine(VsdxLine line, List<VsdxGeometry> geometries) {
+  if (!line.hasLine) return false;
+  for (final geometry in geometries) {
+    if (!geometry.noShow && !geometry.noLine) return true;
+  }
+  return false;
+}
+
+/// Canvas `_drawGlow` uses `(1 - trans) * 0.6` fill-opacity; invert for Trans.
+double _glowHaloTransparency(VsdxGlow glow) =>
+    0.4 + 0.6 * glow.transparency.clamp(0.0, 1.0);
+
+const _kLibvisioGlowFallback = VsdxColor(0xFFFFC107);
+
+VsdxFill _glowFillForLibvisio(VsdxGlow glow) {
+  final trans = _glowHaloTransparency(glow);
+  return VsdxFill(
+    foreground: glow.color ??
+        (glow.themeColorIndex == null ? _kLibvisioGlowFallback : null),
+    pattern: 1,
+    themeForegroundIndex: glow.color == null ? glow.themeColorIndex : null,
+    foregroundTransparency: trans,
+  );
+}
+
+VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
+  final weight = math.max(glow.sizeInches * 2, 0.02);
+  if (glow.color == null && glow.themeColorIndex != null) {
+    return line.withThemeColor(glow.themeColorIndex!).copyWith(
+          weightInches: weight,
+          pattern: 1,
+          transparency: 0,
+          cap: LineCap.round,
+        );
+  }
+  return line.copyWith(
+    color: colourForLibvisioAlpha(
+      glow.color ?? _kLibvisioGlowFallback,
+      _glowHaloTransparency(glow),
+    ),
+    weightInches: weight,
+    pattern: 1,
+    transparency: 0,
+    cap: LineCap.round,
+    clearThemeColorIndex: true,
+  );
+}
+
+/// `true` when Glow* must become Line / Fill Draw actually collects.
+///
+/// `tokens.txt` has no GlowSize. Filled 2-D that already paints a stroke
+/// keeps that outline — Line is shape-level, so a halo would replace
+/// CompoundType / dashes. Unfilled strokes become a FillForegndTrans
+/// ribbon (FillTrans is a token); filled NoLine / pictures become a
+/// LineWeight halo (`xmlStringToColour` zeros LineColorTrans, so RGB is
+/// premultiplied toward white).
+bool shapeNeedsLibvisioGlowBake(VsdxShape shape) {
+  final glow = shape.glow;
+  if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
+  if (glow.transparency >= 1 - 1e-9) return false;
+  final paintsFill = _shapePaintsFill(shape, shape.geometries);
+  if (!paintsFill && !shape.line.hasLine && !shape.hasImage) return false;
+  if (!paintsFill && shapeNeedsLibvisioArrowedStrokeBake(shape)) {
+    return false;
+  }
+  if (paintsFill || shape.hasImage) return !shape.line.hasLine;
+  return true;
+}
+
+/// Glow cells Draw will collect. Size is 0 after a Line / Fill bake.
+VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
+  if (!shapeNeedsLibvisioGlowBake(shape)) return shape.glow;
+  return shape.glow.copyWith(enabled: false, sizeInches: 0);
+}
+
+({List<VsdxGeometry> geometries, VsdxLine line, VsdxFill fill})?
+    bakeGlowForLibvisio({
+  required VsdxShape shape,
+  required List<VsdxGeometry> geometries,
+  required VsdxLine line,
+  required VsdxFill fill,
+}) {
+  if (!shapeNeedsLibvisioGlowBake(shape)) return null;
+  final glow = shape.glow;
+  final paintsFill = _geometriesPaintFill(fill, geometries);
+  final paintsLine = _geometriesPaintLine(line, geometries);
+  if (!paintsFill) {
+    final out = <VsdxGeometry>[...geometries];
+    var added = false;
+    for (final geometry in geometries) {
+      if (geometry.noShow || geometry.noLine) continue;
+      final points = _strokedVertices(geometry, shape);
+      if (points == null || points.length < 2) continue;
+      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      final commands = strokeRibbonCommands(
+        points,
+        halfWidth: math.max(glow.sizeInches, 0.01),
+        closed: closed,
+      );
+      if (commands.length < 3) continue;
+      out.add(
+        VsdxGeometry(
+          noFill: false,
+          noLine: true,
+          commands: commands,
+        ),
+      );
+      added = true;
+    }
+    if (added) {
+      return (geometries: out, line: line, fill: _glowFillForLibvisio(glow));
+    }
+    if (!paintsLine) {
+      return (
+        geometries: geometries,
+        line: _glowLineForLibvisio(line, glow),
+        fill: fill,
+      );
+    }
+    return null;
+  }
+  if (!paintsLine) {
+    return (
+      geometries: geometries,
+      line: _glowLineForLibvisio(line, glow),
+      fill: fill,
+    );
+  }
+  return null;
 }
 
 bool _hasArrowheads(VsdxLine line) =>
@@ -1395,8 +1671,7 @@ VsdxTextBlock textBlockForPaint(VsdxShape shape) {
 VsdxColor colourForLibvisioAlpha(VsdxColor foreground, double transparency) {
   final t = transparency.clamp(0.0, 1.0);
   if (t <= 1e-9) return foreground;
-  int mix(int channel) =>
-      (channel * (1 - t) + 255 * t).round().clamp(0, 255);
+  int mix(int channel) => (channel * (1 - t) + 255 * t).round().clamp(0, 255);
   return VsdxColor.argb(
     0xFF,
     mix(foreground.red),

@@ -25,7 +25,10 @@
 /// so the oracle SVG is the wrong place to look; `vsd2raw` still has it.
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
 /// a save premultiplies those into RGB toward white. Overline still paints
-/// here even though `readCharIX` skips it. Character ColorTrans, filled-shape
+/// here even though `readCharIX` skips it; a save inserts U+0305 combining
+/// marks so Draw paints the line too. Glow* is not a token: unfilled
+/// strokes bake a FillForegndTrans ribbon and filled NoLine shapes bake a
+/// LineWeight halo. Character ColorTrans, filled-shape
 /// LineColorTrans, and ShdwForegndTrans cannot carry alpha through
 /// `xmlStringToColour`, so a save premultiplies those into RGB toward white
 /// and writes Trans=0 (theme-bound RGB-less cells keep THEMEVAL).
@@ -245,7 +248,25 @@ void main() {
     // VSDContentCollector::_linePropertiesMarkerPath filled ids that used to
     // fall through to a generic triangle when compound/ribbon bakes arrows.
     for (final id in <int>[
-      1, 3, 6, 7, 9, 10, 12, 14, 15, 16, 17, 18, 20, 21, 22, 27, 35, 38, 42,
+      1,
+      3,
+      6,
+      7,
+      9,
+      10,
+      12,
+      14,
+      15,
+      16,
+      17,
+      18,
+      20,
+      21,
+      22,
+      27,
+      35,
+      38,
+      42,
     ]) {
       final arrows = bakeArrowGeometriesForLibvisio(
         VsdxShapeFactory.line(
@@ -285,6 +306,97 @@ void main() {
       2,
       reason: 'libvisio marker 39/40 is two triangles',
     );
+  });
+
+  test('Character Overline bakes combining U+0305 for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'Over',
+    ).copyWith(
+      text: 'AB',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'AB',
+            charStyle: VsdxCharStyle(overline: true),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioOverlineBake(shape), isTrue);
+    final baked = bakeOverlineShapeForLibvisioWrite(shape);
+    expect(baked.richText.runs.single.charStyle.overline, isFalse);
+    expect(
+        baked.richText.runs.single.text, contains(kLibvisioCombiningOverline));
+    expect(baked.text, contains(kLibvisioCombiningOverline));
+  });
+
+  test('Glow bakes a halo Draw can collect', () {
+    final stroke = VsdxShapeFactory.line(
+      id: 1,
+      ax: 0,
+      ay: 0,
+      bx: 3,
+      by: 0,
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.04,
+      ),
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: VsdxColor(0xFFFF00FF),
+        sizeInches: 0.08,
+        transparency: 0.5,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowBake(stroke), isTrue);
+    final strokeWrite = libvisioShapeWrite(stroke);
+    expect(strokeWrite.fill.hasFill, isTrue);
+    expect(strokeWrite.fill.foregroundTransparency, greaterThan(0));
+    expect(strokeWrite.geometries.any((g) => !g.noFill), isTrue);
+    expect(strokeWrite.line.hasLine, isTrue);
+    expect(strokeWrite.line.weightInches, closeTo(0.04, 1e-9));
+    expect(glowForLibvisioWrite(stroke).enabled, isFalse);
+
+    final filled = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 1,
+      pinY: 1,
+      width: 1.5,
+      height: 0.8,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: VsdxColor(0xFFFF00FF),
+        sizeInches: 0.08,
+        transparency: 0.5,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowBake(filled), isTrue);
+    final filledWrite = libvisioShapeWrite(filled);
+    expect(filledWrite.line.hasLine, isTrue);
+    expect(filledWrite.line.weightInches, closeTo(0.16, 1e-9));
+    expect(filledWrite.fill.pattern, 1);
+
+    final outlined = VsdxShapeFactory.rectangle(
+      id: 3,
+      pinX: 1,
+      pinY: 1,
+      width: 1.5,
+      height: 0.8,
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: VsdxColor(0xFFFF00FF),
+        sizeInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowBake(outlined), isFalse,
+        reason: 'a painted outline must not be stolen for the halo');
   });
 
   test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {
@@ -1079,6 +1191,44 @@ void main() {
     built = built.addShape(
       VsdxShapeFactory.rectangle(
         id: nextId++,
+        pinX: 3,
+        pinY: 2,
+        width: 1.4,
+        height: 0.7,
+        name: 'GlowNoLine',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+        line: const VsdxLine(pattern: 0),
+      ).copyWith(
+        glow: const VsdxGlow(
+          color: VsdxColor(0xFFFF00FF),
+          sizeInches: 0.08,
+          transparency: 0.5,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.line(
+        id: nextId++,
+        ax: 5,
+        ay: 2,
+        bx: 7.5,
+        by: 2,
+        name: 'GlowStroke',
+        line: const VsdxLine(
+          color: VsdxColor(0xFF000000),
+          weightInches: 0.04,
+        ),
+      ).copyWith(
+        glow: const VsdxGlow(
+          color: VsdxColor(0xFFFF00FF),
+          sizeInches: 0.08,
+          transparency: 0.5,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
         pinX: 1,
         pinY: 5,
         width: 1.8,
@@ -1192,9 +1342,11 @@ void main() {
     expect(xml, contains('N="Highlight" V="#FF00FF"'),
         reason:
             'Character Highlight must round-trip even though libvisio skips it');
-    expect(xml, contains('N="Overline" V="1"'),
+    expect(xml.contains('N="Overline" V="1"'), isFalse,
         reason:
-            'Character Overline must round-trip even though libvisio skips it');
+            'readCharIX skips Overline; combining U+0305 is what Draw paints');
+    expect(xml, contains(kLibvisioCombiningOverline),
+        reason: 'Overline bakes U+0305 so LibreOffice still shows the line');
     expect(xml, contains('N="Color" V="#666666"'),
         reason:
             'Character ColorTrans bakes RGB toward white; xmlStringToColour zeros alpha');
@@ -1202,8 +1354,7 @@ void main() {
         reason:
             'baked ColorTrans must be 0 so Visio does not fade the blended RGB twice');
     expect(xml.contains('N="Rounding" V="0.15"'), isFalse,
-        reason:
-            'Rounding is baked into RelQuadBezTo; the cell must stay 0');
+        reason: 'Rounding is baked into RelQuadBezTo; the cell must stay 0');
     expect(xml, contains('N="Font" V="Microsoft YaHei"'),
         reason:
             'readCharIX only stores Font; CJK-only Arial bakes to AsianFont');
@@ -1269,7 +1420,8 @@ void main() {
     expect(filledLineTrans.fill.foreground?.value, 0xFFFFFFFF);
     expect(filledLineTrans.line.transparency, closeTo(0, 1e-12));
     expect(filledLineTrans.line.color?.value, 0xFF666666,
-        reason: 'filled 2-D LineColorTrans premultiplies; Draw has no stroke alpha');
+        reason:
+            'filled 2-D LineColorTrans premultiplies; Draw has no stroke alpha');
     expect(filledLineTrans.geometries.where((g) => !g.noFill).length, 1,
         reason: 'body Fill is occupied so the stroke cannot become a ribbon');
     final rounding =
@@ -1392,7 +1544,16 @@ void main() {
         .single
         .charStyle;
     expect(highlightStyle.highlight?.value, 0xFFFF00FF);
-    expect(highlightStyle.overline, isTrue);
+    expect(highlightStyle.overline, isFalse);
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'Highlight')
+          .richText
+          .runs
+          .single
+          .text,
+      contains(kLibvisioCombiningOverline),
+    );
     expect(highlightStyle.transparency, closeTo(0, 1e-9));
     expect(highlightStyle.color?.value, 0xFF666666);
     final highlightBlock = savedDoc.pages.first.shapes
@@ -1440,6 +1601,18 @@ void main() {
     expect(xml, contains('N="Pos" V="1"'));
     expect(xml, contains('N="DblUnderline" V="1"'));
     expect(xml, contains('N="Bullet" V="1"'));
+    final glowNoLine =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowNoLine');
+    expect(glowNoLine.glow.enabled, isFalse,
+        reason: 'GlowSize is not a token; the halo is a LineWeight bake');
+    expect(glowNoLine.line.hasLine, isTrue);
+    expect(glowNoLine.line.weightInches, closeTo(0.16, 1e-9));
+    final glowStroke =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowStroke');
+    expect(glowStroke.glow.enabled, isFalse);
+    expect(glowStroke.fill.hasFill, isTrue);
+    expect(glowStroke.geometries.any((g) => !g.noFill), isTrue);
+    expect(glowStroke.line.hasLine, isTrue);
     expect(
       savedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'FillUnknown')
@@ -1478,7 +1651,8 @@ void main() {
         .firstWhere((s) => s.name == 'BevelRoundCap');
     expect(bevelRoundCap.line.roundingInches, closeTo(0, 1e-12));
     expect(bevelRoundCap.line.cap, LineCap.extended,
-        reason: 'Draw derives round join from LineCap 0; flatten so chamfers stay sharp');
+        reason:
+            'Draw derives round join from LineCap 0; flatten so chamfers stay sharp');
     expect(
       bevelRoundCap.geometries.single.commands.whereType<RelQuadBezTo>(),
       isEmpty,
