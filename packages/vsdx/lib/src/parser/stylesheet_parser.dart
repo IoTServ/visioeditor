@@ -124,6 +124,7 @@ class StyleSheetParser {
               'DblUnderline',
               'DoubleStrikethrough',
               'Overline',
+              'Highlight',
               'ColorTrans',
               'Letterspace',
               'Pos',

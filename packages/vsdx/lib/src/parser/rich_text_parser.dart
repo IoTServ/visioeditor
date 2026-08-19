@@ -430,6 +430,7 @@ class RichTextParser {
     final overline =
         _cellBool(row, 'Overline', inheritFrom: defaults.overline) ??
         defaults.overline;
+    final highlight = _readHighlight(row, defaults.highlight);
     final transparency = (_cellDouble(row, 'ColorTrans',
                 inheritFrom: defaults.transparency) ??
             defaults.transparency)
@@ -474,6 +475,7 @@ class RichTextParser {
       doubleUnderline: dblUnder,
       doubleStrikethrough: dblStrike,
       overline: overline,
+      highlight: highlight,
       transparency: transparency,
       letterSpacingInches: readLengthInches(
             row,
@@ -754,6 +756,20 @@ class RichTextParser {
     }
     final asInt = int.tryParse(raw);
     if (asInt == 0 || asInt == 255) return null;
+    return VsdxColor.tryParse(raw, palette: colorPalette);
+  }
+
+  /// Character `Highlight`. Missing / `F=Inh` inherits; `V=0` clears.
+  VsdxColor? _readHighlight(XmlElement row, VsdxColor? inherit) {
+    final cell = findCell(row, 'Highlight');
+    if (cell == null) return inherit;
+    if (isInhFormula(cell.getAttribute('F'))) return inherit;
+    final raw = cell.getAttribute('V');
+    if (raw == null || raw.isEmpty) return null;
+    final u = raw.trim().toUpperCase();
+    if (u == '0' || u == 'THEMED' || u.contains('THEMEVAL')) return null;
+    final asInt = int.tryParse(raw.trim());
+    if (asInt == 0) return null;
     return VsdxColor.tryParse(raw, palette: colorPalette);
   }
 

@@ -347,6 +347,7 @@ bool _sameChar(VsdxCharStyle a, VsdxCharStyle b) =>
     a.doubleUnderline == b.doubleUnderline &&
     a.doubleStrikethrough == b.doubleStrikethrough &&
     a.overline == b.overline &&
+    a.highlight?.value == b.highlight?.value &&
     a.transparency == b.transparency &&
     a.letterSpacingInches == b.letterSpacingInches &&
     a.position == b.position &&

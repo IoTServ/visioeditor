@@ -4128,9 +4128,11 @@ class VsdxPainter extends CustomPainter {
     final widthScale = run.charStyle.fontScale <= 0
         ? 1.0
         : run.charStyle.fontScale.clamp(0.1, 4.0);
+    final hl = run.charStyle.highlight;
+    final spanBackground = hl != null ? Color(hl.value) : backgroundColor;
     final style = TextStyle(
       color: c,
-      backgroundColor: backgroundColor,
+      backgroundColor: spanBackground,
       fontFamily: font.family,
       fontFamilyFallback: font.familyFallback.isEmpty
           ? null

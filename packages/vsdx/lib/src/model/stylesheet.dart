@@ -128,6 +128,7 @@ class StyleSheetRegistry {
     bool? doubleUnderline;
     bool? doubleStrikethrough;
     bool? overline;
+    VsdxColor? highlight;
     double? transparency;
     double? letterSpacingInches;
     VsdxTextPosition? position;
@@ -170,6 +171,7 @@ class StyleSheetRegistry {
           doubleStrikethrough = c.doubleStrikethrough;
         }
         if (resolved.addIfAbsent('Overline', defined)) overline = c.overline;
+        if (resolved.addIfAbsent('Highlight', defined)) highlight = c.highlight;
         if (resolved.addIfAbsent('ColorTrans', defined)) {
           transparency = c.transparency;
         }
@@ -203,6 +205,7 @@ class StyleSheetRegistry {
       doubleUnderline: doubleUnderline ?? false,
       doubleStrikethrough: doubleStrikethrough ?? false,
       overline: overline ?? false,
+      highlight: highlight,
       transparency: transparency ?? 0,
       letterSpacingInches: letterSpacingInches ?? 0,
       position: position ?? VsdxTextPosition.normal,

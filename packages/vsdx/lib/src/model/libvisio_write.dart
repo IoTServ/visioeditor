@@ -2,9 +2,11 @@
 ///
 /// LibreOffice Draw never reads Visio XML itself — `VisioImportFilter.cxx`
 /// only calls `VisioDocument::isSupported` + `parse`. The VSDX token map has
-/// no `CompoundType`, and unknown `LinePattern` ids (custom draw.io arrays,
-/// 0xFE, …) fall through `_lineProperties` to a solid stroke. A save therefore
-/// has to emit parallel Geometry rails and a built-in pattern 2–23.
+/// no `CompoundType` and no `LineGradient`, and unknown `LinePattern` ids
+/// (custom draw.io arrays, 0xFE, …) fall through `_lineProperties` to a solid
+/// stroke. A save therefore has to emit parallel Geometry rails, a built-in
+/// pattern 2–23, and — for an unfilled 2-D stroke with a line gradient — a
+/// filled ribbon whose FillPattern 25–40 libvisio *does* collect.
 library;
 
 import '../export/compound_stroke.dart';
@@ -36,6 +38,7 @@ class LibvisioShapeWrite {
 LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   var geometries = shape.geometries;
   var line = shape.line;
+  var fill = shape.fill;
   var geometryRewritten = false;
 
   final baked = bakeCompoundTypeForLibvisio(shape);
@@ -55,10 +58,22 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     line = line.copyWith(color: color);
   }
 
+  final ribbon = bakeLineGradientRibbon(
+    shape: shape,
+    geometries: geometries,
+    line: line,
+  );
+  if (ribbon != null) {
+    geometries = ribbon.geometries;
+    line = ribbon.line;
+    fill = ribbon.fill;
+    geometryRewritten = true;
+  }
+
   return LibvisioShapeWrite(
     geometries: geometries,
     line: line,
-    fill: shape.fill,
+    fill: fill,
     geometryRewritten: geometryRewritten,
   );
 }
@@ -75,9 +90,24 @@ List<Offset2D>? _strokedVertices(VsdxGeometry geometry, VsdxShape shape) {
       );
 }
 
-/// `true` when a 2-D shape's CompoundType would otherwise vanish in Draw.
+bool _shapePaintsFill(VsdxShape shape, List<VsdxGeometry> geometries) {
+  if (!shape.fill.hasFill) return false;
+  for (final geometry in geometries) {
+    if (!geometry.noShow && !geometry.noFill) return true;
+  }
+  return false;
+}
+
+bool _hasArrowheads(VsdxLine line) =>
+    line.beginArrow != 0 || line.endArrow != 0;
+
+/// `true` when CompoundType would otherwise vanish in Draw.
+///
+/// 1-D connectors with arrowheads are left alone: libvisio hangs a marker on
+/// every open path, so splitting a connector into rails duplicates the arrow.
+/// Arrow-less 1-D double-lines bake the same way 2-D shapes do.
 bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
-  if (shape.is1D) return false;
+  if (shape.is1D && _hasArrowheads(shape.line)) return false;
   if (shape.line.compoundType <= 0 || !shape.line.hasLine) return false;
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
@@ -149,6 +179,122 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
       compoundType: 0,
       weightInches: railWeight,
     ),
+  );
+}
+
+/// `true` when an unfilled 2-D LineGradient would be a solid stroke in Draw.
+///
+/// `tokens.txt` has no LineGradient cell. A 1-D connector keeps its glue
+/// contract; arrowheads are shape-level markers and cannot follow a filled
+/// ribbon. Filled shapes already occupy FillPattern, so they keep LineColor.
+bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) {
+  if (shape.is1D || _hasArrowheads(shape.line)) return false;
+  if (!shape.line.hasGradient || !shape.line.hasLine) return false;
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points != null && points.length >= 2) return true;
+  }
+  return false;
+}
+
+/// Expand an unfilled line-gradient stroke into a closed ribbon FillPattern
+/// 25–40 can paint. Compound rails, when present, are expanded one by one.
+({List<VsdxGeometry> geometries, VsdxLine line, VsdxFill fill})?
+    bakeLineGradientRibbon({
+  required VsdxShape shape,
+  required List<VsdxGeometry> geometries,
+  required VsdxLine line,
+}) {
+  if (!shapeNeedsLibvisioLineGradientRibbon(shape)) return null;
+  if (!line.hasGradient || !line.hasLine) return null;
+  final fill = _fillFromLineGradient(line);
+  if (fill == null) return null;
+
+  final weight = line.weightInches > 1e-9 ? line.weightInches : 0.01;
+  final half = weight / 2;
+  final out = <VsdxGeometry>[];
+  var added = false;
+  for (final geometry in geometries) {
+    if (geometry.noShow || geometry.noLine) {
+      out.add(geometry);
+      continue;
+    }
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) {
+      out.add(geometry);
+      continue;
+    }
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final commands = strokeRibbonCommands(
+      points,
+      halfWidth: half,
+      closed: closed,
+    );
+    if (commands.length < 3) {
+      out.add(geometry);
+      continue;
+    }
+    out.add(
+      VsdxGeometry(
+        noFill: false,
+        noLine: true,
+        commands: commands,
+      ),
+    );
+    added = true;
+  }
+  if (!added) return null;
+
+  return (
+    geometries: out,
+    line: line.copyWith(pattern: 0, gradient: null),
+    fill: fill,
+  );
+}
+
+VsdxFill? _fillFromLineGradient(VsdxLine line) {
+  if (!line.hasGradient) return null;
+  final gradient = line.gradient!;
+  VsdxColor? first;
+  VsdxColor? last;
+  for (final stop in gradient.stops) {
+    if (stop.color != null) {
+      first ??= stop.color;
+      last = stop.color;
+    }
+  }
+  first ??= line.color ?? const VsdxColor(0xFF000000);
+  last ??= first;
+  return VsdxFill(
+    foreground: first,
+    background: last,
+    pattern: 1,
+    gradient: gradient,
+  );
+}
+
+/// Closed polygon covering a stroked polyline, used as a filled ribbon.
+List<VsdxPathCommand> strokeRibbonCommands(
+  List<Offset2D> points, {
+  required double halfWidth,
+  required bool closed,
+}) {
+  final left = offsetPolyline(points, halfWidth, closed: closed);
+  final right = offsetPolyline(points, -halfWidth, closed: closed);
+  if (left.length < 2 || right.length < 2) {
+    return const <VsdxPathCommand>[];
+  }
+  if (closed) {
+    return <VsdxPathCommand>[
+      ...polylineCommands(left, closed: true),
+      ...polylineCommands(List<Offset2D>.of(right.reversed), closed: true),
+    ];
+  }
+  return polylineCommands(
+    <Offset2D>[...left, ...right.reversed],
+    closed: true,
   );
 }
 

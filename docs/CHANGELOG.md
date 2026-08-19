@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Arrow-less 1-D `CompoundType` strokes and unfilled 2-D `LineGradient`
+  strokes now survive a save into LibreOffice. libvisio hangs a marker on
+  every open path, so connectors with arrows still skip the rail rewrite;
+  a double-line without arrows bakes the same parallel Geometry rails as
+  2-D. `tokens.txt` has no LineGradient cell, so an unfilled 2-D gradient
+  stroke is expanded into a closed ribbon and written as classic FillPattern
+  25–40. Character `Highlight` is skipped by libvisio `readCharIX` but now
+  parses, paints (canvas + SVG), and round-trips in XML.
 - DiagramML `CubBezTo` / `QuadBezTo` / `RelArcTo` (and the other VSDX-era
   Rel* rows libvisio's token map does not name) now parse and paint, and a
   save rewrites them to the RelCubBezTo / RelQuadBezTo / ArcTo / PolylineTo

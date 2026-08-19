@@ -1,13 +1,16 @@
 /// Fill, line and Rounding types must paint here, and a save must emit the
 /// cells / rows LibreOffice's libvisio importer still collects.
 ///
-/// `VSDXParser` has no FillGradient token, no shape-level Rounding, and no
-/// CompoundType token. A modern gradient with FillPattern=1, a polyline with
-/// only a Rounding cell, or a CompoundType>0 stroke disappears in Draw. The
-/// writer rewrites those to classic FillPattern 25–40, baked RelQuadBezTo
-/// corners, and parallel Geometry rails. Classic FillPattern 25–40 also paint
-/// here even when the model has no stop section yet. Unknown LinePattern ids
-/// snap to the built-in 2–23 table `_lineProperties` actually dashes.
+/// `VSDXParser` has no FillGradient token, no shape-level Rounding, no
+/// CompoundType token, and no LineGradient token. A modern gradient with
+/// FillPattern=1, a polyline with only a Rounding cell, a CompoundType>0
+/// stroke, or an unfilled 2-D LineGradient disappears in Draw. The writer
+/// rewrites those to classic FillPattern 25–40, baked RelQuadBezTo corners,
+/// parallel Geometry rails (including arrow-less 1-D), and a filled ribbon
+/// for line gradients. Classic FillPattern 25–40 also paint here even when
+/// the model has no stop section yet. Unknown LinePattern ids snap to the
+/// built-in 2–23 table `_lineProperties` actually dashes. Character
+/// Highlight is skipped by libvisio `readCharIX` but still paints here.
 library;
 
 import 'package:test/test.dart';
@@ -89,6 +92,21 @@ void main() {
       ),
     );
     built = built.addShape(
+      VsdxShapeFactory.line(
+        id: nextId++,
+        ax: 1,
+        ay: 0.6,
+        bx: 4,
+        by: 0.6,
+        name: 'Compound1D',
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 1,
+        ),
+      ),
+    );
+    built = built.addShape(
       VsdxShape(
         id: nextId++,
         name: 'LineGradient',
@@ -111,6 +129,30 @@ void main() {
               VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
             ],
           ),
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 7,
+        pinY: 4,
+        width: 1.4,
+        height: 0.7,
+        name: 'Highlight',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+      ).copyWith(
+        text: 'Hi',
+        richText: const VsdxRichText(
+          runs: [
+            VsdxTextRun(
+              text: 'Hi',
+              charStyle: VsdxCharStyle(
+                highlight: VsdxColor(0xFFFF00FF),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -147,6 +189,10 @@ void main() {
     expect(svg, contains('stroke-dasharray="'), reason: 'LinePattern 2–23');
     expect(svg, contains('<marker'), reason: 'BeginArrow / EndArrow');
     expect(RegExp(r'\bQ ').hasMatch(svg), isTrue, reason: 'Rounding fillets');
+    expect(svg, contains('paint-order="stroke fill"'),
+        reason: 'Character Highlight marker halo');
+    expect(svg.toLowerCase(), contains('#ff00ff'),
+        reason: 'Character Highlight colour');
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final xml = VsdxPackage.open(saved)
@@ -158,11 +204,14 @@ void main() {
             'does not restroke the original path');
     expect(
       xml.contains('N="LineGradientEnabled" V="1"'),
-      isTrue,
-      reason: 'LineGradient cells stay for Visio; LO uses LineColor',
+      isFalse,
+      reason: 'Unfilled 2-D LineGradient bakes to a FillPattern ribbon; '
+          'tokens.txt has no LineGradient cell',
     );
     expect(xml, contains('N="LineColor" V="#FF0000"'),
         reason: 'LineGradient without LineColor must emit a stop colour for LO');
+    expect(xml, contains('N="Highlight" V="#FF00FF"'),
+        reason: 'Character Highlight must round-trip even though libvisio skips it');
     expect(
       xml.contains('N="FillPattern" V="1"') &&
           xml.contains('N="FillGradientEnabled" V="1"'),
@@ -173,6 +222,37 @@ void main() {
       RegExp(r'N="FillPattern" V="(2[5-9]|3[0-9]|40)"').hasMatch(xml),
       isTrue,
       reason: 'FillGradient fallback must be FillPattern 25–40',
+    );
+
+    final savedDoc = parser.parse(saved);
+    final lineGradient = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LineGradient');
+    expect(lineGradient.line.hasGradient, isFalse);
+    expect(lineGradient.line.pattern, 0);
+    expect(
+      lineGradient.fill.hasGradient ||
+          (lineGradient.fill.pattern >= 25 && lineGradient.fill.pattern <= 40),
+      isTrue,
+      reason: 'LineGradient ribbon must become a classic FillPattern',
+    );
+    expect(lineGradient.geometries.any((g) => !g.noFill), isTrue);
+    final compound1d = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Compound1D');
+    expect(compound1d.line.compoundType, 0);
+    expect(
+      compound1d.geometries.where((g) => !g.noLine).length,
+      greaterThan(1),
+    );
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'Highlight')
+          .richText
+          .runs
+          .single
+          .charStyle
+          .highlight
+          ?.value,
+      0xFFFF00FF,
     );
 
     final oracle = LibvisioOracle.tryLoad();

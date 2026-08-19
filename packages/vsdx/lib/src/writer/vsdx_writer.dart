@@ -2712,7 +2712,10 @@ class VsdxWriter {
         el.getAttribute('MasterShape') != null;
     if ((preserveUnchangedPackage || inheritsShapeSheet) &&
         _shapePatchInputsEqual(base, edited)) {
-      return false;
+      if (preserveUnchangedPackage ||
+          !_shapeNeedsLibvisioGeometryRewrite(edited)) {
+        return false;
+      }
     }
     var changed = false;
     changed |= _patchLength(el, 'PinX', base.pinX, edited.pinX);
@@ -2875,12 +2878,14 @@ class VsdxWriter {
     }
     // Protection (drawio "Lock/Unlock").
     changed |= _patchLock(el, base, edited);
-    // Style.
+    // Style. Fill / Line / Geometry may be rewritten so Draw collects them.
+    final baseWrite = libvisioShapeWrite(base);
+    final editedWrite = libvisioShapeWrite(edited);
     changed |= _patchColorOrTheme(el, 'FillForegnd', 'QuickStyleFillColor',
-        baseColor: base.fill.foreground,
-        baseTheme: base.fill.themeForegroundIndex,
-        editedColor: edited.fill.foreground,
-        editedTheme: edited.fill.themeForegroundIndex);
+        baseColor: baseWrite.fill.foreground,
+        baseTheme: baseWrite.fill.themeForegroundIndex,
+        editedColor: editedWrite.fill.foreground,
+        editedTheme: editedWrite.fill.themeForegroundIndex);
     // Match rebuild: a standalone filled leaf needs an explicit foreground so
     // Edraw does not treat a missing FillForegnd as hollow. Materialise the
     // resolved model colour on equal-path saves too; keep genuine
@@ -2888,13 +2893,13 @@ class VsdxWriter {
     final inheritsFill = el.getAttribute('Master') != null ||
         el.getAttribute('MasterShape') != null ||
         el.getAttribute('FillStyle') != null;
-    if (edited.fill.pattern != 0 &&
+    if (editedWrite.fill.pattern != 0 &&
         edited.children.isEmpty &&
-        edited.fill.themeForegroundIndex == null &&
+        editedWrite.fill.themeForegroundIndex == null &&
         !inheritsFill &&
         !_hasCell(el, 'FillForegnd')) {
       final foreground =
-          edited.fill.foreground ?? const VsdxColor(0xFFFFFFFF);
+          editedWrite.fill.foreground ?? const VsdxColor(0xFFFFFFFF);
       _writeValue(_ensureCell(el, 'FillForegnd'), _hex(foreground));
       changed = true;
     }
@@ -2903,14 +2908,14 @@ class VsdxWriter {
     // theme FillBkgnd patch cannot overwrite FillForegnd's slot. When both
     // slots differ, write THEMEVAL("AccentColorN") instead of bare THEMEVAL().
     changed |= _patchColorOrTheme(el, 'FillBkgnd', 'QuickStyleFillColor',
-        baseColor: base.fill.background,
-        baseTheme: base.fill.themeBackgroundIndex,
-        editedColor: edited.fill.background,
-        editedTheme: edited.fill.themeBackgroundIndex,
-        writeQuickStyle: edited.fill.themeForegroundIndex == null,
+        baseColor: baseWrite.fill.background,
+        baseTheme: baseWrite.fill.themeBackgroundIndex,
+        editedColor: editedWrite.fill.background,
+        editedTheme: editedWrite.fill.themeBackgroundIndex,
+        writeQuickStyle: editedWrite.fill.themeForegroundIndex == null,
         themeValFormula: () {
-          final bg = edited.fill.themeBackgroundIndex;
-          final fg = edited.fill.themeForegroundIndex;
+          final bg = editedWrite.fill.themeBackgroundIndex;
+          final fg = editedWrite.fill.themeForegroundIndex;
           if (bg == null || fg == null || fg == bg) return null;
           final name = ThemeSlot.themeValName(bg);
           return name == null ? null : 'THEMEVAL("$name")';
@@ -2918,18 +2923,16 @@ class VsdxWriter {
     changed |= _patchInt(
         el,
         'FillPattern',
-        fillPatternForLibvisioWrite(base.fill),
-        fillPatternForLibvisioWrite(edited.fill));
+        fillPatternForLibvisioWrite(baseWrite.fill),
+        fillPatternForLibvisioWrite(editedWrite.fill));
     // Groups often omit Fill* entirely and inherit via StyleSheet. Materialising
     // the parser default pattern=1 without FillForegnd makes Edraw treat the
     // container as a hollow phantom fill. Only ensure when the cell already
     // exists (scrub Inh) or the shape is a leaf (rebuild always emits pattern).
     if (edited.children.isEmpty || _hasCell(el, 'FillPattern')) {
       changed |= _ensureLiteralInt(
-          el, 'FillPattern', fillPatternForLibvisioWrite(edited.fill));
+          el, 'FillPattern', fillPatternForLibvisioWrite(editedWrite.fill));
     }
-    final baseWrite = libvisioShapeWrite(base);
-    final editedWrite = libvisioShapeWrite(edited);
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: baseWrite.line.color,
         baseTheme: baseWrite.line.themeColorIndex,
@@ -2970,13 +2973,13 @@ class VsdxWriter {
         'EndArrowSize',
         _arrowSizeToBucket(edited.line.endArrowSizeInches));
     changed |= _patchRatio(el, 'FillForegndTrans',
-        base.fill.foregroundTransparency, edited.fill.foregroundTransparency);
+        baseWrite.fill.foregroundTransparency, editedWrite.fill.foregroundTransparency);
     changed |= _ensureLiteralLength(
-        el, 'FillForegndTrans', edited.fill.foregroundTransparency);
+        el, 'FillForegndTrans', editedWrite.fill.foregroundTransparency);
     changed |= _patchRatio(el, 'FillBkgndTrans',
-        base.fill.backgroundTransparency, edited.fill.backgroundTransparency);
+        baseWrite.fill.backgroundTransparency, editedWrite.fill.backgroundTransparency);
     changed |= _ensureLiteralLength(
-        el, 'FillBkgndTrans', edited.fill.backgroundTransparency);
+        el, 'FillBkgndTrans', editedWrite.fill.backgroundTransparency);
     changed |= _patchRatio(
         el, 'LineColorTrans', base.line.transparency, edited.line.transparency);
     changed |=
@@ -3125,8 +3128,8 @@ class VsdxWriter {
         el, 'ReflectionBlur', edited.reflection.blurInches);
     changed |= _ensureLiteralLength(
         el, 'ReflectionTransparency', edited.reflection.transparency);
-    changed |= _patchGradient(el, base.fill, edited.fill);
-    changed |= _patchLineGradient(el, base.line, edited.line);
+    changed |= _patchGradient(el, baseWrite.fill, editedWrite.fill);
+    changed |= _patchLineGradient(el, baseWrite.line, editedWrite.line);
     // Text content — only rewrite `<Text>` when the plain string changes so
     // existing `<cp>/<pp>/<fld>` markers survive style-only edits (libvisio
     // round-trip). When content does change we rebuild from rich runs with
@@ -3142,7 +3145,7 @@ class VsdxWriter {
     // e.g. after resize scaling or connector re-routing).
     changed |= _patchGeometry(el, base, edited);
     // Edraw defaults absent NoFill → 1 (hollow); inject explicit 0/1.
-    changed |= _ensureGeometryNoFillNoLine(el, edited);
+    changed |= _ensureGeometryNoFillNoLine(el, editedWrite.geometries);
     // Edge glue points for 2-D shapes (Edraw attaches oddly without them).
     changed |= _ensureConnectionPoints(el, edited);
     // 1-D dynamics Edraw expects on every connector (GlueType / route style).
@@ -4628,6 +4631,12 @@ class VsdxWriter {
         c.doubleStrikethrough ? '1' : '0');
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Overline'), c.overline ? '1' : '0');
+    if (c.highlight != null) {
+      changed |= _writeValueIfNeeded(
+          _ensureCell(row, 'Highlight'), _hex(c.highlight!));
+    } else {
+      changed |= _writeValueIfNeeded(_ensureCell(row, 'Highlight'), '0');
+    }
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
     changed |= _writeValueIfNeeded(
@@ -4833,6 +4842,9 @@ class VsdxWriter {
     _writeValue(_ensureCell(row, 'DoubleStrikethrough'),
         c.doubleStrikethrough ? '1' : '0');
     _writeValue(_ensureCell(row, 'Overline'), c.overline ? '1' : '0');
+    _writeValue(
+        _ensureCell(row, 'Highlight'),
+        c.highlight != null ? _hex(c.highlight!) : '0');
     _writeValue(_ensureCell(row, 'Letterspace'), _fmt(c.letterSpacingInches));
     _writeValue(
         _ensureCell(row, 'Pos'), _textPositionInt(c.position).toString());
@@ -5025,6 +5037,7 @@ class VsdxWriter {
           ca.doubleUnderline != cb.doubleUnderline ||
           ca.doubleStrikethrough != cb.doubleStrikethrough ||
           ca.overline != cb.overline ||
+          ca.highlight?.value != cb.highlight?.value ||
           ca.fontFamily != cb.fontFamily ||
           ca.color?.value != cb.color?.value ||
           ca.themeColorIndex != cb.themeColorIndex ||
@@ -6943,7 +6956,7 @@ class VsdxWriter {
   /// Sync Geometry NoFill/NoLine to the model. Edraw treats missing NoFill as
   /// 1 (no fill), so filled shapes export hollow unless we emit V="0". Also
   /// force-updates stale cells after UI setNoFill / setNoLine.
-  bool _ensureGeometryNoFillNoLine(XmlElement el, VsdxShape s) {
+  bool _ensureGeometryNoFillNoLine(XmlElement el, List<VsdxGeometry> geometries) {
     final sections = <XmlElement>[
       for (final child in el.childElements)
         if (child.name.local == 'Section' &&
@@ -6954,7 +6967,7 @@ class VsdxWriter {
     var changed = false;
     for (var i = 0; i < sections.length; i++) {
       final section = sections[i];
-      final g = i < s.geometries.length ? s.geometries[i] : null;
+      final g = i < geometries.length ? geometries[i] : null;
       final wantFill = g?.noFill ?? false;
       final wantLine = g?.noLine ?? false;
       final wantShow = g?.noShow ?? false;
@@ -7337,6 +7350,7 @@ class VsdxWriter {
       return _buildPictureElement(s, imageRels, opaqueById: opaqueById);
     }
     final write = libvisioShapeWrite(s);
+    final fill = write.fill;
     // Drop stale THEMEVAL keys left after theme→solid / no-fill edits so a
     // group rebuild cannot resurrect them (patch path already scrubbed).
     final staleTheme = _staleThemeFormulaKeys(s);
@@ -7452,29 +7466,29 @@ class VsdxWriter {
       }
     }
     // --- Fill ----------------------------------------------------------------
-    if (s.fill.foreground != null) {
-      children.add(_cell('FillForegnd', _hex(s.fill.foreground!),
+    if (fill.foreground != null) {
+      children.add(_cell('FillForegnd', _hex(fill.foreground!),
           formula: formulaOf('FillForegnd')));
-    } else if (s.fill.themeForegroundIndex != null) {
+    } else if (fill.themeForegroundIndex != null) {
       children.add(_cell('FillForegnd', '0',
           formula: formulaOf('FillForegnd') ?? 'THEMEVAL()'));
       children.add(
-          _cell('QuickStyleFillColor', s.fill.themeForegroundIndex!.toString()));
+          _cell('QuickStyleFillColor', fill.themeForegroundIndex!.toString()));
     } else if (formulaOf('FillForegnd') != null) {
       children.add(_cell('FillForegnd', '0', formula: formulaOf('FillForegnd')));
-    } else if (s.fill.pattern != 0 && s.children.isEmpty) {
+    } else if (fill.pattern != 0 && s.children.isEmpty) {
       // VSD import / defaultFill often leave foreground null while pattern=1.
       // Visio resolves via StyleSheets; 万兴图示 treats missing FillForegnd as
       // hollow — emit opaque white (Visio "No Style" default). Skip groups:
       // inventing a fill on a container paints a phantom rectangle after reopen.
       children.add(_cell('FillForegnd', '#FFFFFF'));
     }
-    if (s.fill.background != null) {
-      children.add(_cell('FillBkgnd', _hex(s.fill.background!),
+    if (fill.background != null) {
+      children.add(_cell('FillBkgnd', _hex(fill.background!),
           formula: formulaOf('FillBkgnd')));
-    } else if (s.fill.themeBackgroundIndex != null) {
-      final bgSlot = s.fill.themeBackgroundIndex!;
-      final fgSlot = s.fill.themeForegroundIndex;
+    } else if (fill.themeBackgroundIndex != null) {
+      final bgSlot = fill.themeBackgroundIndex!;
+      final fgSlot = fill.themeForegroundIndex;
       // When fg and bg use different theme slots they cannot share one
       // QuickStyleFillColor — emit THEMEVAL("AccentColorN") for the bg cell.
       final named = (fgSlot != null && fgSlot != bgSlot)
@@ -7493,17 +7507,17 @@ class VsdxWriter {
       children.add(_cell('FillBkgnd', '0', formula: formulaOf('FillBkgnd')));
     }
     // FillBkgnd default comes from document StyleSheets (No Style) when omitted.
-    final fillPattern = fillPatternForLibvisioWrite(s.fill);
+    final fillPattern = fillPatternForLibvisioWrite(fill);
     children.add(_cell(
       'FillPattern',
       fillPattern.toString(),
-      formula: fillPattern == s.fill.pattern ? formulaOf('FillPattern') : null,
+      formula: fillPattern == fill.pattern ? formulaOf('FillPattern') : null,
     ));
     // Always emit Trans (incl. 0) so Master transparency cannot revive after
     // clear + group rebuild (patch already force-writes these).
     children
-      ..add(_cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)))
-      ..add(_cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)));
+      ..add(_cell('FillForegndTrans', _fmt(fill.foregroundTransparency)))
+      ..add(_cell('FillBkgndTrans', _fmt(fill.backgroundTransparency)));
     // --- Line ----------------------------------------------------------------
     if (write.line.color != null) {
       children.add(_cell('LineColor', _hex(write.line.color!),
@@ -7635,21 +7649,21 @@ class VsdxWriter {
             'ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     }
-    if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
+    if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
       children
         ..add(_cell('FillGradientEnabled', '1'))
         ..add(_cell('FillGradientDir',
-            _gradientDirFor(s.fill.gradient!).toString()))
-        ..add(_cell('FillGradientAngle', _fmt(s.fill.gradient!.angleRad)));
+            _gradientDirFor(fill.gradient!).toString()))
+        ..add(_cell('FillGradientAngle', _fmt(fill.gradient!.angleRad)));
     } else {
       children.add(_cell('FillGradientEnabled', '0'));
     }
-    if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
+    if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
       children
         ..add(_cell('LineGradientEnabled', '1'))
         ..add(_cell('LineGradientDir',
-            _gradientDirFor(s.line.gradient!).toString()))
-        ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
+            _gradientDirFor(write.line.gradient!).toString()))
+        ..add(_cell('LineGradientAngle', _fmt(write.line.gradient!.angleRad)));
     } else {
       children.add(_cell('LineGradientEnabled', '0'));
     }
@@ -7737,11 +7751,11 @@ class VsdxWriter {
     if (s.richText.tabSets.isNotEmpty) {
       children.add(_buildTabsSection(s.richText.tabSets));
     }
-    if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
-      children.add(_buildFillGradientSection(s.fill.gradient!));
+    if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
+      children.add(_buildFillGradientSection(fill.gradient!));
     }
-    if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
-      children.add(_buildLineGradientSection(s.line.gradient!));
+    if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
+      children.add(_buildLineGradientSection(write.line.gradient!));
     }
     var ix = 0;
     for (final g in write.geometries) {
@@ -7900,6 +7914,8 @@ class VsdxWriter {
       ..add(_cell('DblUnderline', c.doubleUnderline ? '1' : '0'))
       ..add(_cell('DoubleStrikethrough', c.doubleStrikethrough ? '1' : '0'))
       ..add(_cell('Overline', c.overline ? '1' : '0'))
+      ..add(_cell(
+          'Highlight', c.highlight != null ? _hex(c.highlight!) : '0'))
       ..add(_cell('Letterspace', _fmt(c.letterSpacingInches)))
       ..add(_cell('Pos', _textPositionInt(c.position).toString()))
       ..add(_cell('Case', _textCaseInt(c.textCase).toString()))
@@ -8094,12 +8110,13 @@ class VsdxWriter {
           partName: part ?? '',
         );
     final compression = _vsdxCompressionFor(s, foreignType, part);
-    final bgSlot = s.fill.themeBackgroundIndex;
-    final fgSlot = s.fill.themeForegroundIndex;
+    final write = libvisioShapeWrite(s);
+    final fill = write.fill;
+    final bgSlot = fill.themeBackgroundIndex;
+    final fgSlot = fill.themeForegroundIndex;
     final namedBg = (bgSlot != null && fgSlot != null && fgSlot != bgSlot)
         ? ThemeSlot.themeValName(bgSlot)
         : null;
-    final write = libvisioShapeWrite(s);
     final children = <XmlNode>[
       _cell('PinX', _fmt(s.pinX), formula: _nonInhFormula(s.formulas['PinX'])),
       _cell('PinY', _fmt(s.pinY), formula: _nonInhFormula(s.formulas['PinY'])),
@@ -8158,15 +8175,15 @@ class VsdxWriter {
       _cell('Contrast', _fmt(s.imageContrast)),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
-      _cell('FillPattern', fillPatternForLibvisioWrite(s.fill).toString()),
-      if (s.fill.foreground != null)
-        _cell('FillForegnd', _hex(s.fill.foreground!))
-      else if (s.fill.themeForegroundIndex != null) ...[
+      _cell('FillPattern', fillPatternForLibvisioWrite(fill).toString()),
+      if (fill.foreground != null)
+        _cell('FillForegnd', _hex(fill.foreground!))
+      else if (fill.themeForegroundIndex != null) ...[
         _cell('FillForegnd', '0', formula: 'THEMEVAL()'),
-        _cell('QuickStyleFillColor', s.fill.themeForegroundIndex!.toString()),
+        _cell('QuickStyleFillColor', fill.themeForegroundIndex!.toString()),
       ],
-      if (s.fill.background != null)
-        _cell('FillBkgnd', _hex(s.fill.background!))
+      if (fill.background != null)
+        _cell('FillBkgnd', _hex(fill.background!))
       else if (bgSlot != null) ...[
         _cell(
           'FillBkgnd',
@@ -8175,8 +8192,8 @@ class VsdxWriter {
         ),
         if (fgSlot == null) _cell('QuickStyleFillColor', bgSlot.toString()),
       ],
-      _cell('FillForegndTrans', _fmt(s.fill.foregroundTransparency)),
-      _cell('FillBkgndTrans', _fmt(s.fill.backgroundTransparency)),
+      _cell('FillForegndTrans', _fmt(fill.foregroundTransparency)),
+      _cell('FillBkgndTrans', _fmt(fill.backgroundTransparency)),
       _cell('LinePattern', write.line.pattern.toString()),
       _cell('LineWeight', _fmt(write.line.weightInches)),
       _cell('LineCap', _lineCapInt(s.line.cap).toString()),
@@ -8286,21 +8303,21 @@ class VsdxWriter {
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
     }
     // Match Shape rebuild: always emit gradient enable flags (incl. 0).
-    if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
+    if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
       children
         ..add(_cell('FillGradientEnabled', '1'))
         ..add(_cell('FillGradientDir',
-            _gradientDirFor(s.fill.gradient!).toString()))
-        ..add(_cell('FillGradientAngle', _fmt(s.fill.gradient!.angleRad)));
+            _gradientDirFor(fill.gradient!).toString()))
+        ..add(_cell('FillGradientAngle', _fmt(fill.gradient!.angleRad)));
     } else {
       children.add(_cell('FillGradientEnabled', '0'));
     }
-    if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
+    if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
       children
         ..add(_cell('LineGradientEnabled', '1'))
         ..add(_cell('LineGradientDir',
-            _gradientDirFor(s.line.gradient!).toString()))
-        ..add(_cell('LineGradientAngle', _fmt(s.line.gradient!.angleRad)));
+            _gradientDirFor(write.line.gradient!).toString()))
+        ..add(_cell('LineGradientAngle', _fmt(write.line.gradient!.angleRad)));
     } else {
       children.add(_cell('LineGradientEnabled', '0'));
     }
@@ -8382,11 +8399,11 @@ class VsdxWriter {
       if (s.richText.tabSets.isNotEmpty) {
         children.add(_buildTabsSection(s.richText.tabSets));
       }
-      if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
-        children.add(_buildFillGradientSection(s.fill.gradient!));
+      if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
+        children.add(_buildFillGradientSection(fill.gradient!));
       }
-      if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
-        children.add(_buildLineGradientSection(s.line.gradient!));
+      if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
+        children.add(_buildLineGradientSection(write.line.gradient!));
       }
       final textEl = XmlElement(XmlName('Text'));
       for (var i = 0; i < pictureRuns.length; i++) {
@@ -8405,11 +8422,11 @@ class VsdxWriter {
       if (s.richText.tabSets.isNotEmpty) {
         children.add(_buildTabsSection(s.richText.tabSets));
       }
-      if (s.fill.gradient != null && s.fill.gradient!.stops.isNotEmpty) {
-        children.add(_buildFillGradientSection(s.fill.gradient!));
+      if (fill.gradient != null && fill.gradient!.stops.isNotEmpty) {
+        children.add(_buildFillGradientSection(fill.gradient!));
       }
-      if (s.line.gradient != null && s.line.gradient!.stops.isNotEmpty) {
-        children.add(_buildLineGradientSection(s.line.gradient!));
+      if (write.line.gradient != null && write.line.gradient!.stops.isNotEmpty) {
+        children.add(_buildLineGradientSection(write.line.gradient!));
       }
     }
     // Emit frame Geometry (required by Edraw/Visio for Foreign hit-testing).
@@ -8804,6 +8821,7 @@ class VsdxWriter {
   /// for VSD/VDX.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
+    if (shapeNeedsLibvisioLineGradientRibbon(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
     if (shape.line.roundingInches <= 1e-12) return false;
     for (final geometry in shape.geometries) {

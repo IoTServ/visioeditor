@@ -309,6 +309,20 @@ void main() {
             compoundType: 1,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 14,
+          ax: 4,
+          ay: 6.5,
+          bx: 7,
+          by: 6.5,
+          name: 'Compound1D',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 1,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);

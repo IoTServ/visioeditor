@@ -121,6 +121,34 @@ void main() {
     expect(style.overline, isTrue);
   });
 
+  test('Character Highlight parses V=hex and V=0 clears', () {
+    final marked = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Highlight" V="#ff00ff"/>'
+        '</Row></Section>'
+        '<Text><cp IX="0"/>Hi</Text>',
+      ),
+    );
+    expect(
+      marked.runs.single.charStyle.highlight?.value,
+      0xFFFF00FF,
+    );
+
+    final cleared = parser.parse(
+      shape(
+        '<Section N="Character"><Row IX="0">'
+        '<Cell N="Highlight" V="0"/>'
+        '</Row></Section>'
+        '<Text><cp IX="0"/>Hi</Text>',
+      ),
+      defaultChar: const VsdxCharStyle(
+        highlight: VsdxColor(0xFFFFFF00),
+      ),
+    );
+    expect(cleared.runs.single.charStyle.highlight, isNull);
+  });
+
   test('ordinary trailing whitespace is preserved without a tab marker', () {
     final rich = parser.parse(shape('<Text>Label  \n</Text>'));
     expect(rich.plainText, 'Label  \n');

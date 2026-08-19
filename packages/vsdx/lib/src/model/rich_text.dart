@@ -316,6 +316,7 @@ class VsdxCharStyle {
     this.doubleUnderline = false,
     this.doubleStrikethrough = false,
     this.overline = false,
+    this.highlight,
     this.transparency = 0.0,
     this.letterSpacingInches = 0.0,
     this.position = VsdxTextPosition.normal,
@@ -346,6 +347,10 @@ class VsdxCharStyle {
   final bool doubleUnderline;
   final bool doubleStrikethrough;
   final bool overline;
+
+  /// Character `Highlight` — a marker colour behind the glyphs (`V=0` = none).
+  /// libvisio's `readCharIX` skips the cell; canvas and SVG still paint it.
+  final VsdxColor? highlight;
   final double transparency;
   final double letterSpacingInches;
 
@@ -409,6 +414,7 @@ class VsdxCharStyle {
         doubleUnderline: doubleUnderline,
         doubleStrikethrough: doubleStrikethrough,
         overline: overline,
+        highlight: highlight,
         transparency: transparency,
         letterSpacingInches: letterSpacingInches,
         position: position,
@@ -430,6 +436,8 @@ class VsdxCharStyle {
     bool? doubleUnderline,
     bool? doubleStrikethrough,
     bool? overline,
+    VsdxColor? highlight,
+    bool clearHighlight = false,
     double? transparency,
     double? letterSpacingInches,
     VsdxTextPosition? position,
@@ -461,6 +469,7 @@ class VsdxCharStyle {
         doubleUnderline: doubleUnderline ?? this.doubleUnderline,
         doubleStrikethrough: doubleStrikethrough ?? this.doubleStrikethrough,
         overline: overline ?? this.overline,
+        highlight: clearHighlight ? null : (highlight ?? this.highlight),
         transparency: transparency ?? this.transparency,
         letterSpacingInches: letterSpacingInches ?? this.letterSpacingInches,
         position: position ?? this.position,

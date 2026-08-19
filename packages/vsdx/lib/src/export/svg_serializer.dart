@@ -5930,6 +5930,16 @@ class VsdxToSvgSerializer {
       '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing * coordinateScale)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
+    if (c.highlight != null) {
+      // libvisio skips Character Highlight; paint a marker halo so SVG export
+      // still shows the run (canvas uses TextStyle.backgroundColor).
+      attrs.write(
+        ' stroke="${_hex(c.highlight!)}" '
+        'stroke-width="${_n(fs * 0.9 * coordinateScale)}" '
+        'paint-order="stroke fill" stroke-linejoin="round" '
+        'stroke-linecap="round"',
+      );
+    }
     final lang = c.langId?.trim();
     if (lang != null && lang.isNotEmpty) {
       attrs.write(' xml:lang="${_esc(lang.replaceAll('_', '-'))}"');
