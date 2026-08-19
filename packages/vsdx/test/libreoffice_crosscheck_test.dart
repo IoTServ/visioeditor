@@ -323,14 +323,44 @@ void main() {
             compoundType: 1,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 15,
+          ax: 1,
+          ay: 5.5,
+          bx: 4,
+          by: 5.5,
+          name: 'LineGradient1D',
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.06,
+            gradient: VsdxGradient(
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 16,
+          ax: 5,
+          ay: 5.5,
+          bx: 8,
+          by: 5.5,
+          name: 'CapFlat',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            cap: LineCap.extended,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
-    final reopenedCommands = parser
-        .parse(generated)
-        .pages
-        .first
-        .shapes
+    final reopenedDoc = parser.parse(generated);
+    final reopenedCommands = reopenedDoc.pages.first.shapes
         .expand((shape) => shape.geometries)
         .expand((geometry) => geometry.commands);
     expect(
@@ -370,6 +400,18 @@ void main() {
       reopenedCommands.whereType<NurbsTo>().single.degree,
       9,
       reason: 'NURBSTo degree must survive the VSDX writer round-trip',
+    );
+    final lineGradient1d = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LineGradient1D');
+    expect(lineGradient1d.is1D, isTrue);
+    expect(lineGradient1d.line.hasGradient, isFalse);
+    expect(lineGradient1d.geometries.any((g) => !g.noFill), isTrue);
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CapFlat')
+          .line
+          .cap,
+      LineCap.extended,
     );
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;

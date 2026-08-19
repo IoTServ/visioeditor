@@ -5,7 +5,7 @@
 /// no `CompoundType` and no `LineGradient`, and unknown `LinePattern` ids
 /// (custom draw.io arrays, 0xFE, …) fall through `_lineProperties` to a solid
 /// stroke. A save therefore has to emit parallel Geometry rails, a built-in
-/// pattern 2–23, and — for an unfilled 2-D stroke with a line gradient — a
+/// pattern 2–23, and — for an unfilled stroke with a line gradient — a
 /// filled ribbon whose FillPattern 25–40 libvisio *does* collect.
 library;
 
@@ -182,13 +182,15 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
   );
 }
 
-/// `true` when an unfilled 2-D LineGradient would be a solid stroke in Draw.
+/// `true` when an unfilled LineGradient would be a solid stroke in Draw.
 ///
-/// `tokens.txt` has no LineGradient cell. A 1-D connector keeps its glue
-/// contract; arrowheads are shape-level markers and cannot follow a filled
-/// ribbon. Filled shapes already occupy FillPattern, so they keep LineColor.
+/// `tokens.txt` has no LineGradient cell. Arrowheads stay shape-level
+/// markers and cannot follow a filled ribbon, so connectors with arrows
+/// keep LineColor. Arrow-less 1-D strokes bake the same ribbon as 2-D:
+/// XForm1D / glue cells are untouched, matching CompoundType. Filled
+/// shapes already occupy FillPattern, so they keep LineColor.
 bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) {
-  if (shape.is1D || _hasArrowheads(shape.line)) return false;
+  if (_hasArrowheads(shape.line)) return false;
   if (!shape.line.hasGradient || !shape.line.hasLine) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   for (final geometry in shape.geometries) {

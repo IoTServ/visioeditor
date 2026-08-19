@@ -1325,18 +1325,20 @@ ApplyResult applyOps(
             if (lineCapRaw != null) {
               LineCap? cap;
               if (lineCapRaw is num) {
+                // Visio LineCap cell / libvisio `style.cap`: 0 round, 1
+                // extended (SVG butt), 2 square.
                 cap = switch (lineCapRaw.toInt()) {
                   0 => LineCap.round,
-                  1 => LineCap.square,
-                  2 => LineCap.extended,
+                  1 => LineCap.extended,
+                  2 => LineCap.square,
                   _ => null,
                 };
               } else {
                 final s = lineCapRaw.toString().trim().toLowerCase();
                 cap = switch (s) {
                   'round' || '0' => LineCap.round,
-                  'square' || '1' => LineCap.square,
-                  'extended' || 'flat' || '2' => LineCap.extended,
+                  'extended' || 'flat' || 'butt' || '1' => LineCap.extended,
+                  'square' || '2' => LineCap.square,
                   _ => null,
                 };
               }

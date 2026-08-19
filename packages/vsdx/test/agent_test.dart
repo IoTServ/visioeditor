@@ -1563,6 +1563,41 @@ void main() {
           VsdxHorzAlign.full);
     });
 
+    test('set_style lineCap Visio cell ids 0/1/2', () {
+      final blank = const VsdxWriter().emptyDocument();
+      var doc = const DocumentParser().parse(blank);
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.line(
+            id: id,
+            ax: 1,
+            ay: 1,
+            bx: 3,
+            by: 1,
+          ),
+        ),
+      );
+      LineCap capAfter(Object lineCap) {
+        final r = applyOps(doc, <Map<String, dynamic>>[
+          <String, dynamic>{
+            'op': 'set_style',
+            'ids': <String>['shape:$id'],
+            'lineCap': lineCap,
+          },
+        ]);
+        return r.document.pages.first.findShapeById(id)!.line.cap;
+      }
+
+      expect(capAfter(0), LineCap.round);
+      expect(capAfter(1), LineCap.extended);
+      expect(capAfter(2), LineCap.square);
+      expect(capAfter('1'), LineCap.extended);
+      expect(capAfter('flat'), LineCap.extended);
+      expect(capAfter('square'), LineCap.square);
+    });
+
     test('set_style fillGradient and lineGradient', () {
       final blank = const VsdxWriter().emptyDocument();
       var doc = const DocumentParser().parse(blank);

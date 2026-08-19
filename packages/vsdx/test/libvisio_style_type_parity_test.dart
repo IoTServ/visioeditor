@@ -4,13 +4,15 @@
 /// `VSDXParser` has no FillGradient token, no shape-level Rounding, no
 /// CompoundType token, and no LineGradient token. A modern gradient with
 /// FillPattern=1, a polyline with only a Rounding cell, a CompoundType>0
-/// stroke, or an unfilled 2-D LineGradient disappears in Draw. The writer
+/// stroke, or an unfilled LineGradient disappears in Draw. The writer
 /// rewrites those to classic FillPattern 25–40, baked RelQuadBezTo corners,
 /// parallel Geometry rails (including arrow-less 1-D), and a filled ribbon
-/// for line gradients. Classic FillPattern 25–40 also paint here even when
-/// the model has no stop section yet. Unknown LinePattern ids snap to the
-/// built-in 2–23 table `_lineProperties` actually dashes. Character
-/// Highlight is skipped by libvisio `readCharIX` but still paints here.
+/// for line gradients (2-D and arrow-less 1-D). Classic FillPattern 25–40
+/// also paint here even when the model has no stop section yet. Unknown
+/// LinePattern ids snap to the built-in 2–23 table `_lineProperties`
+/// actually dashes. `LineCap` 0/1/2 is a token libvisio *does* collect.
+/// Character Highlight / Overline are skipped by `readCharIX` but still
+/// paint here.
 library;
 
 import 'package:test/test.dart';
@@ -107,6 +109,17 @@ void main() {
       ),
     );
     built = built.addShape(
+      box(
+        'CompoundThickThin',
+        const VsdxFill(foreground: VsdxColor(0xFFCCCCCC), pattern: 1),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 2,
+        ),
+      ),
+    );
+    built = built.addShape(
       VsdxShape(
         id: nextId++,
         name: 'LineGradient',
@@ -133,6 +146,47 @@ void main() {
       ),
     );
     built = built.addShape(
+      VsdxShapeFactory.line(
+        id: nextId++,
+        ax: 1,
+        ay: 1.2,
+        bx: 4,
+        by: 1.2,
+        name: 'LineGradient1D',
+        line: const VsdxLine(
+          pattern: 1,
+          weightInches: 0.06,
+          gradient: VsdxGradient(
+            stops: [
+              VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+            ],
+          ),
+        ),
+      ),
+    );
+    for (final entry in <(String, LineCap)>[
+      ('CapRound', LineCap.round),
+      ('CapSquare', LineCap.square),
+      ('CapFlat', LineCap.extended),
+    ]) {
+      built = built.addShape(
+        VsdxShapeFactory.line(
+          id: nextId++,
+          ax: 5,
+          ay: 0.3,
+          bx: 8,
+          by: 0.3,
+          name: entry.$1,
+          line: VsdxLine(
+            color: const VsdxColor(0xFF000000),
+            weightInches: 0.08,
+            cap: entry.$2,
+          ),
+        ),
+      );
+    }
+    built = built.addShape(
       VsdxShapeFactory.rectangle(
         id: nextId++,
         pinX: 7,
@@ -150,6 +204,7 @@ void main() {
               text: 'Hi',
               charStyle: VsdxCharStyle(
                 highlight: VsdxColor(0xFFFF00FF),
+                overline: true,
               ),
             ),
           ],
@@ -193,6 +248,12 @@ void main() {
         reason: 'Character Highlight marker halo');
     expect(svg.toLowerCase(), contains('#ff00ff'),
         reason: 'Character Highlight colour');
+    expect(svg, contains('text-decoration="overline"'),
+        reason: 'Character Overline is skipped by readCharIX but still paints');
+    expect(svg, contains('stroke-linecap="round"'));
+    expect(svg, contains('stroke-linecap="square"'));
+    expect(svg, contains('stroke-linecap="butt"'),
+        reason: 'Visio LineCap=1 / libvisio cap 1 maps to SVG butt');
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final xml = VsdxPackage.open(saved)
@@ -205,13 +266,19 @@ void main() {
     expect(
       xml.contains('N="LineGradientEnabled" V="1"'),
       isFalse,
-      reason: 'Unfilled 2-D LineGradient bakes to a FillPattern ribbon; '
-          'tokens.txt has no LineGradient cell',
+      reason: 'Unfilled LineGradient (2-D and arrow-less 1-D) bakes to a '
+          'FillPattern ribbon; tokens.txt has no LineGradient cell',
     );
     expect(xml, contains('N="LineColor" V="#FF0000"'),
         reason: 'LineGradient without LineColor must emit a stop colour for LO');
     expect(xml, contains('N="Highlight" V="#FF00FF"'),
         reason: 'Character Highlight must round-trip even though libvisio skips it');
+    expect(xml, contains('N="Overline" V="1"'),
+        reason: 'Character Overline must round-trip even though libvisio skips it');
+    expect(xml, contains('N="LineCap" V="1"'),
+        reason: 'Visio LineCap 1 (extended/flat) is what libvisio maps to butt');
+    expect(xml, contains('N="LineCap" V="2"'),
+        reason: 'Visio LineCap 2 (square) is what libvisio maps to SVG square');
     expect(
       xml.contains('N="FillPattern" V="1"') &&
           xml.contains('N="FillGradientEnabled" V="1"'),
@@ -236,6 +303,19 @@ void main() {
       reason: 'LineGradient ribbon must become a classic FillPattern',
     );
     expect(lineGradient.geometries.any((g) => !g.noFill), isTrue);
+    final lineGradient1d = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LineGradient1D');
+    expect(lineGradient1d.is1D, isTrue);
+    expect(lineGradient1d.line.hasGradient, isFalse);
+    expect(lineGradient1d.line.pattern, 0);
+    expect(
+      lineGradient1d.fill.hasGradient ||
+          (lineGradient1d.fill.pattern >= 25 &&
+              lineGradient1d.fill.pattern <= 40),
+      isTrue,
+      reason: 'Arrow-less 1-D LineGradient bakes the same ribbon as 2-D',
+    );
+    expect(lineGradient1d.geometries.any((g) => !g.noFill), isTrue);
     final compound1d = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'Compound1D');
     expect(compound1d.line.compoundType, 0);
@@ -243,17 +323,35 @@ void main() {
       compound1d.geometries.where((g) => !g.noLine).length,
       greaterThan(1),
     );
+    final thickThin = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'CompoundThickThin');
+    expect(thickThin.line.compoundType, 0);
+    expect(
+      thickThin.geometries.where((g) => !g.noLine).length,
+      greaterThan(1),
+    );
     expect(
       savedDoc.pages.first.shapes
-          .firstWhere((s) => s.name == 'Highlight')
-          .richText
-          .runs
-          .single
-          .charStyle
-          .highlight
-          ?.value,
-      0xFFFF00FF,
+          .firstWhere((s) => s.name == 'CapFlat')
+          .line
+          .cap,
+      LineCap.extended,
     );
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CapSquare')
+          .line
+          .cap,
+      LineCap.square,
+    );
+    final highlightStyle = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Highlight')
+        .richText
+        .runs
+        .single
+        .charStyle;
+    expect(highlightStyle.highlight?.value, 0xFFFF00FF);
+    expect(highlightStyle.overline, isTrue);
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

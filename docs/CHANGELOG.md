@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Arrow-less 1-D `LineGradient` strokes now bake the same filled ribbon as
+  2-D when saved for LibreOffice. libvisio has no LineGradient token, so a
+  connector without arrowheads used to reopen as a solid stroke in Draw;
+  XForm1D / glue cells stay in place, matching the CompoundType rail bake.
+  Connectors with arrows still keep `LineColor`. Visio `LineCap` 0/1/2
+  (round / extended / square, the mapping `VSDContentCollector` uses) now
+  round-trips through agent ops, SVG `stroke-linecap`, and the writer.
+  Character `Overline` is skipped by libvisio `readCharIX` but now paints
+  and round-trips alongside Highlight. `CompoundType` 2 (thick-thin) is
+  included in the LibreOffice style bake coverage.
 - Arrow-less 1-D `CompoundType` strokes and unfilled 2-D `LineGradient`
   strokes now survive a save into LibreOffice. libvisio hangs a marker on
   every open path, so connectors with arrows still skip the rail rewrite;
