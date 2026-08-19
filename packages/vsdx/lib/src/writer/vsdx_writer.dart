@@ -2713,7 +2713,8 @@ class VsdxWriter {
     if ((preserveUnchangedPackage || inheritsShapeSheet) &&
         _shapePatchInputsEqual(base, edited)) {
       if (preserveUnchangedPackage ||
-          !_shapeNeedsLibvisioGeometryRewrite(edited)) {
+          (!_shapeNeedsLibvisioGeometryRewrite(edited) &&
+              !shapeNeedsLibvisioTextBkgndBake(edited))) {
         return false;
       }
     }
@@ -3003,8 +3004,8 @@ class VsdxWriter {
     // HideText / TextBkgnd + drop shadow / glow / reflection.
     changed |= _patchTextBlock(
       el,
-      base.richText.textBlock,
-      edited.richText.textBlock,
+      textBlockForLibvisioWrite(base),
+      textBlockForLibvisioWrite(edited),
       edited,
     );
     changed |= _patchShadow(el, base.shadow, edited.shadow);
@@ -7672,7 +7673,7 @@ class VsdxWriter {
     final textRuns = _effectiveTextRuns(s);
     _appendTextBlockCells(
       children,
-      s.richText.textBlock,
+      textBlockForLibvisioWrite(s),
       formulas: s.formulas,
       shapeForDefaults: s,
       hasLabel: textRuns.isNotEmpty,
@@ -8386,7 +8387,7 @@ class VsdxWriter {
     final pictureRuns = _effectiveTextRuns(s);
     _appendTextBlockCells(
       children,
-      s.richText.textBlock,
+      textBlockForLibvisioWrite(s),
       formulas: s.formulas,
       shapeForDefaults: s,
       hasLabel: pictureRuns.isNotEmpty,

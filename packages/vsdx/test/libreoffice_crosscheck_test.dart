@@ -429,6 +429,27 @@ void main() {
             endArrowSizeInches: 0.25,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 21,
+          pinX: 8,
+          pinY: 3.5,
+          width: 1.4,
+          height: 0.7,
+          name: 'Highlight',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+        ).copyWith(
+          text: 'Hi',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'Hi',
+                charStyle: VsdxCharStyle(highlight: VsdxColor(0xFFFF00FF)),
+              ),
+            ],
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -513,6 +534,10 @@ void main() {
         .firstWhere((s) => s.name == 'ArrowedLineColorTrans1D');
     expect(arrowedTrans.line.beginArrow, 0);
     expect(arrowedTrans.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    final highlight = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Highlight');
+    expect(highlight.richText.runs.single.charStyle.highlight?.value, 0xFFFF00FF);
+    expect(highlight.richText.textBlock.backgroundColor?.value, 0xFFFF00FF);
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';
@@ -900,6 +925,35 @@ void main() {
               expect(corner.b, lessThan(80));
             }
           }
+        }
+        if (entry.key == 'generated' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          );
+          expect(rendered, isNotNull);
+          var magentaPixels = 0;
+          for (final pixel in rendered!) {
+            if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(50),
+            reason: 'LibreOffice must paint Character Highlight via baked '
+                'TextBkgnd; magentaPixels=$magentaPixels',
+          );
         }
         if (entry.key == 'text_flip' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';

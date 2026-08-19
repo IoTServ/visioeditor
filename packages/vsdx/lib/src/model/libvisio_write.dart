@@ -11,7 +11,9 @@
 /// libvisio *does* collect. Arrowed 1-D connectors that also need those
 /// rewrites bake Begin/EndArrow as filled Geometry so Draw does not hang a
 /// marker on every open rail (and so BeginArrowSize, which is not a token,
-/// still has a size).
+/// still has a size). Character Highlight is skipped by `readCharIX` but
+/// `TextBkgnd` is collected and painted as `fo:background-color`, so a
+/// uniform highlight with no authored text-block fill is written there.
 library;
 
 import 'dart:math' as math;
@@ -23,6 +25,7 @@ import 'fill.dart';
 import 'geometry.dart';
 import 'line.dart';
 import 'perimeter.dart';
+import 'rich_text.dart';
 import 'rounding.dart';
 import 'shape.dart';
 
@@ -618,4 +621,64 @@ List<double> _normalizedDash(List<double> values) {
   }
   if (max < 1e-12) return values;
   return <double>[for (final value in values) value / max];
+}
+
+/// Shared Character Highlight of every non-empty run, or `null` if mixed / absent.
+VsdxColor? uniformCharacterHighlight(VsdxShape shape) {
+  VsdxColor? highlight;
+  var sawText = false;
+  for (final run in shape.richText.runs) {
+    if (run.text.trim().isEmpty) continue;
+    sawText = true;
+    final color = run.charStyle.highlight;
+    if (color == null) return null;
+    if (highlight == null) {
+      highlight = color;
+    } else if (highlight.value != color.value) {
+      return null;
+    }
+  }
+  if (sawText) return highlight;
+  final plain = shape.text?.trim() ?? '';
+  if (plain.isEmpty || shape.richText.runs.isEmpty) return null;
+  return shape.richText.runs.first.charStyle.highlight;
+}
+
+/// `true` when Character Highlight must be written as TextBkgnd for Draw.
+///
+/// `readCharIX` has `case XML_HIGHLIGHT: break;`. `TextBkgnd` is a token
+/// `VSDContentCollector` paints as span `fo:background-color`. Skip when the
+/// block already has a fill — that cell is the user's text-block colour.
+bool shapeNeedsLibvisioTextBkgndBake(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  if (block.hideText) return false;
+  if (block.backgroundColor != null) return false;
+  return uniformCharacterHighlight(shape) != null;
+}
+
+/// Text block cells the writer should emit so Draw paints Highlight.
+VsdxTextBlock textBlockForLibvisioWrite(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  if (!shapeNeedsLibvisioTextBkgndBake(shape)) return block;
+  return block.copyWith(backgroundColor: uniformCharacterHighlight(shape));
+}
+
+/// TextBkgnd to paint here. `null` when it is only the LibreOffice stand-in
+/// for Character Highlight, so canvas / SVG keep the tighter highlight halo.
+VsdxColor? textBlockBackgroundForPaint(VsdxShape shape) {
+  final background = shape.richText.textBlock.backgroundColor;
+  if (background == null) return null;
+  final highlight = uniformCharacterHighlight(shape);
+  if (highlight != null && highlight.value == background.value) return null;
+  return background;
+}
+
+/// [VsdxShape.richText] text block with a Highlight-stand-in TextBkgnd cleared.
+VsdxTextBlock textBlockForPaint(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  if (textBlockBackgroundForPaint(shape) != null ||
+      block.backgroundColor == null) {
+    return block;
+  }
+  return block.withoutBackgroundColor();
 }

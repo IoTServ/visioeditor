@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Character `Highlight` now also writes `TextBkgnd` when the text block has
+  no fill of its own. libvisio's `readCharIX` skips the Highlight cell, but
+  `VSDContentCollector` paints `TextBkgnd` as span `fo:background-color`, so
+  Draw used to drop the marker colour on save. Canvas and SVG still paint
+  the tighter highlight halo and ignore a TextBkgnd that only exists as that
+  stand-in, so a save/reopen here does not double-fill.
 - Arrowed 1-D `CompoundType` / `LineGradient` / `LineColorTrans` strokes now
   bake Begin/EndArrow as filled Geometry before the rail or ribbon rewrite,
   then clear the arrow cells. libvisio hangs a marker on every open path and

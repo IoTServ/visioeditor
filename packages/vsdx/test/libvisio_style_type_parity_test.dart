@@ -16,10 +16,17 @@
 /// Classic FillPattern 25–40 also paint here even when the model has no
 /// stop section yet. Unknown LinePattern ids snap to the built-in 2–23
 /// table `_lineProperties` actually dashes. `LineCap` 0/1/2 is a token
-/// libvisio *does* collect. Character Highlight / Overline / ColorTrans
-/// are skipped or alpha-stripped by `readCharIX` / `xmlStringToColour`
-/// but still paint here.
+/// libvisio *does* collect. Character Highlight is skipped by `readCharIX`
+/// but a uniform marker with no authored TextBkgnd is written there —
+/// `VSDContentCollector` paints it as span `fo:background-color` and Draw
+/// shows the plate. `RVNGSVGDrawingGenerator` drops that property, so the
+/// oracle SVG is the wrong place to look; `vsd2raw` still has it. Overline
+/// / ColorTrans still paint here even though `readCharIX` skips Overline
+/// and `xmlStringToColour` zeros alpha.
 library;
+
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
@@ -118,6 +125,41 @@ void main() {
     );
     expect(shapeNeedsLibvisioArrowedStrokeBake(plain), isFalse);
     expect(libvisioShapeWrite(plain).line.beginArrow, 4);
+  });
+
+  test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'Hi',
+    ).copyWith(
+      text: 'Hi',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'Hi',
+            charStyle: VsdxCharStyle(highlight: VsdxColor(0xFFFF00FF)),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioTextBkgndBake(shape), isTrue);
+    expect(
+      textBlockForLibvisioWrite(shape).backgroundColor?.value,
+      0xFFFF00FF,
+    );
+    expect(textBlockForPaint(shape).backgroundColor, isNull);
+    final withBlock = shape.copyWith(
+      richText: shape.richText.copyWith(
+        textBlock: shape.richText.textBlock.copyWith(
+          backgroundColor: const VsdxColor(0xFF00FF00),
+        ),
+      ),
+    );
+    expect(shapeNeedsLibvisioTextBkgndBake(withBlock), isFalse);
   });
 
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
@@ -621,6 +663,17 @@ void main() {
     expect(highlightStyle.highlight?.value, 0xFFFF00FF);
     expect(highlightStyle.overline, isTrue);
     expect(highlightStyle.transparency, closeTo(0.4, 1e-9));
+    final highlightBlock = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Highlight')
+        .richText
+        .textBlock;
+    expect(highlightBlock.backgroundColor?.value, 0xFFFF00FF,
+        reason: 'Highlight bakes to TextBkgnd so Draw can paint it');
+    expect(xml, contains('N="TextBkgnd" V="#FF00FF"'),
+        reason: 'readCharIX skips Highlight; TextBkgnd is collected');
+    // RVNGSVGDrawingGenerator never emits span fo:background-color (vsd2xhtml
+    // tspans are fill-only). vsd2raw still records the property Draw uses.
+    _expectVsd2rawTextBkgnd(saved, '#ff00ff');
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
@@ -643,4 +696,27 @@ void main() {
       reason: 'libvisio must paint LineColorTrans via baked FillForegndTrans',
     );
   });
+}
+
+String? _which(String name) {
+  final result = Process.runSync('which', <String>[name]);
+  if (result.exitCode != 0) return null;
+  final path = (result.stdout as String).trim();
+  return path.isEmpty ? null : path;
+}
+
+void _expectVsd2rawTextBkgnd(Uint8List saved, String hex) {
+  final vsd2raw = _which('vsd2raw');
+  if (vsd2raw == null) return;
+  final tmp = File(
+    '${Directory.systemTemp.path}/vsdx_highlight_textbkgnd.vsdx',
+  );
+  tmp.writeAsBytesSync(saved);
+  final raw = Process.runSync(vsd2raw, <String>[tmp.path]);
+  expect(raw.exitCode, 0, reason: 'vsd2raw stderr: ${raw.stderr}');
+  expect(
+    raw.stdout.toString().toLowerCase(),
+    contains('fo:background-color: $hex'),
+    reason: 'libvisio must collect baked TextBkgnd for Draw',
+  );
 }

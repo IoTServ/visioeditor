@@ -2623,7 +2623,7 @@ class VsdxPainter extends CustomPainter {
     // Freehand ink keeps ordinary AABB text placement.
     final isEdgeLabel = shape.isGlueableConnector;
 
-    final block = rich.textBlock;
+    final block = textBlockForPaint(shape);
     var labelAngle = isEdgeLabel
         ? (_paintTarget ?? page)?.effectiveConnectorLabelAngle(shape) ??
               block.angleRad

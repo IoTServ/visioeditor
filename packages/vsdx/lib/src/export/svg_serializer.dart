@@ -23,6 +23,7 @@ import '../model/fill.dart';
 import '../model/geometry.dart';
 import '../model/image.dart';
 import '../model/layer.dart';
+import '../model/libvisio_write.dart';
 import '../model/line.dart';
 import '../model/nurbs.dart';
 import '../model/page.dart';
@@ -4428,7 +4429,7 @@ class VsdxToSvgSerializer {
     required String paintIdScope,
     required String indent,
   }) {
-    final block = shape.richText.textBlock;
+    final block = textBlockForPaint(shape);
     var labelAngle = shape.isGlueableConnector
         ? page.effectiveConnectorLabelAngle(shape)
         : block.angleRad;
