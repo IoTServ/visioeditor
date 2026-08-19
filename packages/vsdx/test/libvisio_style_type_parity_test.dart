@@ -26,7 +26,9 @@
 /// / `ComplexScriptSize` are not tokens, so an Asian-only (Hangul/Kana/Han)
 /// or complex-script-only run whose Visio `Font` is Arial is rewritten to
 /// the face and size Draw will actually load. Mixed Latin+CJK runs keep
-/// `Font`. Unknown `FillPattern` ids above 40 snap to solid `1`.
+/// `Font`. Unknown `FillPattern` ids above 40 snap to solid `1`. Explicit
+/// round joins on a square/flat cap bake RelQuadBezTo — `_lineProperties`
+/// would otherwise emit miter from LineCap.
 library;
 
 import 'dart:io';
@@ -209,6 +211,22 @@ void main() {
     expect(fontFamilyForLibvisioWrite(latinUi, 'Hi'), 'Arial');
     expect(fontFamilyForLibvisioWrite(latinUi, 'Hello世界'), 'Arial');
     expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 41)), 1);
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        join: VsdxLineJoin.round,
+        weightInches: 0.08,
+      )),
+      closeTo(0.04, 1e-12),
+    );
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.round,
+        join: VsdxLineJoin.round,
+        weightInches: 0.08,
+      )),
+      0,
+    );
   });
 
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
@@ -266,6 +284,32 @@ void main() {
         line: const VsdxLine(
           color: VsdxColor.black,
           roundingInches: 0.15,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShape(
+        id: nextId++,
+        name: 'RoundJoin',
+        pinX: 8,
+        pinY: 1.6,
+        width: 1.4,
+        height: 1.4,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              LineTo(1.4, 0),
+              LineTo(1.4, 1.4),
+            ],
+          ),
+        ],
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          cap: LineCap.square,
+          join: VsdxLineJoin.round,
         ),
       ),
     );
@@ -675,7 +719,8 @@ void main() {
     final xml = VsdxPackage.open(saved)
         .readPartXml('/visio/pages/page1.xml')!
         .toXmlString();
-    expect(xml, contains('T="RelQuadBezTo"'), reason: 'Rounding bakes for LO');
+    expect(xml, contains('T="RelQuadBezTo"'),
+        reason: 'Rounding and round-join bakes for LO');
     expect(xml, contains('N="CompoundType" V="0"'),
         reason: 'CompoundType 1 bakes to rails; cell must be 0 so Visio '
             'does not restroke the original path');
@@ -887,6 +932,16 @@ void main() {
           .pattern,
       1,
       reason: 'FillPattern 41 is not a hatch/gradient id Draw paints',
+    );
+    final roundJoin =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
+    expect(roundJoin.line.roundingInches, closeTo(0, 1e-12),
+        reason: 'round join must not write a Rounding cell Visio would restroke');
+    expect(roundJoin.line.cap, LineCap.square);
+    expect(
+      roundJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+      reason: '_lineProperties would miter a square cap; fillets are collected',
     );
     final collected = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'CollectedChar')

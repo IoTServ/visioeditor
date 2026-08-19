@@ -18,7 +18,10 @@
 /// `readCharIX` only stores `Font` and `Size` — so an Asian-only (or
 /// complex-script-only) run whose Latin `Font` would tofu in Draw is
 /// rewritten to the Asian / complex face, and a complex-only run writes
-/// `ComplexScriptSize` into `Size`.
+/// `ComplexScriptSize` into `Size`. `_lineProperties` derives `stroke-linejoin`
+/// from `LineCap` only (round cap → round join, otherwise miter), so an
+/// explicit round join on a square/flat cap is baked with the same RelQuadBezTo
+/// fillets as shape-level Rounding.
 library;
 
 import 'dart:math' as math;
@@ -545,6 +548,23 @@ int linePatternForLibvisioWrite(VsdxLine line) {
   }
   if (line.pattern >= 1 && line.pattern <= 23) return line.pattern;
   return 1;
+}
+
+/// Fillet radius Draw will actually paint.
+///
+/// Shape-level `Rounding` is not in `readShapeProperties` (only stylesheet
+/// `readLine`). Explicit draw.io round joins are also dropped: `_lineProperties`
+/// maps join from `LineCap`, so a square/flat cap becomes a miter. Bake those
+/// at half the line weight, without writing a Rounding cell Visio would
+/// apply a second time on top of the fillets.
+double roundingForLibvisioWrite(VsdxLine line) {
+  var radius = line.roundingInches;
+  if (line.join == VsdxLineJoin.round && line.cap != LineCap.round) {
+    final joinRadius =
+        (line.weightInches > 1e-9 ? line.weightInches : 0.01) / 2;
+    if (joinRadius > radius) radius = joinRadius;
+  }
+  return radius;
 }
 
 /// Closest of libvisio's dash ids 2–23 for a draw.io / custom array.

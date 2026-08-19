@@ -5137,7 +5137,7 @@ class VsdxWriter {
               ix++,
               width: edited.width,
               height: edited.height,
-              roundingInches: edited.line.roundingInches,
+              roundingInches: roundingForLibvisioWrite(edited.line),
             )
             case final s?)
           s,
@@ -7776,7 +7776,7 @@ class VsdxWriter {
         ix++,
         width: s.width,
         height: s.height,
-        roundingInches: s.line.roundingInches,
+        roundingInches: roundingForLibvisioWrite(s.line),
       );
       if (section != null) children.add(section);
     }
@@ -8453,7 +8453,7 @@ class VsdxWriter {
         gIx++,
         width: s.width,
         height: s.height,
-        roundingInches: s.line.roundingInches,
+        roundingInches: roundingForLibvisioWrite(s.line),
       );
       if (section != null) {
         children.add(section);
@@ -8831,19 +8831,21 @@ class VsdxWriter {
   /// libvisio's VSDX shape switch has no `XML_ROUNDING` (only the stylesheet
   /// `readLine` path collects it). Leaving a polyline + Rounding cell makes
   /// Draw paint sharp corners. Bake the fillet, matching `_bakeLegacyRounding`
-  /// for VSD/VDX.
+  /// for VSD/VDX. Explicit round joins on a non-round cap use the same path:
+  /// `_lineProperties` would otherwise emit miter.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
     if (shapeNeedsLibvisioArrowedStrokeBake(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
-    if (shape.line.roundingInches <= 1e-12) return false;
+    final radius = roundingForLibvisioWrite(shape.line);
+    if (radius <= 1e-12) return false;
     for (final geometry in shape.geometries) {
       final baked = bakePolylineRounding(
         geometry,
         width: shape.width,
         height: shape.height,
-        radius: shape.line.roundingInches,
+        radius: radius,
       );
       if (!identical(baked, geometry)) return true;
     }

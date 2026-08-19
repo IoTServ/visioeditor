@@ -537,6 +537,31 @@ void main() {
             pattern: 41,
           ),
         ),
+      ).addShape(
+        VsdxShape(
+          id: id + 26,
+          name: 'RoundJoin',
+          pinX: 8,
+          pinY: 8.2,
+          width: 1.4,
+          height: 1.4,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(1.4, 0),
+                LineTo(1.4, 1.4),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            cap: LineCap.square,
+            join: VsdxLineJoin.round,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -659,6 +684,13 @@ void main() {
           .fill
           .pattern,
       1,
+    );
+    final roundJoin = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'RoundJoin');
+    expect(roundJoin.line.cap, LineCap.square);
+    expect(
+      roundJoin.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
     );
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;

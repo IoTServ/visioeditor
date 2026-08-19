@@ -597,7 +597,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   the Latin `Size` and tofu or shrink labels Visio rendered with the locale
   face. Mixed Latin+CJK runs keep `Font` / `Size` so Visio's Latin glyphs
   do not change. Unknown `FillPattern` ids above 40 snap to solid `1`
-  (Draw's fallback for those ids is the *background* colour).
+  (Draw's fallback for those ids is the *background* colour). Explicit
+  round joins on a square/flat cap bake RelQuadBezTo fillets (half the
+  line weight) so Draw does not miter them: `_lineProperties` derives
+  join from LineCap only. The Rounding cell stays 0 so Visio does not
+  fillet the already-baked corners a second time.
 - Arrowed 1-D `CompoundType` / `LineGradient` / `LineColorTrans` strokes now
   bake Begin/EndArrow as filled Geometry before the rail or ribbon rewrite,
   then clear the arrow cells. libvisio hangs a marker on every open path and
