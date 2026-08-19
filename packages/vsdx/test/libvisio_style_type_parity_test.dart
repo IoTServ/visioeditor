@@ -11,28 +11,32 @@
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. Arrowed 1-D connectors that also need rails or a ribbon bake
-/// Begin/EndArrow as filled Geometry so Draw does not hang a marker on
+/// Begin/EndArrow as Geometry so Draw does not hang a marker on
 /// every open rail, and so BeginArrowSize (not a token) still has a size.
-/// Classic FillPattern 25–40 also paint here even when the model has no
-/// stop section yet. Unknown LinePattern ids snap to the built-in 2–23
-/// table `_lineProperties` actually dashes. `LineCap` 0/1/2 is a token
-/// libvisio *does* collect. Character Highlight is skipped by `readCharIX`
-/// but a uniform marker with no authored TextBkgnd is written there —
-/// `VSDContentCollector` paints it as span `fo:background-color` and Draw
-/// shows the plate. `RVNGSVGDrawingGenerator` drops that property, so the
-/// oracle SVG is the wrong place to look; `vsd2raw` still has it. Overline
-/// still paints here even though `readCharIX` skips it. Character
-/// ColorTrans, filled-shape LineColorTrans, and ShdwForegndTrans cannot
-/// carry alpha through `xmlStringToColour`, so a save premultiplies those
-/// into RGB toward white and writes Trans=0 (theme-bound RGB-less cells
-/// keep THEMEVAL). `AsianFont` / `ComplexScriptFont`
-/// / `ComplexScriptSize` are not tokens, so an Asian-only (Hangul/Kana/Han)
-/// or complex-script-only run whose Visio `Font` is Arial is rewritten to
-/// the face and size Draw will actually load. Mixed Latin+CJK runs keep
-/// `Font`. Unknown `FillPattern` ids above 40 snap to solid `1`. Explicit
-/// round joins on a square/flat cap bake RelQuadBezTo — `_lineProperties`
-/// would otherwise emit miter from LineCap. Bevel joins bake LineTo chamfers;
-/// arcs joins bake the same fillets as round (canvas `canvasStrokeJoin`).
+/// A plain stroke whose size disagrees with `_lineProperties`' line-weight
+/// formula bakes the same way. Open arrow ids become filled ribbons of
+/// the original weight. Classic FillPattern 25–40 also paint here even when
+/// the model has no stop section yet. Unknown LinePattern ids snap to the
+/// built-in 2–23 table `_lineProperties` actually dashes. `LineCap` 0/1/2 is a
+/// token libvisio *does* collect. Character Highlight is skipped by
+/// `readCharIX` but a uniform marker with no authored TextBkgnd is written
+/// there — `VSDContentCollector` paints it as span `fo:background-color`
+/// and Draw shows the plate. `RVNGSVGDrawingGenerator` drops that property,
+/// so the oracle SVG is the wrong place to look; `vsd2raw` still has it.
+/// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
+/// a save premultiplies those into RGB toward white. Overline still paints
+/// here even though `readCharIX` skips it. Character ColorTrans, filled-shape
+/// LineColorTrans, and ShdwForegndTrans cannot carry alpha through
+/// `xmlStringToColour`, so a save premultiplies those into RGB toward white
+/// and writes Trans=0 (theme-bound RGB-less cells keep THEMEVAL).
+/// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
+/// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
+/// Visio `Font` is Arial is rewritten to the face and size Draw will
+/// actually load. Mixed Latin+CJK runs keep `Font`. Unknown `FillPattern`
+/// ids above 40 snap to solid `1`. Explicit round joins on a square/flat
+/// cap bake RelQuadBezTo — `_lineProperties` would otherwise emit miter
+/// from LineCap. Bevel joins bake LineTo chamfers; arcs joins bake the
+/// same fillets as round (canvas `canvasStrokeJoin`).
 library;
 
 import 'dart:io';
@@ -131,10 +135,58 @@ void main() {
       ay: 0,
       bx: 3,
       by: 0,
-      line: arrowed(),
+      line: arrowed().copyWith(
+        weightInches: 0.01,
+        beginArrowSizeInches: 0.125,
+        endArrowSizeInches: 0.125,
+      ),
     );
     expect(shapeNeedsLibvisioArrowedStrokeBake(plain), isFalse);
     expect(libvisioShapeWrite(plain).line.beginArrow, 4);
+
+    for (final scaledId in <int>[10, 11, 14, 22]) {
+      final scaled = VsdxShapeFactory.line(
+        id: 40 + scaledId,
+        ax: 0,
+        ay: 0,
+        bx: 3,
+        by: 0,
+        line: VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.01,
+          beginArrow: scaledId,
+          endArrow: scaledId,
+          beginArrowSizeInches: 0.125,
+          endArrowSizeInches: 0.125,
+        ),
+      );
+      expect(
+        shapeNeedsLibvisioArrowedStrokeBake(scaled),
+        isFalse,
+        reason: 'default bucket 2 must keep native marker $scaledId',
+      );
+    }
+
+    final oversized = VsdxShapeFactory.line(
+      id: 5,
+      ax: 0,
+      ay: 0,
+      bx: 3,
+      by: 0,
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.01,
+        beginArrow: 4,
+        endArrow: 4,
+        beginArrowSizeInches: 0.35,
+        endArrowSizeInches: 0.35,
+      ),
+    );
+    expect(shapeNeedsLibvisioArrowedStrokeBake(oversized), isTrue);
+    final oversizedWrite = libvisioShapeWrite(oversized);
+    expect(oversizedWrite.line.beginArrow, 0);
+    expect(oversizedWrite.line.endArrow, 0);
+    expect(oversizedWrite.geometries.any((g) => !g.noFill), isTrue);
 
     VsdxShape filledCompound(int type) => VsdxShapeFactory.rectangle(
           id: type,
@@ -192,7 +244,9 @@ void main() {
 
     // VSDContentCollector::_linePropertiesMarkerPath filled ids that used to
     // fall through to a generic triangle when compound/ribbon bakes arrows.
-    for (final id in <int>[6, 10, 12, 15, 17, 18, 20, 21, 38, 42]) {
+    for (final id in <int>[
+      1, 3, 6, 7, 9, 10, 12, 14, 15, 16, 17, 18, 20, 21, 22, 27, 35, 38, 42,
+    ]) {
       final arrows = bakeArrowGeometriesForLibvisio(
         VsdxShapeFactory.line(
           id: id,
@@ -266,6 +320,55 @@ void main() {
       ),
     );
     expect(shapeNeedsLibvisioTextBkgndBake(withBlock), isFalse);
+  });
+
+  test('TextBkgndTrans premultiplies into TextBkgnd for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'Plate',
+    ).copyWith(
+      text: 'Hi',
+      richText: const VsdxRichText(
+        textBlock: VsdxTextBlock(
+          backgroundColor: VsdxColor(0xFF0000FF),
+          backgroundTransparency: 0.5,
+        ),
+        runs: [VsdxTextRun(text: 'Hi')],
+      ),
+    );
+    expect(shapeNeedsLibvisioTextBlockBake(shape), isTrue);
+    final baked = textBlockForLibvisioWrite(shape);
+    expect(baked.backgroundTransparency, 0);
+    expect(
+      baked.backgroundColor,
+      colourForLibvisioAlpha(const VsdxColor(0xFF0000FF), 0.5),
+    );
+  });
+
+  test('layer ColorTrans premultiplies into Color for LibreOffice', () {
+    const layer = VsdxLayer(
+      id: 0,
+      name: 'Tint',
+      color: VsdxColor(0xFF0000FF),
+      colorTrans: 0.5,
+    );
+    final baked = layerForLibvisioWrite(layer);
+    expect(baked.colorTrans, 0);
+    expect(
+      baked.color,
+      colourForLibvisioAlpha(const VsdxColor(0xFF0000FF), 0.5),
+    );
+    expect(
+      layerForLibvisioWrite(
+        const VsdxLayer(id: 1, name: 'NoColor', colorTrans: 0.5),
+      ).colorTrans,
+      0.5,
+      reason: 'ColorTrans without Color stays; Draw never tints those rows',
+    );
   });
 
   test('Asian/complex Character Font and Size bake for LibreOffice', () {

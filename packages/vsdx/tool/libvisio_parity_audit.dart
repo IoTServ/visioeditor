@@ -333,6 +333,10 @@ void _roundTripAudit(
     // A saved package that draws fewer objects has dropped geometry; more is
     // usually the writer expanding a master reference into explicit shapes.
     final drawnRatio = before.drawn == 0 ? 1.0 : after.drawn / before.drawn;
+    // BeginArrowSize is not a token, so a save may bake markers into Geometry.
+    if (lostFeatures.remove('marker') && drawnRatio < 0.95) {
+      lostFeatures.add('marker');
+    }
 
     // Compare the saved page count with our own model, not with libvisio's
     // reading of the source. `recursion-cycle.vsdx` points its page

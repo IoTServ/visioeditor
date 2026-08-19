@@ -100,13 +100,15 @@ void main() {
     );
     final reopened = const DocumentParser().parse(saved).pages.single;
 
-    expect(reopened.layers, page.layers);
+    expect(reopened.layers.map(layerForLibvisioWrite).toList(),
+        page.layers.map(layerForLibvisioWrite).toList());
     expect(reopened.shapes[0].layerMemberIds, const <int>[0, 1]);
     expect(reopened.shapes[1].layerMemberIds, const <int>[0, 2]);
     expect(
       layerColorSource(reopened.layers, reopened.shapes[0].layerMemberIds)
           ?.color,
-      red,
+      colourForLibvisioAlpha(red, 0.25),
+      reason: 'layer ColorTrans bakes into Color so Draw can collect it',
     );
     expect(
       layerColorSource(reopened.layers, reopened.shapes[1].layerMemberIds),

@@ -466,13 +466,19 @@ void main() {
         ]),
       );
       final inheritedStyle = reopened.pages.single.findShapeById(7)!;
+      final sourceStyle = imported.document.pages.single.findShapeById(7)!;
       expect(inheritedStyle.line.cap, LineCap.square);
       expect(inheritedStyle.line.beginArrow, 4);
       expect(inheritedStyle.line.endArrow, 13);
-      expect(inheritedStyle.line.roundingInches, closeTo(0.08, 1e-9));
+      expect(inheritedStyle.line.roundingInches, closeTo(0, 1e-9),
+          reason: 'Rounding is baked into RelQuadBezTo; the cell is 0 so '
+              'Visio does not fillet twice');
       expect(inheritedStyle.fill.foregroundTransparency, closeTo(0.15, 1e-9));
       expect(inheritedStyle.shadow.enabled, isTrue);
-      expect(inheritedStyle.shadow.color, const VsdxColor(0xFF44546A));
+      expect(
+        inheritedStyle.shadow.color,
+        shadowForLibvisioWrite(sourceStyle.shadow).color,
+      );
       expect(inheritedStyle.shadow.offsetXInches, closeTo(0.2, 1e-9));
       expect(inheritedStyle.shadow.blurInches, 0,
           reason: 'VDX round-trip must preserve a hard classic shadow');

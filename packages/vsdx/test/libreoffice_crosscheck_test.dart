@@ -710,6 +710,43 @@ void main() {
             transparency: 0.4,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 35,
+          ax: 1,
+          ay: 9.9,
+          bx: 4,
+          by: 9.9,
+          name: 'LargeArrow',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.01,
+            beginArrow: 4,
+            endArrow: 1,
+            beginArrowSizeInches: 0.35,
+            endArrowSizeInches: 0.35,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 36,
+          pinX: 6,
+          pinY: 1.6,
+          width: 1.4,
+          height: 0.7,
+          name: 'TextBkgndTrans',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+        ).copyWith(
+          text: 'Hi',
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              backgroundColor: VsdxColor(0xFF0000FF),
+              backgroundTransparency: 0.5,
+            ),
+            runs: [VsdxTextRun(text: 'Hi')],
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -798,6 +835,18 @@ void main() {
         .firstWhere((s) => s.name == 'Highlight');
     expect(highlight.richText.runs.single.charStyle.highlight?.value, 0xFFFF00FF);
     expect(highlight.richText.textBlock.backgroundColor?.value, 0xFFFF00FF);
+    final largeArrow = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LargeArrow');
+    expect(largeArrow.line.beginArrow, 0);
+    expect(largeArrow.line.endArrow, 0);
+    expect(largeArrow.geometries.any((g) => !g.noFill), isTrue);
+    final textBkgndTrans = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'TextBkgndTrans');
+    expect(textBkgndTrans.richText.textBlock.backgroundTransparency, 0);
+    expect(
+      textBkgndTrans.richText.textBlock.backgroundColor,
+      colourForLibvisioAlpha(const VsdxColor(0xFF0000FF), 0.5),
+    );
     expect(
       reopenedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'CJK')

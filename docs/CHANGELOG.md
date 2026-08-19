@@ -583,6 +583,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
+  plain strokes, not only on compound / gradient / transparent connectors.
+  libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *
+  (0.1/(w²+1)+2.54*w)`); `tokens.txt` has no arrow-size cell. A non-default
+  size bucket that disagrees with that formula bakes the marker as Geometry
+  at the authored size. Untouched Visio bucket 2 (`0.125"`) keeps native
+  `BeginArrow` / `EndArrow`, including ids whose Draw scale is 0.7 / 1.2.
+  Open arrow ids become filled ribbons of the original weight so they keep
+  their silhouette after a CompoundType rail rewrite. `TextBkgndTrans` and
+  layer `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
+  zeros alpha), so a save premultiplies those into RGB toward white and
+  writes Trans=0.
 - Shape-level `Rounding` is now written as 0 after the RelQuadBezTo bake so
   Visio does not fillet already-rounded corners a second time. Bevel joins
   with a round `LineCap` bake LineTo chamfers and flatten the cap to

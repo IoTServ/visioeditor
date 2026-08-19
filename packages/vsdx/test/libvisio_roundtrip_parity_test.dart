@@ -5,7 +5,9 @@
 /// a writer that emits something only *we* understand. This one parses the
 /// source, saves it, and asks libvisio — the importer LibreOffice drives — to
 /// read both. Page count, page size, rendered letters, drawing features and
-/// the number of painted objects all have to survive.
+/// the number of painted objects all have to survive. A save may bake
+/// BeginArrowSize into Geometry (not a token), so libvisio's SVG can lose
+/// `svg:marker` while still drawing the arrowheads as paths.
 ///
 /// Skips cleanly when the libvisio shim has not been built (`native/build.sh`,
 /// needs `brew install libvisio`).
@@ -94,6 +96,12 @@ void main() {
         problems.add('$label: text lost "$lost"');
       }
       final lostFeatures = before.features.difference(after.features);
+      // BeginArrowSize is not a token, so a save may bake markers into
+      // Geometry. libvisio then draws filled paths instead of svg:marker;
+      // LibreOffice still paints the arrowheads.
+      if (lostFeatures.remove('marker') && after.drawn < before.drawn) {
+        problems.add('$label: lost marker');
+      }
       if (lostFeatures.isNotEmpty) {
         problems.add('$label: lost ${lostFeatures.join(", ")}');
       }

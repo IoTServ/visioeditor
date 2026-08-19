@@ -9,7 +9,10 @@ import 'package:vsdx/vsdx.dart';
 // ---------------------------------------------------------------------------
 // Round-trip harness: build a flowchart the way the app's stencils/tools do,
 // export it with the writer, re-parse it, and diff the model + render both to
-// PNG. Any field that drifts across save→reopen is a writer/parser bug.
+// PNG. A save rewrites cells LibreOffice's libvisio importer still collects
+// (CubBezTo→RelCubBezTo, FillPattern 25–40 for modern gradients, LineColorTrans
+// premultiplied into LineColor, …), so the "before" side is normalised with
+// the same write helpers before comparing.
 // ---------------------------------------------------------------------------
 
 const _writer = VsdxWriter();
@@ -134,6 +137,58 @@ const _tol = 5e-3;
 
 bool _close(double a, double b, [double tol = _tol]) => (a - b).abs() <= tol;
 
+/// Cells / rows the writer emits so Draw paints this shape.
+VsdxShape _expectedWritten(VsdxShape shape) {
+  final write = libvisioShapeWrite(shape);
+  final radius = roundingForLibvisioWrite(shape.line);
+  final chamfer = chamferForLibvisioWrite(shape.line);
+  final geometries = <VsdxGeometry>[
+    for (final geometry in write.geometries)
+      bakePolylineRounding(
+        geometry,
+        width: shape.width,
+        height: shape.height,
+        radius: radius,
+        chamfer: chamfer,
+      ),
+  ];
+  return shape.copyWith(
+    geometries: [
+      for (final geometry in geometries)
+        geometry.copyWith(
+          commands: [
+            for (final command in geometry.commands)
+              forLibvisioWrite(
+                command,
+                width: shape.width,
+                height: shape.height,
+              ),
+          ],
+        ),
+    ],
+    line: write.line,
+    fill: write.fill.copyWith(
+      pattern: fillPatternForLibvisioWrite(write.fill),
+    ),
+    shadow: shadowForLibvisioWrite(shape.shadow),
+    richText: shape.richText.copyWith(
+      textBlock: textBlockForLibvisioWrite(shape),
+      runs: [
+        for (final run in shape.richText.runs)
+          run.copyWith(
+            charStyle: run.charStyle.copyWith(
+              fontFamily: fontFamilyForLibvisioWrite(run.charStyle, run.text),
+              fontSizeInches:
+                  fontSizeForLibvisioWrite(run.charStyle, run.text),
+              color: charColorForLibvisioWrite(run.charStyle),
+              transparency: charTransparencyForLibvisioWrite(run.charStyle),
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
 List<double> _coords(VsdxPathCommand c) => switch (c) {
       MoveTo(:final x, :final y) => [x, y],
       LineTo(:final x, :final y) => [x, y],
@@ -148,6 +203,7 @@ List<double> _coords(VsdxPathCommand c) => switch (c) {
     };
 
 void _diffShape(VsdxShape a, VsdxShape b, String path, List<String> out) {
+  a = _expectedWritten(a);
   void num2(String f, double x, double y) {
     if (!_close(x, y)) out.add('$path.$f: $x -> $y');
   }

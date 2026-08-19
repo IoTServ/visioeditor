@@ -557,32 +557,17 @@ class VsdxWriter {
     }
     var changed = false;
     for (final layer in ep.layers) {
+      final write = layerForLibvisioWrite(layer);
       final base = _findLayer(bp.layers, layer.id);
+      final baseWrite = base == null ? null : layerForLibvisioWrite(base);
       var row = rows[layer.id];
       if (row == null) {
         // New layer row — emit a full row matching `_buildLayerSection`.
-        section.children.add(XmlElement(
-          XmlName('Row'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), layer.id.toString())],
-          <XmlNode>[
-            _cell('Name', layer.name),
-            _cell('Visible', layer.visible ? '1' : '0'),
-            _cell('Print', layer.print ? '1' : '0'),
-            _cell('Active', layer.active ? '1' : '0'),
-            _cell('Lock', layer.locked ? '1' : '0'),
-            _cell('Snap', layer.snap ? '1' : '0'),
-            _cell('Glue', layer.glue ? '1' : '0'),
-            if (layer.color != null) _cell('Color', _hex(layer.color!)),
-            if (layer.colorTrans > _epsilon)
-              _cell('ColorTrans', _fmt(layer.colorTrans)),
-            if (layer.nameUniv != null) _cell('NameUniv', layer.nameUniv!),
-            if (layer.status != 0) _cell('Status', layer.status.toString()),
-          ],
-        ));
+        section.children.add(_buildLayerRow(write));
         changed = true;
         continue;
       }
-      if (base == null) continue;
+      if (base == null || baseWrite == null) continue;
       // Value-unchanged still scrubs residual F=Inh (same as PageWidth).
       bool sync(String name, String want, bool modelChanged) {
         if (modelChanged) {
@@ -610,15 +595,15 @@ class VsdxWriter {
           sync('Active', layer.active ? '1' : '0', layer.active != base.active);
       changed |= sync('Snap', layer.snap ? '1' : '0', layer.snap != base.snap);
       changed |= sync('Glue', layer.glue ? '1' : '0', layer.glue != base.glue);
-      if (layer.color?.value != base.color?.value) {
-        if (layer.color != null) {
-          _writeValue(_ensureCell(row, 'Color'), _hex(layer.color!));
+      if (write.color?.value != baseWrite.color?.value) {
+        if (write.color != null) {
+          _writeValue(_ensureCell(row, 'Color'), _hex(write.color!));
         } else {
           _removeNamedCells(row, const ['Color']);
         }
         changed = true;
-      } else if (layer.color != null) {
-        changed |= sync('Color', _hex(layer.color!), false);
+      } else if (write.color != null) {
+        changed |= sync('Color', _hex(write.color!), false);
       } else {
         // Model has no colour — still scrub residual F=Inh or drop the cell.
         final colorCell = _findCell(row, 'Color');
@@ -648,8 +633,8 @@ class VsdxWriter {
       }
       changed |= sync(
         'ColorTrans',
-        _fmt(layer.colorTrans),
-        (layer.colorTrans - base.colorTrans).abs() > _epsilon,
+        _fmt(write.colorTrans),
+        (write.colorTrans - baseWrite.colorTrans).abs() > _epsilon,
       );
       changed |= sync(
           'Status', layer.status.toString(), layer.status != base.status);
@@ -1162,26 +1147,27 @@ class VsdxWriter {
   XmlElement _buildLayerSection(List<VsdxLayer> layers) => XmlElement(
         XmlName('Section'),
         <XmlAttribute>[XmlAttribute(XmlName('N'), 'Layer')],
+        [
+          for (final layer in layers) _buildLayerRow(layerForLibvisioWrite(layer)),
+        ],
+      );
+
+  XmlElement _buildLayerRow(VsdxLayer layer) => XmlElement(
+        XmlName('Row'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), layer.id.toString())],
         <XmlNode>[
-          for (final layer in layers)
-            XmlElement(
-              XmlName('Row'),
-              <XmlAttribute>[XmlAttribute(XmlName('IX'), layer.id.toString())],
-              <XmlNode>[
-                _cell('Name', layer.name),
-                _cell('Visible', layer.visible ? '1' : '0'),
-                _cell('Print', layer.print ? '1' : '0'),
-                _cell('Active', layer.active ? '1' : '0'),
-                _cell('Lock', layer.locked ? '1' : '0'),
-                _cell('Snap', layer.snap ? '1' : '0'),
-                _cell('Glue', layer.glue ? '1' : '0'),
-                if (layer.color != null) _cell('Color', _hex(layer.color!)),
-                if (layer.colorTrans > _epsilon)
-                  _cell('ColorTrans', _fmt(layer.colorTrans)),
-                if (layer.nameUniv != null) _cell('NameUniv', layer.nameUniv!),
-                if (layer.status != 0) _cell('Status', layer.status.toString()),
-              ],
-            ),
+          _cell('Name', layer.name),
+          _cell('Visible', layer.visible ? '1' : '0'),
+          _cell('Print', layer.print ? '1' : '0'),
+          _cell('Active', layer.active ? '1' : '0'),
+          _cell('Lock', layer.locked ? '1' : '0'),
+          _cell('Snap', layer.snap ? '1' : '0'),
+          _cell('Glue', layer.glue ? '1' : '0'),
+          if (layer.color != null) _cell('Color', _hex(layer.color!)),
+          if (layer.colorTrans > _epsilon)
+            _cell('ColorTrans', _fmt(layer.colorTrans)),
+          if (layer.nameUniv != null) _cell('NameUniv', layer.nameUniv!),
+          if (layer.status != 0) _cell('Status', layer.status.toString()),
         ],
       );
 
@@ -2714,7 +2700,7 @@ class VsdxWriter {
         _shapePatchInputsEqual(base, edited)) {
       if (preserveUnchangedPackage ||
           (!_shapeNeedsLibvisioGeometryRewrite(edited) &&
-              !shapeNeedsLibvisioTextBkgndBake(edited) &&
+              !shapeNeedsLibvisioTextBlockBake(edited) &&
               !shapeNeedsLibvisioFontBake(edited))) {
         return false;
       }

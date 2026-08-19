@@ -100,8 +100,10 @@ void main() {
           expect(after, isNotNull);
           expect(after!.shadow.enabled, isTrue);
           expect(after.shadow.pattern, shape.shadow.pattern);
+          final shadowWrite = shadowForLibvisioWrite(shape.shadow);
           expect(after.shadow.transparency,
-              closeTo(shape.shadow.transparency, 1e-9));
+              closeTo(shadowWrite.transparency, 1e-9));
+          expect(after.shadow.color, shadowWrite.color);
           expect(after.shadow.offsetXInches,
               closeTo(shape.shadow.offsetXInches, 1e-9));
           expect(after.shadow.offsetYInches,
@@ -256,8 +258,11 @@ void main() {
         expect(_connectSignatures(afterPage.connects),
             _connectSignatures(beforePage.connects),
             reason: '${fixture.path} page $pageIndex connects after synthesis');
-        expect(afterPage.layers, beforePage.layers,
-            reason: '${fixture.path} page $pageIndex layers after synthesis');
+        expect(
+          afterPage.layers.map(layerForLibvisioWrite).toList(),
+          beforePage.layers.map(layerForLibvisioWrite).toList(),
+          reason: '${fixture.path} page $pageIndex layers after synthesis',
+        );
         final afterById = <int, VsdxShape>{
           for (final shape in _allPageShapes(afterPage)) shape.id: shape,
         };
@@ -458,7 +463,7 @@ void _expectSynthesizedShape(
   close(before.endY, after.endY, 'EndY');
   expect(after.richText.plainText, _normalizeText(before.richText.plainText),
       reason: '$reason text');
-  _expectRichText(before.richText, after.richText, reason: reason);
+  _expectRichText(before, after, reason: reason);
   expect(after.richText.tabSets, before.richText.tabSets,
       reason: '$reason tab sets');
   expect(after.fields, before.fields, reason: '$reason dynamic fields');
@@ -526,17 +531,22 @@ void _expectSynthesizedShape(
   expect(after.lineStyleId, before.lineStyleId, reason: '$reason LineStyle');
   expect(after.fillStyleId, before.fillStyleId, reason: '$reason FillStyle');
   expect(after.textStyleId, before.textStyleId, reason: '$reason TextStyle');
-  expect(after.fill.pattern, before.fill.pattern,
+  // VSD → VSDX synthesis injects veVsd*ArrowSize User cells so Draw keeps
+  // native markers (BeginArrowSize is not a token). Match that before
+  // comparing the LibreOffice write, or hairline dimension ticks look like
+  // a FillPattern ribbon bake that the writer correctly skipped.
+  final shapeWrite = libvisioShapeWrite(before.persistVsdArrowSizes(force: true));
+  expect(after.fill.pattern, fillPatternForLibvisioWrite(shapeWrite.fill),
       reason: '$reason fill pattern');
-  expect(after.fill.foreground, before.fill.foreground,
+  expect(after.fill.foreground, shapeWrite.fill.foreground,
       reason: '$reason fill foreground');
-  expect(after.fill.background, before.fill.background,
+  expect(after.fill.background, shapeWrite.fill.background,
       reason: '$reason fill background');
-  close(before.fill.foregroundTransparency,
+  close(shapeWrite.fill.foregroundTransparency,
       after.fill.foregroundTransparency, 'FillForegndTrans');
-  close(before.fill.backgroundTransparency,
+  close(shapeWrite.fill.backgroundTransparency,
       after.fill.backgroundTransparency, 'FillBkgndTrans');
-  final beforeGradient = before.fill.gradient;
+  final beforeGradient = shapeWrite.fill.gradient;
   final afterGradient = after.fill.gradient;
   if (beforeGradient == null || afterGradient == null) {
     expect(afterGradient, beforeGradient, reason: '$reason fill gradient');
@@ -560,76 +570,91 @@ void _expectSynthesizedShape(
           'FillGradient[$i].Transparency');
     }
   }
-  expect(after.line.pattern, before.line.pattern,
+  final lineWrite = shapeWrite.line;
+  expect(after.line.pattern, lineWrite.pattern,
       reason: '$reason line pattern');
-  expect(after.line.color, before.line.color, reason: '$reason line color');
+  expect(after.line.color, lineWrite.color, reason: '$reason line color');
   close(before.line.weightInches, after.line.weightInches, 'LineWeight');
-  close(before.line.transparency, after.line.transparency, 'LineColorTrans');
-  expect(after.line.beginArrow, before.line.beginArrow,
+  close(lineWrite.transparency, after.line.transparency, 'LineColorTrans');
+  expect(after.line.beginArrow, lineWrite.beginArrow,
       reason: '$reason begin arrow');
-  expect(after.line.endArrow, before.line.endArrow,
+  expect(after.line.endArrow, lineWrite.endArrow,
       reason: '$reason end arrow');
-  if (before.line.hasBeginArrow) {
+  if (lineWrite.hasBeginArrow) {
     close(before.line.beginArrowSizeInches, after.line.beginArrowSizeInches,
         'BeginArrowSize');
   }
-  if (before.line.hasEndArrow) {
+  if (lineWrite.hasEndArrow) {
     close(before.line.endArrowSizeInches, after.line.endArrowSizeInches,
         'EndArrowSize');
   }
+  final shadowWrite = shadowForLibvisioWrite(before.shadow);
   expect(after.shadow.enabled, before.shadow.enabled,
       reason: '$reason shadow enabled');
   expect(after.shadow.pattern, before.shadow.pattern,
       reason: '$reason shadow pattern');
-  expect(after.shadow.color, before.shadow.color,
+  expect(after.shadow.color, shadowWrite.color,
       reason: '$reason shadow color');
-  expect(after.shadow.themeColorIndex, before.shadow.themeColorIndex,
+  expect(after.shadow.themeColorIndex, shadowWrite.themeColorIndex,
       reason: '$reason shadow theme color');
   close(before.shadow.offsetXInches, after.shadow.offsetXInches,
       'ShadowOffsetX');
   close(before.shadow.offsetYInches, after.shadow.offsetYInches,
       'ShadowOffsetY');
   close(before.shadow.blurInches, after.shadow.blurInches, 'ShadowBlur');
-  close(before.shadow.transparency, after.shadow.transparency,
+  close(shadowWrite.transparency, after.shadow.transparency,
       'ShadowTransparency');
-  expect(after.geometries.length, before.geometries.length,
+  final expectedGeometries = <VsdxGeometry>[
+    for (final geometry in shapeWrite.geometries)
+      bakePolylineRounding(
+        geometry,
+        width: before.width,
+        height: before.height,
+        radius: roundingForLibvisioWrite(before.line),
+        chamfer: chamferForLibvisioWrite(before.line),
+      ),
+  ];
+  expect(after.geometries.length, expectedGeometries.length,
       reason: '$reason geometry sections');
-  for (var i = 0; i < before.geometries.length; i++) {
+  for (var i = 0; i < expectedGeometries.length; i++) {
     // libvisio's VSDX parser skips shape-level Rounding, so synthesis bakes
     // polyline fillets into RelQuadBezTo rows. Compare against that write.
-    final a = bakePolylineRounding(
-      before.geometries[i],
-      width: before.width,
-      height: before.height,
-      radius: before.line.roundingInches,
-    );
+    final a = expectedGeometries[i];
     final b = after.geometries[i];
     expect(b.ix, a.ix, reason: '$reason Geometry[$i] IX');
     expect(b.noFill, a.noFill, reason: '$reason Geometry[$i] NoFill');
     expect(b.noLine, a.noLine, reason: '$reason Geometry[$i] NoLine');
     expect(b.noShow, a.noShow, reason: '$reason Geometry[$i] NoShow');
+    final expectedCommands = <VsdxPathCommand>[
+      for (final command in a.commands)
+        forLibvisioWrite(
+          command,
+          width: before.width,
+          height: before.height,
+        ),
+    ];
     expect(b.commands.map((c) => c.runtimeType),
-        a.commands.map((c) => c.runtimeType),
+        expectedCommands.map((c) => c.runtimeType),
         reason: '$reason Geometry[$i] command topology');
     for (var commandIndex = 0;
-        commandIndex < a.commands.length;
+        commandIndex < expectedCommands.length;
         commandIndex++) {
       expect(
         pathCommandsEqual(
           b.commands[commandIndex],
-          a.commands[commandIndex],
+          expectedCommands[commandIndex],
         ),
         isTrue,
         reason: '$reason Geometry[$i] command $commandIndex values: '
-            '${a.commands[commandIndex]} -> ${b.commands[commandIndex]}',
+            '${expectedCommands[commandIndex]} -> ${b.commands[commandIndex]}',
       );
     }
   }
 }
 
 void _expectRichText(
-  VsdxRichText before,
-  VsdxRichText after, {
+  VsdxShape beforeShape,
+  VsdxShape afterShape, {
   required String reason,
 }) {
   void close(double? a, double? b, String field) {
@@ -640,6 +665,8 @@ void _expectRichText(
     }
   }
 
+  final before = beforeShape.richText;
+  final after = afterShape.richText;
   final a = before.textBlock;
   final b = after.textBlock;
   if (a.pinXInches != null) close(a.pinXInches, b.pinXInches, 'TxtPinX');
@@ -662,9 +689,10 @@ void _expectRichText(
   close(a.marginTopInches, b.marginTopInches, 'TopMargin');
   close(a.marginBottomInches, b.marginBottomInches, 'BottomMargin');
   expect(b.hideText, a.hideText, reason: '$reason HideText');
-  expect(b.backgroundColor, a.backgroundColor,
+  final textBlockWrite = textBlockForLibvisioWrite(beforeShape);
+  expect(b.backgroundColor, textBlockWrite.backgroundColor,
       reason: '$reason TextBkgnd');
-  close(a.backgroundTransparency, b.backgroundTransparency,
+  close(textBlockWrite.backgroundTransparency, b.backgroundTransparency,
       'TextBkgndTrans');
   expect(b.textDirection, a.textDirection, reason: '$reason TextDirection');
   close(a.defaultTabStopInches, b.defaultTabStopInches, 'DefaultTabStop');
@@ -682,14 +710,16 @@ void _expectRichText(
 
     final ac = ar.charStyle;
     final bc = br.charStyle;
-    expect(bc.fontFamily, ac.fontFamily,
+    expect(bc.fontFamily, fontFamilyForLibvisioWrite(ac, ar.text),
         reason: '$reason run $i font family');
-    close(ac.fontSizeInches, bc.fontSizeInches, 'run $i font size');
+    close(fontSizeForLibvisioWrite(ac, ar.text), bc.fontSizeInches,
+        'run $i font size');
     expect(bc.style.bold, ac.style.bold, reason: '$reason run $i bold');
     expect(bc.style.italic, ac.style.italic, reason: '$reason run $i italic');
     expect(bc.style.smallCaps, ac.style.smallCaps,
         reason: '$reason run $i small caps');
-    expect(bc.color, ac.color, reason: '$reason run $i color');
+    expect(bc.color, charColorForLibvisioWrite(ac),
+        reason: '$reason run $i color');
     expect(bc.themeColorIndex, ac.themeColorIndex,
         reason: '$reason run $i theme color');
     expect(bc.underline, ac.underline,
@@ -701,7 +731,8 @@ void _expectRichText(
     expect(bc.doubleStrikethrough, ac.doubleStrikethrough,
         reason: '$reason run $i double strikethrough');
     expect(bc.overline, ac.overline, reason: '$reason run $i overline');
-    close(ac.transparency, bc.transparency, 'run $i transparency');
+    close(charTransparencyForLibvisioWrite(ac), bc.transparency,
+        'run $i transparency');
     close(ac.letterSpacingInches, bc.letterSpacingInches,
         'run $i letter spacing');
     expect(bc.position, ac.position, reason: '$reason run $i position');

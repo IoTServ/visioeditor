@@ -12,11 +12,17 @@
 /// the same way: each rail becomes a filled ribbon of that rail's width,
 /// because LineWeight is shape-level and stroked rails would share the
 /// thinnest width. Arrowed 1-D connectors that also need those
-/// rewrites bake Begin/EndArrow as filled Geometry so Draw does not hang a
-/// marker on every open rail (and so BeginArrowSize, which is not a token,
-/// still has a size). Character Highlight is skipped by `readCharIX` but
-/// `TextBkgnd` is collected and painted as `fo:background-color`, so a
-/// uniform highlight with no authored text-block fill is written there.
+/// rewrites bake Begin/EndArrow as Geometry so Draw does not hang a
+/// marker on every open rail. A plain stroke whose authored
+/// BeginArrowSize disagrees with `_lineProperties`' line-weight formula
+/// bakes the same way (`tokens.txt` has no BeginArrowSize). Open arrow
+/// ids become filled ribbons of the original weight so they survive a
+/// CompoundType rail rewrite. Character Highlight is skipped by
+/// `readCharIX` but `TextBkgnd` is collected and painted as
+/// `fo:background-color`, so a uniform highlight with no authored
+/// text-block fill is written there. `TextBkgndTrans` and layer
+/// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
+/// zeros alpha), so a save premultiplies those into RGB toward white.
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens —
 /// `readCharIX` only stores `Font` and `Size` — so an Asian-only (or
 /// complex-script-only) run whose Latin `Font` would tofu in Draw is
@@ -42,6 +48,7 @@ import 'dash_pattern.dart';
 import 'effects.dart';
 import 'fill.dart';
 import 'geometry.dart';
+import 'layer.dart';
 import 'line.dart';
 import 'perimeter.dart';
 import 'rich_text.dart';
@@ -185,7 +192,57 @@ VsdxShape _withoutArrowheads(VsdxShape shape) => shape.copyWith(
       line: shape.line.copyWith(beginArrow: 0, endArrow: 0),
     );
 
-/// Arrowed 1-D that also needs rails / a ribbon: bake markers as Geometry.
+/// Marker width `VSDContentCollector::_lineProperties` actually emits.
+///
+/// `tokens.txt` has no BeginArrowSize / EndArrowSize. Draw uses
+/// `markerScale * (0.1/(width²+1) + 2.54*width) * pageScale` (inches),
+/// matching `_linePropertiesMarkerScale` for ids 10–11 / 14–18 / 22.
+double libvisioMarkerSizeInches({
+  required int marker,
+  required double strokeWidthInches,
+  double pageScale = 1.0,
+}) {
+  final markerScale = switch (marker) {
+    10 || 11 => 0.7,
+    14 || 15 || 16 || 17 || 18 || 22 => 1.2,
+    _ => 1.0,
+  };
+  final width = strokeWidthInches.isFinite ? strokeWidthInches : 0.0;
+  final scale = pageScale.isFinite ? pageScale : 1.0;
+  return scale * markerScale * (0.1 / (width * width + 1.0) + 2.54 * width);
+}
+
+bool _hasVsdImportedArrowSize(VsdxShape shape) => shape.userCells.any(
+      (cell) =>
+          cell.name == VsdxShape.userVsdBeginArrowSize ||
+          cell.name == VsdxShape.userVsdEndArrowSize,
+    );
+
+bool _arrowSizeMismatchesLibvisio({
+  required int arrowId,
+  required double authoredInches,
+  required double weightInches,
+}) {
+  if (arrowId == 0) return false;
+  final expected = libvisioMarkerSizeInches(
+    marker: arrowId,
+    strokeWidthInches: weightInches,
+  );
+  final authored = authoredInches <= 0 ? 0.125 : authoredInches;
+  // Visio bucket 2 is 0.125" for every marker id. Draw then scales ids
+  // 10–11 / 14–18 / 22 by 0.7 / 1.2 from LineWeight, so an untouched
+  // default arrow already "mismatches" that formula. Baking those would
+  // drop native BeginArrow on every save (export of ids 1–45, VDX
+  // inherited arrows). Only a non-default bucket is worth a Geometry bake.
+  const defaultBucketInches = 0.125;
+  if ((authored - defaultBucketInches).abs() <= 0.02) return false;
+  final span = math.max(authored, expected);
+  if (span < 1e-9) return false;
+  return (authored - expected).abs() > math.max(0.02, 0.15 * span);
+}
+
+/// Arrowed 1-D that also needs rails / a ribbon, or whose size Draw would
+/// take from LineWeight instead of BeginArrowSize: bake markers as Geometry.
 ///
 /// libvisio hangs `draw:marker-*` on every open path, so CompoundType rails
 /// would duplicate arrowheads, and a closed LineGradient / LineColorTrans
@@ -196,6 +253,19 @@ bool shapeNeedsLibvisioArrowedStrokeBake(VsdxShape shape) {
   if (!_hasArrowheads(shape.line)) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (_strokeTips(shape) == null) return false;
+  if (!_hasVsdImportedArrowSize(shape) &&
+      (_arrowSizeMismatchesLibvisio(
+            arrowId: shape.line.beginArrow,
+            authoredInches: shape.line.beginArrowSizeInches,
+            weightInches: shape.line.weightInches,
+          ) ||
+          _arrowSizeMismatchesLibvisio(
+            arrowId: shape.line.endArrow,
+            authoredInches: shape.line.endArrowSizeInches,
+            weightInches: shape.line.weightInches,
+          ))) {
+    return true;
+  }
   final stripped = _withoutArrowheads(shape);
   return shapeNeedsLibvisioCompoundBake(stripped) ||
       shapeNeedsLibvisioStrokeRibbon(stripped);
@@ -403,103 +473,354 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
   return null;
 }
 
-/// Filled arrow polygons in the 0–10 marker viewBox used by
-/// `VSDContentCollector::_linePropertiesMarkerPath` / SVG `_arrowMarkerBody`
-/// (tip at x=10, y=5). Extra ids beyond 2/5/8/11/13/39/40 are the filled
-/// cousins Draw would otherwise flatten to the default triangle.
-List<List<Offset2D>> _markerPolygons(int arrowId) {
+/// Local-space arrow bake: tip at the origin, body along −X, unit size.
+///
+/// Matches `lib/render/arrow_library.dart` so Visio (native markers gone)
+/// and Draw (Geometry only) see the same silhouette. Open ids are later
+/// expanded to filled ribbons because LineWeight is shape-level.
+class _ArrowBakeSpec {
+  const _ArrowBakeSpec({
+    required this.polylines,
+    required this.closed,
+    required this.filled,
+    this.centered = false,
+  });
+
+  final List<List<Offset2D>> polylines;
+  final bool closed;
+  final bool filled;
+  final bool centered;
+}
+
+List<Offset2D> _regularPolygon({
+  required double cx,
+  required double cy,
+  required double radius,
+  int sides = 16,
+}) =>
+    [
+      for (var i = 0; i < sides; i++)
+        Offset2D(
+          cx + radius * math.cos(i * 2 * math.pi / sides),
+          cy + radius * math.sin(i * 2 * math.pi / sides),
+        ),
+    ];
+
+_ArrowBakeSpec _arrowBakeSpec(int arrowId) {
   switch (arrowId) {
+    case 1:
+    case 3:
+    case 43:
+    case 44:
+    case 45:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(-1, -0.4), Offset2D(0, 0), Offset2D(-1, 0.4)],
+        ],
+        closed: false,
+        filled: false,
+      );
     case 2:
-    case 15:
-      return const [
-        [Offset2D(0, 2.5), Offset2D(10, 5), Offset2D(0, 7.5)],
-      ];
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-1, -0.25), Offset2D(-1, 0.25)],
+        ],
+        closed: true,
+        filled: true,
+      );
     case 5:
-    case 17:
-      return const [
-        [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9), Offset2D(3, 5)],
-      ];
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(0, 0),
+            Offset2D(-1, -0.4),
+            Offset2D(-0.7, 0),
+            Offset2D(-1, 0.4),
+          ],
+        ],
+        closed: true,
+        filled: true,
+      );
     case 6:
-      return const [
-        [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9), Offset2D(7, 5)],
-      ];
     case 8:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(0, 0),
+            Offset2D(-1.1, -0.45),
+            Offset2D(-0.85, 0),
+            Offset2D(-1.1, 0.45),
+          ],
+        ],
+        closed: true,
+        filled: true,
+      );
+    case 7:
+    case 19:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(-0.55, -0.5), Offset2D(0, 0), Offset2D(-0.55, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 9:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(-1, -1.1), Offset2D(0, 1.1)],
+          [Offset2D(-0.5, -1.1), Offset2D(-0.5, 1.1)],
+        ],
+        closed: false,
+        filled: false,
+        centered: true,
+      );
+    case 10:
+      return _ArrowBakeSpec(
+        polylines: [_regularPolygon(cx: -0.5, cy: 0, radius: 0.5)],
+        closed: true,
+        filled: true,
+        centered: true,
+      );
+    case 11:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(-0.85, -0.4),
+            Offset2D(0, -0.4),
+            Offset2D(0, 0.4),
+            Offset2D(-0.85, 0.4),
+          ],
+        ],
+        closed: true,
+        filled: true,
+        centered: true,
+      );
     case 12:
     case 18:
-      return const [
-        [
-          Offset2D(0, 0.5),
-          Offset2D(10, 5),
-          Offset2D(0, 9.5),
-          Offset2D(2.5, 5),
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(0, 0),
+            Offset2D(-1.1, -0.45),
+            Offset2D(-0.85, 0),
+            Offset2D(-1.1, 0.45),
+          ],
         ],
-      ];
-    case 10:
+        closed: true,
+        filled: false,
+      );
+    case 13:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(0, 0),
+            Offset2D(-1.4, -1.4 / 3),
+            Offset2D(-1.4, 1.4 / 3),
+          ],
+        ],
+        closed: true,
+        filled: true,
+      );
+    case 14:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-0.85, -0.55), Offset2D(-0.85, 0.55)],
+        ],
+        closed: true,
+        filled: false,
+      );
+    case 15:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-1, -0.25), Offset2D(-1, 0.25)],
+        ],
+        closed: true,
+        filled: false,
+      );
+    case 16:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-1, -0.4), Offset2D(-1, 0.4)],
+        ],
+        closed: true,
+        filled: false,
+      );
+    case 17:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(0, 0),
+            Offset2D(-1, -0.4),
+            Offset2D(-0.7, 0),
+            Offset2D(-1, 0.4),
+          ],
+        ],
+        closed: true,
+        filled: false,
+      );
     case 20:
+      return _ArrowBakeSpec(
+        polylines: [_regularPolygon(cx: -0.5, cy: 0, radius: 0.4)],
+        closed: true,
+        filled: false,
+        centered: true,
+      );
+    case 21:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(-0.85, -0.4),
+            Offset2D(0, -0.4),
+            Offset2D(0, 0.4),
+            Offset2D(-0.85, 0.4),
+          ],
+        ],
+        closed: true,
+        filled: false,
+        centered: true,
+      );
+    case 22:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [
+            Offset2D(0, 0),
+            Offset2D(-0.5, -0.35),
+            Offset2D(-1, 0),
+            Offset2D(-0.5, 0.35),
+          ],
+        ],
+        closed: true,
+        filled: false,
+      );
+    case 23:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(-1, 0.5), Offset2D(0, -0.5)],
+          [Offset2D(-0.5, -0.5), Offset2D(-0.5, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 24:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(-0.3, -0.5), Offset2D(-0.3, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 25:
+    case 26:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(-0.3, -0.5), Offset2D(-0.3, 0.5)],
+          [Offset2D(-0.55, -0.5), Offset2D(-0.55, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 27:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(0.85, -0.5)],
+          [Offset2D(0, 0), Offset2D(0.85, 0)],
+          [Offset2D(0, 0), Offset2D(0.85, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 28:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(0.72, -0.5)],
+          [Offset2D(0, 0), Offset2D(0.72, 0)],
+          [Offset2D(0, 0), Offset2D(0.72, 0.5)],
+          [Offset2D(0.88, -0.5), Offset2D(0.88, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 29:
+      return _ArrowBakeSpec(
+        polylines: [
+          _regularPolygon(cx: 0.4, cy: 0, radius: 0.18),
+          const [Offset2D(0.6, -0.05), Offset2D(1.1, -0.5)],
+          const [Offset2D(0.6, 0), Offset2D(1.1, 0)],
+          const [Offset2D(0.6, 0.05), Offset2D(1.1, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 30:
+      return _ArrowBakeSpec(
+        polylines: [
+          _regularPolygon(cx: 0.6, cy: 0, radius: 0.18),
+          const [Offset2D(0.3, -0.5), Offset2D(0.3, 0.5)],
+        ],
+        closed: false,
+        filled: false,
+      );
+    case 31:
+    case 32:
+    case 33:
+    case 34:
+    case 41:
+      return _ArrowBakeSpec(
+        polylines: [_regularPolygon(cx: -0.5, cy: 0, radius: 0.5)],
+        closed: true,
+        filled: false,
+      );
+    case 35:
+    case 36:
+    case 37:
+      return _ArrowBakeSpec(
+        polylines: [
+          _regularPolygon(cx: -0.4, cy: 0, radius: 0.4),
+          const [
+            Offset2D(-1.0, -0.5),
+            Offset2D(-0.8, -0.5),
+            Offset2D(-0.8, 0.5),
+            Offset2D(-1.0, 0.5),
+          ],
+        ],
+        closed: true,
+        filled: true,
+      );
     case 38:
     case 42:
-      return const [
-        [
-          Offset2D(5, 0),
-          Offset2D(8.5, 1.5),
-          Offset2D(10, 5),
-          Offset2D(8.5, 8.5),
-          Offset2D(5, 10),
-          Offset2D(1.5, 8.5),
-          Offset2D(0, 5),
-          Offset2D(1.5, 1.5),
-        ],
-      ];
-    case 11:
-    case 21:
-      return const [
-        [Offset2D(0, 1), Offset2D(10, 1), Offset2D(10, 9), Offset2D(0, 9)],
-      ];
-    case 13:
-      return const [
-        [Offset2D(0, 1.667), Offset2D(10, 5), Offset2D(0, 8.333)],
-      ];
+      return _ArrowBakeSpec(
+        polylines: [_regularPolygon(cx: -0.5, cy: 0, radius: 0.5)],
+        closed: true,
+        filled: true,
+      );
     case 39:
     case 40:
-      return const [
-        [Offset2D(4, 1), Offset2D(10, 5), Offset2D(4, 9)],
-        [Offset2D(0, 1), Offset2D(6, 5), Offset2D(0, 9)],
-      ];
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-0.6, -0.35), Offset2D(-0.6, 0.35)],
+          [Offset2D(-0.6, 0), Offset2D(-1.2, -0.35), Offset2D(-1.2, 0.35)],
+        ],
+        closed: true,
+        filled: true,
+      );
     default:
-      return const [
-        [Offset2D(0, 1), Offset2D(10, 5), Offset2D(0, 9)],
-      ];
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-1, -0.4), Offset2D(-1, 0.4)],
+        ],
+        closed: true,
+        filled: true,
+      );
   }
 }
 
-bool _centeredMarker(int arrowId) =>
-    arrowId == 9 ||
-    arrowId == 10 ||
-    arrowId == 11 ||
-    arrowId == 20 ||
-    arrowId == 21;
-
-Offset2D _markerWorld(
-  Offset2D local, {
-  required Offset2D tip,
-  required double ux,
-  required double uy,
-  required double scale,
-  required double refX,
-}) {
-  final x = (local.x - refX) * scale;
-  final y = (local.y - 5) * scale;
-  return Offset2D(
-    tip.x + x * ux - y * uy,
-    tip.y + x * uy + y * ux,
-  );
-}
-
-/// Shape-local filled polygons for BeginArrow / EndArrow.
+/// Shape-local filled polygons / ribbons for BeginArrow / EndArrow.
 List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
   final tips = _strokeTips(shape);
   if (tips == null) return const <VsdxGeometry>[];
   final out = <VsdxGeometry>[];
+  final halfWeight =
+      (shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01) / 2;
   void add(int id, double size, Offset2D tip, Offset2D from) {
     if (id == 0) return;
     final dx = tip.x - from.x;
@@ -509,26 +830,57 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
     final ux = dx / len;
     final uy = dy / len;
     final mw = size <= 0 ? 0.125 : size;
-    final scale = mw / 10;
-    final refX = _centeredMarker(id) ? 5.0 : 10.0;
-    for (final poly in _markerPolygons(id)) {
+    final spec = _arrowBakeSpec(id);
+    var localPolys = spec.polylines;
+    if (spec.centered) {
+      var minX = double.infinity;
+      var maxX = -double.infinity;
+      for (final poly in localPolys) {
+        for (final p in poly) {
+          if (p.x < minX) minX = p.x;
+          if (p.x > maxX) maxX = p.x;
+        }
+      }
+      if (minX.isFinite) {
+        final shift = (minX + maxX) / 2;
+        localPolys = [
+          for (final poly in localPolys)
+            [for (final p in poly) Offset2D(p.x - shift, p.y)],
+        ];
+      }
+    }
+    for (final local in localPolys) {
       final world = <Offset2D>[
-        for (final p in poly)
-          _markerWorld(
-            p,
-            tip: tip,
-            ux: ux,
-            uy: uy,
-            scale: scale,
-            refX: refX,
+        for (final p in local)
+          Offset2D(
+            tip.x + p.x * mw * ux - p.y * mw * uy,
+            tip.y + p.x * mw * uy + p.y * mw * ux,
           ),
       ];
-      if (world.length < 3) continue;
+      if (spec.filled) {
+        if (world.length < 3) continue;
+        out.add(
+          VsdxGeometry(
+            noFill: false,
+            noLine: true,
+            commands: polylineCommands(world, closed: spec.closed),
+          ),
+        );
+        continue;
+      }
+      if (world.length < 2) continue;
+      final closed = (spec.closed && world.length >= 3) || world.length >= 8;
+      final commands = strokeRibbonCommands(
+        world,
+        halfWidth: halfWeight,
+        closed: closed,
+      );
+      if (commands.length < 3) continue;
       out.add(
         VsdxGeometry(
           noFill: false,
           noLine: true,
-          commands: polylineCommands(world, closed: true),
+          commands: commands,
         ),
       );
     }
@@ -830,11 +1182,35 @@ bool shapeNeedsLibvisioTextBkgndBake(VsdxShape shape) {
   return uniformCharacterHighlight(shape) != null;
 }
 
-/// Text block cells the writer should emit so Draw paints Highlight.
-VsdxTextBlock textBlockForLibvisioWrite(VsdxShape shape) {
+/// `true` when TextBkgnd / Highlight cells must be rewritten for Draw.
+///
+/// `TextBkgndTrans` is in `tokens.txt` but `readShapeProperties` has no
+/// case for it, and `xmlStringToColour` stores Colour.a = 0, so a
+/// semi-transparent plate becomes opaque in Draw unless the RGB is
+/// premultiplied and Trans is written 0.
+bool shapeNeedsLibvisioTextBlockBake(VsdxShape shape) {
+  if (shapeNeedsLibvisioTextBkgndBake(shape)) return true;
   final block = shape.richText.textBlock;
-  if (!shapeNeedsLibvisioTextBkgndBake(shape)) return block;
-  return block.copyWith(backgroundColor: uniformCharacterHighlight(shape));
+  if (block.hideText) return false;
+  return block.backgroundColor != null && block.backgroundTransparency > 1e-9;
+}
+
+/// Text block cells the writer should emit so Draw paints Highlight / Trans.
+VsdxTextBlock textBlockForLibvisioWrite(VsdxShape shape) {
+  var block = shape.richText.textBlock;
+  if (shapeNeedsLibvisioTextBkgndBake(shape)) {
+    block = block.copyWith(backgroundColor: uniformCharacterHighlight(shape));
+  }
+  if (block.backgroundColor != null && block.backgroundTransparency > 1e-9) {
+    block = block.copyWith(
+      backgroundColor: colourForLibvisioAlpha(
+        block.backgroundColor!,
+        block.backgroundTransparency,
+      ),
+      backgroundTransparency: 0,
+    );
+  }
+  return block;
 }
 
 /// TextBkgnd to paint here. `null` when it is only the LibreOffice stand-in
@@ -908,6 +1284,19 @@ VsdxShadow shadowForLibvisioWrite(VsdxShadow shadow) {
     ),
     transparency: 0,
     clearThemeColorIndex: true,
+  );
+}
+
+/// Layer `Color` / `ColorTrans` Draw will collect.
+///
+/// `readLayerIX` stores `Color` and skips `ColorTrans` (not a token).
+/// `xmlStringToColour` also forces Colour.a = 0. A tint with no RGB is
+/// left alone.
+VsdxLayer layerForLibvisioWrite(VsdxLayer layer) {
+  if (layer.color == null || layer.colorTrans <= 1e-9) return layer;
+  return layer.copyWith(
+    color: colourForLibvisioAlpha(layer.color!, layer.colorTrans),
+    colorTrans: 0,
   );
 }
 
