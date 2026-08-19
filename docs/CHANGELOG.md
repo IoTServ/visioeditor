@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Rendering is now checked per shape, not just per page. A page-level mean
+  error cannot see a single geometry, fill or master that silently
+  disappears: the average barely moves. The corpus now maps every shape
+  through `localToPageDeep` — honouring signed Width/Height, Angle and
+  ancestor flips — and compares ink presence in that rectangle between
+  our painter and LibreOffice. Across 60 files there is no shape
+  LibreOffice paints and we do not. Dropping every filled leaf on
+  `color-boxes.vsdx` fails with one line per vanished shape.
 - Saving is now verified against the reference consumer instead of against
   ourselves. Every fixture is parsed, saved, and read back by libvisio —
   page count, page size, rendered letters, drawing features and painted

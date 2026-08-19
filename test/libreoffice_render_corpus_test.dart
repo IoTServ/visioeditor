@@ -107,6 +107,7 @@ const _corpus = <_CorpusEntry>[
   _CorpusEntry(
     'Visio5TextFieldsWithUnits.vsd',
     expectedTextFragments: _legacyUnitFieldTexts,
+    paintsMoreThanLibreOffice: true,
   ),
   _CorpusEntry(
     'Visio6PlanWithDimensions.vsd',
@@ -427,6 +428,15 @@ void main() {
             final appMetrics = _measure(appImage);
             final referenceMetrics = _measure(referenceImage);
             final comparison = _compare(appImage, referenceImage);
+            failures.addAll(
+              _compareShapeRegions(
+                entry: entry,
+                page: page,
+                pageIndex: pageIndex,
+                app: appImage,
+                reference: referenceImage,
+              ),
+            );
             _DecodedImage? libreOfficeRoundTripImage;
             _ImageComparison? libreOfficeRoundTripComparison;
             if (libreOfficeRoundTripPages != null &&
@@ -651,6 +661,206 @@ void main() {
   );
 }
 
+/// Per-shape presence check: wherever LibreOffice paints a shape, we have to
+/// paint something in the same place, and vice versa.
+///
+/// A page-level mean error cannot see this. A single shape that fails to
+/// render — one geometry type, one fill, one master reference — moves the page
+/// average by far less than the tolerance, and the corpus stays green while a
+/// whole class of drawing silently disappears. Comparing ink presence inside
+/// each shape's own page rectangle localises exactly that.
+///
+/// The check is deliberately one of presence, not likeness: text metrics and
+/// hinting differ between the two renderers, so requiring similar ink *amounts*
+/// per shape would fail constantly. It only fires when one side draws a
+/// substantial mark and the other draws essentially nothing.
+///
+/// Across the whole corpus there is no shape LibreOffice paints and we do not.
+///
+/// What it cannot see: a shape whose rectangle is mostly filled by its
+/// neighbours. A connector's bounds reach the two boxes it joins, so their
+/// edges keep the region inked even when the connector itself is gone. Line
+/// endings, dashes and the other connector styling are covered by the
+/// libvisio feature diff in the engine package instead.
+List<String> _compareShapeRegions({
+  required _CorpusEntry entry,
+  required VsdxPage page,
+  required int pageIndex,
+  required _DecodedImage app,
+  required _DecodedImage reference,
+}) {
+  final failures = <String>[];
+  for (final region in _shapeRegions(page)) {
+    final ours = _regionInk(app, region.rect, page);
+    final theirs = _regionInk(reference, region.rect, page);
+    if (ours.pixels < _minimumRegionPixels) continue;
+    final label = '${entry.name}#${pageIndex + 1} shape ${region.id}'
+        '${region.name.isEmpty ? '' : ' (${region.name})'}';
+    if (_vanished(drawn: theirs.fraction, other: ours.fraction)) {
+      failures.add(
+        '$label: LibreOffice paints it '
+        '(${theirs.fraction.toStringAsFixed(4)}) and we do not '
+        '(${ours.fraction.toStringAsFixed(4)})',
+      );
+    } else if (!entry.paintsMoreThanLibreOffice &&
+        _vanished(drawn: ours.fraction, other: theirs.fraction) &&
+        theirs.fraction < _blankInkFraction) {
+      failures.add(
+        '$label: we paint it (${ours.fraction.toStringAsFixed(4)}) and '
+        'LibreOffice does not (${theirs.fraction.toStringAsFixed(4)})',
+      );
+    }
+  }
+  return failures;
+}
+
+/// Regions smaller than this sample too few pixels to judge.
+const _minimumRegionPixels = 400;
+
+/// Whether a shape one renderer clearly drew is absent from the other.
+///
+/// The comparison is relative because ink fraction depends on what kind of
+/// shape it is: a filled box covers most of its rectangle, while a thin
+/// diagonal connector covers barely a percent of the same area. A fixed
+/// "clearly drawn" cutoff high enough to ignore antialiasing noise would sit
+/// above every connector on the page, and dropping all of them would pass.
+bool _vanished({required double drawn, required double other}) =>
+    drawn >= _minimumInkFraction && other < drawn * 0.15;
+
+/// Roughly twenty pixels of a 72-DPI inch square: enough to be a mark rather
+/// than the stray edge of a neighbouring stroke.
+const _minimumInkFraction = 0.004;
+
+/// Essentially empty. Used only on the "we paint more" side, because
+/// LibreOffice is the known-incomplete renderer on the fixtures where we
+/// recover field text, and a slightly-below-threshold LibreOffice region
+/// is not a defect on our part.
+const _blankInkFraction = 0.001;
+
+class _ShapeRegion {
+  const _ShapeRegion(this.id, this.name, this.rect);
+
+  final int id;
+  final String name;
+
+  /// Page rectangle in inches, origin bottom-left as Visio stores it.
+  final _Rect rect;
+}
+
+class _Rect {
+  const _Rect(this.left, this.bottom, this.right, this.top);
+
+  final double left;
+  final double bottom;
+  final double right;
+  final double top;
+
+  double get width => right - left;
+  double get height => top - bottom;
+}
+
+/// Page-space rectangle of every shape that is worth judging on its own.
+///
+/// Group children are included: a group that renders its frame but loses its
+/// contents is exactly the kind of defect this is meant to find.
+List<_ShapeRegion> _shapeRegions(VsdxPage page) {
+  final out = <_ShapeRegion>[];
+  void walk(VsdxShape shape) {
+    final rect = _shapeRect(page, shape);
+    if (rect != null &&
+        rect.width > 0.05 &&
+        rect.height > 0.05 &&
+        // A shape covering the page tells us nothing the page metrics do not.
+        rect.width * rect.height < page.widthInches * page.heightInches * 0.5) {
+      out.add(_ShapeRegion(shape.id, shape.name, rect));
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return out;
+}
+
+/// Axis-aligned page bounds of [shape], following Angle and the flips through
+/// every ancestor frame.
+_Rect? _shapeRect(VsdxPage page, VsdxShape shape) {
+  // Width and height are signed: a 1-D connector routed right-to-left has a
+  // negative width, and its local extent runs from that negative value to
+  // zero. Taking the magnitude here would mirror the rectangle to the wrong
+  // side of the pin and measure a neighbouring shape instead.
+  final width = shape.width;
+  final height = shape.height;
+  if (width.abs() <= 0 || height.abs() <= 0) return null;
+  final corners = <Offset2D>[
+    const Offset2D(0, 0),
+    Offset2D(width, 0),
+    Offset2D(width, height),
+    Offset2D(0, height),
+  ];
+  var left = double.infinity;
+  var bottom = double.infinity;
+  var right = double.negativeInfinity;
+  var top = double.negativeInfinity;
+  for (final corner in corners) {
+    final Offset2D mapped;
+    try {
+      mapped = page.localToPageDeep(shape.id, corner);
+    } catch (_) {
+      return null;
+    }
+    if (!mapped.x.isFinite || !mapped.y.isFinite) return null;
+    left = math.min(left, mapped.x);
+    bottom = math.min(bottom, mapped.y);
+    right = math.max(right, mapped.x);
+    top = math.max(top, mapped.y);
+  }
+  return _Rect(left, bottom, right, top);
+}
+
+/// Ink fraction inside [rect], shrunk slightly so a neighbouring shape's
+/// stroke sitting on the boundary cannot answer for this one.
+///
+/// [rect] is in page inches with the origin at the bottom-left, as Visio
+/// stores it; both renderings put pixel row 0 at the top.
+({double fraction, int pixels}) _regionInk(
+  _DecodedImage image,
+  _Rect rect,
+  VsdxPage page,
+) {
+  const inset = 0.01;
+  final scaleX = image.width / page.widthInches;
+  final scaleY = image.height / page.heightInches;
+  final left = ((rect.left + inset) * scaleX).floor().clamp(0, image.width);
+  final right = ((rect.right - inset) * scaleX).ceil().clamp(left, image.width);
+  final top =
+      ((page.heightInches - rect.top + inset) * scaleY).floor().clamp(
+        0,
+        image.height,
+      );
+  final bottom = ((page.heightInches - rect.bottom - inset) * scaleY)
+      .ceil()
+      .clamp(top, image.height);
+
+  var ink = 0;
+  for (var y = top; y < bottom; y++) {
+    for (var x = left; x < right; x++) {
+      final offset = (y * image.width + x) * 4;
+      if (image.rgba[offset + 3] < 16) continue;
+      if (image.rgba[offset] < 248 ||
+          image.rgba[offset + 1] < 248 ||
+          image.rgba[offset + 2] < 248) {
+        ink++;
+      }
+    }
+  }
+  final pixels = (right - left) * (bottom - top);
+  return (fraction: pixels == 0 ? 0.0 : ink / pixels, pixels: pixels);
+}
+
 /// Compare text without committing to a particular line breaking. The renderer
 /// word-wraps a label to fit its text block, so a phrase that Visio shows on
 /// one line can legitimately arrive split across two `<text>` elements.
@@ -832,6 +1042,7 @@ class _CorpusEntry {
     this.packageFixture = false,
     this.ignoreLibreOfficePageCount = false,
     this.ignoreLibreOfficeCanvasSize = false,
+    this.paintsMoreThanLibreOffice = false,
     this.libreOfficeReferenceFromRoundTrip = false,
     this.maxMeanAbsoluteError,
     this.minInkIntersectionOverUnion,
@@ -848,6 +1059,9 @@ class _CorpusEntry {
   final bool packageFixture;
   final bool ignoreLibreOfficePageCount;
   final bool ignoreLibreOfficeCanvasSize;
+  /// LibreOffice leaves shapes of this source blank, so only the direction
+  /// that matters — a shape it draws and we do not — is asserted.
+  final bool paintsMoreThanLibreOffice;
   final bool libreOfficeReferenceFromRoundTrip;
   final double? maxMeanAbsoluteError;
   final double? minInkIntersectionOverUnion;
