@@ -670,6 +670,46 @@ void main() {
             compoundType: 4,
           ),
         ),
+      ).addShape(
+        VsdxShape(
+          id: id + 33,
+          name: 'BevelRoundCap',
+          pinX: 6,
+          pinY: 9.5,
+          width: 1.4,
+          height: 1.4,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(1.4, 0),
+                LineTo(1.4, 1.4),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            cap: LineCap.round,
+            join: VsdxLineJoin.bevel,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 34,
+          pinX: 3.5,
+          pinY: 9.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'FilledLineTrans',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.04,
+            transparency: 0.4,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -852,6 +892,25 @@ void main() {
           .length,
       3,
     );
+    final rounding = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Rounding');
+    expect(rounding.line.roundingInches, closeTo(0, 1e-12));
+    expect(
+      rounding.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+    );
+    final bevelRoundCap = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'BevelRoundCap');
+    expect(bevelRoundCap.line.cap, LineCap.extended);
+    expect(
+      bevelRoundCap.geometries.single.commands.whereType<LineTo>().length,
+      greaterThan(2),
+    );
+    final filledLineTrans = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'FilledLineTrans');
+    expect(filledLineTrans.line.transparency, closeTo(0, 1e-12));
+    expect(filledLineTrans.line.color?.value, 0xFF666666);
+    expect(filledLineTrans.fill.foreground?.value, 0xFFFFFFFF);
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';

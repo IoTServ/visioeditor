@@ -25,7 +25,13 @@
 /// from `LineCap` only (round cap → round join, otherwise miter), so an
 /// explicit round / arcs join on a square/flat cap is baked with the same
 /// RelQuadBezTo fillets as shape-level Rounding, and a bevel join becomes a
-/// LineTo chamfer. The Rounding cell stays 0 so Visio does not restroke.
+/// LineTo chamfer (including when the cap is round: Draw would otherwise
+/// round the elbow, so the written LineCap is flattened to extended). The
+/// Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
+/// filled-shape LineColorTrans, and ShdwForegndTrans are not tokens —
+/// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
+/// those into RGB toward white and writes Trans=0. Theme-bound colours
+/// with no resolved RGB are left alone so THEMEVAL() survives.
 library;
 
 import 'dart:math' as math;
@@ -33,6 +39,7 @@ import 'dart:math' as math;
 import '../export/compound_stroke.dart';
 import '../utils/color.dart';
 import 'dash_pattern.dart';
+import 'effects.dart';
 import 'fill.dart';
 import 'geometry.dart';
 import 'line.dart';
@@ -121,6 +128,26 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
       );
     }
     line = line.copyWith(beginArrow: 0, endArrow: 0);
+  }
+
+  final sourceLine = shape.line;
+  if (roundingForLibvisioWrite(sourceLine) > 1e-12) {
+    line = line.copyWith(roundingInches: 0);
+  }
+  if (chamferForLibvisioWrite(sourceLine) &&
+      sourceLine.cap == LineCap.round) {
+    line = line.copyWith(cap: LineCap.extended);
+  }
+  if (line.transparency > 1e-9 &&
+      (line.color != null || line.themeColorIndex == null)) {
+    line = line.copyWith(
+      color: colourForLibvisioAlpha(
+        line.color ?? const VsdxColor(0xFF000000),
+        line.transparency,
+      ),
+      transparency: 0,
+      clearThemeColorIndex: true,
+    );
   }
 
   return LibvisioShapeWrite(
@@ -659,8 +686,13 @@ int linePatternForLibvisioWrite(VsdxLine line) {
 /// a bevel chamfer so Visio's round corners stay round.
 double roundingForLibvisioWrite(VsdxLine line) {
   var radius = line.roundingInches;
-  if (line.cap == LineCap.round) return radius;
   final joinRadius = (line.weightInches > 1e-9 ? line.weightInches : 0.01) / 2;
+  if (line.cap == LineCap.round) {
+    // Draw already round-joins a round cap. Bevel still has to be baked
+    // (and the cap flattened) or Draw paints a round elbow.
+    if (line.join == VsdxLineJoin.bevel && radius <= 1e-12) return joinRadius;
+    return radius;
+  }
   switch (line.join) {
     case VsdxLineJoin.round:
     case VsdxLineJoin.arcs:
@@ -678,11 +710,11 @@ double roundingForLibvisioWrite(VsdxLine line) {
 /// `true` when the baked corner must be a LineTo chamfer, not RelQuadBezTo.
 ///
 /// Only bevel, and only when there is no shape-level Rounding (that cell
-/// still means a Visio fillet). Round / arcs keep the quadratic.
+/// still means a Visio fillet). Round / arcs keep the quadratic. A round
+/// cap is flattened to LineCap.extended on write so Draw does not round
+/// the chamfer (`_lineProperties` join comes from LineCap only).
 bool chamferForLibvisioWrite(VsdxLine line) =>
-    line.roundingInches <= 1e-12 &&
-    line.cap != LineCap.round &&
-    line.join == VsdxLineJoin.bevel;
+    line.roundingInches <= 1e-12 && line.join == VsdxLineJoin.bevel;
 
 /// Closest of libvisio's dash ids 2–23 for a draw.io / custom array.
 int nearestLibvisioLinePattern(List<double> custom) {
@@ -825,6 +857,60 @@ VsdxTextBlock textBlockForPaint(VsdxShape shape) {
   return block.withoutBackgroundColor();
 }
 
+/// RGB Draw will paint when libvisio strips alpha (`xmlStringToColour`
+/// always stores Colour.a = 0, and ColorTrans / LineColorTrans /
+/// ShdwForegndTrans are not tokens). Blends [foreground] toward white.
+VsdxColor colourForLibvisioAlpha(VsdxColor foreground, double transparency) {
+  final t = transparency.clamp(0.0, 1.0);
+  if (t <= 1e-9) return foreground;
+  int mix(int channel) =>
+      (channel * (1 - t) + 255 * t).round().clamp(0, 255);
+  return VsdxColor.argb(
+    0xFF,
+    mix(foreground.red),
+    mix(foreground.green),
+    mix(foreground.blue),
+  );
+}
+
+/// `Color` cell Draw will collect. Character ColorTrans is not a token.
+VsdxColor? charColorForLibvisioWrite(VsdxCharStyle style) {
+  if (style.transparency <= 1e-9) return style.color;
+  if (style.color == null && style.themeColorIndex != null) return style.color;
+  return colourForLibvisioAlpha(
+    style.color ?? const VsdxColor(0xFF000000),
+    style.transparency,
+  );
+}
+
+/// `ColorTrans` cell. Zeroed when [charColorForLibvisioWrite] baked alpha
+/// into RGB so Visio does not fade the already-blended colour a second time.
+double charTransparencyForLibvisioWrite(VsdxCharStyle style) {
+  if (style.transparency <= 1e-9) return style.transparency;
+  if (style.color == null && style.themeColorIndex != null) {
+    return style.transparency;
+  }
+  return 0;
+}
+
+/// `ShdwForegnd` / `ShdwForegndTrans` Draw will collect. Shadow alpha is
+/// `shadowFgColour.a`, which VSDX `xmlStringToColour` forces to 0.
+VsdxShadow shadowForLibvisioWrite(VsdxShadow shadow) {
+  if (!shadow.enabled ||
+      shadow.transparency <= 1e-9 ||
+      (shadow.color == null && shadow.themeColorIndex != null)) {
+    return shadow;
+  }
+  return shadow.copyWith(
+    color: colourForLibvisioAlpha(
+      shadow.color ?? const VsdxColor(0xFF000000),
+      shadow.transparency,
+    ),
+    transparency: 0,
+    clearThemeColorIndex: true,
+  );
+}
+
 /// Face libvisio's `readCharIX` will actually load (`tokens.txt` has `Font`,
 /// not `AsianFont` / `ComplexScriptFont`).
 const kLibvisioDefaultAsianFont = 'Microsoft YaHei';
@@ -930,6 +1016,10 @@ bool shapeNeedsLibvisioFontBake(VsdxShape shape) {
                 run.charStyle.fontSizeInches)
             .abs() >
         1e-12) {
+      return true;
+    }
+    if (charTransparencyForLibvisioWrite(run.charStyle) !=
+        run.charStyle.transparency) {
       return true;
     }
   }

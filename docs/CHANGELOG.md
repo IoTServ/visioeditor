@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Shape-level `Rounding` is now written as 0 after the RelQuadBezTo bake so
+  Visio does not fillet already-rounded corners a second time. Bevel joins
+  with a round `LineCap` bake LineTo chamfers and flatten the cap to
+  extended: `_lineProperties` derives join from LineCap only, so Draw used
+  to round those elbows. Character `ColorTrans`, filled 2-D `LineColorTrans`,
+  and `ShdwForegndTrans` premultiply into RGB toward white (`xmlStringToColour`
+  always stores Colour.a = 0, and none of those cells are tokens). Unfilled
+  strokes still use a `FillForegndTrans` ribbon. Theme-bound colours with no
+  resolved RGB keep THEMEVAL().
 - Unfilled `CompoundType` 2–4 (thick-thin / thin-thick / triple) now bake
   each rail as a filled ribbon of that rail's own width so LibreOffice keeps
   the contrast. libvisio has no CompoundType token and LineWeight is

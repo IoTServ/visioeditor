@@ -2947,8 +2947,8 @@ class VsdxWriter {
     changed |= _patchInt(
         el, 'LinePattern', baseWrite.line.pattern, editedWrite.line.pattern);
     changed |= _ensureLiteralInt(el, 'LinePattern', editedWrite.line.pattern);
-    changed |= _patchInt(el, 'LineCap', _lineCapInt(base.line.cap), _lineCapInt(edited.line.cap));
-    changed |= _ensureLiteralInt(el, 'LineCap', _lineCapInt(edited.line.cap));
+    changed |= _patchInt(el, 'LineCap', _lineCapInt(baseWrite.line.cap), _lineCapInt(editedWrite.line.cap));
+    changed |= _ensureLiteralInt(el, 'LineCap', _lineCapInt(editedWrite.line.cap));
     changed |= _patchInt(el, 'BeginArrow', baseWrite.line.beginArrow, editedWrite.line.beginArrow);
     changed |= _ensureLiteralInt(el, 'BeginArrow', editedWrite.line.beginArrow);
     changed |= _patchInt(el, 'EndArrow', baseWrite.line.endArrow, editedWrite.line.endArrow);
@@ -2983,15 +2983,15 @@ class VsdxWriter {
     changed |= _ensureLiteralLength(
         el, 'FillBkgndTrans', editedWrite.fill.backgroundTransparency);
     changed |= _patchRatio(
-        el, 'LineColorTrans', base.line.transparency, edited.line.transparency);
+        el, 'LineColorTrans', baseWrite.line.transparency, editedWrite.line.transparency);
     changed |=
-        _ensureLiteralLength(el, 'LineColorTrans', edited.line.transparency);
+        _ensureLiteralLength(el, 'LineColorTrans', editedWrite.line.transparency);
     changed |= _patchLength(
-        el, 'Rounding', base.line.roundingInches, edited.line.roundingInches);
+        el, 'Rounding', baseWrite.line.roundingInches, editedWrite.line.roundingInches);
     // Ensure missing SoftEdges/Rounding/CompoundType cells (rebuild always
     // emits them; StyleSheet can revive 0 defaults when cells are absent).
     changed |=
-        _ensureLiteralLength(el, 'Rounding', edited.line.roundingInches);
+        _ensureLiteralLength(el, 'Rounding', editedWrite.line.roundingInches);
     changed |= _patchLength(
         el, 'SoftEdgesSize', base.line.softEdgesInches, edited.line.softEdgesInches);
     changed |=
@@ -3009,7 +3009,12 @@ class VsdxWriter {
       textBlockForLibvisioWrite(edited),
       edited,
     );
-    changed |= _patchShadow(el, base.shadow, edited.shadow);
+    final shadowWrite = shadowForLibvisioWrite(edited.shadow);
+    changed |= _patchShadow(
+      el,
+      shadowForLibvisioWrite(base.shadow),
+      shadowWrite,
+    );
     changed |= _patchGlow(el, base.glow, edited.glow);
     changed |= _patchReflection(el, base.reflection, edited.reflection);
     // Effects: force literal cell values without F= so StyleSheet Inh cannot
@@ -3048,36 +3053,36 @@ class VsdxWriter {
     changed |=
         _ensureLiteralLength(el, 'ShadowBlur', edited.shadow.blurInches);
     changed |= _ensureLiteralLength(
-        el, 'ShadowForegndTrans', edited.shadow.transparency);
+        el, 'ShadowForegndTrans', shadowWrite.transparency);
     changed |= _ensureLiteralLength(
-        el, 'ShdwForegndTrans', edited.shadow.transparency);
+        el, 'ShdwForegndTrans', shadowWrite.transparency);
     // Colour companions: scrub F=Inh even when the effect model is unchanged
     // (Trans/Size already scrubbed above; colour was previously skipped).
     // Unbound (null color + null theme): drop residual cells / Inh so a
     // stylesheet cannot revive ShadowForegnd on reopen (rebuild omits them).
-    if (edited.shadow.color != null) {
+    if (shadowWrite.color != null) {
       changed |=
-          _forceLiteralColor(el, 'ShadowForegnd', edited.shadow.color!);
-      changed |= _forceLiteralColor(el, 'ShdwForegnd', edited.shadow.color!);
-    } else if (edited.shadow.themeColorIndex != null) {
+          _forceLiteralColor(el, 'ShadowForegnd', shadowWrite.color!);
+      changed |= _forceLiteralColor(el, 'ShdwForegnd', shadowWrite.color!);
+    } else if (shadowWrite.themeColorIndex != null) {
       // Theme-bound: rewrite THEMEVAL if F=Inh (solid path uses forceLiteral).
       changed |= _patchColorOrTheme(
         el,
         'ShadowForegnd',
         'QuickStyleShadowColor',
         baseColor: null,
-        baseTheme: edited.shadow.themeColorIndex,
+        baseTheme: shadowWrite.themeColorIndex,
         editedColor: null,
-        editedTheme: edited.shadow.themeColorIndex,
+        editedTheme: shadowWrite.themeColorIndex,
       );
       changed |= _patchColorOrTheme(
         el,
         'ShdwForegnd',
         'QuickStyleShadowColor',
         baseColor: null,
-        baseTheme: edited.shadow.themeColorIndex,
+        baseTheme: shadowWrite.themeColorIndex,
         editedColor: null,
-        editedTheme: edited.shadow.themeColorIndex,
+        editedTheme: shadowWrite.themeColorIndex,
       );
     } else {
       changed |= _removeNamedCells(el, const [
@@ -4613,9 +4618,10 @@ class VsdxWriter {
         _ensureCell(row, 'Size'), _fmt(fontSizeForLibvisioWrite(c, text)));
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Style'), _charStyleBits(c).toString());
-    if (c.color != null) {
+    final charColor = charColorForLibvisioWrite(c);
+    if (charColor != null) {
       changed |=
-          _writeValueIfNeeded(_ensureCell(row, 'Color'), _hex(c.color!));
+          _writeValueIfNeeded(_ensureCell(row, 'Color'), _hex(charColor));
     } else if (c.themeColorIndex != null) {
       final cell = _ensureCell(row, 'Color');
       if (cell.getAttribute('F') != 'THEMEVAL()' ||
@@ -4656,7 +4662,8 @@ class VsdxWriter {
     changed |=
         _writeValueIfNeeded(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
     changed |= _writeValueIfNeeded(
-        _ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
+        _ensureCell(row, 'ColorTrans'),
+        _fmt(charTransparencyForLibvisioWrite(c)));
     if (c.langId != null && c.langId!.isNotEmpty) {
       changed |= _writeValueIfNeeded(_ensureCell(row, 'LangID'), c.langId!);
     } else {
@@ -4827,8 +4834,9 @@ class VsdxWriter {
     _writeValue(
         _ensureCell(row, 'Size'), _fmt(fontSizeForLibvisioWrite(c, text)));
     _writeValue(_ensureCell(row, 'Style'), _charStyleBits(c).toString());
-    if (c.color != null) {
-      _writeValue(_ensureCell(row, 'Color'), _hex(c.color!));
+    final charColor = charColorForLibvisioWrite(c);
+    if (charColor != null) {
+      _writeValue(_ensureCell(row, 'Color'), _hex(charColor));
     } else if (c.themeColorIndex != null) {
       // Encode the theme slot in V (a cached value Visio recomputes from the
       // THEMEVAL formula) so the specific accent survives a round-trip.
@@ -4863,7 +4871,8 @@ class VsdxWriter {
     _writeValue(
         _ensureCell(row, 'Case'), _textCaseInt(c.textCase).toString());
     _writeValue(_ensureCell(row, 'FontScale'), _fmt(c.fontScale));
-    _writeValue(_ensureCell(row, 'ColorTrans'), _fmt(c.transparency));
+    _writeValue(_ensureCell(row, 'ColorTrans'),
+        _fmt(charTransparencyForLibvisioWrite(c)));
     if (c.asianFont != null && c.asianFont!.isNotEmpty) {
       _writeValue(_ensureCell(row, 'AsianFont'), c.asianFont!);
     } else {
@@ -6768,7 +6777,7 @@ class VsdxWriter {
     var changed = false;
     if (!_hasCell(el, 'LineCap')) {
       _ensureCell(el, 'LineCap')
-          .setAttribute('V', _lineCapInt(s.line.cap).toString());
+          .setAttribute('V', _lineCapInt(libvisioShapeWrite(s).line.cap).toString());
       changed = true;
     }
     if (s.is1D && !_hasCell(el, 'ObjType')) {
@@ -7364,6 +7373,7 @@ class VsdxWriter {
     }
     final write = libvisioShapeWrite(s);
     final fill = write.fill;
+    final shadowWrite = shadowForLibvisioWrite(s.shadow);
     // Drop stale THEMEVAL keys left after theme→solid / no-fill edits so a
     // group rebuild cannot resurrect them (patch path already scrubbed).
     final staleTheme = _staleThemeFormulaKeys(s);
@@ -7553,8 +7563,8 @@ class VsdxWriter {
             : null,
       ))
       // Always emit LineCap (Visio/Edraw "No Style" default is 0 = round).
-      ..add(_cell('LineCap', _lineCapInt(s.line.cap).toString()))
-      ..add(_cell('LineColorTrans', _fmt(s.line.transparency)));
+      ..add(_cell('LineCap', _lineCapInt(write.line.cap).toString()))
+      ..add(_cell('LineColorTrans', _fmt(write.line.transparency)));
     // Always emit arrows (incl. 0) so StyleSheet cannot revive arrowheads
     // after the user cleared them on a rebuild path (patch already forces 0).
     children
@@ -7569,7 +7579,7 @@ class VsdxWriter {
     // Always emit SoftEdges/Rounding (incl. 0) so StyleSheet cannot revive
     // feathering after a group rebuild cleared the effect in the model.
     children
-      ..add(_cell('Rounding', _fmt(s.line.roundingInches)))
+      ..add(_cell('Rounding', _fmt(write.line.roundingInches)))
       ..add(_cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)))
       // Always emit CompoundType (incl. 0) so StyleSheet inheritance cannot
       // revive double-line after the user cleared compound on a rebuild path.
@@ -7581,9 +7591,9 @@ class VsdxWriter {
     if (s.shadow.enabled) {
       children.add(_cell('ShadowPattern', s.shadow.xmlPattern.toString()));
       children.add(_cell('ShdwPattern', s.shadow.xmlPattern.toString()));
-      if (s.shadow.color != null) {
-        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
-        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
+      if (shadowWrite.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(shadowWrite.color!)));
+        children.add(_cell('ShdwForegnd', _hex(shadowWrite.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         // Match Fill/Line theme binding: THEMEVAL() + QuickStyle slot.
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
@@ -7597,8 +7607,8 @@ class VsdxWriter {
         ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
-        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(shadowWrite.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(shadowWrite.transparency)));
     } else {
       // Edraw StyleSheet defaults can leave a residual shadow unless the shape
       // explicitly disables it. Emit both aliases + companions (patch does),
@@ -7606,9 +7616,9 @@ class VsdxWriter {
       children
         ..add(_cell('ShadowPattern', '0'))
         ..add(_cell('ShdwPattern', '0'));
-      if (s.shadow.color != null) {
-        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
-        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
+      if (shadowWrite.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(shadowWrite.color!)));
+        children.add(_cell('ShdwForegnd', _hex(shadowWrite.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
@@ -7621,8 +7631,8 @@ class VsdxWriter {
         ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
-        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(shadowWrite.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(shadowWrite.transparency)));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));
@@ -7890,8 +7900,9 @@ class VsdxWriter {
     // Only emit Color when the model set one. Forcing #000000 on null made
     // editor-created labels (color: null) drift to black after save→reopen.
     // Edraw / Visio still resolve black via DefaultTextStyle / StyleSheets.
-    if (c.color != null) {
-      cells.add(_cell('Color', _hex(c.color!)));
+    final charColor = charColorForLibvisioWrite(c);
+    if (charColor != null) {
+      cells.add(_cell('Color', _hex(charColor)));
     } else if (c.themeColorIndex != null) {
       // Match [_writeCharRow]: cache the theme slot in V so accent survives
       // fresh emit → reopen (parser reads V when F=THEMEVAL()).
@@ -7934,7 +7945,7 @@ class VsdxWriter {
       ..add(_cell('Letterspace', _fmt(c.letterSpacingInches)))
       ..add(_cell('Pos', _textPositionInt(c.position).toString()))
       ..add(_cell('Case', _textCaseInt(c.textCase).toString()))
-      ..add(_cell('ColorTrans', _fmt(c.transparency)))
+      ..add(_cell('ColorTrans', _fmt(charTransparencyForLibvisioWrite(c))))
       ..add(_cell('FontScale', _fmt(c.fontScale)));
     final lang = c.langId ?? (cjk ? 'zh-CN' : null);
     if (lang != null && lang.isNotEmpty) {
@@ -8127,6 +8138,7 @@ class VsdxWriter {
     final compression = _vsdxCompressionFor(s, foreignType, part);
     final write = libvisioShapeWrite(s);
     final fill = write.fill;
+    final shadowWrite = shadowForLibvisioWrite(s.shadow);
     final bgSlot = fill.themeBackgroundIndex;
     final fgSlot = fill.themeForegroundIndex;
     final namedBg = (bgSlot != null && fgSlot != null && fgSlot != bgSlot)
@@ -8211,14 +8223,14 @@ class VsdxWriter {
       _cell('FillBkgndTrans', _fmt(fill.backgroundTransparency)),
       _cell('LinePattern', write.line.pattern.toString()),
       _cell('LineWeight', _fmt(write.line.weightInches)),
-      _cell('LineCap', _lineCapInt(s.line.cap).toString()),
+      _cell('LineCap', _lineCapInt(write.line.cap).toString()),
       if (write.line.color != null)
         _cell('LineColor', _hex(write.line.color!))
       else if (write.line.themeColorIndex != null) ...[
         _cell('LineColor', '0', formula: 'THEMEVAL()'),
         _cell('QuickStyleLineColor', write.line.themeColorIndex!.toString()),
       ],
-      _cell('LineColorTrans', _fmt(s.line.transparency)),
+      _cell('LineColorTrans', _fmt(write.line.transparency)),
       // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
       _cell('BeginArrow', write.line.beginArrow.toString()),
       _cell(
@@ -8231,7 +8243,7 @@ class VsdxWriter {
       // SoftEdges / Rounding / CompoundType — always emit (incl. 0) so
       // StyleSheet inheritance cannot revive effects after Foreign rebuild.
       _cell('SoftEdgesSize', _fmt(s.line.softEdgesInches)),
-      _cell('Rounding', _fmt(s.line.roundingInches)),
+      _cell('Rounding', _fmt(write.line.roundingInches)),
       _cell('CompoundType', write.line.compoundType.toString()),
       // Always emit (incl. empty) — mirrors normal shape rebuild.
       _cell('LayerMember', s.layerMemberIds.join(';')),
@@ -8241,9 +8253,9 @@ class VsdxWriter {
     if (s.shadow.enabled) {
       children.add(_cell('ShadowPattern', s.shadow.xmlPattern.toString()));
       children.add(_cell('ShdwPattern', s.shadow.xmlPattern.toString()));
-      if (s.shadow.color != null) {
-        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
-        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
+      if (shadowWrite.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(shadowWrite.color!)));
+        children.add(_cell('ShdwForegnd', _hex(shadowWrite.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
@@ -8256,15 +8268,15 @@ class VsdxWriter {
         ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
-        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(shadowWrite.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(shadowWrite.transparency)));
     } else {
       children
         ..add(_cell('ShadowPattern', '0'))
         ..add(_cell('ShdwPattern', '0'));
-      if (s.shadow.color != null) {
-        children.add(_cell('ShadowForegnd', _hex(s.shadow.color!)));
-        children.add(_cell('ShdwForegnd', _hex(s.shadow.color!)));
+      if (shadowWrite.color != null) {
+        children.add(_cell('ShadowForegnd', _hex(shadowWrite.color!)));
+        children.add(_cell('ShdwForegnd', _hex(shadowWrite.color!)));
       } else if (s.shadow.themeColorIndex != null) {
         children.add(_cell('ShadowForegnd', '0', formula: 'THEMEVAL()'));
         children.add(_cell('ShdwForegnd', '0', formula: 'THEMEVAL()'));
@@ -8277,8 +8289,8 @@ class VsdxWriter {
         ..add(_cell('ShapeShdwOffsetX', _fmt(s.shadow.offsetXInches)))
         ..add(_cell('ShapeShdwOffsetY', _fmt(s.shadow.offsetYInches)))
         ..add(_cell('ShadowBlur', _fmt(s.shadow.blurInches)))
-        ..add(_cell('ShadowForegndTrans', _fmt(s.shadow.transparency)))
-        ..add(_cell('ShdwForegndTrans', _fmt(s.shadow.transparency)));
+        ..add(_cell('ShadowForegndTrans', _fmt(shadowWrite.transparency)))
+        ..add(_cell('ShdwForegndTrans', _fmt(shadowWrite.transparency)));
     }
     if (s.glow.enabled) {
       children.add(_cell('GlowSize', _fmt(s.glow.sizeInches)));

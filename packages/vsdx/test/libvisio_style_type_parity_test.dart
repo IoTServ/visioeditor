@@ -21,8 +21,11 @@
 /// `VSDContentCollector` paints it as span `fo:background-color` and Draw
 /// shows the plate. `RVNGSVGDrawingGenerator` drops that property, so the
 /// oracle SVG is the wrong place to look; `vsd2raw` still has it. Overline
-/// / ColorTrans still paint here even though `readCharIX` skips Overline
-/// and `xmlStringToColour` zeros alpha. `AsianFont` / `ComplexScriptFont`
+/// still paints here even though `readCharIX` skips it. Character
+/// ColorTrans, filled-shape LineColorTrans, and ShdwForegndTrans cannot
+/// carry alpha through `xmlStringToColour`, so a save premultiplies those
+/// into RGB toward white and writes Trans=0 (theme-bound RGB-less cells
+/// keep THEMEVAL). `AsianFont` / `ComplexScriptFont`
 /// / `ComplexScriptSize` are not tokens, so an Asian-only (Hangul/Kana/Han)
 /// or complex-script-only run whose Visio `Font` is Arial is rewritten to
 /// the face and size Draw will actually load. Mixed Latin+CJK runs keep
@@ -362,8 +365,56 @@ void main() {
         join: VsdxLineJoin.bevel,
         weightInches: 0.08,
       )),
-      isFalse,
+      isTrue,
     );
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.round,
+        join: VsdxLineJoin.bevel,
+        weightInches: 0.08,
+      )),
+      closeTo(0.04, 1e-12),
+    );
+    expect(
+      colourForLibvisioAlpha(VsdxColor.black, 0.4).value,
+      0xFF666666,
+    );
+    expect(
+      charTransparencyForLibvisioWrite(
+        const VsdxCharStyle(transparency: 0.4),
+      ),
+      0,
+    );
+    expect(
+      charColorForLibvisioWrite(
+        const VsdxCharStyle(transparency: 0.4),
+      )?.value,
+      0xFF666666,
+    );
+    expect(
+      shadowForLibvisioWrite(
+        const VsdxShadow(
+          color: VsdxColor(0xFF00AA00),
+          transparency: 0.4,
+        ),
+      ).transparency,
+      0,
+    );
+    expect(
+      shadowForLibvisioWrite(
+        const VsdxShadow(
+          themeColorIndex: 0,
+          transparency: 0.4,
+        ),
+      ).transparency,
+      closeTo(0.4, 1e-12),
+    );
+    final fadedLatin = box(
+      'Fade',
+      'Hi',
+      const VsdxCharStyle(transparency: 0.4),
+    );
+    expect(shapeNeedsLibvisioFontBake(fadedLatin), isTrue);
     expect(
       roundingForLibvisioWrite(const VsdxLine(
         cap: LineCap.square,
@@ -490,6 +541,32 @@ void main() {
           color: VsdxColor.black,
           weightInches: 0.08,
           cap: LineCap.square,
+          join: VsdxLineJoin.bevel,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShape(
+        id: nextId++,
+        name: 'BevelRoundCap',
+        pinX: 8,
+        pinY: 4.8,
+        width: 1.4,
+        height: 1.4,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              LineTo(1.4, 0),
+              LineTo(1.4, 1.4),
+            ],
+          ),
+        ],
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          cap: LineCap.round,
           join: VsdxLineJoin.bevel,
         ),
       ),
@@ -674,6 +751,23 @@ void main() {
           pattern: 1,
           weightInches: 0.08,
           transparency: 0.5,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 5,
+        pinY: 2.2,
+        width: 2,
+        height: 0.7,
+        name: 'FilledLineTrans',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          pattern: 1,
+          weightInches: 0.04,
+          transparency: 0.4,
         ),
       ),
     );
@@ -998,9 +1092,15 @@ void main() {
     expect(xml, contains('N="Overline" V="1"'),
         reason:
             'Character Overline must round-trip even though libvisio skips it');
-    expect(xml, contains('N="ColorTrans" V="0.4"'),
+    expect(xml, contains('N="Color" V="#666666"'),
         reason:
-            'Character ColorTrans must round-trip even though libvisio zeros alpha');
+            'Character ColorTrans bakes RGB toward white; xmlStringToColour zeros alpha');
+    expect(xml.contains('N="ColorTrans" V="0.4"'), isFalse,
+        reason:
+            'baked ColorTrans must be 0 so Visio does not fade the blended RGB twice');
+    expect(xml.contains('N="Rounding" V="0.15"'), isFalse,
+        reason:
+            'Rounding is baked into RelQuadBezTo; the cell must stay 0');
     expect(xml, contains('N="Font" V="Microsoft YaHei"'),
         reason:
             'readCharIX only stores Font; CJK-only Arial bakes to AsianFont');
@@ -1060,6 +1160,23 @@ void main() {
     expect(lineColorTrans1d.line.pattern, 0);
     expect(lineColorTrans1d.fill.foregroundTransparency, closeTo(0.5, 1e-9));
     expect(lineColorTrans1d.geometries.any((g) => !g.noFill), isTrue);
+    final filledLineTrans = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'FilledLineTrans');
+    expect(filledLineTrans.fill.pattern, 1);
+    expect(filledLineTrans.fill.foreground?.value, 0xFFFFFFFF);
+    expect(filledLineTrans.line.transparency, closeTo(0, 1e-12));
+    expect(filledLineTrans.line.color?.value, 0xFF666666,
+        reason: 'filled 2-D LineColorTrans premultiplies; Draw has no stroke alpha');
+    expect(filledLineTrans.geometries.where((g) => !g.noFill).length, 1,
+        reason: 'body Fill is occupied so the stroke cannot become a ribbon');
+    final rounding =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Rounding');
+    expect(rounding.line.roundingInches, closeTo(0, 1e-12),
+        reason: 'Rounding cell is zeroed after the RelQuadBezTo bake');
+    expect(
+      rounding.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+    );
     final compound1d =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Compound1D');
     expect(compound1d.line.compoundType, 0);
@@ -1173,7 +1290,8 @@ void main() {
         .charStyle;
     expect(highlightStyle.highlight?.value, 0xFFFF00FF);
     expect(highlightStyle.overline, isTrue);
-    expect(highlightStyle.transparency, closeTo(0.4, 1e-9));
+    expect(highlightStyle.transparency, closeTo(0, 1e-9));
+    expect(highlightStyle.color?.value, 0xFF666666);
     final highlightBlock = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'Highlight')
         .richText
@@ -1251,6 +1369,19 @@ void main() {
     );
     expect(
       bevelJoin.geometries.single.commands.whereType<LineTo>().length,
+      greaterThan(2),
+    );
+    final bevelRoundCap = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'BevelRoundCap');
+    expect(bevelRoundCap.line.roundingInches, closeTo(0, 1e-12));
+    expect(bevelRoundCap.line.cap, LineCap.extended,
+        reason: 'Draw derives round join from LineCap 0; flatten so chamfers stay sharp');
+    expect(
+      bevelRoundCap.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isEmpty,
+    );
+    expect(
+      bevelRoundCap.geometries.single.commands.whereType<LineTo>().length,
       greaterThan(2),
     );
     final arcsJoin =

@@ -1745,7 +1745,14 @@ void main() {
     expect(after.line.beginArrowSizeInches, closeTo(0.225, 1e-4));
     expect(after.line.endArrowSizeInches, closeTo(0.375, 1e-4));
     expect(after.line.cap, LineCap.square);
-    expect(after.line.transparency, closeTo(0.4, 1e-4));
+    expect(after.line.transparency, closeTo(0, 1e-4));
+    expect(
+      after.line.color?.value,
+      colourForLibvisioAlpha(
+        target.line.color ?? VsdxColor.black,
+        0.4,
+      ).value,
+    );
     expect(after.fill.foregroundTransparency, closeTo(0.25, 1e-4));
     expect(after.fill.background?.value, 0xFF00AA00);
     expect(after.fill.backgroundTransparency, closeTo(0.1, 1e-4));
@@ -1834,7 +1841,11 @@ void main() {
         .first;
     expect(run.charStyle.letterSpacingInches, closeTo(0.02, 1e-6));
     expect(run.charStyle.position, VsdxTextPosition.superscript);
-    expect(run.charStyle.transparency, closeTo(0.3, 1e-6));
+    expect(run.charStyle.transparency, closeTo(0, 1e-6));
+    expect(
+      run.charStyle.color?.value,
+      colourForLibvisioAlpha(VsdxColor.black, 0.3).value,
+    );
     expect(run.paraStyle.horizontalAlign, VsdxHorzAlign.center);
     expect(run.paraStyle.indentFirstInches, closeTo(0.15, 1e-6));
     expect(run.paraStyle.indentLeftInches, closeTo(0.1, 1e-6));
@@ -2114,7 +2125,14 @@ void main() {
         .findShapeById(id)!;
     expect(after.richText.textBlock.hideText, isTrue);
     expect(after.richText.textBlock.backgroundColor?.value, 0xFFFFFF00);
-    expect(after.line.roundingInches, closeTo(0.05, 1e-6));
+    expect(after.line.roundingInches, closeTo(0, 1e-6),
+        reason: 'Rounding is baked into Geometry; the cell must stay 0 for Visio');
+    expect(
+      after.geometries
+          .expand((g) => g.commands)
+          .whereType<RelQuadBezTo>(),
+      isNotEmpty,
+    );
     expect(after.glow.enabled, isTrue);
     expect(after.glow.sizeInches, closeTo(0.08, 1e-6));
     expect(after.glow.color?.value, 0xFFFF0000);
@@ -4945,7 +4963,11 @@ void main() {
     expect(styled.flipX, isTrue);
     expect(styled.shadow.enabled, isTrue);
     expect(styled.fill.foregroundTransparency, closeTo(0.5, 1e-4));
-    expect(styled.line.transparency, closeTo(0.25, 1e-4));
+    expect(styled.line.transparency, closeTo(0, 1e-4));
+    expect(
+      styled.line.color?.value,
+      colourForLibvisioAlpha(VsdxColor.black, 0.25).value,
+    );
     expect(styled.effectiveLocPinX, closeTo(0.25, 1e-4));
     expect(styled.effectiveLocPinY, closeTo(0.75, 1e-4));
   });
@@ -7743,7 +7765,8 @@ void main() {
           );
       expect(cell.getAttribute('F'), isNull, reason: name);
       if (name == 'ShadowForegndTrans') {
-        expect(double.parse(cell.getAttribute('V')!), closeTo(0.35, 1e-6));
+        expect(double.parse(cell.getAttribute('V')!), closeTo(0, 1e-6),
+            reason: 'ShdwForegndTrans is not a token; alpha is baked into RGB');
       } else {
         expect(cell.getAttribute('V'), '1', reason: name);
       }
@@ -13693,7 +13716,8 @@ void main() {
         ).copyWith(
           // Enabled effects with no solid/theme colour — rebuild omits
           // ShadowForegnd / GlowColor; residual F=Inh must still be scrubbed.
-          shadow: const VsdxShadow(enabled: true, pattern: 1),
+          // transparency: 0 so ShdwForegndTrans is not premultiplied into RGB.
+          shadow: const VsdxShadow(enabled: true, pattern: 1, transparency: 0),
           glow: const VsdxGlow(enabled: true, sizeInches: 0.08),
         ),
       ),
