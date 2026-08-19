@@ -589,11 +589,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Draw used to drop the marker colour on save. Canvas and SVG still paint
   the tighter highlight halo and ignore a TextBkgnd that only exists as that
   stand-in, so a save/reopen here does not double-fill.
-- Character `Font` for a CJK-only run whose Visio face is a Latin UI font
-  (Arial, Calibri, …) now writes the `AsianFont` (or Microsoft YaHei).
-  libvisio's `readCharIX` has no `AsianFont` token, so Draw used to load
-  Arial and tofu Chinese labels that Visio rendered with the Asian face.
-  Mixed Latin+CJK runs keep `Font` so Visio's Latin glyphs do not change.
+- Character `Font` for an Asian-only run whose Visio face is a Latin UI font
+  (Arial, Calibri, …) now writes the `AsianFont` (or Microsoft YaHei). Han,
+  Hangul and Kana are included. Complex-script-only runs write
+  `ComplexScriptFont` into `Font` and `ComplexScriptSize` into `Size`.
+  libvisio's `readCharIX` has none of those tokens, so Draw used to load Arial at
+  the Latin `Size` and tofu or shrink labels Visio rendered with the locale
+  face. Mixed Latin+CJK runs keep `Font` / `Size` so Visio's Latin glyphs
+  do not change. Unknown `FillPattern` ids above 40 snap to solid `1`
+  (Draw's fallback for those ids is the *background* colour).
 - Arrowed 1-D `CompoundType` / `LineGradient` / `LineColorTrans` strokes now
   bake Begin/EndArrow as filled Geometry before the rail or ribbon rewrite,
   then clear the arrow cells. libvisio hangs a marker on every open path and

@@ -14,9 +14,11 @@
 /// still has a size). Character Highlight is skipped by `readCharIX` but
 /// `TextBkgnd` is collected and painted as `fo:background-color`, so a
 /// uniform highlight with no authored text-block fill is written there.
-/// `AsianFont` / `ComplexScriptFont` are not tokens — `readCharIX` only
-/// stores `Font` — so a CJK-only (or RTL-only) run whose Latin `Font`
-/// would tofu in Draw is rewritten to the Asian / complex face.
+/// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens —
+/// `readCharIX` only stores `Font` and `Size` — so an Asian-only (or
+/// complex-script-only) run whose Latin `Font` would tofu in Draw is
+/// rewritten to the Asian / complex face, and a complex-only run writes
+/// `ComplexScriptSize` into `Size`.
 library;
 
 import 'dart:math' as math;
@@ -690,29 +692,37 @@ VsdxTextBlock textBlockForPaint(VsdxShape shape) {
 /// not `AsianFont` / `ComplexScriptFont`).
 const kLibvisioDefaultAsianFont = 'Microsoft YaHei';
 
-bool _containsCjk(String text) {
-  for (final rune in text.runes) {
-    if (rune >= 0x4E00 && rune <= 0x9FFF) return true;
-    if (rune >= 0x3400 && rune <= 0x4DBF) return true;
-    if (rune >= 0xF900 && rune <= 0xFAFF) return true;
-  }
-  return false;
-}
+bool _isLatinLetterRune(int rune) =>
+    (rune >= 0x41 && rune <= 0x5A) || (rune >= 0x61 && rune <= 0x7A);
 
-bool _containsLatinLetter(String text) {
+/// Han / Kana / Hangul / Bopomofo with no Latin or complex-script letters.
+bool _isAsianOnly(String text) {
+  var hasAsian = false;
   for (final rune in text.runes) {
-    if ((rune >= 0x41 && rune <= 0x5A) || (rune >= 0x61 && rune <= 0x7A)) {
-      return true;
+    if (isVisioAsianScriptRune(rune)) {
+      hasAsian = true;
+      continue;
+    }
+    if (isVisioComplexScriptRune(rune) || _isLatinLetterRune(rune)) {
+      return false;
     }
   }
-  return false;
+  return hasAsian;
 }
 
-bool _containsRtlLetter(String text) {
+/// Arabic / Hebrew / Indic / … with no Latin or East-Asian letters.
+bool _isComplexScriptOnly(String text) {
+  var hasComplex = false;
   for (final rune in text.runes) {
-    if (isVisioRightToLeftRune(rune)) return true;
+    if (isVisioComplexScriptRune(rune)) {
+      hasComplex = true;
+      continue;
+    }
+    if (isVisioAsianScriptRune(rune) || _isLatinLetterRune(rune)) {
+      return false;
+    }
   }
-  return false;
+  return hasComplex;
 }
 
 bool _isLatinUiFace(String? face) {
@@ -740,30 +750,36 @@ bool _isLatinUiFace(String? face) {
   }
 }
 
-/// `Font` cell Draw will collect. CJK-only runs whose Visio `Font` is a
-/// Latin UI face are rewritten to `AsianFont` (or YaHei); RTL-only runs
-/// use `ComplexScriptFont`. Mixed Latin+CJK / Latin+Arabic keep `Font` so
-/// Visio's Latin glyphs do not change face.
+/// `Font` cell Draw will collect. Asian-only runs whose Visio `Font` is a
+/// Latin UI face are rewritten to `AsianFont` (or YaHei); complex-script-only
+/// runs use `ComplexScriptFont`. Mixed Latin+CJK / Latin+Arabic keep `Font`
+/// so Visio's Latin glyphs do not change face.
 String? fontFamilyForLibvisioWrite(VsdxCharStyle style, String text) {
   final current = style.fontFamily;
-  if (_containsCjk(text) &&
-      !_containsLatinLetter(text) &&
-      !_containsRtlLetter(text)) {
+  if (_isAsianOnly(text)) {
     final asian = style.asianFont?.trim();
     if (asian != null && asian.isNotEmpty) return asian;
     if (_isLatinUiFace(current)) return kLibvisioDefaultAsianFont;
     return current;
   }
-  if (_containsRtlLetter(text) &&
-      !_containsLatinLetter(text) &&
-      !_containsCjk(text)) {
+  if (_isComplexScriptOnly(text)) {
     final complex = style.complexScriptFont?.trim();
     if (complex != null && complex.isNotEmpty) return complex;
   }
-  if ((current == null || current.isEmpty) && _containsCjk(text)) {
-    return kLibvisioDefaultAsianFont;
-  }
   return current;
+}
+
+/// `Size` cell Draw will collect. `ComplexScriptSize` is not a token, so a
+/// complex-script-only run writes that size into `Size`. Mixed runs keep
+/// `Size` so Latin glyphs do not jump.
+double fontSizeForLibvisioWrite(VsdxCharStyle style, String text) {
+  final complex = style.complexScriptSizeInches;
+  if (complex != null &&
+      _isComplexScriptOnly(text) &&
+      (complex - style.fontSizeInches).abs() > 1e-12) {
+    return complex;
+  }
+  return style.fontSizeInches;
 }
 
 bool shapeNeedsLibvisioFontBake(VsdxShape shape) {
@@ -773,6 +789,12 @@ bool shapeNeedsLibvisioFontBake(VsdxShape shape) {
     final baked = fontFamilyForLibvisioWrite(run.charStyle, run.text);
     final current = run.charStyle.fontFamily;
     if ((baked ?? '') != (current ?? '')) return true;
+    if ((fontSizeForLibvisioWrite(run.charStyle, run.text) -
+                run.charStyle.fontSizeInches)
+            .abs() >
+        1e-12) {
+      return true;
+    }
   }
   return false;
 }

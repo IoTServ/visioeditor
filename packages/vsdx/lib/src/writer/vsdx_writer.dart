@@ -4610,7 +4610,7 @@ class VsdxWriter {
   }) {
     var changed = false;
     changed |= _writeValueIfNeeded(
-        _ensureCell(row, 'Size'), _fmt(c.fontSizeInches));
+        _ensureCell(row, 'Size'), _fmt(fontSizeForLibvisioWrite(c, text)));
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Style'), _charStyleBits(c).toString());
     if (c.color != null) {
@@ -4824,7 +4824,8 @@ class VsdxWriter {
   }
 
   void _writeCharRow(XmlElement row, VsdxCharStyle c, {String text = ''}) {
-    _writeValue(_ensureCell(row, 'Size'), _fmt(c.fontSizeInches));
+    _writeValue(
+        _ensureCell(row, 'Size'), _fmt(fontSizeForLibvisioWrite(c, text)));
     _writeValue(_ensureCell(row, 'Style'), _charStyleBits(c).toString());
     if (c.color != null) {
       _writeValue(_ensureCell(row, 'Color'), _hex(c.color!));
@@ -7881,7 +7882,7 @@ class VsdxWriter {
   List<XmlNode> _charCells(VsdxCharStyle c, {String text = ''}) {
     final cjk = _containsCjk(text);
     final cells = <XmlNode>[
-      _cell('Size', _fmt(c.fontSizeInches)),
+      _cell('Size', _fmt(fontSizeForLibvisioWrite(c, text))),
       _cell('Style', _charStyleBits(c).toString()),
     ];
     // Only emit Color when the model set one. Forcing #000000 on null made

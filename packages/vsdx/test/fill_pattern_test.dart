@@ -86,5 +86,10 @@ void main() {
     }
     expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 0)), 0);
     expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 2)), 2);
+    expect(
+      fillPatternForLibvisioWrite(const VsdxFill(pattern: 41)),
+      1,
+      reason: 'ids above 40 become solid foreground, not Draw\'s bg fallback',
+    );
   });
 }

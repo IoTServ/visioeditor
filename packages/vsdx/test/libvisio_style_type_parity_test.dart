@@ -22,9 +22,11 @@
 /// shows the plate. `RVNGSVGDrawingGenerator` drops that property, so the
 /// oracle SVG is the wrong place to look; `vsd2raw` still has it. Overline
 /// / ColorTrans still paint here even though `readCharIX` skips Overline
-/// and `xmlStringToColour` zeros alpha. `AsianFont` is not a token, so a
-/// CJK-only run whose Visio `Font` is Arial is rewritten to the Asian face
-/// Draw will actually load.
+/// and `xmlStringToColour` zeros alpha. `AsianFont` / `ComplexScriptFont`
+/// / `ComplexScriptSize` are not tokens, so an Asian-only (Hangul/Kana/Han)
+/// or complex-script-only run whose Visio `Font` is Arial is rewritten to
+/// the face and size Draw will actually load. Mixed Latin+CJK runs keep
+/// `Font`. Unknown `FillPattern` ids above 40 snap to solid `1`.
 library;
 
 import 'dart:io';
@@ -164,52 +166,49 @@ void main() {
     expect(shapeNeedsLibvisioTextBkgndBake(withBlock), isFalse);
   });
 
-  test('CJK-only Character Font bakes AsianFont for LibreOffice', () {
-    final cjk = VsdxShapeFactory.rectangle(
-      id: 1,
-      pinX: 2,
-      pinY: 2,
-      width: 1.4,
-      height: 0.7,
-      name: 'CJK',
-    ).copyWith(
-      text: '你好',
-      richText: const VsdxRichText(
-        runs: [
-          VsdxTextRun(
-            text: '你好',
-            charStyle: VsdxCharStyle(
-              fontFamily: 'Arial',
-              asianFont: 'Microsoft YaHei',
-            ),
+  test('Asian/complex Character Font and Size bake for LibreOffice', () {
+    VsdxShape box(String name, String text, VsdxCharStyle style) =>
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 1.4,
+          height: 0.7,
+          name: name,
+        ).copyWith(
+          text: text,
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(text: text, charStyle: style),
+            ],
           ),
-        ],
-      ),
+        );
+
+    const latinUi = VsdxCharStyle(
+      fontFamily: 'Arial',
+      asianFont: 'Microsoft YaHei',
+      complexScriptFont: 'Times New Roman',
+      complexScriptSizeInches: 18 / 72,
     );
-    expect(shapeNeedsLibvisioFontBake(cjk), isTrue);
-    expect(
-      fontFamilyForLibvisioWrite(cjk.richText.runs.single.charStyle, '你好'),
-      'Microsoft YaHei',
-    );
-    final latin = cjk.copyWith(
-      text: 'Hi',
-      richText: const VsdxRichText(
-        runs: [
-          VsdxTextRun(
-            text: 'Hi',
-            charStyle: VsdxCharStyle(
-              fontFamily: 'Arial',
-              asianFont: 'Microsoft YaHei',
-            ),
-          ),
-        ],
-      ),
-    );
+    final han = box('CJK', '你好', latinUi);
+    expect(shapeNeedsLibvisioFontBake(han), isTrue);
+    expect(fontFamilyForLibvisioWrite(latinUi, '你好'), 'Microsoft YaHei');
+    final hangul = box('Hangul', '안녕', latinUi);
+    expect(shapeNeedsLibvisioFontBake(hangul), isTrue);
+    expect(fontFamilyForLibvisioWrite(latinUi, '안녕'), 'Microsoft YaHei');
+    final kana = box('Kana', 'こんにちは', latinUi);
+    expect(shapeNeedsLibvisioFontBake(kana), isTrue);
+    expect(fontFamilyForLibvisioWrite(latinUi, 'こんにちは'), 'Microsoft YaHei');
+    final arabic = box('Arabic', 'سلام', latinUi);
+    expect(shapeNeedsLibvisioFontBake(arabic), isTrue);
+    expect(fontFamilyForLibvisioWrite(latinUi, 'سلام'), 'Times New Roman');
+    expect(fontSizeForLibvisioWrite(latinUi, 'سلام'), closeTo(18 / 72, 1e-12));
+    expect(fontSizeForLibvisioWrite(latinUi, '你好'), closeTo(12 / 72, 1e-12));
+    final latin = box('Hi', 'Hi', latinUi);
     expect(shapeNeedsLibvisioFontBake(latin), isFalse);
-    expect(
-      fontFamilyForLibvisioWrite(latin.richText.runs.single.charStyle, 'Hi'),
-      'Arial',
-    );
+    expect(fontFamilyForLibvisioWrite(latinUi, 'Hi'), 'Arial');
+    expect(fontFamilyForLibvisioWrite(latinUi, 'Hello世界'), 'Arial');
+    expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 41)), 1);
   });
 
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
@@ -526,6 +525,101 @@ void main() {
         ),
       ),
     );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 5,
+        pinY: 3,
+        width: 1.4,
+        height: 0.7,
+        name: 'Hangul',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+      ).copyWith(
+        text: '안녕',
+        richText: const VsdxRichText(
+          runs: [
+            VsdxTextRun(
+              text: '안녕',
+              charStyle: VsdxCharStyle(
+                fontFamily: 'Arial',
+                asianFont: 'Microsoft YaHei',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 3,
+        pinY: 3,
+        width: 1.4,
+        height: 0.7,
+        name: 'Arabic',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+      ).copyWith(
+        text: 'سلام',
+        richText: const VsdxRichText(
+          runs: [
+            VsdxTextRun(
+              text: 'سلام',
+              charStyle: VsdxCharStyle(
+                fontFamily: 'Arial',
+                complexScriptFont: 'Times New Roman',
+                complexScriptSizeInches: 18 / 72,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 1,
+        pinY: 5,
+        width: 1.8,
+        height: 0.8,
+        name: 'CollectedChar',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+      ).copyWith(
+        text: 'Ab',
+        shadow: const VsdxShadow(
+          color: VsdxColor(0xFF00AA00),
+          offsetXInches: 0.08,
+          offsetYInches: 0.08,
+          transparency: 0,
+        ),
+        richText: const VsdxRichText(
+          runs: [
+            VsdxTextRun(
+              text: 'Ab',
+              charStyle: VsdxCharStyle(
+                fontScale: 0.9,
+                textCase: VsdxTextCase.allCaps,
+                position: VsdxTextPosition.superscript,
+                doubleUnderline: true,
+              ),
+              paraStyle: VsdxParaStyle(bullet: 1),
+            ),
+          ],
+        ),
+      ),
+    );
+    built = built.addShape(
+      box(
+        'FillUnknown',
+        const VsdxFill(
+          foreground: VsdxColor(0xFFFF0000),
+          background: VsdxColor(0xFF0000FF),
+          pattern: 41,
+        ),
+      ),
+    );
     for (final pattern in <int>[2, 10, 23]) {
       built = built.addShape(
         VsdxShape(
@@ -759,11 +853,69 @@ void main() {
           .fontFamily,
       'Microsoft YaHei',
     );
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'Hangul')
+          .richText
+          .runs
+          .single
+          .charStyle
+          .fontFamily,
+      'Microsoft YaHei',
+    );
+    final arabicStyle = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Arabic')
+        .richText
+        .runs
+        .single
+        .charStyle;
+    expect(arabicStyle.fontFamily, 'Times New Roman');
+    expect(arabicStyle.fontSizeInches, closeTo(18 / 72, 1e-12));
+    expect(arabicStyle.complexScriptSizeInches, closeTo(18 / 72, 1e-12));
+    expect(xml, contains('N="Font" V="Times New Roman"'));
+    expect(xml, contains('N="Size" V="0.25"'),
+        reason: 'ComplexScriptSize bakes into Size so Draw can collect it');
+    expect(xml, contains('N="FontScale" V="0.9"'));
+    expect(xml, contains('N="Case" V="1"'));
+    expect(xml, contains('N="Pos" V="1"'));
+    expect(xml, contains('N="DblUnderline" V="1"'));
+    expect(xml, contains('N="Bullet" V="1"'));
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'FillUnknown')
+          .fill
+          .pattern,
+      1,
+      reason: 'FillPattern 41 is not a hatch/gradient id Draw paints',
+    );
+    final collected = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'CollectedChar')
+        .richText
+        .runs
+        .single;
+    expect(collected.charStyle.fontScale, closeTo(0.9, 1e-9));
+    expect(collected.charStyle.textCase, VsdxTextCase.allCaps);
+    expect(collected.charStyle.position, VsdxTextPosition.superscript);
+    expect(collected.charStyle.doubleUnderline, isTrue);
+    expect(collected.paraStyle.bullet, 1);
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CollectedChar')
+          .shadow
+          .enabled,
+      isTrue,
+    );
     // RVNGSVGDrawingGenerator never emits span fo:background-color (vsd2xhtml
     // tspans are fill-only). vsd2raw still records the property Draw uses.
     _expectVsd2rawCollected(saved, <String>[
       'fo:background-color: #ff00ff',
       'style:font-name: Microsoft YaHei',
+      'style:font-name: Times New Roman',
+      'fo:text-transform: uppercase',
+      'style:text-position: super',
+      'style:text-underline-type: double',
+      'text:bullet-char',
+      'draw:shadow',
     ]);
 
     final oracle = LibvisioOracle.tryLoad();

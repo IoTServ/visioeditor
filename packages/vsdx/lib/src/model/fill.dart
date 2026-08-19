@@ -249,12 +249,19 @@ int? libvisioClassicPatternFor(VsdxGradient gradient) {
 }
 
 /// `FillPattern` LibreOffice's libvisio importer will actually collect.
+///
+/// Ids above 40 fall through `_fillAndShadowProperties` to a solid
+/// *background* colour. This package paints those as solid foreground, so a
+/// save snaps them to `1` (or the nearest classic gradient id when stops
+/// are present).
 int fillPatternForLibvisioWrite(VsdxFill fill) {
   final pattern = fill.pattern;
   if (pattern == 0) return 0;
   if (pattern >= 2 && pattern <= 40) return pattern;
-  if (!fill.hasGradient) return pattern;
-  return libvisioClassicPatternFor(fill.gradient!) ?? pattern;
+  if (fill.hasGradient) {
+    return libvisioClassicPatternFor(fill.gradient!) ?? 1;
+  }
+  return 1;
 }
 
 double _normDegrees(double degrees) {

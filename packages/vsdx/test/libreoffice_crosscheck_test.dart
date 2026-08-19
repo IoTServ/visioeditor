@@ -474,6 +474,69 @@ void main() {
             ],
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 23,
+          pinX: 6,
+          pinY: 2.5,
+          width: 1.4,
+          height: 0.7,
+          name: 'Hangul',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+        ).copyWith(
+          text: '안녕',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: '안녕',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  asianFont: 'Microsoft YaHei',
+                ),
+              ),
+            ],
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 24,
+          pinX: 4,
+          pinY: 2.5,
+          width: 1.4,
+          height: 0.7,
+          name: 'Arabic',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+        ).copyWith(
+          text: 'سلام',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: 'سلام',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  complexScriptFont: 'Times New Roman',
+                  complexScriptSizeInches: 18 / 72,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 25,
+          pinX: 2,
+          pinY: 8.2,
+          width: 1.5,
+          height: 0.8,
+          name: 'FillUnknown',
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFFFF0000),
+            background: VsdxColor(0xFF0000FF),
+            pattern: 41,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -571,6 +634,31 @@ void main() {
           .charStyle
           .fontFamily,
       'Microsoft YaHei',
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'Hangul')
+          .richText
+          .runs
+          .single
+          .charStyle
+          .fontFamily,
+      'Microsoft YaHei',
+    );
+    final arabic = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Arabic')
+        .richText
+        .runs
+        .single
+        .charStyle;
+    expect(arabic.fontFamily, 'Times New Roman');
+    expect(arabic.fontSizeInches, closeTo(18 / 72, 1e-12));
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'FillUnknown')
+          .fill
+          .pattern,
+      1,
     );
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
