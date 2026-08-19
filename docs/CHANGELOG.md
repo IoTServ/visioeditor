@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Saving is now verified against the reference consumer instead of against
+  ourselves. Every fixture is parsed, saved, and read back by libvisio —
+  page count, page size, rendered letters, drawing features and painted
+  object count all have to survive — and LibreOffice renders the original
+  and the saved package so the pixels can be diffed. Across 152 documents a
+  save changes nothing libvisio reads, and the worst rendered difference is
+  a mean absolute error of 0.0200. Only one fixture used to check that a
+  saved file still looks right in LibreOffice.
 - Drawing features are now diffed against libvisio per document. Its whole
   painting surface is `drawPath`, `drawGraphicObject` and a text stack, so
   every other type a Visio file carries — gradient, hatch or bitmap fill,

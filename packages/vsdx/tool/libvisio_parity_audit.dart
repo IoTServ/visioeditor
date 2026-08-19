@@ -58,6 +58,10 @@ void main(List<String> args) {
     _featureAudit(files, oracle, verbose: verbose);
     return;
   }
+  if (args.contains('--roundtrip')) {
+    _roundTripAudit(files, oracle, verbose: verbose);
+    return;
+  }
 
   final problems = <String>[];
   print(
@@ -205,6 +209,216 @@ void _featureAudit(
   if (gaps == 0) {
     print('\nOK — every feature libvisio paints is painted here too');
   }
+}
+
+// --- round-trip through the reference consumer -------------------------------
+
+/// What libvisio sees in a document, reduced to the things a save must not
+/// change. Everything here is read out of libvisio's own SVG, so the two sides
+/// are measured by the same importer LibreOffice uses.
+class _Seen {
+  const _Seen({
+    required this.pages,
+    required this.sizes,
+    required this.text,
+    required this.features,
+    required this.drawn,
+  });
+
+  final int pages;
+  final List<String> sizes;
+  final String text;
+  final Set<String> features;
+  final int drawn;
+
+  static _Seen of(List<String> svgPages) {
+    final joined = svgPages.join();
+    final sizes = <String>[];
+    for (final page in svgPages) {
+      final m = RegExp(r'width="([0-9.]+)in"\s+height="([0-9.]+)in"')
+          .firstMatch(page);
+      sizes.add(m == null
+          ? '?'
+          : '${double.parse(m.group(1)!).toStringAsFixed(2)}x'
+              '${double.parse(m.group(2)!).toStringAsFixed(2)}');
+    }
+    // Case-folded letters only. A save legitimately reformats field values —
+    // libvisio reads `300.0000` straight out of a legacy VSD and `25 ft` back
+    // out of the VSDX we write, because the VSDX carries the format the binary
+    // record only implied — and it applies the StrUpper / StrLower formats
+    // that libvisio ignores. Digits, punctuation and case therefore move
+    // around; losing a whole label shows up in the letters either way.
+    final characters = <String>[];
+    for (final m in RegExp(
+      r'<(?:svg:)?tspan\b[^>]*>(.*?)</(?:svg:)?tspan>',
+      dotAll: true,
+    ).allMatches(joined)) {
+      characters.addAll(
+        RegExp(r'\p{L}', unicode: true)
+            .allMatches(_unescape(m.group(1)!).toLowerCase())
+            .map((c) => c.group(0)!),
+      );
+    }
+    characters.sort();
+    return _Seen(
+      pages: svgPages.length,
+      sizes: sizes,
+      text: characters.join(),
+      features: <String>{
+        for (final feature in libvisioFeaturePatterns.keys)
+          if (paintsLibvisioFeature(feature, joined, libvisio: true)) feature,
+      },
+      drawn: RegExp(r'<svg:(?:path|polyline|polygon|ellipse|rect|image)\b')
+          .allMatches(joined)
+          .length,
+    );
+  }
+}
+
+void _roundTripAudit(
+  List<File> files,
+  LibvisioOracle? oracle, {
+  required bool verbose,
+}) {
+  if (oracle == null) {
+    stderr.writeln('--roundtrip needs the libvisio shim (native/build.sh)');
+    exit(2);
+  }
+  print('Comparing what libvisio sees before and after a save.\n');
+  print(
+    '${'file'.padRight(46)}'
+    '${'pages'.padRight(12)}${'size'.padRight(8)}'
+    '${'text'.padRight(8)}${'features'.padRight(10)}drawn',
+  );
+  print('-' * 96);
+
+  final problems = <String>[];
+  var compared = 0;
+
+  for (final file in files) {
+    final label = _label(file);
+    final bytes = Uint8List.fromList(file.readAsBytesSync());
+    final beforePages = oracle.svgPages(bytes);
+    if (beforePages == null) continue;
+
+    final VisioParseResult parsed;
+    try {
+      parsed = parseVisio(bytes, sourceName: file.path);
+    } catch (error) {
+      problems.add('$label: parse failed: $error');
+      continue;
+    }
+    final Uint8List saved;
+    try {
+      saved = const VsdxWriter().write(
+        originalBytes: parsed.originalBytes,
+        edited: parsed.document,
+      );
+    } catch (error) {
+      problems.add('$label: write failed: $error');
+      continue;
+    }
+    final afterPages = oracle.svgPages(saved);
+    if (afterPages == null) {
+      problems.add('$label: libvisio cannot reopen the saved package');
+      print('${label.padRight(46)}REOPEN FAIL');
+      continue;
+    }
+
+    final before = _Seen.of(beforePages);
+    final after = _Seen.of(afterPages);
+    compared++;
+
+    final lostFeatures = before.features.difference(after.features);
+    // A saved package that draws fewer objects has dropped geometry; more is
+    // usually the writer expanding a master reference into explicit shapes.
+    final drawnRatio = before.drawn == 0 ? 1.0 : after.drawn / before.drawn;
+
+    // Compare the saved page count with our own model, not with libvisio's
+    // reading of the source. `recursion-cycle.vsdx` points its page
+    // relationship back at `pages.xml`, and libvisio follows the loop into a
+    // phantom second page (LibreOffice reports three); the writer must simply
+    // emit the one page we parsed.
+    if (after.pages != parsed.document.pages.length) {
+      problems.add(
+        '$label: saved ${after.pages} pages, model has '
+        '${parsed.document.pages.length}',
+      );
+    }
+    // A source without a PageSheet has no page size at all, so libvisio
+    // reports 0x0 and LibreOffice falls back to A4 for both the original and
+    // the saved package. There is nothing to preserve in that case.
+    final sizeChanged = !before.sizes.every(_isDegenerateSize) &&
+        before.sizes.join(',') != after.sizes.join(',');
+    if (sizeChanged) {
+      problems.add(
+        '$label: page size ${before.sizes.join(",")} → ${after.sizes.join(",")}',
+      );
+    }
+    final lostText = _missingFrom(before.text, after.text);
+    if (lostText.isNotEmpty) {
+      problems.add('$label: text lost "$lostText"');
+    }
+    if (lostFeatures.isNotEmpty) {
+      problems.add('$label: lost ${lostFeatures.join(", ")}');
+    }
+    if (drawnRatio < 0.95) {
+      problems.add(
+        '$label: drawn objects ${before.drawn} → ${after.drawn}',
+      );
+    }
+
+    final pagesWrong = after.pages != parsed.document.pages.length;
+    final row = '${label.padRight(46)}'
+        '${'${before.pages}→${after.pages}'.padRight(12)}'
+        '${(sizeChanged ? "DIFF" : "ok").padRight(8)}'
+        '${(lostText.isEmpty ? "ok" : "LOST").padRight(8)}'
+        '${(lostFeatures.isEmpty ? "ok" : lostFeatures.join("/")).padRight(10)}'
+        '${before.drawn}→${after.drawn}';
+    if (verbose ||
+        pagesWrong ||
+        lostText.isNotEmpty ||
+        lostFeatures.isNotEmpty ||
+        drawnRatio < 0.95 ||
+        sizeChanged) {
+      print(row);
+    }
+  }
+
+  print('\ncompared $compared files');
+  if (problems.isEmpty) {
+    print('OK — a save preserves everything libvisio reads back');
+    return;
+  }
+  print('${problems.length} problem(s):');
+  for (final problem in problems) {
+    print('  - $problem');
+  }
+}
+
+/// libvisio reports `0.00x0.00` for a page whose source carries no PageSheet.
+bool _isDegenerateSize(String size) => size == '0.00x0.00' || size == '?';
+
+String _unescape(String xml) => xml
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&amp;', '&');
+
+/// Characters present in the sorted multiset [before] but not in [after].
+String _missingFrom(String before, String after) {
+  final remaining = after.split('');
+  final lost = StringBuffer();
+  for (final character in before.split('')) {
+    final at = remaining.indexOf(character);
+    if (at < 0) {
+      lost.write(character);
+    } else {
+      remaining.removeAt(at);
+    }
+  }
+  return lost.toString();
 }
 
 // --- collection -------------------------------------------------------------

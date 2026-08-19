@@ -54,14 +54,22 @@ jobs:
             libreoffice-core-nogui \
           || sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             libreoffice-draw
+          # pdftoppm rasterises the converted PDFs for the round-trip diff.
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            poppler-utils
           command -v soffice || command -v libreoffice
           soffice --version 2>/dev/null || libreoffice --version
+          pdftoppm -v
       - name: soffice convert writer .vsdx → PDF
         working-directory: packages/vsdx
         env:
           REQUIRE_SOFFICE: '1'
+          # Renders every fixture twice — as authored and as we save it — so a
+          # writer that shifts or drops content fails here.
+          RUN_LIBREOFFICE_ROUNDTRIP: '1'
         run: |
           dart pub get
           dart test \
             test/libreoffice_crosscheck_test.dart \
-            test/visio_family_render_test.dart
+            test/visio_family_render_test.dart \
+            test/libreoffice_roundtrip_render_test.dart

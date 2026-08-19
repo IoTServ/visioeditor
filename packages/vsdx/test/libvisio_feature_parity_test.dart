@@ -12,7 +12,6 @@
 /// needs `brew install libvisio`).
 library;
 
-import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
@@ -20,21 +19,7 @@ import 'package:vsdx/vsdx.dart';
 
 import 'support/libvisio_features.dart';
 import 'support/libvisio_oracle.dart';
-
-/// Bundled fixtures first, then the upstream libvisio corpus when the optional
-/// `third_party` clone is present (see `third_party/README.md`).
-const _searchDirectories = <String>[
-  'test/fixtures',
-  'test/fixtures/vsd',
-  'test/fixtures/vsd/external',
-  '../../third_party/libvisio/src/test/data',
-];
-
-const _visioExtensions = <String>{
-  '.vsd', '.vss', '.vst',
-  '.vdx', '.vsx', '.vtx',
-  '.vsdx', '.vsdm', '.vstx', '.vstm', '.vssx', '.vssm',
-};
+import 'support/visio_corpus.dart';
 
 void main() {
   final oracle = LibvisioOracle.tryLoad();
@@ -48,7 +33,7 @@ void main() {
       return;
     }
 
-    final files = _collectFixtures();
+    final files = collectVisioCorpus();
     expect(files, isNotEmpty, reason: 'no Visio fixtures found');
 
     final gaps = <String>[];
@@ -63,7 +48,7 @@ void main() {
       try {
         document = parseVisio(bytes, sourceName: file.path).document;
       } catch (error) {
-        gaps.add('${_label(file)}: parse failed: $error');
+        gaps.add('${corpusLabel(file)}: parse failed: $error');
         continue;
       }
 
@@ -91,7 +76,9 @@ void main() {
         final actual =
             paintsLibvisioFeature(feature, ours.toString(), libvisio: false);
         if (!actual) {
-          gaps.add('${_label(file)}: libvisio paints "$feature", we do not');
+          gaps.add(
+            '${corpusLabel(file)}: libvisio paints "$feature", we do not',
+          );
         }
       }
     }
@@ -99,31 +86,4 @@ void main() {
     expect(compared, greaterThan(10), reason: 'too few fixtures compared');
     expect(gaps, isEmpty, reason: 'feature parity gaps:\n${gaps.join('\n')}');
   });
-}
-
-List<File> _collectFixtures() {
-  final out = <File>[];
-  for (final path in _searchDirectories) {
-    final directory = Directory(path);
-    if (!directory.existsSync()) continue;
-    for (final entity in directory.listSync()) {
-      if (entity is! File) continue;
-      final name = entity.uri.pathSegments.last;
-      final dot = name.lastIndexOf('.');
-      if (dot < 0) continue;
-      if (!_visioExtensions.contains(name.substring(dot).toLowerCase())) {
-        continue;
-      }
-      out.add(entity);
-    }
-  }
-  out.sort((a, b) => a.path.compareTo(b.path));
-  return out;
-}
-
-String _label(File file) {
-  final segments = file.uri.pathSegments;
-  final parent =
-      segments.length > 1 ? segments[segments.length - 2] : '';
-  return '$parent/${segments.last}';
 }
