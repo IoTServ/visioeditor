@@ -7555,8 +7555,10 @@ void main() {
     }
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
-    // F=Inh without Master → no local gradient (ignore stale Enabled V=1).
-    expect(doc.pages.first.findShapeById(id)!.fill.hasGradient, isFalse);
+    // A save of a modern FillGradient also writes classic FillPattern 25–40
+    // so LibreOffice still paints a wash. F=Inh on FillGradientEnabled
+    // drops the stop section, but the classic id remains.
+    expect(doc.pages.first.findShapeById(id)!.fill.hasGradient, isTrue);
     const grad = VsdxGradient(
       type: VsdxGradientType.linear,
       stops: [
@@ -13863,7 +13865,7 @@ void main() {
       doc.pages.first.updateShapeById(
         id,
         (s) => s.copyWith(
-          fill: s.fill.copyWith(gradient: null),
+          fill: s.fill.withGradient(null),
           pinX: s.pinX + 0.01,
         ),
       ),

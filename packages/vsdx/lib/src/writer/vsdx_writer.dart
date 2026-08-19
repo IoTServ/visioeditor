@@ -33,6 +33,7 @@ import '../model/line.dart';
 import '../model/master.dart';
 import '../model/page.dart';
 import '../model/rich_text.dart';
+import '../model/rounding.dart';
 import '../model/shape.dart';
 import '../model/sheet_sections.dart';
 import '../model/theme.dart';
@@ -2913,13 +2914,18 @@ class VsdxWriter {
           final name = ThemeSlot.themeValName(bg);
           return name == null ? null : 'THEMEVAL("$name")';
         }());
-    changed |= _patchInt(el, 'FillPattern', base.fill.pattern, edited.fill.pattern);
+    changed |= _patchInt(
+        el,
+        'FillPattern',
+        fillPatternForLibvisioWrite(base.fill),
+        fillPatternForLibvisioWrite(edited.fill));
     // Groups often omit Fill* entirely and inherit via StyleSheet. Materialising
     // the parser default pattern=1 without FillForegnd makes Edraw treat the
     // container as a hollow phantom fill. Only ensure when the cell already
     // exists (scrub Inh) or the shape is a leaf (rebuild always emits pattern).
     if (edited.children.isEmpty || _hasCell(el, 'FillPattern')) {
-      changed |= _ensureLiteralInt(el, 'FillPattern', edited.fill.pattern);
+      changed |= _ensureLiteralInt(
+          el, 'FillPattern', fillPatternForLibvisioWrite(edited.fill));
     }
     changed |= _patchColorOrTheme(el, 'LineColor', 'QuickStyleLineColor',
         baseColor: base.line.color,
@@ -5057,8 +5063,7 @@ class VsdxWriter {
   }
 
   bool _patchGeometry(XmlElement el, VsdxShape base, VsdxShape edited) {
-    final needsLibvisioRewrite =
-        _geometryNeedsLibvisioRewrite(edited.geometries);
+    final needsLibvisioRewrite = _shapeNeedsLibvisioGeometryRewrite(edited);
     if (!needsLibvisioRewrite &&
         _geometriesEqual(base.geometries, edited.geometries)) {
       return _scrubGeometryInh(el, edited);
@@ -5099,6 +5104,7 @@ class VsdxWriter {
               ix++,
               width: edited.width,
               height: edited.height,
+              roundingInches: edited.line.roundingInches,
             )
             case final s?)
           s,
@@ -7478,8 +7484,12 @@ class VsdxWriter {
       children.add(_cell('FillBkgnd', '0', formula: formulaOf('FillBkgnd')));
     }
     // FillBkgnd default comes from document StyleSheets (No Style) when omitted.
-    children.add(_cell('FillPattern', s.fill.pattern.toString(),
-        formula: formulaOf('FillPattern')));
+    final fillPattern = fillPatternForLibvisioWrite(s.fill);
+    children.add(_cell(
+      'FillPattern',
+      fillPattern.toString(),
+      formula: fillPattern == s.fill.pattern ? formulaOf('FillPattern') : null,
+    ));
     // Always emit Trans (incl. 0) so Master transparency cannot revive after
     // clear + group rebuild (patch already force-writes these).
     children
@@ -7726,6 +7736,7 @@ class VsdxWriter {
         ix++,
         width: s.width,
         height: s.height,
+        roundingInches: s.line.roundingInches,
       );
       if (section != null) children.add(section);
     }
@@ -8132,7 +8143,7 @@ class VsdxWriter {
       _cell('Contrast', _fmt(s.imageContrast)),
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
-      _cell('FillPattern', s.fill.pattern.toString()),
+      _cell('FillPattern', fillPatternForLibvisioWrite(s.fill).toString()),
       if (s.fill.foreground != null)
         _cell('FillForegnd', _hex(s.fill.foreground!))
       else if (s.fill.themeForegroundIndex != null) ...[
@@ -8397,6 +8408,7 @@ class VsdxWriter {
         gIx++,
         width: s.width,
         height: s.height,
+        roundingInches: s.line.roundingInches,
       );
       if (section != null) {
         children.add(section);
@@ -8771,30 +8783,59 @@ class VsdxWriter {
     return false;
   }
 
+  /// libvisio's VSDX shape switch has no `XML_ROUNDING` (only the stylesheet
+  /// `readLine` path collects it). Leaving a polyline + Rounding cell makes
+  /// Draw paint sharp corners. Bake the fillet, matching `_bakeLegacyRounding`
+  /// for VSD/VDX.
+  static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
+    if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
+    if (shape.line.roundingInches <= 1e-12) return false;
+    for (final geometry in shape.geometries) {
+      final baked = bakePolylineRounding(
+        geometry,
+        width: shape.width,
+        height: shape.height,
+        radius: shape.line.roundingInches,
+      );
+      if (!identical(baked, geometry)) return true;
+    }
+    return false;
+  }
+
   XmlElement? _buildGeometrySection(
     VsdxGeometry g,
     int ix, {
     double width = 1,
     double height = 1,
+    double roundingInches = 0,
   }) {
+    final geometry = bakePolylineRounding(
+      g,
+      width: width,
+      height: height,
+      radius: roundingInches,
+    );
+    final baked = !identical(geometry, g);
     final rows = <XmlNode>[];
     // Always emit NoFill/NoLine/NoShow/NoSnap/NoQuickDrag. Visio defaults
     // missing NoFill to 0 (filled), but 万兴图示 treats a missing cell as
     // NoFill=1 → hollow shapes; the other three flags follow the same pattern
     // in Edraw samples (always written as 0 when inactive).
-    rows.add(_cell('NoFill', g.noFill ? '1' : '0'));
-    rows.add(_cell('NoLine', g.noLine ? '1' : '0'));
-    rows.add(_cell('NoShow', g.noShow ? '1' : '0'));
-    rows.add(_cell('NoSnap', g.noSnap ? '1' : '0'));
-    rows.add(_cell('NoQuickDrag', g.noQuickDrag ? '1' : '0'));
+    rows.add(_cell('NoFill', geometry.noFill ? '1' : '0'));
+    rows.add(_cell('NoLine', geometry.noLine ? '1' : '0'));
+    rows.add(_cell('NoShow', geometry.noShow ? '1' : '0'));
+    rows.add(_cell('NoSnap', geometry.noSnap ? '1' : '0'));
+    rows.add(_cell('NoQuickDrag', geometry.noQuickDrag ? '1' : '0'));
     // When the geometry was parsed (row IX known) preserve the source row IX so
     // an instance that inherits/overrides master rows keeps aligning by IX on
     // re-parse; otherwise number rows sequentially (freshly-built shapes).
-    final useSourceIx = g.rowIndices.length == g.commands.length &&
+    // Baked Rounding / Rel* rewrites invent rows, so sequential IX is required.
+    final useSourceIx = !baked &&
+        g.rowIndices.length == g.commands.length &&
         g.rowIndices.isNotEmpty;
     var rowIx = 1;
     var cmdIx = 0;
-    for (final original in g.commands) {
+    for (final original in geometry.commands) {
       final thisIx = useSourceIx ? g.rowIndices[cmdIx] : rowIx;
       final cmd = forLibvisioWrite(
         original,
@@ -8803,7 +8844,7 @@ class VsdxWriter {
       );
       // Rel* / CubBezTo formulas assume the original cell units; drop them
       // when the row type changes so baked V= is what Visio and libvisio see.
-      final formulas = commandNeedsLibvisioRewrite(original)
+      final formulas = baked || commandNeedsLibvisioRewrite(original)
           ? const <String, String>{}
           : g.formulasAt(cmdIx);
       final row = _buildRow(cmd, thisIx, formulas: formulas);
@@ -8815,7 +8856,7 @@ class VsdxWriter {
     }
     // Re-emit `Del` rows for master rows this instance deleted, so the merge
     // reproduces on the next parse instead of re-inheriting them.
-    for (final delIx in g.deletedRowIndices) {
+    for (final delIx in baked ? const <int>{} : g.deletedRowIndices) {
       rows.add(XmlElement(XmlName('Row'), <XmlAttribute>[
         XmlAttribute(XmlName('IX'), delIx.toString()),
         XmlAttribute(XmlName('Del'), '1'),

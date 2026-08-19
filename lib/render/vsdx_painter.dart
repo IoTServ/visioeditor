@@ -1332,11 +1332,12 @@ class VsdxPainter extends CustomPainter {
       return;
     }
     final fill = shape.fill;
-    if (fill.hasGradient) {
+    final paintGradient = fill.paintGradient;
+    if (paintGradient != null) {
       final bounds = path.getBounds();
       if (bounds.isEmpty) return;
       final shader = _buildGradientShader(
-        fill.gradient!,
+        paintGradient,
         bounds,
         fillTransparency: fill.foregroundTransparency,
       );

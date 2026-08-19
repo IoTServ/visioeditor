@@ -37,4 +37,54 @@ void main() {
     expect(fill.gradient!.stops.first.color, const VsdxColor(0xFFF4F9FF));
     expect(fill.gradient!.stops.last.color, const VsdxColor(0xFFDFF4D5));
   });
+
+  test('paintGradient materialises classic FillPattern 25–40 without parse', () {
+    const fill = VsdxFill(
+      foreground: VsdxColor(0xFFFF0000),
+      background: VsdxColor(0xFF0000FF),
+      pattern: 40,
+    );
+    expect(fill.hasGradient, isFalse);
+    expect(fill.paintGradient, isNotNull);
+    expect(fill.paintGradient!.type, VsdxGradientType.radial);
+    expect(fill.paintGradient!.dir, 4);
+
+    final page = const DocumentParser()
+        .parse(const VsdxWriter().emptyDocument())
+        .pages
+        .first;
+    final svg = VsdxToSvgSerializer().serializePage(
+      page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: page.nextFreeShapeId(),
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 2,
+          fill: fill,
+        ),
+      ),
+    );
+    expect(svg, contains('radialGradient'));
+  });
+
+  test('FillGradient with FillPattern=1 maps to a classic id libvisio paints', () {
+    for (var pattern = 25; pattern <= 40; pattern++) {
+      final classic = withLibvisioClassicGradient(
+        VsdxFill(
+          foreground: const VsdxColor(0xFFFF0000),
+          background: const VsdxColor(0xFF0000FF),
+          pattern: pattern,
+        ),
+      );
+      final modern = classic.copyWith(pattern: 1);
+      expect(
+        fillPatternForLibvisioWrite(modern),
+        pattern,
+        reason: 'FillPattern $pattern',
+      );
+    }
+    expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 0)), 0);
+    expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 2)), 2);
+  });
 }

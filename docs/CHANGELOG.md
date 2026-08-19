@@ -589,6 +589,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   / InfiniteLine / Spline / NURBS rows LibreOffice actually collects. A
   VDX coverage drawing that used to lose its Béziers on import now round-
   trips through Draw.
+- Modern `FillGradient` fills and shape-level `Rounding` now survive a save
+  into LibreOffice. libvisio's VSDX parser has no FillGradient token and
+  does not read Rounding on a shape (only on a stylesheet), so Draw used to
+  flatten those to solid colour and sharp corners. A save now writes the
+  nearest classic FillPattern 25–40 and bakes filleted RelQuadBezTo rows;
+  classic FillPattern 25–40 also paint here even when the model has no stop
+  section yet.
 - Rendering is now checked per shape, not just per page. A page-level mean
   error cannot see a single geometry, fill or master that silently
   disappears: the average barely moves. The corpus now maps every shape

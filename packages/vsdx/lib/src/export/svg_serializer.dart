@@ -1747,7 +1747,7 @@ class VsdxToSvgSerializer {
     } else if (!hasFill) {
       fillPaint = 'none';
       fillOp = 0;
-    } else if (shape.fill.hasGradient) {
+    } else if (shape.fill.paintGradient != null) {
       fillPaint = 'url(#grad-$paintId)';
       fillOp = alpha;
     } else if (shape.fill.pattern >= 2 &&
@@ -2667,8 +2667,9 @@ class VsdxToSvgSerializer {
     final fill = shape.fill;
     if (!fill.hasFill) return 'fill="none"';
 
-    if (fill.hasGradient) {
-      final g = fill.gradient!;
+    final paintGradient = fill.paintGradient;
+    if (paintGradient != null) {
+      final g = paintGradient;
       final id = 'grad-$paintId';
       final fillAlpha = (1 - fill.foregroundTransparency.clamp(0.0, 1.0));
       final stops = StringBuffer();

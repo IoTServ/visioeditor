@@ -230,6 +230,70 @@ void main() {
             ),
           ],
         ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 9,
+          pinX: 2,
+          pinY: 7.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'HatchFill',
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFFFF0000),
+            background: VsdxColor(0xFF0000FF),
+            pattern: 2,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 10,
+          pinX: 4,
+          pinY: 7.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'ClassicRadialFill',
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFFFF0000),
+            background: VsdxColor(0xFF0000FF),
+            pattern: 40,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 11,
+          pinX: 6,
+          pinY: 7.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'FillGradient',
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFFFF0000),
+            background: VsdxColor(0xFF0000FF),
+            pattern: 1,
+            gradient: VsdxGradient(
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 12,
+          pinX: 8,
+          pinY: 7.5,
+          width: 1.5,
+          height: 0.8,
+          name: 'Rounding',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFF00), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            roundingInches: 0.15,
+            pattern: 2,
+            endArrow: 4,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);

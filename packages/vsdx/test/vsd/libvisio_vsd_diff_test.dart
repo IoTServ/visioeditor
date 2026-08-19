@@ -595,7 +595,14 @@ void _expectSynthesizedShape(
   expect(after.geometries.length, before.geometries.length,
       reason: '$reason geometry sections');
   for (var i = 0; i < before.geometries.length; i++) {
-    final a = before.geometries[i];
+    // libvisio's VSDX parser skips shape-level Rounding, so synthesis bakes
+    // polyline fillets into RelQuadBezTo rows. Compare against that write.
+    final a = bakePolylineRounding(
+      before.geometries[i],
+      width: before.width,
+      height: before.height,
+      radius: before.line.roundingInches,
+    );
     final b = after.geometries[i];
     expect(b.ix, a.ix, reason: '$reason Geometry[$i] IX');
     expect(b.noFill, a.noFill, reason: '$reason Geometry[$i] NoFill');

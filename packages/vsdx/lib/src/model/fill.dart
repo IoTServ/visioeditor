@@ -196,6 +196,78 @@ VsdxFill withLibvisioClassicGradient(VsdxFill fill) {
   );
 }
 
+/// Classic `FillPattern` 25–40 that libvisio's VSDX parser will paint as an
+/// ODF gradient. `null` when [gradient] cannot be approximated that way.
+///
+/// LibreOffice reaches Visio only through `VisioDocument::parse`. The VSDX
+/// token map has no `FillGradient` / `FillGradientEnabled`, so a modern
+/// two-stop fill with `FillPattern=1` becomes a solid. Writing the nearest
+/// classic id keeps Draw filling the shape while Visio still honours the
+/// `FillGradient` section when `FillGradientEnabled=1`.
+int? libvisioClassicPatternFor(VsdxGradient gradient) {
+  switch (gradient.type) {
+    case VsdxGradientType.rectangular:
+      return 35;
+    case VsdxGradientType.radial:
+    case VsdxGradientType.path:
+      return switch (gradient.dir) {
+        1 => 36,
+        3 => 37,
+        5 => 38,
+        7 => 39,
+        _ => 40,
+      };
+    case VsdxGradientType.linear:
+      break;
+  }
+  if (gradient.stops.length >= 3) {
+    final degrees = _normDegrees(gradient.angleRad * 180 / math.pi);
+    return _degreeDelta(degrees, 0) <= _degreeDelta(degrees, 90) ? 26 : 29;
+  }
+  // Inverse of `angleRad = π/2 − drawDegrees × π/180` in the 25–34 table.
+  final drawDegrees = _normDegrees(90 - gradient.angleRad * 180 / math.pi);
+  const table = <int, double>{
+    25: 270,
+    27: 90,
+    28: 180,
+    30: 0,
+    31: 225,
+    32: 135,
+    33: 315,
+    34: 45,
+  };
+  var best = 27;
+  var bestDelta = 360.0;
+  for (final entry in table.entries) {
+    final delta = _degreeDelta(drawDegrees, entry.value);
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = entry.key;
+    }
+  }
+  return best;
+}
+
+/// `FillPattern` LibreOffice's libvisio importer will actually collect.
+int fillPatternForLibvisioWrite(VsdxFill fill) {
+  final pattern = fill.pattern;
+  if (pattern == 0) return 0;
+  if (pattern >= 2 && pattern <= 40) return pattern;
+  if (!fill.hasGradient) return pattern;
+  return libvisioClassicPatternFor(fill.gradient!) ?? pattern;
+}
+
+double _normDegrees(double degrees) {
+  final wrapped = degrees % 360;
+  return wrapped < 0 ? wrapped + 360 : wrapped;
+}
+
+double _degreeDelta(double a, double b) {
+  var delta = (_normDegrees(a) - _normDegrees(b)).abs();
+  if (delta > 180) delta = 360 - delta;
+  return delta;
+}
+
 @immutable
 class VsdxFill {
   const VsdxFill({
@@ -235,6 +307,16 @@ class VsdxFill {
 
   bool get hasFill => pattern != 0;
   bool get hasGradient => gradient != null && gradient!.stops.isNotEmpty;
+
+  /// Gradient the renderer should paint: an explicit `FillGradient` section,
+  /// or the libvisio mapping of classic `FillPattern` 25–40. Factory shapes
+  /// can carry pattern 40 without a stop section; parse-time conversion
+  /// would otherwise be the only path that filled them.
+  VsdxGradient? get paintGradient {
+    if (hasGradient) return gradient;
+    if (pattern < 25 || pattern > 40) return null;
+    return withLibvisioClassicGradient(this).gradient;
+  }
 
   /// Default sentinel for shapes without an explicit Fill section.
   static const VsdxFill defaultFill = VsdxFill();
@@ -298,7 +380,12 @@ class VsdxFill {
         background: background,
         foregroundTransparency: foregroundTransparency,
         backgroundTransparency: backgroundTransparency,
-        pattern: gradient != null && pattern == 0 ? 1 : pattern,
+        // Clearing a gradient must not leave classic ids 25–40 behind: a save
+        // that used them as a libvisio FillGradient fallback would otherwise
+        // rematerialise the wash on the next parse.
+        pattern: gradient == null
+            ? (pattern >= 25 && pattern <= 40 ? 1 : pattern)
+            : (pattern == 0 ? 1 : pattern),
         themeForegroundIndex: themeForegroundIndex,
         themeBackgroundIndex: themeBackgroundIndex,
         gradient: gradient,
