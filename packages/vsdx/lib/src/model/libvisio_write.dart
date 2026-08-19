@@ -8,7 +8,10 @@
 /// stroke. A save therefore has to emit parallel Geometry rails, a built-in
 /// pattern 2–23, and — for an unfilled stroke with a line gradient or
 /// LineColorTrans — a filled ribbon whose FillPattern 25–40 / FillForegndTrans
-/// libvisio *does* collect. Arrowed 1-D connectors that also need those
+/// libvisio *does* collect. Unfilled CompoundType 2–4 keep thick/thin contrast
+/// the same way: each rail becomes a filled ribbon of that rail's width,
+/// because LineWeight is shape-level and stroked rails would share the
+/// thinnest width. Arrowed 1-D connectors that also need those
 /// rewrites bake Begin/EndArrow as filled Geometry so Draw does not hang a
 /// marker on every open rail (and so BeginArrowSize, which is not a token,
 /// still has a size). Character Highlight is skipped by `readCharIX` but
@@ -76,8 +79,13 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   if (baked != null) {
     geometries = baked.geometries;
     line = baked.line;
+    if (baked.fill != null) fill = baked.fill!;
     geometryRewritten = true;
-    working = working.copyWith(geometries: geometries, line: line);
+    working = working.copyWith(
+      geometries: geometries,
+      line: line,
+      fill: fill,
+    );
   }
 
   final pattern = linePatternForLibvisioWrite(line);
@@ -186,12 +194,35 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
   return false;
 }
 
-/// Offset each stroked polyline into rails libvisio can stroke.
+/// Whether an unfilled CompoundType 2–4 can keep thick/thin contrast in Draw.
 ///
-/// LineWeight is shape-level, so every rail shares the same width (exact for
-/// CompoundType 1; thick-thin / triple keep the offsets and use the thinnest
-/// rail width so they do not blob into one fat stroke).
-({List<VsdxGeometry> geometries, VsdxLine line})? bakeCompoundTypeForLibvisio(
+/// LineWeight is shape-level, so stroked rails must share one width (the
+/// thinnest, or they blob). Unfilled solid / gradient / transparent strokes
+/// can instead become filled ribbons of each rail's own width — FillPattern
+/// and FillForegndTrans are tokens. Dashes 2–23 stay stroked so
+/// `_lineProperties` still paints them. Filled 2-D keeps stroked rails
+/// because the shape's Fill is already the body colour.
+bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
+  if (shape.line.compoundType < 2) return false;
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  final pattern = linePatternForLibvisioWrite(shape.line);
+  if (pattern >= 2 &&
+      pattern <= 23 &&
+      !shape.line.hasGradient &&
+      shape.line.transparency <= 1e-9) {
+    return false;
+  }
+  return true;
+}
+
+/// Offset each stroked polyline into rails libvisio can stroke (or fill).
+///
+/// CompoundType 1 (equal double) stays two strokes. Unfilled 2–4 become
+/// per-rail ribbons so Draw keeps thick-thin / triple contrast; filled 2-D
+/// and dashed unfilled strokes keep parallel strokes at the thinnest rail
+/// width so they do not blob into one fat line.
+({List<VsdxGeometry> geometries, VsdxLine line, VsdxFill? fill})?
+    bakeCompoundTypeForLibvisio(
   VsdxShape shape,
 ) {
   if (!shapeNeedsLibvisioCompoundBake(shape)) return null;
@@ -199,6 +230,7 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
   final rails = compoundRails(shape.line.compoundType, weight);
   if (rails.isEmpty) return null;
+  final useRibbons = _useVariableWidthCompoundRibbons(shape);
 
   final out = <VsdxGeometry>[];
   var addedRails = false;
@@ -223,17 +255,54 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
     for (final rail in rails) {
       final offset = offsetPolyline(points, rail.offset, closed: closed);
       if (offset.length < 2) continue;
-      out.add(
-        VsdxGeometry(
-          noFill: true,
-          noLine: false,
-          commands: polylineCommands(offset, closed: closed),
-        ),
-      );
+      if (useRibbons) {
+        final commands = strokeRibbonCommands(
+          offset,
+          halfWidth: rail.width / 2,
+          closed: closed,
+        );
+        if (commands.length < 3) continue;
+        out.add(
+          VsdxGeometry(
+            noFill: false,
+            noLine: true,
+            commands: commands,
+          ),
+        );
+      } else {
+        out.add(
+          VsdxGeometry(
+            noFill: true,
+            noLine: false,
+            commands: polylineCommands(offset, closed: closed),
+          ),
+        );
+      }
       addedRails = true;
     }
   }
   if (!addedRails) return null;
+
+  if (useRibbons) {
+    final fill = _fillFromLineStroke(shape.line) ??
+        VsdxFill(
+          foreground: shape.line.color ?? const VsdxColor(0xFF000000),
+          background: shape.line.color ?? const VsdxColor(0xFF000000),
+          pattern: 1,
+          themeForegroundIndex:
+              shape.line.color == null ? shape.line.themeColorIndex : null,
+        );
+    return (
+      geometries: out,
+      line: shape.line.copyWith(
+        compoundType: 0,
+        pattern: 0,
+        gradient: null,
+        transparency: 0,
+      ),
+      fill: fill,
+    );
+  }
 
   var railWeight = rails.first.width;
   for (final rail in rails) {
@@ -245,6 +314,7 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
       compoundType: 0,
       weightInches: railWeight,
     ),
+    fill: null,
   );
 }
 

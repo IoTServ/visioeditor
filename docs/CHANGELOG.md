@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Unfilled `CompoundType` 2–4 (thick-thin / thin-thick / triple) now bake
+  each rail as a filled ribbon of that rail's own width so LibreOffice keeps
+  the contrast. libvisio has no CompoundType token and LineWeight is
+  shape-level, so the previous parallel *strokes* all used the thinnest
+  rail and Draw painted equal hairlines. Filled 2-D and dashed unfilled
+  strokes still use those equal-width strokes so the body Fill and
+  LinePattern 2–23 stay intact. 1-D type 3/4 is in the soffice cross-check.
 - `CompoundType` 3 (thin-thick) and 4 (triple) now have the same LibreOffice
   rail-bake coverage as types 1–2. libvisio has no CompoundType token, so a
   save still emits parallel Geometry rails and zeros the cell. Arrowed 1-D

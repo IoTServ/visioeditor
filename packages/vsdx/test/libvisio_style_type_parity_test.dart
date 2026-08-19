@@ -150,10 +150,41 @@ void main() {
       final baked = bakeCompoundTypeForLibvisio(filledCompound(type));
       expect(baked, isNotNull, reason: 'CompoundType $type must bake rails');
       expect(baked!.line.compoundType, 0);
+      expect(baked.fill, isNull, reason: 'filled 2-D keeps stroked rails');
       expect(
         baked.geometries.where((g) => !g.noLine).length,
         type == 4 ? 3 : 2,
       );
+    }
+
+    VsdxShape unfilledCompound1d(int type) => VsdxShapeFactory.line(
+          id: 20 + type,
+          ax: 0,
+          ay: 0,
+          bx: 3,
+          by: 0,
+          line: VsdxLine(
+            color: const VsdxColor(0xFF000000),
+            weightInches: 0.08,
+            compoundType: type,
+          ),
+        );
+    for (final type in <int>[3, 4]) {
+      final baked = bakeCompoundTypeForLibvisio(unfilledCompound1d(type));
+      expect(
+        baked,
+        isNotNull,
+        reason: 'unfilled CompoundType $type must bake width-true ribbons',
+      );
+      expect(baked!.line.compoundType, 0);
+      expect(baked.line.pattern, 0);
+      expect(baked.fill, isNotNull);
+      expect(baked.fill!.pattern, 1);
+      expect(
+        baked.geometries.where((g) => !g.noFill).length,
+        type == 4 ? 3 : 2,
+      );
+      expect(baked.geometries.where((g) => !g.noLine), isEmpty);
     }
 
     // VSDContentCollector::_linePropertiesMarkerPath filled ids that used to
@@ -512,6 +543,36 @@ void main() {
           color: VsdxColor.black,
           weightInches: 0.08,
           compoundType: 1,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.line(
+        id: nextId++,
+        ax: 5,
+        ay: 0.6,
+        bx: 8,
+        by: 0.6,
+        name: 'CompoundThinThick1D',
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 3,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.line(
+        id: nextId++,
+        ax: 1,
+        ay: 0.3,
+        bx: 4,
+        by: 0.3,
+        name: 'CompoundTriple1D',
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          weightInches: 0.08,
+          compoundType: 4,
         ),
       ),
     );
@@ -1005,6 +1066,25 @@ void main() {
     expect(
       compound1d.geometries.where((g) => !g.noLine).length,
       greaterThan(1),
+    );
+    final thinThick1d = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'CompoundThinThick1D');
+    expect(thinThick1d.is1D, isTrue);
+    expect(thinThick1d.line.compoundType, 0);
+    expect(thinThick1d.line.pattern, 0);
+    expect(thinThick1d.fill.pattern, 1);
+    expect(
+      thinThick1d.geometries.where((g) => !g.noFill).length,
+      2,
+      reason: 'unfilled CompoundType 3 bakes two width-true ribbons',
+    );
+    final triple1d = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'CompoundTriple1D');
+    expect(triple1d.line.compoundType, 0);
+    expect(
+      triple1d.geometries.where((g) => !g.noFill).length,
+      3,
+      reason: 'unfilled CompoundType 4 bakes three width-true ribbons',
     );
     final arrowedCompound = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'ArrowedCompound1D');

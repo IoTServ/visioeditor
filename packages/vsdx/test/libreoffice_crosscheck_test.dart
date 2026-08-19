@@ -642,6 +642,34 @@ void main() {
             compoundType: 4,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 31,
+          ax: 1,
+          ay: 0.4,
+          bx: 4,
+          by: 0.4,
+          name: 'CompoundThinThick1D',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 3,
+          ),
+        ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 32,
+          ax: 5,
+          ay: 0.4,
+          bx: 8,
+          by: 0.4,
+          name: 'CompoundTriple1D',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            compoundType: 4,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -805,6 +833,22 @@ void main() {
           .firstWhere((s) => s.name == 'CompoundTriple')
           .geometries
           .where((g) => !g.noLine)
+          .length,
+      3,
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CompoundThinThick1D')
+          .geometries
+          .where((g) => !g.noFill)
+          .length,
+      2,
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CompoundTriple1D')
+          .geometries
+          .where((g) => !g.noFill)
           .length,
       3,
     );
