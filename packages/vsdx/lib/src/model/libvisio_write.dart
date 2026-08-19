@@ -14,6 +14,9 @@
 /// still has a size). Character Highlight is skipped by `readCharIX` but
 /// `TextBkgnd` is collected and painted as `fo:background-color`, so a
 /// uniform highlight with no authored text-block fill is written there.
+/// `AsianFont` / `ComplexScriptFont` are not tokens — `readCharIX` only
+/// stores `Font` — so a CJK-only (or RTL-only) run whose Latin `Font`
+/// would tofu in Draw is rewritten to the Asian / complex face.
 library;
 
 import 'dart:math' as math;
@@ -681,4 +684,95 @@ VsdxTextBlock textBlockForPaint(VsdxShape shape) {
     return block;
   }
   return block.withoutBackgroundColor();
+}
+
+/// Face libvisio's `readCharIX` will actually load (`tokens.txt` has `Font`,
+/// not `AsianFont` / `ComplexScriptFont`).
+const kLibvisioDefaultAsianFont = 'Microsoft YaHei';
+
+bool _containsCjk(String text) {
+  for (final rune in text.runes) {
+    if (rune >= 0x4E00 && rune <= 0x9FFF) return true;
+    if (rune >= 0x3400 && rune <= 0x4DBF) return true;
+    if (rune >= 0xF900 && rune <= 0xFAFF) return true;
+  }
+  return false;
+}
+
+bool _containsLatinLetter(String text) {
+  for (final rune in text.runes) {
+    if ((rune >= 0x41 && rune <= 0x5A) || (rune >= 0x61 && rune <= 0x7A)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _containsRtlLetter(String text) {
+  for (final rune in text.runes) {
+    if (isVisioRightToLeftRune(rune)) return true;
+  }
+  return false;
+}
+
+bool _isLatinUiFace(String? face) {
+  if (face == null || face.isEmpty) return true;
+  switch (face.toLowerCase()) {
+    case 'arial':
+    case 'calibri':
+    case 'cambria':
+    case 'candara':
+    case 'consolas':
+    case 'constantia':
+    case 'corbel':
+    case 'courier new':
+    case 'georgia':
+    case 'helvetica':
+    case 'segoe ui':
+    case 'tahoma':
+    case 'times':
+    case 'times new roman':
+    case 'trebuchet ms':
+    case 'verdana':
+      return true;
+    default:
+      return false;
+  }
+}
+
+/// `Font` cell Draw will collect. CJK-only runs whose Visio `Font` is a
+/// Latin UI face are rewritten to `AsianFont` (or YaHei); RTL-only runs
+/// use `ComplexScriptFont`. Mixed Latin+CJK / Latin+Arabic keep `Font` so
+/// Visio's Latin glyphs do not change face.
+String? fontFamilyForLibvisioWrite(VsdxCharStyle style, String text) {
+  final current = style.fontFamily;
+  if (_containsCjk(text) &&
+      !_containsLatinLetter(text) &&
+      !_containsRtlLetter(text)) {
+    final asian = style.asianFont?.trim();
+    if (asian != null && asian.isNotEmpty) return asian;
+    if (_isLatinUiFace(current)) return kLibvisioDefaultAsianFont;
+    return current;
+  }
+  if (_containsRtlLetter(text) &&
+      !_containsLatinLetter(text) &&
+      !_containsCjk(text)) {
+    final complex = style.complexScriptFont?.trim();
+    if (complex != null && complex.isNotEmpty) return complex;
+  }
+  if ((current == null || current.isEmpty) && _containsCjk(text)) {
+    return kLibvisioDefaultAsianFont;
+  }
+  return current;
+}
+
+bool shapeNeedsLibvisioFontBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (run.text.trim().isEmpty) continue;
+    final baked = fontFamilyForLibvisioWrite(run.charStyle, run.text);
+    final current = run.charStyle.fontFamily;
+    if ((baked ?? '') != (current ?? '')) return true;
+  }
+  return false;
 }

@@ -2714,7 +2714,8 @@ class VsdxWriter {
         _shapePatchInputsEqual(base, edited)) {
       if (preserveUnchangedPackage ||
           (!_shapeNeedsLibvisioGeometryRewrite(edited) &&
-              !shapeNeedsLibvisioTextBkgndBake(edited))) {
+              !shapeNeedsLibvisioTextBkgndBake(edited) &&
+              !shapeNeedsLibvisioFontBake(edited))) {
         return false;
       }
     }
@@ -4555,7 +4556,7 @@ class VsdxWriter {
       final charRow =
           i < charRows.length ? charRows[i] : _addRow(charSection, i);
       charRow.setAttribute('IX', i.toString());
-      _writeCharRow(charRow, runs[i].charStyle);
+      _writeCharRow(charRow, runs[i].charStyle, text: runs[i].text);
       final paraRow =
           i < paraRows.length ? paraRows[i] : _addRow(paraSection, i);
       paraRow.setAttribute('IX', i.toString());
@@ -4589,7 +4590,11 @@ class VsdxWriter {
     final paraRows = paraSection == null ? const <XmlElement>[] : _rowsOf(paraSection);
     for (var i = 0; i < runs.length; i++) {
       if (i < charRows.length) {
-        changed |= _scrubCharRowInh(charRows[i], runs[i].charStyle);
+        changed |= _scrubCharRowInh(
+          charRows[i],
+          runs[i].charStyle,
+          text: runs[i].text,
+        );
       }
       if (i < paraRows.length) {
         changed |= _scrubParaRowInh(paraRows[i], runs[i].paraStyle);
@@ -4598,7 +4603,11 @@ class VsdxWriter {
     return changed;
   }
 
-  bool _scrubCharRowInh(XmlElement row, VsdxCharStyle c) {
+  bool _scrubCharRowInh(
+    XmlElement row,
+    VsdxCharStyle c, {
+    String text = '',
+  }) {
     var changed = false;
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Size'), _fmt(c.fontSizeInches));
@@ -4618,9 +4627,9 @@ class VsdxWriter {
     } else {
       changed |= _removeInhOrDrop(row, 'Color');
     }
-    if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
-      changed |=
-          _writeValueIfNeeded(_ensureCell(row, 'Font'), c.fontFamily!);
+    final font = fontFamilyForLibvisioWrite(c, text);
+    if (font != null && font.isNotEmpty) {
+      changed |= _writeValueIfNeeded(_ensureCell(row, 'Font'), font);
     } else {
       changed |= _removeInhOrDrop(row, 'Font');
     }
@@ -4814,7 +4823,7 @@ class VsdxWriter {
     return changed;
   }
 
-  void _writeCharRow(XmlElement row, VsdxCharStyle c) {
+  void _writeCharRow(XmlElement row, VsdxCharStyle c, {String text = ''}) {
     _writeValue(_ensureCell(row, 'Size'), _fmt(c.fontSizeInches));
     _writeValue(_ensureCell(row, 'Style'), _charStyleBits(c).toString());
     if (c.color != null) {
@@ -4830,8 +4839,9 @@ class VsdxWriter {
       // THEMEVAL cannot revive on the next reopen.
       _removeNamedCells(row, const ['Color']);
     }
-    if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
-      _writeValue(_ensureCell(row, 'Font'), c.fontFamily!);
+    final font = fontFamilyForLibvisioWrite(c, text);
+    if (font != null && font.isNotEmpty) {
+      _writeValue(_ensureCell(row, 'Font'), font);
     } else {
       // Match rebuild: omit Font when unbound so a prior face cannot stick.
       _removeNamedCells(row, const ['Font']);
@@ -7895,8 +7905,9 @@ class VsdxWriter {
     } else if (cjk) {
       cells.add(_cell('AsianFont', _defaultAsianFont));
     }
-    if (c.fontFamily != null && c.fontFamily!.isNotEmpty) {
-      cells.add(_cell('Font', c.fontFamily!));
+    final font = fontFamilyForLibvisioWrite(c, text);
+    if (font != null && font.isNotEmpty) {
+      cells.add(_cell('Font', font));
     } else if (cjk) {
       cells.add(_cell('Font', _defaultAsianFont));
     }

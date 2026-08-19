@@ -22,7 +22,9 @@
 /// shows the plate. `RVNGSVGDrawingGenerator` drops that property, so the
 /// oracle SVG is the wrong place to look; `vsd2raw` still has it. Overline
 /// / ColorTrans still paint here even though `readCharIX` skips Overline
-/// and `xmlStringToColour` zeros alpha.
+/// and `xmlStringToColour` zeros alpha. `AsianFont` is not a token, so a
+/// CJK-only run whose Visio `Font` is Arial is rewritten to the Asian face
+/// Draw will actually load.
 library;
 
 import 'dart:io';
@@ -160,6 +162,54 @@ void main() {
       ),
     );
     expect(shapeNeedsLibvisioTextBkgndBake(withBlock), isFalse);
+  });
+
+  test('CJK-only Character Font bakes AsianFont for LibreOffice', () {
+    final cjk = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'CJK',
+    ).copyWith(
+      text: '你好',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: '你好',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              asianFont: 'Microsoft YaHei',
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioFontBake(cjk), isTrue);
+    expect(
+      fontFamilyForLibvisioWrite(cjk.richText.runs.single.charStyle, '你好'),
+      'Microsoft YaHei',
+    );
+    final latin = cjk.copyWith(
+      text: 'Hi',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'Hi',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              asianFont: 'Microsoft YaHei',
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioFontBake(latin), isFalse);
+    expect(
+      fontFamilyForLibvisioWrite(latin.richText.runs.single.charStyle, 'Hi'),
+      'Arial',
+    );
   });
 
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
@@ -451,6 +501,31 @@ void main() {
         ),
       ),
     );
+    built = built.addShape(
+      VsdxShapeFactory.rectangle(
+        id: nextId++,
+        pinX: 7,
+        pinY: 3,
+        width: 1.4,
+        height: 0.7,
+        name: 'CJK',
+        fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+        line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+      ).copyWith(
+        text: '你好',
+        richText: const VsdxRichText(
+          runs: [
+            VsdxTextRun(
+              text: '你好',
+              charStyle: VsdxCharStyle(
+                fontFamily: 'Arial',
+                asianFont: 'Microsoft YaHei',
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
     for (final pattern in <int>[2, 10, 23]) {
       built = built.addShape(
         VsdxShape(
@@ -528,6 +603,9 @@ void main() {
     expect(xml, contains('N="ColorTrans" V="0.4"'),
         reason:
             'Character ColorTrans must round-trip even though libvisio zeros alpha');
+    expect(xml, contains('N="Font" V="Microsoft YaHei"'),
+        reason:
+            'readCharIX only stores Font; CJK-only Arial bakes to AsianFont');
     expect(xml, contains('N="FillForegndTrans" V="0.5"'),
         reason:
             'LineColorTrans bakes to FillForegndTrans which readShapeProperties collects');
@@ -671,9 +749,22 @@ void main() {
         reason: 'Highlight bakes to TextBkgnd so Draw can paint it');
     expect(xml, contains('N="TextBkgnd" V="#FF00FF"'),
         reason: 'readCharIX skips Highlight; TextBkgnd is collected');
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CJK')
+          .richText
+          .runs
+          .single
+          .charStyle
+          .fontFamily,
+      'Microsoft YaHei',
+    );
     // RVNGSVGDrawingGenerator never emits span fo:background-color (vsd2xhtml
     // tspans are fill-only). vsd2raw still records the property Draw uses.
-    _expectVsd2rawTextBkgnd(saved, '#ff00ff');
+    _expectVsd2rawCollected(saved, <String>[
+      'fo:background-color: #ff00ff',
+      'style:font-name: Microsoft YaHei',
+    ]);
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
@@ -705,18 +796,21 @@ String? _which(String name) {
   return path.isEmpty ? null : path;
 }
 
-void _expectVsd2rawTextBkgnd(Uint8List saved, String hex) {
+void _expectVsd2rawCollected(Uint8List saved, List<String> snippets) {
   final vsd2raw = _which('vsd2raw');
   if (vsd2raw == null) return;
   final tmp = File(
-    '${Directory.systemTemp.path}/vsdx_highlight_textbkgnd.vsdx',
+    '${Directory.systemTemp.path}/vsdx_libvisio_collected.vsdx',
   );
   tmp.writeAsBytesSync(saved);
   final raw = Process.runSync(vsd2raw, <String>[tmp.path]);
   expect(raw.exitCode, 0, reason: 'vsd2raw stderr: ${raw.stderr}');
-  expect(
-    raw.stdout.toString().toLowerCase(),
-    contains('fo:background-color: $hex'),
-    reason: 'libvisio must collect baked TextBkgnd for Draw',
-  );
+  final out = raw.stdout.toString();
+  for (final snippet in snippets) {
+    expect(
+      out,
+      contains(snippet),
+      reason: 'libvisio must collect $snippet for Draw',
+    );
+  }
 }

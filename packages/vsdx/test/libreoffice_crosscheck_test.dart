@@ -450,6 +450,30 @@ void main() {
             ],
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.rectangle(
+          id: id + 22,
+          pinX: 8,
+          pinY: 2.5,
+          width: 1.4,
+          height: 0.7,
+          name: 'CJK',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+        ).copyWith(
+          text: '你好',
+          richText: const VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: '你好',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  asianFont: 'Microsoft YaHei',
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -538,6 +562,16 @@ void main() {
         .firstWhere((s) => s.name == 'Highlight');
     expect(highlight.richText.runs.single.charStyle.highlight?.value, 0xFFFF00FF);
     expect(highlight.richText.textBlock.backgroundColor?.value, 0xFFFF00FF);
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CJK')
+          .richText
+          .runs
+          .single
+          .charStyle
+          .fontFamily,
+      'Microsoft YaHei',
+    );
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';
