@@ -4,7 +4,13 @@
 // hole shows up as a row instead of a silent skip.
 //
 // Usage:
-//   dart run tool/libvisio_parity_audit.dart [--verbose] [filter]
+//   dart run tool/libvisio_parity_audit.dart [--verbose] [--features] [filter]
+//
+// `--features` switches to a per-drawing-feature diff: libvisio renders through
+// `drawPath` / `drawGraphicObject` plus a text stack, so every other "type" is
+// carried by the style properties it sets (gradient, hatch or bitmap fill,
+// dashes, markers, shadow, text decoration). A file where libvisio paints one
+// of those and we paint none is a type we silently drop.
 //
 // The libvisio columns need native/libvisio_shim.dylib (native/build.sh).
 // ignore_for_file: avoid_print
@@ -14,6 +20,7 @@ import 'dart:typed_data';
 
 import 'package:vsdx/vsdx.dart';
 
+import '../test/support/libvisio_features.dart';
 import '../test/support/libvisio_oracle.dart';
 
 const _sourceDirectories = <String>[
@@ -45,6 +52,11 @@ void main(List<String> args) {
   if (files.isEmpty) {
     stderr.writeln('no Visio files matched');
     exit(2);
+  }
+
+  if (args.contains('--features')) {
+    _featureAudit(files, oracle, verbose: verbose);
+    return;
   }
 
   final problems = <String>[];
@@ -104,6 +116,95 @@ void main(List<String> args) {
     print('  - $problem');
   }
   if (verbose) exit(1);
+}
+
+// --- feature diff -----------------------------------------------------------
+
+void _featureAudit(
+  List<File> files,
+  LibvisioOracle? oracle, {
+  required bool verbose,
+}) {
+  if (oracle == null) {
+    stderr.writeln('--features needs the libvisio shim (native/build.sh)');
+    exit(2);
+  }
+  final names = libvisioFeaturePatterns.keys.toList();
+  final missing = <String, List<String>>{for (final n in names) n: <String>[]};
+  final extra = <String, List<String>>{for (final n in names) n: <String>[]};
+  var compared = 0;
+
+  for (final file in files) {
+    final label = _label(file);
+    final bytes = Uint8List.fromList(file.readAsBytesSync());
+    final referencePages = oracle.svgPages(bytes);
+    if (referencePages == null) continue;
+
+    final VsdxDocument document;
+    try {
+      document = parseVisio(bytes, sourceName: file.path).document;
+    } catch (_) {
+      continue;
+    }
+    // Compare whole documents: libvisio flattens background pages into the
+    // pages that reference them, so a per-page pairing would report phantom
+    // differences on every drawing that uses one.
+    final ours = StringBuffer();
+    for (final page in document.pages) {
+      ours.write(
+        VsdxToSvgSerializer().serializePage(
+          page,
+          theme: document.theme,
+          images: document.images,
+          underlayPage: document.backgroundFor(page),
+        ),
+      );
+    }
+    final reference = referencePages.join();
+    compared++;
+
+    for (final name in names) {
+      final inReference =
+          paintsLibvisioFeature(name, reference, libvisio: true);
+      final inOurs =
+          paintsLibvisioFeature(name, ours.toString(), libvisio: false);
+      if (inReference && !inOurs) missing[name]!.add(label);
+      if (inOurs && !inReference) extra[name]!.add(label);
+    }
+  }
+
+  print('compared $compared files against libvisio\n');
+  print('feature      libvisio-only  ours-only');
+  print('-' * 60);
+  for (final name in names) {
+    print(
+      '${name.padRight(13)}'
+      '${'${missing[name]!.length}'.padRight(15)}'
+      '${extra[name]!.length}',
+    );
+  }
+
+  var gaps = 0;
+  for (final name in names) {
+    if (missing[name]!.isEmpty) continue;
+    gaps += missing[name]!.length;
+    print('\n$name missing in ${missing[name]!.length} file(s):');
+    for (final label in missing[name]!) {
+      print('  - $label');
+    }
+  }
+  if (verbose) {
+    for (final name in names) {
+      if (extra[name]!.isEmpty) continue;
+      print('\n$name drawn only by us in ${extra[name]!.length} file(s):');
+      for (final label in extra[name]!) {
+        print('  - $label');
+      }
+    }
+  }
+  if (gaps == 0) {
+    print('\nOK — every feature libvisio paints is painted here too');
+  }
 }
 
 // --- collection -------------------------------------------------------------

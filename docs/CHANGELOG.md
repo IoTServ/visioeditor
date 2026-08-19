@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Drawing features are now diffed against libvisio per document. Its whole
+  painting surface is `drawPath`, `drawGraphicObject` and a text stack, so
+  every other type a Visio file carries — gradient, hatch or bitmap fill,
+  dashes, line-end markers, drop shadow, text decoration — rides on the
+  graphic style it sets. A feature that stops rendering everywhere barely
+  moves a page's mean pixel error, so the existing corpus could not see it;
+  the new check compares feature presence directly across 152 documents.
 - DiagramML (`.vdx` / `.vsx` / `.vtx`) now opens whatever namespace the file
   declares, matching libvisio's `isXmlVisioDocument`, which LibreOffice reaches
   through `VisioDocument::isSupported` and which only ever compares the root
