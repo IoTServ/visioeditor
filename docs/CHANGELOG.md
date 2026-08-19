@@ -583,6 +583,24 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- DiagramML (`.vdx` / `.vsx` / `.vtx`) now opens whatever namespace the file
+  declares, matching libvisio's `isXmlVisioDocument`, which LibreOffice reaches
+  through `VisioDocument::isSupported` and which only ever compares the root
+  element name. Files exported by third-party tools with a foreign namespace,
+  and files whose namespace declarations were stripped, opened in LibreOffice
+  but were rejected here. Detection now also reads forward to the first real
+  element instead of scanning the header, so a comment mentioning
+  `<VisioDocument>` no longer counts as a signature.
+- A bare `VisioDocument` record stream — an OLE2 export, or a legacy file that
+  was never wrapped — now imports like the compound file it came from.
+  libvisio falls back to the input itself when there is no such substream, and
+  it validates the version byte before dispatching, so both parsers now accept
+  exactly the same binaries.
+- Every Visio extension the editor advertises (`.vsdx` `.vsdm` `.vstx` `.vstm`
+  `.vssx` `.vssm` `.vsd` `.vss` `.vst` `.vdx` `.vsx` `.vtx`) is now covered
+  end to end — detect, parse, render, save, reopen — with the saved package
+  handed to LibreOffice for confirmation. Only the three most common
+  extensions had that coverage before.
 - Embedded Excel chart and sheet OLE previews now detect their Workbook/Book
   streams and composite the transparent WMF/EMF presentation on LibreOffice's
   classic Blue 2 surface (`#729FCF`). Variable-length OLE presentation headers

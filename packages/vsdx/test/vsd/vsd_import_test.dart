@@ -87,6 +87,36 @@ void main() {
       expect(String.fromCharCodes(stream.sublist(0, 18)), 'Visio (TM) Drawing');
       expect(stream[0x1A], 11);
     });
+
+    test('a bare VisioDocument stream parses like the OLE2 file, per libvisio',
+        () {
+      // libvisio's `isBinaryVisioDocument` falls back to the input itself when
+      // there is no `VisioDocument` substream to open, so LibreOffice reads an
+      // extracted record stream as a Visio document. The record layout is the
+      // same either way; only the OLE2 metadata is gone.
+      final bytes = _loadSample('Visio11FormatLine.vsd');
+      if (bytes == null) return;
+      final flat = Uint8List.fromList(
+        CompoundFile.open(bytes).readStream('VisioDocument')!,
+      );
+      expect(looksLikeCfb(flat), isFalse);
+      expect(looksLikeVisioBinary(flat), isTrue);
+
+      final wrapped = parseVisio(bytes).document;
+      final bare = parseVisio(flat).document;
+      expect(bare.pages, hasLength(wrapped.pages.length));
+      expect(
+        VsdxToSvgSerializer().serializeDocument(bare),
+        VsdxToSvgSerializer().serializeDocument(wrapped),
+      );
+
+      // The magic and the version byte both have to hold, exactly as
+      // libvisio requires before it picks a parser.
+      final wrongVersion = Uint8List.fromList(flat)..[0x1A] = 9;
+      expect(looksLikeVisioBinary(wrongVersion), isFalse);
+      final wrongMagic = Uint8List.fromList(flat)..[0] = 0x57;
+      expect(looksLikeVisioBinary(wrongMagic), isFalse);
+    });
   });
 
   group('VsdDocumentParser', () {

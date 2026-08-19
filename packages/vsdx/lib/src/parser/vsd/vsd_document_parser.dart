@@ -14,17 +14,42 @@ import 'cfb/compound_file.dart';
 import 'vsd_metadata.dart';
 import 'vsd_parser.dart';
 
-/// Detects OLE2 compound files that contain a VisioDocument stream.
+/// libvisio's `checkVisioMagic` signature, including the terminator.
+const _visioMagic = 'Visio (TM) Drawing\r\n\u0000';
+
+/// Detects a legacy binary Visio document.
+///
+/// Mirrors libvisio's `isBinaryVisioDocument`, which LibreOffice's Visio import
+/// filter reaches through `VisioDocument::isSupported`: take the `VisioDocument`
+/// substream when the input is an OLE2 compound file, otherwise treat the input
+/// itself as that stream, then require the Visio magic and a version byte the
+/// binary parsers understand.
 bool looksLikeVisioBinary(Uint8List bytes) {
-  if (!looksLikeCfb(bytes)) return false;
+  return _visioDocumentStream(bytes) != null;
+}
+
+/// The record stream libvisio hands to its binary parsers, or `null` when
+/// [bytes] is not a legacy binary Visio document.
+Uint8List? _visioDocumentStream(Uint8List bytes) {
   try {
-    final cfb = CompoundFile.open(bytes);
-    final stream = cfb.readStream('VisioDocument');
-    if (stream == null || stream.length < 0x20) return false;
-    final magic = String.fromCharCodes(stream.sublist(0, 18));
-    return magic == 'Visio (TM) Drawing';
+    Uint8List? stream;
+    if (looksLikeCfb(bytes)) {
+      stream = CompoundFile.open(bytes).readStream('VisioDocument');
+    }
+    // A bare `VisioDocument` stream (an OLE2 export, or a Visio 1–5 file that
+    // was never wrapped) is what libvisio falls back to when the input has no
+    // such substream. Its parsers read the identical record layout either way.
+    stream ??= bytes;
+    if (stream.length < 0x20) return null;
+    if (String.fromCharCodes(stream.sublist(0, _visioMagic.length)) !=
+        _visioMagic) {
+      return null;
+    }
+    final version = stream[0x1A];
+    if ((version < 1 || version > 6) && version != 11) return null;
+    return stream;
   } catch (_) {
-    return false;
+    return null;
   }
 }
 
@@ -43,9 +68,16 @@ class VsdDocumentParser {
   /// drawing page.
   VsdxDocument parse(Uint8List bytes, {bool extractStencils = false}) {
     if (!looksLikeCfb(bytes)) {
-      throw const VsdxFormatException(
-        'Not a Visio binary (.vsd) compound file',
-      );
+      // libvisio parses a bare `VisioDocument` record stream too, falling back
+      // to the input itself whenever there is no OLE2 substream to open. Such
+      // a stream carries none of the OLE metadata read below.
+      final flat = _visioDocumentStream(bytes);
+      if (flat == null) {
+        throw const VsdxFormatException(
+          'Not a Visio binary (.vsd) compound file',
+        );
+      }
+      return VsdBinaryParser(flat).parse(extractStencils: extractStencils);
     }
     final cfb = CompoundFile.open(bytes);
     final stream = cfb.readStream('VisioDocument');

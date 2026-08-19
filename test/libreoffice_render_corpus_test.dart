@@ -36,6 +36,24 @@ const _legacyUnitFieldTexts = <String>[
   'Example testing text',
 ];
 
+const _angleFieldTexts = <String>[
+  'TextField GeometryAngleGeneral -30',
+  'TextField GeometryAngleRadians -0.5236 rad',
+  'TextField GeometryAngleDegrees -30 deg',
+];
+
+const _currencyFieldTexts = <String>[
+  '1 currency format \$1.00',
+  '4 currency format 1.00 \$',
+  '1 currency format with 4 precision \$1.0000',
+];
+
+const _numericFieldTexts = <String>[
+  'Number of lines, percentage format: 1.00 %',
+  'Creator, Upper case: BARTOSZ KOSIOREK',
+  'Creator, lower case: bartosz kosiorek',
+];
+
 const _vdxCoverageTexts = <String>[
   'All rich text retained',
   'Second line and tab:',
@@ -59,8 +77,18 @@ const _corpus = <_CorpusEntry>[
     maxMeanAbsoluteError: 0.015,
     minInkIntersectionOverUnion: 0.95,
   ),
-  _CorpusEntry('Visio11TextFieldsWithAngle.vsd'),
-  _CorpusEntry('Visio11TextFieldsWithCurrency.vsd'),
+  _CorpusEntry(
+    'Visio11TextFieldsWithAngle.vsd',
+    expectedTextFragments: _angleFieldTexts,
+  ),
+  // libvisio's field formatter has no currency case, so LibreOffice shows the
+  // labels with the values missing. Pin ours to the amounts Visio itself
+  // renders; without this the fixture's only signal is that we draw more ink
+  // than the oracle, which a regression could silently erase.
+  _CorpusEntry(
+    'Visio11TextFieldsWithCurrency.vsd',
+    expectedTextFragments: _currencyFieldTexts,
+  ),
   _CorpusEntry('Visio11TextFieldsWithUnits.vsd'),
   // Current libvisio misplaces several VSD5 dimension paths during direct
   // rendering. Its WMF reference and VSD6 successor agree with our editable
@@ -112,7 +140,12 @@ const _corpus = <_CorpusEntry>[
   ),
   _CorpusEntry('tdf154379-QuickStyleFillMatrix.vsdx'),
   _CorpusEntry('tdf76829-datetime-format.vsd'),
-  _CorpusEntry('tdf76829-numeric-format.vsd'),
+  // Same story as the currency fixture: LibreOffice drops the percentage
+  // value, and the string-case formats are ours to keep correct.
+  _CorpusEntry(
+    'tdf76829-numeric-format.vsd',
+    expectedTextFragments: _numericFieldTexts,
+  ),
   _CorpusEntry('testfile1.vsdx'),
   _CorpusEntry('testfile3.vsdx'),
   _CorpusEntry('testfile4.vsdx'),
@@ -254,9 +287,13 @@ void main() {
           final document = result.document;
           final pages = document.pages;
           if (entry.expectedTextFragments.isNotEmpty) {
-            final visibleTexts = _visibleTexts(document);
+            final visibleTexts = _visibleTexts(
+              document,
+            ).map(_collapseWhitespace).toList();
             for (final expected in entry.expectedTextFragments) {
-              if (!visibleTexts.any((text) => text.contains(expected))) {
+              if (!visibleTexts.any(
+                (text) => text.contains(_collapseWhitespace(expected)),
+              )) {
                 failures.add(
                   '${entry.name}: parsed model lost text "$expected"',
                 );
@@ -343,9 +380,9 @@ void main() {
               '${caseDirectory.path}/app-${pageIndex + 1}.svg',
             )..writeAsStringSync(appSvg);
             if (pageIndex == 0) {
-              final svgText = _svgPlainText(appSvg);
+              final svgText = _collapseWhitespace(_svgPlainText(appSvg));
               for (final expected in entry.expectedTextFragments) {
-                if (!svgText.contains(expected)) {
+                if (!svgText.contains(_collapseWhitespace(expected))) {
                   failures.add('${entry.name}: SVG lost text "$expected"');
                 }
               }
@@ -613,6 +650,12 @@ void main() {
     timeout: const Timeout(Duration(minutes: 8)),
   );
 }
+
+/// Compare text without committing to a particular line breaking. The renderer
+/// word-wraps a label to fit its text block, so a phrase that Visio shows on
+/// one line can legitimately arrive split across two `<text>` elements.
+String _collapseWhitespace(String text) =>
+    text.replaceAll(RegExp(r'\s+'), ' ').trim();
 
 /// Join text split across SVG `<text>` / `<tspan>` elements. Checking the raw
 /// markup reports false losses when a character-style boundary falls inside

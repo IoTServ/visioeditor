@@ -787,6 +787,46 @@ void main() {
       expect(() => parseVisio(unrelated), throwsA(isA<VsdxFormatException>()));
     });
 
+    test('opens DiagramML with a foreign or absent namespace, like libvisio',
+        () {
+      // libvisio's `isXmlVisioDocument` reads forward to the first element and
+      // compares only its name, so LibreOffice opens DiagramML whatever the
+      // namespace says. Demanding a known Visio namespace made third-party and
+      // namespace-stripped files unopenable here while they opened there.
+      final xml = utf8.decode(_fixture());
+      final expected = const VdxDocumentParser().parse(_fixture());
+
+      for (final variant in <String, String>{
+        'no namespace': xml.replaceAll(RegExp(r'\sxmlns(:\w+)?="[^"]*"'), ''),
+        'foreign namespace': xml.replaceFirst(
+          'http://schemas.microsoft.com/visio/2003/core',
+          'http://example.invalid/visio/9999/core',
+        ),
+        'leading comment': xml.replaceFirst(
+          '<VisioDocument',
+          '<!-- exported by a third party tool --><VisioDocument',
+        ),
+      }.entries) {
+        final bytes = Uint8List.fromList(utf8.encode(variant.value));
+        expect(looksLikeVdx(bytes), isTrue, reason: variant.key);
+        final document =
+            parseVisio(bytes, sourceName: 'variant.vdx').document;
+        expect(document.pages, hasLength(expected.pages.length),
+            reason: variant.key);
+        expect(
+          document.pages.single.shapes.length,
+          expected.pages.single.shapes.length,
+          reason: variant.key,
+        );
+      }
+
+      // A comment mentioning the root element is not a Visio document.
+      final commentOnly = Uint8List.fromList(
+        utf8.encode('<?xml version="1.0"?><!-- <VisioDocument> --><other/>'),
+      );
+      expect(looksLikeVdx(commentOnly), isFalse);
+    });
+
     test('honours declared single- and multi-byte XML encodings end to end',
         () {
       final source = utf8.decode(_fixture());

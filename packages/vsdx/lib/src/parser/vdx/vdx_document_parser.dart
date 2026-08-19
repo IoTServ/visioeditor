@@ -40,23 +40,77 @@ import '../rich_text_parser.dart';
 import '../style_parser.dart';
 import '../stylesheet_parser.dart';
 
-const _vdxNamespaces = <String>{
-  'urn:schemas-microsoft-com:office:visio',
-  'http://schemas.microsoft.com/visio/2003/core',
-  'http://schemas.microsoft.com/visio/2006/core',
-};
-
 /// Cheap signature check used by the unified Visio entry point.
+///
+/// Mirrors libvisio's `isXmlVisioDocument`, which LibreOffice's Visio import
+/// filter reaches through `VisioDocument::isSupported`: read forward to the
+/// first *element* node and accept the stream when that element is named
+/// `VisioDocument`. libvisio takes the name straight from libxml2 and never
+/// inspects the namespace, so DiagramML that declares a foreign namespace — or
+/// none at all — still opens in LibreOffice. Requiring a known namespace here
+/// made those same files unopenable in the editor.
 bool looksLikeVdx(Uint8List bytes) {
   if (bytes.isEmpty) return false;
   try {
     final head = _decodeXml(
         bytes.length > 8192 ? Uint8List.sublistView(bytes, 0, 8192) : bytes);
-    return RegExp(r'<(?:[A-Za-z_][\w.-]*:)?VisioDocument\b').hasMatch(head) &&
-        (_vdxNamespaces.any(head.contains) || head.contains('xmlns='));
+    return _firstElementName(head) == 'VisioDocument';
   } catch (_) {
     return false;
   }
+}
+
+/// Qualified name of the first element start tag in [xml], skipping the XML
+/// declaration, comments, processing instructions and any DOCTYPE (including
+/// an internal subset). Returns `null` when no element starts within [xml].
+///
+/// libvisio compares the *qualified* name, so a prefixed `<v:VisioDocument>`
+/// root is not a Visio document as far as LibreOffice is concerned; the
+/// element lookups below likewise assume unprefixed names.
+String? _firstElementName(String xml) {
+  var index = 0;
+  while (true) {
+    index = xml.indexOf('<', index);
+    if (index < 0) return null;
+    if (xml.startsWith('<!--', index)) {
+      final end = xml.indexOf('-->', index + 4);
+      if (end < 0) return null;
+      index = end + 3;
+      continue;
+    }
+    if (xml.startsWith('<?', index)) {
+      final end = xml.indexOf('?>', index + 2);
+      if (end < 0) return null;
+      index = end + 2;
+      continue;
+    }
+    if (xml.startsWith('<!', index)) {
+      final end = _skipDeclaration(xml, index);
+      if (end < 0) return null;
+      index = end;
+      continue;
+    }
+    final match =
+        RegExp(r'^<([A-Za-z_][\w.\-]*(?::[A-Za-z_][\w.\-]*)?)[\s/>]')
+            .firstMatch(xml.substring(index));
+    return match?.group(1);
+  }
+}
+
+/// Index just past the `<!...>` markup declaration starting at [start],
+/// honouring a `[...]` internal DTD subset. `-1` when it is unterminated.
+int _skipDeclaration(String xml, int start) {
+  for (var i = start + 2; i < xml.length; i++) {
+    final char = xml[i];
+    if (char == '[') {
+      final close = xml.indexOf(']', i + 1);
+      if (close < 0) return -1;
+      i = close;
+      continue;
+    }
+    if (char == '>') return i + 1;
+  }
+  return -1;
 }
 
 class VdxDocumentParser {
@@ -75,15 +129,6 @@ class VdxDocumentParser {
         'Unsupported XML document: expected VisioDocument',
       );
     }
-    final namespace = root.name.namespaceUri ?? root.getAttribute('xmlns');
-    if (namespace != null &&
-        namespace.isNotEmpty &&
-        !_vdxNamespaces.contains(namespace)) {
-      throw VsdxFormatException(
-        'Unsupported Visio XML namespace: $namespace',
-      );
-    }
-
     final documentXml = _normaliseDocument(root);
     final baseResources = const DocumentResourcesParser().parse(documentXml);
     final resources = VsdxDocumentResources(

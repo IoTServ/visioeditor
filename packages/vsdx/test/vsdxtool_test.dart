@@ -1,3 +1,11 @@
+/// Every case here shells out to `dart run bin/vsdxtool.dart`, which JIT
+/// compiles the whole package on each invocation. That routinely exceeds the
+/// 30 second default once the suite runs several files concurrently, so the
+/// timeout below reflects the cost of the subprocess rather than the CLI
+/// itself being slow.
+@Timeout(Duration(minutes: 5))
+library;
+
 import 'dart:convert';
 import 'dart:io';
 

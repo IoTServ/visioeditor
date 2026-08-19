@@ -660,6 +660,9 @@ void main() {
       await dir.delete(recursive: true);
     }
   },
+      // A headless soffice conversion alone takes most of the 30 second
+      // default on a cold profile, and this case converts eight packages.
+      timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'
           : false);

@@ -62,4 +62,6 @@ jobs:
           REQUIRE_SOFFICE: '1'
         run: |
           dart pub get
-          dart test test/libreoffice_crosscheck_test.dart
+          dart test \
+            test/libreoffice_crosscheck_test.dart \
+            test/visio_family_render_test.dart
