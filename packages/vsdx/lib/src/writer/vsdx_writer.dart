@@ -8821,7 +8821,7 @@ class VsdxWriter {
   /// for VSD/VDX.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
-    if (shapeNeedsLibvisioLineGradientRibbon(shape)) return true;
+    if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;
     if (shape.line.roundingInches <= 1e-12) return false;
     for (final geometry in shape.geometries) {

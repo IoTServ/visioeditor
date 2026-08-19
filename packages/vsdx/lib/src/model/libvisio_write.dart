@@ -2,11 +2,13 @@
 ///
 /// LibreOffice Draw never reads Visio XML itself — `VisioImportFilter.cxx`
 /// only calls `VisioDocument::isSupported` + `parse`. The VSDX token map has
-/// no `CompoundType` and no `LineGradient`, and unknown `LinePattern` ids
+/// no `CompoundType` and no `LineGradient`, `LineColorTrans` is absent and
+/// `xmlStringToColour` forces Colour.a = 0, and unknown `LinePattern` ids
 /// (custom draw.io arrays, 0xFE, …) fall through `_lineProperties` to a solid
 /// stroke. A save therefore has to emit parallel Geometry rails, a built-in
-/// pattern 2–23, and — for an unfilled stroke with a line gradient — a
-/// filled ribbon whose FillPattern 25–40 libvisio *does* collect.
+/// pattern 2–23, and — for an unfilled stroke with a line gradient or
+/// LineColorTrans — a filled ribbon whose FillPattern 25–40 / FillForegndTrans
+/// libvisio *does* collect.
 library;
 
 import '../export/compound_stroke.dart';
@@ -58,7 +60,7 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     line = line.copyWith(color: color);
   }
 
-  final ribbon = bakeLineGradientRibbon(
+  final ribbon = bakeStrokeRibbonForLibvisio(
     shape: shape,
     geometries: geometries,
     line: line,
@@ -182,16 +184,21 @@ bool shapeNeedsLibvisioCompoundBake(VsdxShape shape) {
   );
 }
 
-/// `true` when an unfilled LineGradient would be a solid stroke in Draw.
+/// `true` when an unfilled LineGradient / LineColorTrans stroke vanishes in Draw.
 ///
-/// `tokens.txt` has no LineGradient cell. Arrowheads stay shape-level
-/// markers and cannot follow a filled ribbon, so connectors with arrows
-/// keep LineColor. Arrow-less 1-D strokes bake the same ribbon as 2-D:
-/// XForm1D / glue cells are untouched, matching CompoundType. Filled
-/// shapes already occupy FillPattern, so they keep LineColor.
-bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) {
+/// `tokens.txt` has no LineGradient or LineColorTrans cell, and
+/// `xmlStringToColour` always stores Colour.a = 0, so `VSDContentCollector`
+/// paints every VSDX stroke opaque. Arrowheads stay shape-level markers and
+/// cannot follow a filled ribbon, so connectors with arrows keep LineColor.
+/// Arrow-less 1-D strokes bake the same ribbon as 2-D: XForm1D / glue cells
+/// are untouched, matching CompoundType. Filled shapes already occupy
+/// FillPattern, so they keep LineColor (Draw will show an opaque stroke).
+bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
   if (_hasArrowheads(shape.line)) return false;
-  if (!shape.line.hasGradient || !shape.line.hasLine) return false;
+  if (!shape.line.hasLine) return false;
+  if (!shape.line.hasGradient && shape.line.transparency <= 1e-9) {
+    return false;
+  }
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
@@ -201,17 +208,22 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) {
   return false;
 }
 
-/// Expand an unfilled line-gradient stroke into a closed ribbon FillPattern
-/// 25–40 can paint. Compound rails, when present, are expanded one by one.
+/// Back-compat name for the LineGradient half of [shapeNeedsLibvisioStrokeRibbon].
+bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
+    shape.line.hasGradient && shapeNeedsLibvisioStrokeRibbon(shape);
+
+/// Expand an unfilled gradient or transparent stroke into a closed ribbon
+/// FillPattern 25–40 / FillForegndTrans can paint. Compound rails, when
+/// present, are expanded one by one.
 ({List<VsdxGeometry> geometries, VsdxLine line, VsdxFill fill})?
-    bakeLineGradientRibbon({
+    bakeStrokeRibbonForLibvisio({
   required VsdxShape shape,
   required List<VsdxGeometry> geometries,
   required VsdxLine line,
 }) {
-  if (!shapeNeedsLibvisioLineGradientRibbon(shape)) return null;
-  if (!line.hasGradient || !line.hasLine) return null;
-  final fill = _fillFromLineGradient(line);
+  if (!shapeNeedsLibvisioStrokeRibbon(shape)) return null;
+  if (!line.hasLine) return null;
+  final fill = _fillFromLineStroke(line);
   if (fill == null) return null;
 
   final weight = line.weightInches > 1e-9 ? line.weightInches : 0.01;
@@ -251,29 +263,42 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) {
 
   return (
     geometries: out,
-    line: line.copyWith(pattern: 0, gradient: null),
+    line: line.copyWith(pattern: 0, gradient: null, transparency: 0),
     fill: fill,
   );
 }
 
-VsdxFill? _fillFromLineGradient(VsdxLine line) {
-  if (!line.hasGradient) return null;
-  final gradient = line.gradient!;
-  VsdxColor? first;
-  VsdxColor? last;
-  for (final stop in gradient.stops) {
-    if (stop.color != null) {
-      first ??= stop.color;
-      last = stop.color;
+VsdxFill? _fillFromLineStroke(VsdxLine line) {
+  final transparency = line.transparency.clamp(0.0, 1.0);
+  if (line.hasGradient) {
+    final gradient = line.gradient!;
+    VsdxColor? first;
+    VsdxColor? last;
+    for (final stop in gradient.stops) {
+      if (stop.color != null) {
+        first ??= stop.color;
+        last = stop.color;
+      }
     }
+    first ??= line.color ?? const VsdxColor(0xFF000000);
+    last ??= first;
+    return VsdxFill(
+      foreground: first,
+      background: last,
+      pattern: 1,
+      gradient: gradient,
+      foregroundTransparency: transparency,
+      backgroundTransparency: transparency,
+    );
   }
-  first ??= line.color ?? const VsdxColor(0xFF000000);
-  last ??= first;
+  if (transparency <= 1e-9) return null;
   return VsdxFill(
-    foreground: first,
-    background: last,
+    foreground: line.color ?? const VsdxColor(0xFF000000),
+    background: line.color ?? const VsdxColor(0xFF000000),
     pattern: 1,
-    gradient: gradient,
+    themeForegroundIndex: line.color == null ? line.themeColorIndex : null,
+    foregroundTransparency: transparency,
+    backgroundTransparency: transparency,
   );
 }
 

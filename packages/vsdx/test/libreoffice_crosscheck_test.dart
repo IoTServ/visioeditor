@@ -356,6 +356,20 @@ void main() {
             cap: LineCap.extended,
           ),
         ),
+      ).addShape(
+        VsdxShapeFactory.line(
+          id: id + 17,
+          ax: 1,
+          ay: 6.2,
+          bx: 4,
+          by: 6.2,
+          name: 'LineColorTrans1D',
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            transparency: 0.5,
+          ),
+        ),
       ),
     );
     final generated = writer.write(originalBytes: blank, edited: doc);
@@ -413,6 +427,12 @@ void main() {
           .cap,
       LineCap.extended,
     );
+    final lineColorTrans1d = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LineColorTrans1D');
+    expect(lineColorTrans1d.is1D, isTrue);
+    expect(lineColorTrans1d.line.pattern, 0);
+    expect(lineColorTrans1d.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(lineColorTrans1d.geometries.any((g) => !g.noFill), isTrue);
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';

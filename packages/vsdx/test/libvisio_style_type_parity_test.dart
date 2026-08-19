@@ -2,17 +2,20 @@
 /// cells / rows LibreOffice's libvisio importer still collects.
 ///
 /// `VSDXParser` has no FillGradient token, no shape-level Rounding, no
-/// CompoundType token, and no LineGradient token. A modern gradient with
+/// CompoundType token, no LineGradient token, and no LineColorTrans token
+/// (`xmlStringToColour` also forces Colour.a = 0). A modern gradient with
 /// FillPattern=1, a polyline with only a Rounding cell, a CompoundType>0
-/// stroke, or an unfilled LineGradient disappears in Draw. The writer
-/// rewrites those to classic FillPattern 25–40, baked RelQuadBezTo corners,
-/// parallel Geometry rails (including arrow-less 1-D), and a filled ribbon
-/// for line gradients (2-D and arrow-less 1-D). Classic FillPattern 25–40
-/// also paint here even when the model has no stop section yet. Unknown
-/// LinePattern ids snap to the built-in 2–23 table `_lineProperties`
-/// actually dashes. `LineCap` 0/1/2 is a token libvisio *does* collect.
-/// Character Highlight / Overline are skipped by `readCharIX` but still
-/// paint here.
+/// stroke, an unfilled LineGradient, or a semi-transparent stroke
+/// disappears or goes fully opaque in Draw. The writer rewrites those to
+/// classic FillPattern 25–40, baked RelQuadBezTo corners, parallel Geometry
+/// rails (including arrow-less 1-D), and a filled ribbon for line gradients
+/// and LineColorTrans (2-D and arrow-less 1-D) whose FillForegndTrans
+/// libvisio *does* collect. Classic FillPattern 25–40 also paint here even
+/// when the model has no stop section yet. Unknown LinePattern ids snap to
+/// the built-in 2–23 table `_lineProperties` actually dashes. `LineCap`
+/// 0/1/2 is a token libvisio *does* collect. Character Highlight / Overline
+/// / ColorTrans are skipped or alpha-stripped by `readCharIX` /
+/// `xmlStringToColour` but still paint here.
 library;
 
 import 'package:test/test.dart';
@@ -165,6 +168,44 @@ void main() {
         ),
       ),
     );
+    built = built.addShape(
+      VsdxShape(
+        id: nextId++,
+        name: 'LineColorTrans',
+        pinX: 5,
+        pinY: 1.6,
+        width: 2,
+        height: 0.2,
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[MoveTo(0, 0.1), LineTo(2, 0.1)],
+          ),
+        ],
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          pattern: 1,
+          weightInches: 0.08,
+          transparency: 0.5,
+        ),
+      ),
+    );
+    built = built.addShape(
+      VsdxShapeFactory.line(
+        id: nextId++,
+        ax: 1,
+        ay: 1.8,
+        bx: 4,
+        by: 1.8,
+        name: 'LineColorTrans1D',
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          pattern: 1,
+          weightInches: 0.08,
+          transparency: 0.5,
+        ),
+      ),
+    );
     for (final entry in <(String, LineCap)>[
       ('CapRound', LineCap.round),
       ('CapSquare', LineCap.square),
@@ -205,6 +246,7 @@ void main() {
               charStyle: VsdxCharStyle(
                 highlight: VsdxColor(0xFFFF00FF),
                 overline: true,
+                transparency: 0.4,
               ),
             ),
           ],
@@ -254,6 +296,11 @@ void main() {
     expect(svg, contains('stroke-linecap="square"'));
     expect(svg, contains('stroke-linecap="butt"'),
         reason: 'Visio LineCap=1 / libvisio cap 1 maps to SVG butt');
+    expect(svg, contains('stroke-opacity="0.5"'),
+        reason: 'LineColorTrans must paint here even though tokens.txt omits it');
+    expect(svg, contains('fill-opacity="0.6"'),
+        reason: 'Character ColorTrans 0.4 paints as fill-opacity 0.6; '
+            'xmlStringToColour zeros alpha');
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final xml = VsdxPackage.open(saved)
@@ -275,6 +322,10 @@ void main() {
         reason: 'Character Highlight must round-trip even though libvisio skips it');
     expect(xml, contains('N="Overline" V="1"'),
         reason: 'Character Overline must round-trip even though libvisio skips it');
+    expect(xml, contains('N="ColorTrans" V="0.4"'),
+        reason: 'Character ColorTrans must round-trip even though libvisio zeros alpha');
+    expect(xml, contains('N="FillForegndTrans" V="0.5"'),
+        reason: 'LineColorTrans bakes to FillForegndTrans which readShapeProperties collects');
     expect(xml, contains('N="LineCap" V="1"'),
         reason: 'Visio LineCap 1 (extended/flat) is what libvisio maps to butt');
     expect(xml, contains('N="LineCap" V="2"'),
@@ -316,6 +367,17 @@ void main() {
       reason: 'Arrow-less 1-D LineGradient bakes the same ribbon as 2-D',
     );
     expect(lineGradient1d.geometries.any((g) => !g.noFill), isTrue);
+    final lineColorTrans = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LineColorTrans');
+    expect(lineColorTrans.line.pattern, 0);
+    expect(lineColorTrans.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(lineColorTrans.geometries.any((g) => !g.noFill), isTrue);
+    final lineColorTrans1d = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LineColorTrans1D');
+    expect(lineColorTrans1d.is1D, isTrue);
+    expect(lineColorTrans1d.line.pattern, 0);
+    expect(lineColorTrans1d.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(lineColorTrans1d.geometries.any((g) => !g.noFill), isTrue);
     final compound1d = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'Compound1D');
     expect(compound1d.line.compoundType, 0);
@@ -352,6 +414,7 @@ void main() {
         .charStyle;
     expect(highlightStyle.highlight?.value, 0xFFFF00FF);
     expect(highlightStyle.overline, isTrue);
+    expect(highlightStyle.transparency, closeTo(0.4, 1e-9));
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
@@ -367,6 +430,11 @@ void main() {
     expect(
       after.contains('stroke-dasharray') || after.contains('draw:stroke'),
       isTrue,
+    );
+    expect(
+      RegExp(r'fill-opacity(?:=|:)\s*"?0\.5').hasMatch(after),
+      isTrue,
+      reason: 'libvisio must paint LineColorTrans via baked FillForegndTrans',
     );
   });
 }

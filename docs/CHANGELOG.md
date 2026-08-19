@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Arrow-less 1-D / unfilled 2-D `LineColorTrans` strokes now bake a filled
+  ribbon with `FillForegndTrans` when saved for LibreOffice. libvisio's
+  VSDX token map has no LineColorTrans cell, and `xmlStringToColour`
+  always stores Colour.a = 0, so Draw used to paint every VSDX stroke
+  opaque. XForm1D / glue stay in place; connectors with arrows and filled
+  2-D shapes still keep `LineColor`. Character `ColorTrans` is similarly
+  alpha-stripped by libvisio but now paints (canvas + SVG) and round-trips.
 - Arrow-less 1-D `LineGradient` strokes now bake the same filled ribbon as
   2-D when saved for LibreOffice. libvisio has no LineGradient token, so a
   connector without arrowheads used to reopen as a solid stroke in Draw;
