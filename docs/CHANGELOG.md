@@ -625,9 +625,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - Character `Overline` and `Glow*` now survive a save into LibreOffice.
   libvisio's `readCharIX` has an empty `Overline` case, so a save inserts
   combining U+0305 marks and clears the cell. Glow cells are not tokens:
-  an unfilled stroke bakes a `FillForegndTrans` ribbon and a filled NoLine
-  shape bakes a `LineWeight` halo, then `GlowSize` is written 0. Filled
-  shapes that already paint a stroke keep their outline.
+  an unfilled stroke bakes a `FillForegndTrans` ribbon, a filled NoLine
+  shape bakes a `LineWeight` halo, and a filled shape that already paints
+  a stroke bakes a locked sibling halo (`LibvisioGlow.{id}`) so the
+  outline keeps CompoundType / dashes, then `GlowSize` is written 0.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

@@ -92,7 +92,18 @@ void main() {
       imageBlur: 0,
     );
     final payload = Uint8List.fromList(<int>[
-      0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3, 4,
+      0x89,
+      0x50,
+      0x4E,
+      0x47,
+      0x0D,
+      0x0A,
+      0x1A,
+      0x0A,
+      1,
+      2,
+      3,
+      4,
     ]);
     page = page
         .addShape(rect)
@@ -144,7 +155,14 @@ void main() {
     expect(rectAfter.line.softEdgesInches, closeTo(0.05, 1e-6));
     expect(rectAfter.line.compoundType, 0);
     expect(rectAfter.geometries.where((g) => !g.noLine).length, greaterThan(1));
-    expect(rectAfter.glow.enabled, isTrue);
+    expect(rectAfter.glow.enabled, isFalse,
+        reason: 'Glow on a filled stroke bakes a sibling halo');
+    expect(
+      after.shapes
+          .expand((s) => <VsdxShape>[s, ...s.children])
+          .where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
     expect(rectAfter.shadow.enabled, isTrue);
     expect(rectAfter.richText.textBlock.verticalAlign, VsdxVertAlign.top);
 

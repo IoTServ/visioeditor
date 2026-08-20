@@ -877,10 +877,14 @@ void main() {
     bytes = writer.write(originalBytes: bytes, edited: doc);
     doc = parser.parse(bytes);
     final g = doc.pages.first.findShapeById(id)!.glow;
-    expect(g.enabled, isTrue);
-    expect(g.sizeInches, closeTo(0.05, 1e-6));
+    expect(g.enabled, isFalse,
+        reason: 'Glow on a filled stroke bakes a sibling halo');
     expect(g.transparency, closeTo(0.6, 1e-6));
     expect(g.color, isNull);
+    expect(
+      doc.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
   });
 
   test('SVG soft edges with fully transparent shadow omits shadow merge', () {

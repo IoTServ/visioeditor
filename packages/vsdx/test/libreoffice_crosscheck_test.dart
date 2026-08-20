@@ -997,6 +997,29 @@ void main() {
                 transparency: 0.4,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 48,
+              pinX: 7.2,
+              pinY: 9.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'GlowFillStroke',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                pattern: 1,
+                weightInches: 0.02,
+              ),
+            ).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFF00CC66),
+                sizeInches: 0.08,
+                transparency: 0.4,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1159,6 +1182,15 @@ void main() {
     expect(glowNoLine.glow.enabled, isFalse);
     expect(glowNoLine.line.hasLine, isTrue);
     expect(glowNoLine.line.weightInches, closeTo(0.16, 1e-9));
+    final glowFillStroke = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'GlowFillStroke');
+    expect(glowFillStroke.glow.enabled, isFalse);
+    expect(glowFillStroke.line.pattern, 1);
+    final glowFillPlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowFillStroke.id}',
+    );
+    expect(glowFillPlate.line.weightInches, closeTo(0.16, 1e-9));
+    expect(glowFillPlate.line.hasLine, isTrue);
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
     expect(overline.richText.runs.single.charStyle.overline, isFalse);
@@ -1229,8 +1261,7 @@ void main() {
     expect(reflectionSource.reflection.enabled, isFalse);
     final reflectionPlate = reopenedDoc.pages.first.shapes.firstWhere(
       (s) =>
-          s.name ==
-          '$kLibvisioReflectionShapeNamePrefix${reflectionSource.id}',
+          s.name == '$kLibvisioReflectionShapeNamePrefix${reflectionSource.id}',
     );
     expect(reflectionPlate.fill.foreground?.value, 0xFFCC5533);
     expect(reflectionPlate.fill.foregroundTransparency, closeTo(0.4, 1e-9));

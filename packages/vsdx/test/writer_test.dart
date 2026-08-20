@@ -2216,9 +2216,14 @@ void main() {
     expect(after.shadow.enabled, isTrue);
     expect(after.shadow.themeColorIndex, ThemeSlot.accent1);
     expect(after.shadow.color, isNull);
-    expect(after.glow.enabled, isTrue);
+    expect(after.glow.enabled, isFalse,
+        reason: 'Glow on a filled stroke bakes a sibling halo');
     expect(after.glow.themeColorIndex, ThemeSlot.accent2);
     expect(after.glow.color, isNull);
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
   });
 
   test('HideText / TextBkgnd / Rounding / Glow round-trip', () {
@@ -2251,11 +2256,9 @@ void main() {
         ),
       ),
     );
-    final after = parser
-        .parse(writer.write(originalBytes: blank, edited: doc))
-        .pages
-        .first
-        .findShapeById(id)!;
+    final savedDoc =
+        parser.parse(writer.write(originalBytes: blank, edited: doc));
+    final after = savedDoc.pages.first.findShapeById(id)!;
     expect(after.richText.textBlock.hideText, isTrue);
     expect(after.richText.textBlock.backgroundColor?.value, 0xFFFFFF00);
     expect(after.line.roundingInches, closeTo(0, 1e-6),
@@ -2265,9 +2268,14 @@ void main() {
       after.geometries.expand((g) => g.commands).whereType<RelQuadBezTo>(),
       isNotEmpty,
     );
-    expect(after.glow.enabled, isTrue);
-    expect(after.glow.sizeInches, closeTo(0.08, 1e-6));
+    expect(after.glow.enabled, isFalse,
+        reason: 'Glow on a filled stroke bakes a sibling halo');
+    expect(after.glow.sizeInches, 0);
     expect(after.glow.color?.value, 0xFFFF0000);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
   });
 
   test('clearing TextBkgnd via withoutBackgroundColor round-trips', () {
@@ -8054,7 +8062,8 @@ void main() {
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
     final shape = doc.pages.first.findShapeById(id)!;
-    expect(shape.glow.enabled, isTrue);
+    expect(shape.glow.enabled, isFalse,
+        reason: 'Glow on a filled stroke bakes a sibling halo');
     expect(shape.reflection.enabled, isFalse,
         reason: 'Reflection* is not a token; Size is baked to 0');
     expect(shape.glow.transparency, closeTo(0.25, 1e-6));
@@ -8077,16 +8086,14 @@ void main() {
         .descendants
         .whereType<XmlElement>()
         .firstWhere(
-          (e) =>
-              e.name.local == 'Shape' && e.getAttribute('ID') == '$id',
+          (e) => e.name.local == 'Shape' && e.getAttribute('ID') == '$id',
         );
     for (final entry in {
       'GlowColorTrans': 0.25,
       'ReflectionTransparency': 0.3,
     }.entries) {
       final cell = sourceEl.children.whereType<XmlElement>().firstWhere(
-            (e) =>
-                e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
+            (e) => e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
           );
       expect(cell.getAttribute('F'), isNull, reason: entry.key);
       expect(double.parse(cell.getAttribute('V')!), closeTo(entry.value, 1e-6),

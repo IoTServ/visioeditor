@@ -63,7 +63,10 @@
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
 /// 2-D shape bakes a locked sibling plate whose FillForegndTrans Draw
-/// collects, then `ReflectionSize` is written 0.
+/// collects, then `ReflectionSize` is written 0. Glow on a filled shape
+/// that already paints a stroke cannot steal Line (CompoundType / dashes
+/// would vanish); that case bakes a locked sibling whose LineWeight halo
+/// Draw collects, then `GlowSize` is written 0.
 library;
 
 import 'dart:math' as math;
@@ -99,7 +102,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   return bakePageColorForLibvisioWrite(
     bakeImageAdjustmentsForLibvisioWrite(
       bakeReflectionForLibvisioWrite(
-        bakeOverlineForLibvisioWrite(hopped),
+        bakeGlowPlateForLibvisioWrite(
+          bakeOverlineForLibvisioWrite(hopped),
+        ),
       ),
     ),
   );
@@ -157,9 +162,8 @@ bool _pageColorPlateMatches(VsdxShape plate, VsdxShape expected) =>
 /// `true` when [page] needs a full-page `PageColor` plate, or a stale plate
 /// stripped, so Draw paints the sheet colour `readPageSheetProperties` skips.
 bool pageNeedsLibvisioPageColorBake(VsdxPage page) {
-  final existing = page.shapes
-      .where((s) => s.name == kLibvisioPageColorShapeName)
-      .toList();
+  final existing =
+      page.shapes.where((s) => s.name == kLibvisioPageColorShapeName).toList();
   if (!_pageColorShouldPaint(page)) return existing.isNotEmpty;
   if (existing.length != 1) return true;
   if (page.shapes.first.id != existing.single.id) return true;
@@ -394,7 +398,8 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
   return _shapePaintsFill(shape, shape.geometries);
 }
 
-VsdxShape _reflectionPlateForLibvisioWrite(VsdxShape source, {required int id}) {
+VsdxShape _reflectionPlateForLibvisioWrite(VsdxShape source,
+    {required int id}) {
   final trans = source.reflection.transparency;
   return VsdxShape(
     id: id,
@@ -558,6 +563,203 @@ VsdxDocument bakeReflectionForLibvisioWrite(VsdxDocument document) {
 VsdxReflection reflectionForLibvisioWrite(VsdxShape shape) {
   if (!shapeNeedsLibvisioReflectionBake(shape)) return shape.reflection;
   return shape.reflection.copyWith(enabled: false, sizeInches: 0);
+}
+
+/// Name prefix of the sibling halo `Glow*` becomes when Line is already painted.
+const kLibvisioGlowShapeNamePrefix = 'LibvisioGlow.';
+
+bool isLibvisioGlowPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioGlowShapeNamePrefix);
+
+int? libvisioGlowSourceId(VsdxShape plate) {
+  if (!isLibvisioGlowPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioGlowShapeNamePrefix.length),
+  );
+}
+
+/// `true` when Glow* must become a sibling halo because Line is already in use.
+///
+/// Same-shape `bakeGlowForLibvisio` steals Fill (unfilled stroke) or Line
+/// (filled NoLine). A default rectangle has both, so Draw would lose the
+/// outline if we reused Line. A locked sibling can carry the halo stroke.
+bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
+  if (isLibvisioGlowPlate(shape) || isLibvisioReflectionPlate(shape)) {
+    return false;
+  }
+  if (shape.is1D) return false;
+  final glow = shape.glow;
+  if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
+  if (glow.transparency >= 1 - 1e-9) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  final paintsFill = _shapePaintsFill(shape, shape.geometries);
+  if (!paintsFill && !shape.hasImage) return false;
+  return shape.line.hasLine;
+}
+
+List<VsdxGeometry> _glowPlateGeometriesForLibvisioWrite(VsdxShape shape) {
+  final out = <VsdxGeometry>[
+    for (final geometry in shape.geometries)
+      if (!geometry.noShow && !geometry.noFill)
+        geometry.copyWith(noFill: true, noLine: false),
+  ];
+  if (out.isNotEmpty) return out;
+  return <VsdxGeometry>[
+    VsdxGeometry(
+      noFill: true,
+      noLine: false,
+      commands: <VsdxPathCommand>[
+        const MoveTo(0, 0),
+        LineTo(shape.width, 0),
+        LineTo(shape.width, shape.height),
+        LineTo(0, shape.height),
+        const LineTo(0, 0),
+      ],
+    ),
+  ];
+}
+
+VsdxShape _glowPlateForLibvisioWrite(VsdxShape source, {required int id}) {
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioGlowShapeNamePrefix${source.id}',
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width,
+    height: source.height,
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: _glowPlateGeometriesForLibvisioWrite(source),
+    fill: const VsdxFill(pattern: 0),
+    line: _glowLineForLibvisio(
+      source.line.copyWith(
+        compoundType: 0,
+        beginArrow: 0,
+        endArrow: 0,
+        pattern: 1,
+      ),
+      source.glow,
+    ),
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+void _collectGlowPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioGlowSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectGlowPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioGlowPlateBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioGlowPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioGlowPlateBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeGlowPlateTree(
+  List<VsdxShape> shapes, {
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioGlowPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeGlowPlateTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioGlowPlateBake(next)) {
+      final plate = _glowPlateForLibvisioWrite(
+        next,
+        id: plateIds[next.id] ?? nextId(),
+      );
+      if (plate.geometries.isNotEmpty) {
+        out.add(plate);
+        changed = true;
+      }
+    } else {
+      final existingId = plateIds[next.id];
+      if (existingId != null) {
+        VsdxShape? kept;
+        for (final candidate in shapes) {
+          if (candidate.id == existingId) {
+            kept = candidate;
+            break;
+          }
+        }
+        if (kept != null) {
+          out.add(kept);
+        }
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+VsdxPage bakeGlowPlatePageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioGlowPlateBake(page)) return page;
+  final plateIds = <int, int>{};
+  _collectGlowPlateIds(page.shapes, plateIds);
+  var nextId = _maxShapeId(page.shapes) + 1;
+  return page.copyWith(
+    shapes: _bakeGlowPlateTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    ),
+  );
+}
+
+/// Insert (or keep) the sibling halos Draw uses when Glow cannot steal Line.
+VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeGlowPlatePageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
 }
 
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).
@@ -1059,7 +1261,10 @@ bool shapeNeedsLibvisioGlowBake(VsdxShape shape) {
 
 /// Glow cells Draw will collect. Size is 0 after a Line / Fill bake.
 VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
-  if (!shapeNeedsLibvisioGlowBake(shape)) return shape.glow;
+  if (!shapeNeedsLibvisioGlowBake(shape) &&
+      !shapeNeedsLibvisioGlowPlateBake(shape)) {
+    return shape.glow;
+  }
   return shape.glow.copyWith(enabled: false, sizeInches: 0);
 }
 

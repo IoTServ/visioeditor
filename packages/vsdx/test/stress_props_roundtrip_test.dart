@@ -109,7 +109,11 @@ void main() {
     expect(s1.geometries.where((g) => !g.noLine).length, greaterThan(1));
     expect(s1.shadow.enabled, isTrue);
     expect(s1.shadow.offsetXInches, closeTo(0.12, 1e-6));
-    expect(s1.glow.enabled, isTrue);
+    expect(s1.glow.enabled, isFalse);
+    expect(
+      again.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
     expect(s1.glow.color?.value, 0xFFF59E0B);
     expect(s1.reflection.enabled, isFalse);
     expect(s1.reflection.distanceInches, closeTo(0.05, 1e-6));
@@ -136,6 +140,10 @@ void main() {
     expect(s3.reflection.enabled, isFalse);
     expect(
       round2.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+    );
+    expect(
+      round2.pages.first.shapes.where(isLibvisioGlowPlate),
       hasLength(1),
     );
     expect(s3.glow.color?.value ?? 0xFFF59E0B, 0xFFF59E0B);
