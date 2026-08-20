@@ -70,7 +70,9 @@
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
-/// and drops `veCurvedText`.
+/// and drops `veCurvedText`. draw.io Shape Inside is also a User row, so
+/// a save bakes locked per-line siblings in the outline bands, hides the
+/// source and drops `veShapeInside`.
 library;
 
 import 'dart:io';
@@ -1308,6 +1310,106 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Shape Inside bakes per-line siblings for LibreOffice', () {
+    VsdxShape oval({
+      required int id,
+      bool inside = true,
+      bool flipX = false,
+    }) =>
+        VsdxShapeFactory.ellipse(
+          id: id,
+          pinX: 4,
+          pinY: 5,
+          width: 3,
+          height: 4,
+          name: 'Oval',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(flipX: flipX).withShapeInside(inside).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            );
+
+    final shape = oval(id: 1);
+    expect(shape.supportsShapeInside, isTrue);
+    expect(shapeNeedsLibvisioShapeInsideBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioShapeInsideBake(oval(id: 8, flipX: true)),
+      isFalse,
+    );
+    expect(
+      shapeNeedsLibvisioShapeInsideBake(
+        VsdxShapeFactory.rectangle(
+          id: 9,
+          pinX: 2,
+          pinY: 2,
+          width: 3,
+          height: 2,
+        ).withShapeInside(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'NO')],
+              ),
+            ),
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shapeInside, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioShapeInsidePlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates.length, greaterThanOrEqualTo(2));
+    expect(plates.every((p) => p.locked), isTrue);
+    expect(plates.first.width, lessThan(plates.last.width - 0.2));
+    expect(libvisioShapeInsideSourceId(plates.first), 1);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShapeInsidePlate),
+      hasLength(plates.length),
+      reason: 'a second save must not stack another Shape Inside plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.shapeInside, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioShapeInsidePlate).length,
+      plates.length,
+    );
+
+    final oracleInside = LibvisioOracle.tryLoad();
+    if (oracleInside == null) return;
+    expect(oracleInside.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {

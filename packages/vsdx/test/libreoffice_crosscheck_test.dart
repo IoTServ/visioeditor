@@ -2021,6 +2021,42 @@ void main() {
             ),
       ),
     );
+    var shapeInsideDocument = parser.parse(blank);
+    final shapeInsidePage = shapeInsideDocument.pages.first;
+    shapeInsideDocument = shapeInsideDocument.replacePage(
+      0,
+      shapeInsidePage.addShape(
+        VsdxShapeFactory.ellipse(
+          id: shapeInsidePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 4,
+          name: 'ShapeInside',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeInside(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2074,6 +2110,10 @@ void main() {
       'curved_text': writer.write(
         originalBytes: blank,
         edited: curvedTextDocument,
+      ),
+      'shape_inside': writer.write(
+        originalBytes: blank,
+        edited: shapeInsideDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2743,6 +2783,78 @@ void main() {
                 'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
           );
         }
+        if (entry.key == 'shape_inside' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final plates = page.shapes.where(isLibvisioShapeInsidePlate).toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates.length, greaterThanOrEqualTo(2));
+          expect(plates.first.width, lessThan(plates.last.width - 0.2));
+
+          int darkCount(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < 180) count++;
+              }
+            }
+            return count;
+          }
+
+          final lineInk = darkCount(
+            plates.first.pinX - 0.35,
+            plates.first.pinY - 0.12,
+            plates.first.pinX + 0.35,
+            plates.first.pinY + 0.12,
+          );
+          final cornerInk = darkCount(2.8, 7.15, 3.15, 7.45);
+          expect(
+            lineInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the top outline band; '
+                'line=$lineInk corner=$cornerInk',
+          );
+          expect(
+            cornerInk,
+            lessThan(3),
+            reason: 'LibreOffice must not wrap the label as a full rectangle '
+                'into the ellipse corner; line=$lineInk corner=$cornerInk',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2751,7 +2863,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts sixteen packages.
+      // default on a cold profile, and this case converts seventeen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

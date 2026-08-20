@@ -685,6 +685,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   already paint, writes `HideText=1` on the source and drops the User row.
   Glueable connector labels, flipped shapes, vertical text and tabbed
   labels keep the User row.
+- draw.io Shape Inside now survives a save into LibreOffice.
+  `User.veShapeInside` is not a token, so a save places locked per-line
+  siblings (`LibvisioShapeInside.{i}.{id}`) in the same outline bands
+  canvas and SVG already paint, writes `HideText=1` on the source and
+  drops the User row. Glueable connector labels, flipped shapes, vertical
+  text, curved text and tabbed labels keep the User row.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

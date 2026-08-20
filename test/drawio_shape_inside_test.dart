@@ -134,18 +134,20 @@ void main() {
     expect(value.currentPage!.findShapeById(id)!.shapeInsidePaddingPx, 2);
     value.redo();
 
-    final reopened = const DocumentParser()
-        .parse(value.exportToBytes())
-        .pages
-        .single
-        .findShapeById(id)!;
-    expect(reopened.shapeInside, isTrue);
-    expect(reopened.shapeInsidePaddingPx, 7);
+    final exported = value.exportToBytes();
+    final reopenedDoc = const DocumentParser().parse(exported);
+    final reopened = reopenedDoc.pages.single.findShapeById(id)!;
+    expect(reopened.shapeInside, isFalse);
+    expect(reopened.richText.textBlock.hideText, isTrue);
     expect(
       reopened.userCells
           .singleWhere((cell) => cell.name == 'foreignMeta')
           .value,
       'keep',
+    );
+    expect(
+      reopenedDoc.pages.single.shapes.where(isLibvisioShapeInsidePlate),
+      isNotEmpty,
     );
   });
 

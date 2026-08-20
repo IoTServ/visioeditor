@@ -91,7 +91,10 @@
 /// drops the User row. draw.io Curved Text is `User.veCurvedText`
 /// (not a token), so a save inserts locked per-glyph siblings along the
 /// same quadratic arc canvas / SVG already paint, hides the source
-/// (`HideText` is a token) and drops the User row. draw.io Word Wrap is `User.veWordWrap` (not a
+/// (`HideText` is a token) and drops the User row. draw.io Shape Inside is
+/// `User.veShapeInside` (not a token), so a save inserts locked per-line
+/// siblings in the same outline bands canvas / SVG already paint, hides
+/// the source and drops the User row. draw.io Word Wrap is `User.veWordWrap` (not a
 /// token), so a save expands TxtWidth to the unwrapped line plus margins
 /// (`svg:width` Draw wraps against) and drops the User row.
 library;
@@ -116,6 +119,7 @@ import 'rich_text.dart';
 import 'rounding.dart';
 import 'shape.dart';
 import 'shape_factory.dart';
+import 'shape_inside.dart';
 import 'sketch_style.dart';
 import 'user_property.dart';
 
@@ -130,19 +134,21 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
-    bakeWordWrapForLibvisioWrite(
-      bakeLabelBorderForLibvisioWrite(
-        bakeLabelPaddingForLibvisioWrite(
-          bakeGeometrySoftEdgesForLibvisioWrite(
-            bakeImageAdjustmentsForLibvisioWrite(
-              bakeReflectionForLibvisioWrite(
-                bakeGlowPlateForLibvisioWrite(
-                  bakeGlassForLibvisioWrite(
-                    bakeSketchForLibvisioWrite(
-                      bakeShadowForLibvisioWrite(
-                        bakeCurvedTextForLibvisioWrite(
-                          bakeShapeOpacityForLibvisioWrite(
-                            bakeOverlineForLibvisioWrite(hopped),
+    bakeShapeInsideForLibvisioWrite(
+      bakeWordWrapForLibvisioWrite(
+        bakeLabelBorderForLibvisioWrite(
+          bakeLabelPaddingForLibvisioWrite(
+            bakeGeometrySoftEdgesForLibvisioWrite(
+              bakeImageAdjustmentsForLibvisioWrite(
+                bakeReflectionForLibvisioWrite(
+                  bakeGlowPlateForLibvisioWrite(
+                    bakeGlassForLibvisioWrite(
+                      bakeSketchForLibvisioWrite(
+                        bakeShadowForLibvisioWrite(
+                          bakeCurvedTextForLibvisioWrite(
+                            bakeShapeOpacityForLibvisioWrite(
+                              bakeOverlineForLibvisioWrite(hopped),
+                            ),
                           ),
                         ),
                       ),
@@ -875,6 +881,20 @@ int? libvisioCurvedTextSourceId(VsdxShape plate) {
   return int.tryParse(plate.name.split('.').last);
 }
 
+/// Name prefix of the per-line siblings `User.veShapeInside` becomes.
+const kLibvisioShapeInsideShapeNamePrefix = 'LibvisioShapeInside.';
+
+/// Pixel density canvas / SVG use for draw.io `shapeInside` padding.
+const kLibvisioShapeInsidePxPerInch = 96.0;
+
+bool isLibvisioShapeInsidePlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioShapeInsideShapeNamePrefix);
+
+int? libvisioShapeInsideSourceId(VsdxShape plate) {
+  if (!isLibvisioShapeInsidePlate(plate)) return null;
+  return int.tryParse(plate.name.split('.').last);
+}
+
 bool isLibvisioShadowPlate(VsdxShape shape) =>
     shape.name.startsWith(kLibvisioShadowShapeNamePrefix);
 
@@ -904,6 +924,7 @@ bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioSoftEdgesPlate(shape) ||
     isLibvisioShadowPlate(shape) ||
     isLibvisioCurvedTextPlate(shape) ||
+    isLibvisioShapeInsidePlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
@@ -2523,6 +2544,451 @@ VsdxDocument bakeCurvedTextForLibvisioWrite(VsdxDocument document) {
     _collectCurvedTextPlateIds(page.shapes, plateIds);
     var nextId = _maxShapeId(page.shapes) + 1;
     final shapes = _bakeCurvedTextTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
+  }
+  if (!changed) return document;
+  return document.copyWith(pages: pages);
+}
+
+const _kLibvisioShapeInsideMaxLines = 24;
+
+bool _shapeInsideDefaultTextBlock(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  final tw = (block.widthInches ?? shape.width).abs();
+  final th = (block.heightInches ?? shape.height).abs();
+  return (block.widthInches == null || (tw - shape.width).abs() < 1e-6) &&
+      (block.heightInches == null || (th - shape.height).abs() < 1e-6) &&
+      (block.pinXInches == null ||
+          (block.pinXInches! - shape.width / 2).abs() < 1e-6) &&
+      (block.pinYInches == null ||
+          (block.pinYInches! - shape.height / 2).abs() < 1e-6);
+}
+
+/// `true` when `User.veShapeInside` must become per-line siblings for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so outline text-flow never becomes ODF. TxtWidth / HideText /
+/// HorzAlign *are* collected, so a save places one locked line shape per
+/// wrapped band canvas / SVG already paint, then hides the source and
+/// drops the User row. Glueable 1-D labels, vertical text, curved text,
+/// flipped shapes and tabbed labels stay native.
+bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (!shape.shapeInside || !shape.supportsShapeInside) return false;
+  if (!shape.wordWrap) return false;
+  if (shape.curvedText) return false;
+  if (shape.flipX || shape.flipY) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.richText.textBlock.textDirection == 1) return false;
+  if (shape.richText.textBlock.angleRad.abs() > 1e-12) return false;
+  if (shape.fields.isNotEmpty) return false;
+  if (!_shapeInsideDefaultTextBlock(shape)) return false;
+  final plain = _shapeInsidePlain(shape);
+  if (plain.trim().isEmpty) return false;
+  if (plain.contains('\t')) return false;
+  for (final run in shape.richText.runs) {
+    if (run.paraStyle.bullet != 0) return false;
+    if (run.paraStyle.indentFirstInches.abs() > 1e-9) return false;
+    if (run.paraStyle.indentLeftInches.abs() > 1e-9) return false;
+    if (run.paraStyle.indentRightInches.abs() > 1e-9) return false;
+  }
+  return true;
+}
+
+String _shapeInsidePlain(VsdxShape shape) {
+  final raw =
+      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
+  final text = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  final style = shape.richText.runs.isNotEmpty
+      ? shape.richText.runs.first.charStyle
+      : VsdxCharStyle.defaults;
+  return switch (style.textCase) {
+    VsdxTextCase.allCaps => text.toUpperCase(),
+    VsdxTextCase.initialCaps => _libvisioInitialCaps(text),
+    VsdxTextCase.normal => text,
+  };
+}
+
+VsdxCharStyle _shapeInsideStyle(VsdxShape shape) {
+  final style = shape.richText.runs.isNotEmpty
+      ? shape.richText.runs.first.charStyle
+      : VsdxCharStyle.defaults;
+  return style.copyWith(textCase: VsdxTextCase.normal);
+}
+
+VsdxParaStyle _shapeInsidePara(VsdxShape shape) =>
+    shape.richText.runs.isNotEmpty
+        ? shape.richText.runs.first.paraStyle
+        : const VsdxParaStyle();
+
+double _shapeInsideLineHeight(VsdxShape shape) {
+  final style = _shapeInsideStyle(shape);
+  final para = _shapeInsidePara(shape);
+  final plain = _shapeInsidePlain(shape);
+  var fs = math.max(style.effectiveFontSizeInchesForText(plain), 0.04);
+  if (para.lineSpacingAbsoluteInches > 1e-9) {
+    return para.lineSpacingAbsoluteInches;
+  }
+  final mult = para.lineSpacingSolid ? 1.0 : para.lineSpacing;
+  return fs *
+      (mult <= 0
+          ? 1.0
+          : mult *
+              (para.lineSpacingSolid
+                  ? 1.0
+                  : kLibreOfficeFontCellLineHeightFactor));
+}
+
+List<String> _libvisioWrapUnits(String text) {
+  final out = <String>[];
+  final buf = StringBuffer();
+  bool? inSpace;
+  void flush() {
+    if (buf.isEmpty) return;
+    out.add(buf.toString());
+    buf.clear();
+  }
+
+  for (final r in text.runes) {
+    final ch = String.fromCharCode(r);
+    final sp = ch == ' ' || ch == '\t';
+    if (inSpace != null && inSpace != sp) flush();
+    inSpace = sp;
+    buf.write(ch);
+  }
+  flush();
+  return out;
+}
+
+List<String> _wrapShapeInsideParagraph(
+  String para,
+  VsdxCharStyle style,
+  double Function(int lineIndex) widthFor,
+) {
+  if (para.isEmpty) return <String>[''];
+  final units = _libvisioWrapUnits(para);
+  final lines = <String>[];
+  var cur = StringBuffer();
+  var curW = 0.0;
+  var lineMax = widthFor(0);
+
+  void flush() {
+    lines.add(cur.toString());
+    cur = StringBuffer();
+    curW = 0.0;
+    lineMax = widthFor(lines.length);
+  }
+
+  for (final unit in units) {
+    final uw = nowrapTextAdvanceInches(unit, style);
+    final isBlank = unit.trim().isEmpty;
+    if (curW > 1e-9 && curW + uw > lineMax && !isBlank) {
+      flush();
+    }
+    if (cur.isEmpty && isBlank) continue;
+    if (uw > lineMax && unit.length > 1 && !isBlank) {
+      for (final r in unit.runes) {
+        final ch = String.fromCharCode(r);
+        final cw = nowrapTextAdvanceInches(ch, style);
+        if (curW > 1e-9 && curW + cw > lineMax) flush();
+        cur.write(ch);
+        curW += cw;
+      }
+      continue;
+    }
+    cur.write(unit);
+    curW += uw;
+  }
+  if (cur.isNotEmpty || lines.isEmpty) flush();
+  return lines;
+}
+
+({double left, double right}) _shapeInsideBandInches(
+  VsdxShape shape, {
+  required double y0,
+  required double y1,
+  required double tw,
+  required double th,
+  required double ml,
+  required double mr,
+  required double padding,
+}) {
+  final band = shape.shapeInsideBand(y0 / th, y1 / th);
+  final left = math.max(ml, (band?.left ?? 0) * tw + padding);
+  final right = math.min(tw - mr, (band?.right ?? 1) * tw - padding);
+  return (left: left, right: math.max(left + 0.01, right));
+}
+
+List<VsdxShape> _shapeInsidePlatesForLibvisioWrite(
+  VsdxShape source, {
+  required List<int> plateIds,
+  required int Function() nextId,
+}) {
+  final style = _shapeInsideStyle(source);
+  final para = _shapeInsidePara(source);
+  final plain = _shapeInsidePlain(source);
+  final block = source.richText.textBlock;
+  final tw = (block.widthInches ?? source.width).abs();
+  final th = (block.heightInches ?? source.height).abs();
+  final ml = block.marginLeftInches;
+  final mr = block.marginRightInches;
+  final mt = block.marginTopInches;
+  final mb = block.marginBottomInches;
+  final padding = source.shapeInsidePaddingPx / kLibvisioShapeInsidePxPerInch;
+  final lineHeight = _shapeInsideLineHeight(source);
+  if (tw <= 1e-9 || th <= 1e-9 || lineHeight <= 1e-9) {
+    return const <VsdxShape>[];
+  }
+  final paragraphs = plain.split('\n');
+  var top = mt;
+  var lines = <String>[];
+  for (var pass = 0; pass < 3; pass++) {
+    lines = <String>[];
+    var index = 0;
+    for (final paraText in paragraphs) {
+      final wrapped = _wrapShapeInsideParagraph(
+        paraText,
+        style,
+        (i) {
+          final y0 = top + (index + i) * lineHeight;
+          return _shapeInsideBandInches(
+                source,
+                y0: y0,
+                y1: y0 + lineHeight,
+                tw: tw,
+                th: th,
+                ml: ml,
+                mr: mr,
+                padding: padding,
+              ).right -
+              _shapeInsideBandInches(
+                source,
+                y0: y0,
+                y1: y0 + lineHeight,
+                tw: tw,
+                th: th,
+                ml: ml,
+                mr: mr,
+                padding: padding,
+              ).left;
+        },
+      );
+      lines.addAll(wrapped);
+      index += wrapped.length;
+    }
+    final total = lines.length * lineHeight;
+    top = switch (block.verticalAlign) {
+      VsdxVertAlign.top => mt,
+      VsdxVertAlign.bottom => th - mb - total,
+      VsdxVertAlign.middle => mt + (th - mt - mb - total) / 2,
+    };
+  }
+  var visible = 0;
+  for (final line in lines) {
+    if (line.trim().isNotEmpty) visible++;
+  }
+  if (visible == 0 || visible > _kLibvisioShapeInsideMaxLines) {
+    return const <VsdxShape>[];
+  }
+
+  final pinX = block.pinXInches ?? source.width / 2;
+  final pinY = block.pinYInches ?? source.height / 2;
+  final locX = block.locPinXInches ?? tw / 2;
+  final locY = block.locPinYInches ?? th / 2;
+  final originX = pinX - locX;
+  final originY = pinY - locY;
+  final out = <VsdxShape>[];
+  var glyph = 0;
+  for (var i = 0; i < lines.length; i++) {
+    final text = lines[i].trim();
+    if (text.isEmpty) continue;
+    final y0 = top + i * lineHeight;
+    final band = _shapeInsideBandInches(
+      source,
+      y0: y0,
+      y1: y0 + lineHeight,
+      tw: tw,
+      th: th,
+      ml: ml,
+      mr: mr,
+      padding: padding,
+    );
+    final bw = band.right - band.left;
+    final midX = (band.left + band.right) / 2;
+    final midYDown = y0 + lineHeight / 2;
+    final local = Offset2D(originX + midX, originY + th - midYDown);
+    final page = _parentFromLocal(source, local);
+    final id = glyph < plateIds.length ? plateIds[glyph] : nextId();
+    out.add(
+      VsdxShapeFactory.rectangle(
+        id: id,
+        pinX: page.x,
+        pinY: page.y,
+        width: bw,
+        height: lineHeight,
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 0),
+        name: '$kLibvisioShapeInsideShapeNamePrefix$glyph.${source.id}',
+      ).copyWith(
+        locPinXInches: bw / 2,
+        locPinYInches: lineHeight / 2,
+        angleRad: source.angleRad,
+        locked: true,
+        layerMemberIds: source.layerMemberIds,
+        text: text,
+        richText: VsdxRichText(
+          runs: <VsdxTextRun>[
+            VsdxTextRun(
+              text: text,
+              charStyle: style,
+              paraStyle: VsdxParaStyle(
+                horizontalAlign: para.effectiveHorizontalAlign,
+              ),
+            ),
+          ],
+          textBlock: VsdxTextBlock(
+            widthInches: bw,
+            heightInches: lineHeight,
+            locPinXInches: bw / 2,
+            locPinYInches: lineHeight / 2,
+            verticalAlign: VsdxVertAlign.middle,
+          ),
+        ),
+      ),
+    );
+    glyph++;
+  }
+  return out;
+}
+
+VsdxShape _sourceForLibvisioShapeInsideWrite(VsdxShape shape) {
+  final others = <VsdxUserCell>[
+    for (final cell in shape.userCells)
+      if (cell.name != VsdxShape.userShapeInside &&
+          cell.name != VsdxShape.userShapeInsidePadding)
+        cell,
+  ];
+  return shape.copyWith(
+    userCells: others,
+    richText: shape.richText.copyWith(
+      textBlock: shape.richText.textBlock.copyWith(hideText: true),
+    ),
+  );
+}
+
+void _collectShapeInsidePlateIds(
+  List<VsdxShape> shapes,
+  Map<int, List<int>> into,
+) {
+  for (final shape in shapes) {
+    final sourceId = libvisioShapeInsideSourceId(shape);
+    if (sourceId != null) {
+      (into[sourceId] ??= <int>[]).add(shape.id);
+    }
+    _collectShapeInsidePlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioShapeInsideBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioShapeInsidePlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioShapeInsideBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeShapeInsideTree(
+  List<VsdxShape> shapes, {
+  required Map<int, List<int>> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioShapeInsidePlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeShapeInsideTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioShapeInsideBake(next)) {
+      final plates = _shapeInsidePlatesForLibvisioWrite(
+        next,
+        plateIds: plateIds[next.id] ?? const <int>[],
+        nextId: nextId,
+      );
+      if (plates.isNotEmpty) {
+        out.add(_sourceForLibvisioShapeInsideWrite(next));
+        out.addAll(plates);
+        changed = true;
+        continue;
+      }
+    } else {
+      final existing = plateIds[next.id];
+      if (existing != null) {
+        out.add(next);
+        for (final id in existing) {
+          final kept = _findShapeById(shapes, id);
+          if (kept != null) {
+            out.add(kept);
+          }
+        }
+        changed = true;
+        continue;
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+/// Insert (or keep) the per-line siblings Draw uses for Shape Inside.
+VsdxDocument bakeShapeInsideForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    if (!pageNeedsLibvisioShapeInsideBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, List<int>>{};
+    _collectShapeInsidePlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeShapeInsideTree(
       page.shapes,
       plateIds: plateIds,
       nextId: () => nextId++,

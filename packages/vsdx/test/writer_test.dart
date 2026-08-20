@@ -2376,6 +2376,65 @@ void main() {
     );
   });
 
+  test('Shape Inside bakes per-line siblings and hides the source', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.ellipse(
+          id: id,
+          pinX: 4,
+          pinY: 5,
+          width: 3,
+          height: 4,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeInside(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    final source = midDoc.pages.first.findShapeById(id)!;
+    expect(source.shapeInside, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    final plates =
+        midDoc.pages.first.shapes.where(isLibvisioShapeInsidePlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates.length, greaterThanOrEqualTo(2));
+    expect(plates.first.width, lessThan(plates.last.width - 0.2));
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    expect(
+      parser.parse(again).pages.first.shapes.where(isLibvisioShapeInsidePlate),
+      hasLength(plates.length),
+      reason: 'a second save must not stack another Shape Inside plate',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
