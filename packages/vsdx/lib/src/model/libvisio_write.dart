@@ -58,7 +58,9 @@
 /// `Letterspace` is not a token; canvas / SVG already fold FontScale into
 /// tracking at 0.55×Size, and `readCharIX` *does* collect FontScale as
 /// `style:text-scale`, so a save adds Letterspace into FontScale and
-/// writes Letterspace 0.
+/// writes Letterspace 0. Page `PageColor` is not a token either
+/// (`readPageSheetProperties` only stores size, scale, and ShdwOffset*) —
+/// a save prepends a locked full-page plate so Draw paints the sheet.
 library;
 
 import 'dart:math' as math;
@@ -79,6 +81,7 @@ import 'perimeter.dart';
 import 'rich_text.dart';
 import 'rounding.dart';
 import 'shape.dart';
+import 'shape_factory.dart';
 
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
 VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
@@ -90,9 +93,102 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     pages.add(next);
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
-  return bakeImageAdjustmentsForLibvisioWrite(
-    bakeOverlineForLibvisioWrite(hopped),
+  return bakePageColorForLibvisioWrite(
+    bakeImageAdjustmentsForLibvisioWrite(
+      bakeOverlineForLibvisioWrite(hopped),
+    ),
   );
+}
+
+/// Shape name of the full-page plate `PageColor` becomes for Draw.
+const kLibvisioPageColorShapeName = 'LibvisioPageColor';
+
+bool _pageColorShouldPaint(VsdxPage page) {
+  final color = page.backgroundColor;
+  if (color == null || color.alpha == 0) return false;
+  if (color.value == VsdxColor.white.value) return false;
+  return page.widthInches > 1e-9 && page.heightInches > 1e-9;
+}
+
+VsdxShape _pageColorPlateForLibvisioWrite(VsdxPage page) {
+  final w = page.widthInches;
+  final h = page.heightInches;
+  final color = page.backgroundColor!;
+  final existingId = page.shapes
+      .where((s) => s.name == kLibvisioPageColorShapeName)
+      .firstOrNull
+      ?.id;
+  return VsdxShapeFactory.rectangle(
+    id: existingId ?? page.nextFreeShapeId(),
+    pinX: w / 2,
+    pinY: h / 2,
+    width: w,
+    height: h,
+    name: kLibvisioPageColorShapeName,
+    fill: VsdxFill(
+      foreground: VsdxColor.argb(255, color.red, color.green, color.blue),
+      pattern: 1,
+      foregroundTransparency: (1 - color.alpha / 255).clamp(0.0, 1.0),
+    ),
+    line: const VsdxLine(pattern: 0),
+  ).copyWith(
+    locPinXInches: w / 2,
+    locPinYInches: h / 2,
+    locked: true,
+  );
+}
+
+bool _pageColorPlateMatches(VsdxShape plate, VsdxShape expected) =>
+    (plate.width - expected.width).abs() < 1e-9 &&
+    (plate.height - expected.height).abs() < 1e-9 &&
+    (plate.pinX - expected.pinX).abs() < 1e-9 &&
+    (plate.pinY - expected.pinY).abs() < 1e-9 &&
+    plate.fill.foreground?.value == expected.fill.foreground?.value &&
+    (plate.fill.foregroundTransparency - expected.fill.foregroundTransparency)
+            .abs() <
+        1e-9 &&
+    plate.line.pattern == 0;
+
+/// `true` when [page] needs a full-page `PageColor` plate, or a stale plate
+/// stripped, so Draw paints the sheet colour `readPageSheetProperties` skips.
+bool pageNeedsLibvisioPageColorBake(VsdxPage page) {
+  final existing = page.shapes
+      .where((s) => s.name == kLibvisioPageColorShapeName)
+      .toList();
+  if (!_pageColorShouldPaint(page)) return existing.isNotEmpty;
+  if (existing.length != 1) return true;
+  if (page.shapes.first.id != existing.single.id) return true;
+  return !_pageColorPlateMatches(
+    existing.single,
+    _pageColorPlateForLibvisioWrite(page),
+  );
+}
+
+VsdxPage bakePageColorPageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioPageColorBake(page)) return page;
+  final others = <VsdxShape>[
+    for (final shape in page.shapes)
+      if (shape.name != kLibvisioPageColorShapeName) shape,
+  ];
+  if (!_pageColorShouldPaint(page)) {
+    return page.copyWith(shapes: others);
+  }
+  return page.copyWith(
+    shapes: <VsdxShape>[_pageColorPlateForLibvisioWrite(page), ...others],
+  );
+}
+
+/// Prepend (or strip) the full-page plate Draw uses in place of `PageColor`.
+VsdxDocument bakePageColorForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakePageColorPageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
 }
 
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).

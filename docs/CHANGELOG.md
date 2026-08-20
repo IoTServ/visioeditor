@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Page `PageColor` now survives a save into LibreOffice. The cell is not a
+  token (`readPageSheetProperties` only stores size, scale, and
+  `ShdwOffset*`), so a save prepends a locked full-page plate Draw can
+  fill. Clearing the page colour drops that plate. Canvas and SVG already
+  painted the sheet.
 - Paragraph `Bullet` 1–7 now paint the same default glyphs LibreOffice’s
   libvisio importer emits (`VSDContentCollector::_bulletFromParaFormat`).
   Types 5 and 6 were a black diamond and an en-dash; they are now U+2756

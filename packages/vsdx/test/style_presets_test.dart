@@ -42,11 +42,18 @@ void main() {
 }
 ''').build();
       final doc = const DocumentParser().parse(bytes);
-      expect(doc.pages.single.shapes.where((s) => !s.is1D), hasLength(2));
+      final nodes = doc.pages.single.shapes.where(
+        (s) => !s.is1D && s.name != kLibvisioPageColorShapeName,
+      );
+      expect(nodes, hasLength(2));
+      expect(
+        doc.pages.single.shapes.first.name,
+        kLibvisioPageColorShapeName,
+        reason: 'dark preset PageColor is not a token; Draw paints a plate',
+      );
       expect(validateDocument(doc).where((i) => i.severity == 'error'), isEmpty);
       // Dark primary fill on the service node.
-      final fills = doc.pages.single.shapes
-          .where((s) => !s.is1D)
+      final fills = nodes
           .map((s) => s.fill.foreground?.value)
           .whereType<int>()
           .toSet();

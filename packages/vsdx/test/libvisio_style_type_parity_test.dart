@@ -47,7 +47,8 @@
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
 /// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
 /// bake LineTo chamfers; arcs joins bake the same fillets as round
-/// (canvas `canvasStrokeJoin`).
+/// (canvas `canvasStrokeJoin`). Page `PageColor` is not a token, so a save
+/// prepends a locked full-page plate Draw can fill.
 library;
 
 import 'dart:io';
@@ -523,6 +524,68 @@ void main() {
     final after = parser.parse(saved).pages.first.findShapeById(1)!;
     expect(after.line.softEdgesInches, closeTo(0, 1e-9));
     expect(after.imagePartName, isNot(part));
+  });
+
+  test('PageColor bakes a full-page plate LibreOffice can collect', () {
+    const colour = VsdxColor(0xFF336699);
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(backgroundColor: colour),
+    );
+    expect(pageNeedsLibvisioPageColorBake(doc.pages.first), isTrue);
+    final baked = documentForLibvisioWrite(doc);
+    expect(pageNeedsLibvisioPageColorBake(baked.pages.first), isFalse);
+    expect(
+      baked.pages.first.shapes
+          .where((s) => s.name == kLibvisioPageColorShapeName),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where((s) => s.name == kLibvisioPageColorShapeName),
+      hasLength(1),
+      reason: 'a second save must not stack another plate',
+    );
+    final plate = baked.pages.first.shapes.first;
+    expect(plate.name, kLibvisioPageColorShapeName);
+    expect(plate.fill.foreground?.value, colour.value);
+    expect(plate.line.pattern, 0);
+    expect(plate.locked, isTrue);
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.backgroundColor?.value, colour.value);
+    expect(savedDoc.pages.first.shapes.first.name, kLibvisioPageColorShapeName);
+    expect(
+      savedDoc.pages.first.shapes.first.fill.foreground?.value,
+      colour.value,
+    );
+
+    final cleared = documentForLibvisioWrite(
+      savedDoc.replacePage(0, savedDoc.pages.first.withoutBackgroundColor()),
+    );
+    expect(
+      cleared.pages.first.shapes
+          .where((s) => s.name == kLibvisioPageColorShapeName),
+      isEmpty,
+      reason: 'clearing PageColor must drop the Draw plate',
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+    expect(
+      after.toLowerCase(),
+      contains('336699'),
+      reason: 'libvisio must fill the PageColor plate',
+    );
+    _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #336699']);
   });
 
   test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {

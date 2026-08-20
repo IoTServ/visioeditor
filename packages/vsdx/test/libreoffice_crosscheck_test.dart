@@ -988,6 +988,10 @@ void main() {
         ),
       ),
     );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.copyWith(backgroundColor: const VsdxColor(0xFF336699)),
+    );
     final generated = writer.write(originalBytes: blank, edited: doc);
     final reopenedDoc = parser.parse(generated);
     final reopenedCommands = reopenedDoc.pages.first.shapes
@@ -1195,6 +1199,11 @@ void main() {
           .pattern,
       1,
     );
+    final pageColorPlate = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == kLibvisioPageColorShapeName);
+    expect(reopenedDoc.pages.first.shapes.first.id, pageColorPlate.id);
+    expect(pageColorPlate.fill.foreground?.value, 0xFF336699);
+    expect(pageColorPlate.line.pattern, 0);
     final roundJoin =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
     expect(roundJoin.line.cap, LineCap.square);

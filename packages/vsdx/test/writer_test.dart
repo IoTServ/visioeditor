@@ -2010,6 +2010,11 @@ void main() {
     );
     final mid = writer.write(originalBytes: blank, edited: doc);
     expect(parser.parse(mid).pages.first.backgroundColor?.value, 0xFFF2F2F2);
+    expect(
+      parser.parse(mid).pages.first.shapes.first.name,
+      kLibvisioPageColorShapeName,
+      reason: 'PageColor is not a token; Draw paints a full-page plate',
+    );
 
     // copyWith(backgroundColor: null) must NOT clear — use the explicit API.
     final stuck = parser.parse(mid).pages.first;
@@ -2023,6 +2028,13 @@ void main() {
     final out = writer.write(originalBytes: mid, edited: doc);
     expect(parser.parse(out).pages.first.backgroundColor, isNull,
         reason: 'writer must drop PageColor cell on clear');
+    expect(
+      parser.parse(out).pages.first.shapes.where(
+            (s) => s.name == kLibvisioPageColorShapeName,
+          ),
+      isEmpty,
+      reason: 'clearing PageColor must drop the Draw plate',
+    );
   });
 
   test('Background / BackPage attributes round-trip', () {
