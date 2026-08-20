@@ -1135,6 +1135,19 @@ void main() {
                   ),
                 )
                 .withWordWrap(false),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 55,
+              pinX: 1.0,
+              pinY: 8.6,
+              width: 1.4,
+              height: 0.6,
+              name: 'GeometrySoft',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+              line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1367,6 +1380,14 @@ void main() {
       wordWrapBox.richText.textBlock.widthInches,
       greaterThan(0.8),
       reason: 'User.veWordWrap is not a token; save expands TxtWidth',
+    );
+    final geometrySoft = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'GeometrySoft');
+    expect(geometrySoft.fill.pattern, 0);
+    expect(geometrySoft.line.softEdgesInches, closeTo(0, 1e-9));
+    expect(
+      reopenedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
     );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
@@ -1894,6 +1915,23 @@ void main() {
             .withWordWrap(false),
       ),
     );
+    var geometrySoftDocument = parser.parse(blank);
+    final geometrySoftPage = geometrySoftDocument.pages.first;
+    geometrySoftDocument = geometrySoftDocument.replacePage(
+      0,
+      geometrySoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: geometrySoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GeometrySoft',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
+        ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1935,6 +1973,10 @@ void main() {
       'word_wrap': writer.write(
         originalBytes: blank,
         edited: wordWrapDocument,
+      ),
+      'geometry_soft': writer.write(
+        originalBytes: blank,
+        edited: geometrySoftDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2380,6 +2422,58 @@ void main() {
                 'overflow=$overflow wrapped=$wrapped',
           );
         }
+        if (entry.key == 'geometry_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          double meanRed(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                sum += rendered.getPixel(x, y).r;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          final centre = meanRed(3.9, 5.2, 4.6, 5.8);
+          final edge = meanRed(2.75, 5.2, 2.95, 5.8);
+          expect(
+            centre,
+            greaterThan(180),
+            reason: 'LibreOffice must paint the SoftEdges fill; '
+                'centre=$centre edge=$edge',
+          );
+          expect(
+            edge,
+            lessThan(centre - 25),
+            reason: 'LibreOffice must paint the feathered PNG edge, not a '
+                'hard fill; centre=$centre edge=$edge',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2388,7 +2482,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts thirteen packages.
+      // default on a cold profile, and this case converts fourteen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

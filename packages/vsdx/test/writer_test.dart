@@ -2238,6 +2238,41 @@ void main() {
     );
   });
 
+  test('geometry SoftEdges bakes a PNG sibling and clears the source fill', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.2,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    expect(midDoc.pages.first.findShapeById(id)!.fill.pattern, 0);
+    expect(midDoc.pages.first.findShapeById(id)!.line.softEdgesInches, 0);
+    expect(
+      midDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    expect(
+      parser.parse(again).pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -6768,8 +6803,15 @@ void main() {
       greaterThan(1),
       reason: 'CompoundType 1 must bake into parallel Geometry rails for LO',
     );
-    final after = parser.parse(saved).pages.first.findShapeById(id)!;
-    expect(after.line.softEdgesInches, closeTo(0.05, 1e-6));
+    final afterDoc = parser.parse(saved);
+    final after = afterDoc.pages.first.findShapeById(id)!;
+    expect(after.line.softEdgesInches, closeTo(0, 1e-6),
+        reason: 'SoftEdgesSize is not a token; the halo is a PNG sibling');
+    expect(after.fill.pattern, 0);
+    expect(
+      afterDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
     expect(after.line.compoundType, 0);
     expect(after.geometries.where((g) => !g.noLine).length, greaterThan(1));
   });

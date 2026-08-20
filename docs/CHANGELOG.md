@@ -665,6 +665,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   edge; centered overflow grows equally. Canvas and SVG already skipped
   wrapping. Glueable connector labels, vertical text, curved text and
   tabbed labels keep the User row.
+- Geometry `SoftEdgesSize` now survives a save into LibreOffice on filled
+  2-D vectors. The cell is not a token, so a save bakes a locked Foreign
+  sibling (`LibvisioSoftEdges.{id}`) whose PNG alpha uses the same
+  SourceAlpha feather canvas and SVG already paint, then writes
+  SoftEdgesSize 0 and drops the source fill so Draw shows the plate.
+  Pictures still feather in place. 1-D, hatches, gradients and theme-only
+  fills keep the cell.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

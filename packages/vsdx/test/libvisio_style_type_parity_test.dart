@@ -65,6 +65,8 @@
 /// save adds the pixel inset into Left/Right/Top/BottomMargin and drops
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
+/// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
+/// PNG sibling and drops the source fill.
 library;
 
 import 'dart:io';
@@ -935,17 +937,15 @@ void main() {
       name: 'WordWrapBox',
       fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
       line: const VsdxLine(pattern: 0),
-    )
-        .copyWith(
-          formulas: const <String, String>{
-            'TxtWidth': 'Width*1',
-            'TxtLocPinX': 'TxtWidth*0.5',
-          },
-          richText: const VsdxRichText(
-            runs: <VsdxTextRun>[VsdxTextRun(text: label)],
-          ),
-        )
-        .withWordWrap(false);
+    ).copyWith(
+      formulas: const <String, String>{
+        'TxtWidth': 'Width*1',
+        'TxtLocPinX': 'TxtWidth*0.5',
+      },
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[VsdxTextRun(text: label)],
+      ),
+    ).withWordWrap(false);
     expect(shapeNeedsLibvisioWordWrapBake(shape), isTrue);
     final needed = nowrapTxtWidthForLibvisioWrite(shape);
     expect(needed, greaterThan(0.8));
@@ -1022,6 +1022,91 @@ void main() {
     final after = savedDoc.pages.first.findShapeById(1)!;
     expect(after.wordWrap, isTrue);
     expect(after.richText.textBlock.widthInches, closeTo(needed, 1e-6));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('geometry SoftEdges bakes a feathered PNG sibling for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'GeometrySoft',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plates = baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.pinX, closeTo(2, 1e-9));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    expect(
+      decoded!.getPixel(0, 0).a,
+      lessThan(decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).a),
+      reason: 'SourceAlpha feather must fade the silhouette edge',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+
+    final oval = VsdxShapeFactory.ellipse(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(oval), isTrue);
+    var ovalDoc = parser.parse(blank);
+    ovalDoc = ovalDoc.replacePage(0, ovalDoc.pages.first.addShape(oval));
+    final ovalBaked = documentForLibvisioWrite(ovalDoc);
+    final ovalPlate =
+        ovalBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final ovalPng = ovalBaked.images.findByPart(ovalPlate.imagePartName!);
+    final ovalDecoded = raster.decodePng(ovalPng!.bytes)!;
+    expect(
+      ovalDecoded.getPixel(0, 0).a,
+      lessThan(20),
+      reason: 'ellipse SoftEdges PNG must keep corners empty',
+    );
+    expect(
+      ovalDecoded.getPixel(ovalDecoded.width ~/ 2, ovalDecoded.height ~/ 2).a,
+      greaterThan(200),
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 0);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

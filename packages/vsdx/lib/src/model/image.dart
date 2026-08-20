@@ -366,3 +366,116 @@ Uint8List? bakeVisioImageAdjustmentsPng({
     return null;
   }
 }
+
+/// Silhouette kinds [bakeSilhouetteSoftEdgesPng] can fill before feathering.
+enum SoftEdgesSilhouetteKind {
+  /// Axis-aligned box filling the bitmap (optional [roundingPx]).
+  rectangle,
+
+  /// Ellipse inscribed in the bitmap.
+  ellipse,
+
+  /// Closed [polygon] in pixel coordinates, y-down.
+  polygon,
+}
+
+/// Rasterize a solid silhouette and feather SourceAlpha like canvas SoftEdges.
+///
+/// Picture SoftEdges feathers a full-frame bitmap. Geometry SoftEdges must
+/// feather the painted alpha (ellipse / polygon), then Draw can show the PNG
+/// because `SoftEdgesSize` is not a token.
+Uint8List? bakeSilhouetteSoftEdgesPng({
+  required int widthPx,
+  required int heightPx,
+  required int red,
+  required int green,
+  required int blue,
+  required int alpha,
+  required double softSigmaPx,
+  SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
+  List<({double x, double y})> polygon = const <({double x, double y})>[],
+  double roundingPx = 0,
+}) {
+  if (widthPx < 2 || heightPx < 2) return null;
+  if (alpha <= 0) return null;
+  try {
+    var work = raster.Image(
+      width: widthPx,
+      height: heightPx,
+      numChannels: 4,
+    );
+    final color = raster.ColorRgba8(
+      red.clamp(0, 255),
+      green.clamp(0, 255),
+      blue.clamp(0, 255),
+      alpha.clamp(0, 255),
+    );
+    switch (kind) {
+      case SoftEdgesSilhouetteKind.rectangle:
+        raster.fillRect(
+          work,
+          x1: 0,
+          y1: 0,
+          x2: widthPx - 1,
+          y2: heightPx - 1,
+          color: color,
+          radius: roundingPx.clamp(0, math.min(widthPx, heightPx) / 2),
+          alphaBlend: false,
+        );
+      case SoftEdgesSilhouetteKind.ellipse:
+        final cx = (widthPx - 1) / 2;
+        final cy = (heightPx - 1) / 2;
+        final rx = math.max((widthPx - 1) / 2, 0.5);
+        final ry = math.max((heightPx - 1) / 2, 0.5);
+        for (var y = 0; y < heightPx; y++) {
+          for (var x = 0; x < widthPx; x++) {
+            final nx = (x + 0.5 - cx) / rx;
+            final ny = (y + 0.5 - cy) / ry;
+            if (nx * nx + ny * ny <= 1) {
+              work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+                  color.b.toInt(), color.a.toInt());
+            }
+          }
+        }
+      case SoftEdgesSilhouetteKind.polygon:
+        if (polygon.length < 3) return null;
+        raster.fillPolygon(
+          work,
+          vertices: <raster.Point>[
+            for (final p in polygon) raster.Point(p.x, p.y),
+          ],
+          color: color,
+        );
+    }
+    final sigma = softSigmaPx.clamp(0.0, 256.0);
+    if (sigma > 1e-6) {
+      final radius = math.max(1, (sigma * 1.5).round());
+      final pad = radius * 2;
+      var mask = raster.Image(
+        width: work.width + pad * 2,
+        height: work.height + pad * 2,
+        numChannels: 4,
+      );
+      for (var y = 0; y < work.height; y++) {
+        for (var x = 0; x < work.width; x++) {
+          final pixel = work.getPixel(x, y);
+          final a = (pixel.aNormalized * 255).round();
+          if (a <= 0) continue;
+          mask.setPixelRgba(x + pad, y + pad, 255, 255, 255, a);
+        }
+      }
+      mask = raster.gaussianBlur(mask, radius: radius);
+      for (var y = 0; y < work.height; y++) {
+        for (var x = 0; x < work.width; x++) {
+          final pixel = work.getPixel(x, y);
+          final m = mask.getPixel(x + pad, y + pad);
+          pixel.aNormalized =
+              (pixel.aNormalized * m.aNormalized).clamp(0.0, 1.0);
+        }
+      }
+    }
+    return raster.encodePng(work);
+  } catch (_) {
+    return null;
+  }
+}

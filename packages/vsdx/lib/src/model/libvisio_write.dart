@@ -48,7 +48,11 @@
 /// is not a token either: an uncropped 2-D Foreign bitmap bakes the same
 /// SourceAlpha feather canvas / SVG use, then SoftEdgesSize is written 0.
 /// Cropped pictures keep the cell — feathering the PNG would miss the
-/// ImgOffset frame Draw still collects. Character Overline
+/// ImgOffset frame Draw still collects. Geometry `SoftEdgesSize` is the
+/// same missing token: a filled 2-D shape bakes a locked Foreign sibling
+/// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use,
+/// then SoftEdgesSize is written 0 and the source fill is dropped so the
+/// plate is the body Draw paints. Character Overline
 /// is a token whose `readCharIX` case is empty, so a save inserts U+0305
 /// combining overlines and clears the cell. Glow* cells are not tokens;
 /// an unfilled stroke bakes a FillForegndTrans ribbon and a filled
@@ -86,6 +90,7 @@
 library;
 
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import '../export/compound_stroke.dart';
 import '../export/line_jumps.dart';
@@ -121,13 +126,15 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     bakeWordWrapForLibvisioWrite(
       bakeLabelBorderForLibvisioWrite(
         bakeLabelPaddingForLibvisioWrite(
-          bakeImageAdjustmentsForLibvisioWrite(
-            bakeReflectionForLibvisioWrite(
-              bakeGlowPlateForLibvisioWrite(
-                bakeGlassForLibvisioWrite(
-                  bakeSketchForLibvisioWrite(
-                    bakeShapeOpacityForLibvisioWrite(
-                      bakeOverlineForLibvisioWrite(hopped),
+          bakeGeometrySoftEdgesForLibvisioWrite(
+            bakeImageAdjustmentsForLibvisioWrite(
+              bakeReflectionForLibvisioWrite(
+                bakeGlowPlateForLibvisioWrite(
+                  bakeGlassForLibvisioWrite(
+                    bakeSketchForLibvisioWrite(
+                      bakeShapeOpacityForLibvisioWrite(
+                        bakeOverlineForLibvisioWrite(hopped),
+                      ),
                     ),
                   ),
                 ),
@@ -827,6 +834,22 @@ const kLibvisioLabelBorderPxPerInch = 96.0;
 /// Pixel density canvas / SVG use for draw.io `labelPadding`.
 const kLibvisioLabelPaddingPxPerInch = 96.0;
 
+/// Name prefix of the feathered PNG sibling geometry SoftEdges becomes.
+const kLibvisioSoftEdgesShapeNamePrefix = 'LibvisioSoftEdges.';
+
+/// Pixel density of the SourceAlpha PNG geometry SoftEdges bakes for Draw.
+const kLibvisioSoftEdgesPxPerInch = 96.0;
+
+bool isLibvisioSoftEdgesPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioSoftEdgesShapeNamePrefix);
+
+int? libvisioSoftEdgesSourceId(VsdxShape plate) {
+  if (!isLibvisioSoftEdgesPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioSoftEdgesShapeNamePrefix.length),
+  );
+}
+
 bool isLibvisioLabelBorderPlate(VsdxShape shape) =>
     shape.name.startsWith(kLibvisioLabelBorderShapeNamePrefix);
 
@@ -843,6 +866,7 @@ bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioReflectionPlate(shape) ||
     isLibvisioGlassPlate(shape) ||
     isLibvisioLabelBorderPlate(shape) ||
+    isLibvisioSoftEdgesPlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
@@ -2463,6 +2487,328 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
     pages: pagesChanged ? pages : document.pages,
     images: registry,
   );
+}
+
+/// `true` when geometry `SoftEdgesSize` must become a feathered PNG for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no
+/// SoftEdgesSize, so Draw paints a hard fill. Picture SoftEdges already
+/// feathers PNG alpha; a filled 2-D vector bakes the same SourceAlpha
+/// treatment into a locked Foreign sibling, then the source fill is
+/// dropped so the plate is the body. 1-D, pictures, hatches, gradients,
+/// and unresolved theme fills stay native.
+bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.hasImage) return false;
+  if (shape.children.isNotEmpty) return false;
+  if (shape.line.softEdgesInches <= 1e-6) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (shape.sketchEffect) return false;
+  if (!shape.fill.hasFill || shape.fill.pattern != 1) return false;
+  if (shape.fill.hasGradient) return false;
+  if (shape.fill.foreground == null) return false;
+  return _softEdgesSilhouetteKind(shape) != null;
+}
+
+SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
+  VsdxGeometry? geom;
+  for (final candidate in shape.geometries) {
+    if (candidate.noShow || candidate.noFill) continue;
+    geom = candidate;
+    break;
+  }
+  if (geom == null) return null;
+  if (geom.commands.length == 1 && geom.commands.first is EllipseCmd) {
+    return SoftEdgesSilhouetteKind.ellipse;
+  }
+  final points = _softEdgesPolygonInches(shape, geom);
+  if (points == null || points.length < 3) return null;
+  if (_softEdgesIsShapeBox(points, shape.width, shape.height)) {
+    return SoftEdgesSilhouetteKind.rectangle;
+  }
+  return SoftEdgesSilhouetteKind.polygon;
+}
+
+List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  final points = <Offset2D>[];
+  for (final cmd in geom.commands) {
+    switch (cmd) {
+      case MoveTo(:final x, :final y):
+        if (points.isNotEmpty) return null;
+        points.add(Offset2D(x, y));
+      case LineTo(:final x, :final y):
+        points.add(Offset2D(x, y));
+      case RelMoveTo(:final fx, :final fy):
+        if (points.isNotEmpty) return null;
+        points.add(Offset2D(fx * w, fy * h));
+      case RelLineTo(:final fx, :final fy):
+        points.add(Offset2D(fx * w, fy * h));
+      default:
+        return null;
+    }
+  }
+  if (points.length >= 2) {
+    final a = points.first;
+    final b = points.last;
+    if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) {
+      points.removeLast();
+    }
+  }
+  return points;
+}
+
+bool _softEdgesIsShapeBox(List<Offset2D> points, double w, double h) {
+  if (points.length < 4) return false;
+  var minX = points.first.x;
+  var minY = points.first.y;
+  var maxX = minX;
+  var maxY = minY;
+  for (final p in points) {
+    if (p.x < minX) minX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y > maxY) maxY = p.y;
+  }
+  return minX.abs() <= 1e-6 &&
+      minY.abs() <= 1e-6 &&
+      (maxX - w.abs()).abs() <= 1e-6 &&
+      (maxY - h.abs()).abs() <= 1e-6;
+}
+
+Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
+  final kind = _softEdgesSilhouetteKind(shape);
+  if (kind == null) return null;
+  final color = shape.fill.foreground!;
+  final trans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  var widthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var heightPx = math.max(8, (h * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(widthPx, heightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    widthPx = math.max(8, (widthPx * scale).round());
+    heightPx = math.max(8, (heightPx * scale).round());
+  }
+  final polygon = <({double x, double y})>[];
+  if (kind == SoftEdgesSilhouetteKind.polygon) {
+    VsdxGeometry? geom;
+    for (final candidate in shape.geometries) {
+      if (candidate.noShow || candidate.noFill) continue;
+      geom = candidate;
+      break;
+    }
+    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
+    if (inches == null) return null;
+    for (final p in inches) {
+      polygon.add((
+        x: p.x / w * (widthPx - 1),
+        y: (1 - p.y / h) * (heightPx - 1),
+      ));
+    }
+  }
+  return bakeSilhouetteSoftEdgesPng(
+    widthPx: widthPx,
+    heightPx: heightPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    softSigmaPx: shape.line.softEdgesInches / w * widthPx,
+    kind: kind,
+    polygon: polygon,
+    roundingPx: 0,
+  );
+}
+
+VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
+  return shape.copyWith(
+    fill: const VsdxFill(pattern: 0),
+    line: shape.line.copyWith(softEdgesInches: 0),
+  );
+}
+
+VsdxShape _softEdgesPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required String imagePartName,
+}) {
+  return VsdxShapeFactory.picture(
+    id: id,
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width,
+    height: source.height,
+    imagePartName: imagePartName,
+    name: '$kLibvisioSoftEdgesShapeNamePrefix${source.id}',
+  ).copyWith(
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    locked: true,
+    layerMemberIds: source.layerMemberIds,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+void _collectSoftEdgesPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioSoftEdgesSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectSoftEdgesPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioGeometrySoftEdgesBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioSoftEdgesPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioGeometrySoftEdgesBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+typedef _SoftEdgesImageSink = void Function(VsdxImage image);
+
+List<VsdxShape> _bakeGeometrySoftEdgesTree(
+  List<VsdxShape> shapes, {
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+  required String Function(int shapeId) allocatePart,
+  required _SoftEdgesImageSink addImage,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioSoftEdgesPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeGeometrySoftEdgesTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+        allocatePart: allocatePart,
+        addImage: addImage,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioGeometrySoftEdgesBake(next)) {
+      final png = _softEdgesPngForLibvisioWrite(next);
+      if (png != null) {
+        final part = allocatePart(next.id);
+        addImage(
+          VsdxImage(
+            partName: part,
+            bytes: png,
+            mimeType: 'image/png',
+          ),
+        );
+        final plate = _softEdgesPlateForLibvisioWrite(
+          next,
+          id: plateIds[next.id] ?? nextId(),
+          imagePartName: part,
+        );
+        out.add(plate);
+        out.add(_sourceForLibvisioGeometrySoftEdgesWrite(next));
+        changed = true;
+        continue;
+      }
+    } else {
+      final existingId = plateIds[next.id];
+      if (existingId != null) {
+        VsdxShape? kept;
+        for (final candidate in shapes) {
+          if (candidate.id == existingId) {
+            kept = candidate;
+            break;
+          }
+        }
+        if (kept != null) {
+          out.add(kept);
+          changed = true;
+        }
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+/// Insert (or keep) the feathered PNG siblings Draw uses for geometry SoftEdges.
+VsdxDocument bakeGeometrySoftEdgesForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_soft_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_soft_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    if (!pageNeedsLibvisioGeometrySoftEdgesBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, int>{};
+    _collectSoftEdgesPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeGeometrySoftEdgesTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+      allocatePart: allocatePart,
+      addImage: (image) {
+        registry = registry.withImage(image);
+        changed = true;
+      },
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
+  }
+  if (!changed) return document;
+  return document.copyWith(pages: pages, images: registry);
 }
 
 /// Cells and Geometry the writer should emit so Draw paints this shape.
