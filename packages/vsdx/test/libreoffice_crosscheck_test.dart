@@ -977,6 +977,26 @@ void main() {
                 ],
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 47,
+              pinX: 7.2,
+              pinY: 8.4,
+              width: 1.6,
+              height: 0.8,
+              name: 'Reflection',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFCC5533), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              reflection: const VsdxReflection(
+                enabled: true,
+                sizeInches: 0.45,
+                distanceInches: 0.06,
+                transparency: 0.4,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1204,6 +1224,17 @@ void main() {
     expect(reopenedDoc.pages.first.shapes.first.id, pageColorPlate.id);
     expect(pageColorPlate.fill.foreground?.value, 0xFF336699);
     expect(pageColorPlate.line.pattern, 0);
+    final reflectionSource = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'Reflection');
+    expect(reflectionSource.reflection.enabled, isFalse);
+    final reflectionPlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) =>
+          s.name ==
+          '$kLibvisioReflectionShapeNamePrefix${reflectionSource.id}',
+    );
+    expect(reflectionPlate.fill.foreground?.value, 0xFFCC5533);
+    expect(reflectionPlate.fill.foregroundTransparency, closeTo(0.4, 1e-9));
+    expect(reflectionPlate.line.pattern, 0);
     final roundJoin =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
     expect(roundJoin.line.cap, LineCap.square);

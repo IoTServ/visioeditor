@@ -3004,7 +3004,8 @@ class VsdxWriter {
       shadowWrite,
     );
     changed |= _patchGlow(el, base.glow, glowForLibvisioWrite(edited));
-    changed |= _patchReflection(el, base.reflection, edited.reflection);
+    changed |= _patchReflection(
+        el, base.reflection, reflectionForLibvisioWrite(edited));
     // Effects: force literal cell values without F= so StyleSheet Inh cannot
     // override enable bits / companions whether the effect is on or off
     // (mirrors SoftEdgesSize / FillGradientEnabled scrub paths).
@@ -3107,11 +3108,12 @@ class VsdxWriter {
         editedTheme: null,
       );
     }
-    if (!edited.reflection.enabled) {
+    final reflectionWrite = reflectionForLibvisioWrite(edited);
+    if (!reflectionWrite.enabled) {
       changed |= _forceLiteralZeroLength(el, 'ReflectionSize');
     } else {
       changed |= _ensureLiteralLength(
-          el, 'ReflectionSize', edited.reflection.sizeInches);
+          el, 'ReflectionSize', reflectionWrite.sizeInches);
     }
     // Dist/Blur/Trans kept for toggle-off → save → reopen → toggle-on.
     changed |= _ensureLiteralLength(
@@ -7629,9 +7631,10 @@ class VsdxWriter {
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
-    if (s.reflection.enabled) {
+    final reflectionWrite = reflectionForLibvisioWrite(s);
+    if (reflectionWrite.enabled) {
       children
-        ..add(_cell('ReflectionSize', _fmt(s.reflection.sizeInches)))
+        ..add(_cell('ReflectionSize', _fmt(reflectionWrite.sizeInches)))
         ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
         ..add(_cell('ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));
@@ -8283,9 +8286,10 @@ class VsdxWriter {
       }
       children.add(_cell('GlowColorTrans', _fmt(s.glow.transparency)));
     }
-    if (s.reflection.enabled) {
+    final reflectionWrite = reflectionForLibvisioWrite(s);
+    if (reflectionWrite.enabled) {
       children
-        ..add(_cell('ReflectionSize', _fmt(s.reflection.sizeInches)))
+        ..add(_cell('ReflectionSize', _fmt(reflectionWrite.sizeInches)))
         ..add(_cell('ReflectionDist', _fmt(s.reflection.distanceInches)))
         ..add(_cell('ReflectionTransparency', _fmt(s.reflection.transparency)))
         ..add(_cell('ReflectionBlur', _fmt(s.reflection.blurInches)));

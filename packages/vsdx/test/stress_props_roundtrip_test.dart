@@ -91,7 +91,12 @@ void main() {
     doc = doc.replacePage(0, doc.pages.first.copyWith(shapes: [shape]));
     final bytes1 = writer.write(originalBytes: blank, edited: doc);
     final again = parser.parse(bytes1);
-    final s1 = again.pages.first.shapes.first;
+    final s1 = again.pages.first.findShapeById(1)!;
+    expect(
+      again.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+      reason: 'Reflection* is not a token; Draw paints a sibling plate',
+    );
 
     expect(s1.fill.hasGradient, isTrue);
     expect(s1.fill.gradient!.angleRad, closeTo(math.pi / 4, 0.01));
@@ -106,23 +111,33 @@ void main() {
     expect(s1.shadow.offsetXInches, closeTo(0.12, 1e-6));
     expect(s1.glow.enabled, isTrue);
     expect(s1.glow.color?.value, 0xFFF59E0B);
-    expect(s1.reflection.enabled, isTrue);
+    expect(s1.reflection.enabled, isFalse);
     expect(s1.reflection.distanceInches, closeTo(0.05, 1e-6));
     expect(s1.text, 'Stress');
 
-    final s2 = s1.copyWith(
-      glow: s1.glow.copyWith(enabled: false),
-      shadow: s1.shadow.copyWith(enabled: false),
-    );
     final bytes2 = writer.write(
       originalBytes: bytes1,
-      edited: again.replacePage(0, again.pages.first.copyWith(shapes: [s2])),
+      edited: again.replacePage(
+        0,
+        again.pages.first.updateShapeById(
+          1,
+          (s) => s.copyWith(
+            glow: s.glow.copyWith(enabled: false),
+            shadow: s.shadow.copyWith(enabled: false),
+          ),
+        ),
+      ),
     );
-    final s3 = parser.parse(bytes2).pages.first.shapes.first;
+    final round2 = parser.parse(bytes2);
+    final s3 = round2.pages.first.findShapeById(1)!;
     expect(s3.glow.enabled, isFalse);
     expect(s3.shadow.enabled, isFalse);
     expect(s3.fill.hasGradient, isTrue);
-    expect(s3.reflection.enabled, isTrue);
+    expect(s3.reflection.enabled, isFalse);
+    expect(
+      round2.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+    );
     expect(s3.glow.color?.value ?? 0xFFF59E0B, 0xFFF59E0B);
 
     final svg = VsdxToSvgSerializer().serializeDocument(parser.parse(bytes1));

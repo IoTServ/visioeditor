@@ -47,8 +47,10 @@
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
 /// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
 /// bake LineTo chamfers; arcs joins bake the same fillets as round
-/// (canvas `canvasStrokeJoin`). Page `PageColor` is not a token, so a save
-/// prepends a locked full-page plate Draw can fill.
+/// (canvas `canvasStrokeJoin`). `Reflection*` cells are not tokens, so a
+/// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
+/// Draw collects, then `ReflectionSize` is written 0. Page `PageColor` is
+/// not a token, so a save prepends a locked full-page plate Draw can fill.
 library;
 
 import 'dart:io';
@@ -586,6 +588,106 @@ void main() {
       reason: 'libvisio must fill the PageColor plate',
     );
     _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #336699']);
+  });
+
+  test('Reflection bakes a sibling plate LibreOffice can collect', () {
+    const colour = VsdxColor(0xFFCC5533);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'Mirror',
+      fill: const VsdxFill(foreground: colour, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+    expect(reflectionForLibvisioWrite(shape).enabled, isFalse);
+    expect(reflectionForLibvisioWrite(shape).sizeInches, 0);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    expect(pageNeedsLibvisioReflectionBake(doc.pages.first), isTrue);
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioReflectionPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another plate',
+    );
+    final plate = baked.pages.first.shapes.first;
+    expect(plate.name, '${kLibvisioReflectionShapeNamePrefix}1');
+    expect(plate.locked, isTrue);
+    expect(plate.fill.foreground?.value, colour.value);
+    expect(plate.fill.foregroundTransparency, closeTo(0.4, 1e-9));
+    expect(plate.line.pattern, 0);
+    expect(
+      plate.geometries.single.commands.any((c) => switch (c) {
+            MoveTo(:final y) => y < -1e-6,
+            LineTo(:final y) => y < -1e-6,
+            _ => false,
+          }),
+      isTrue,
+      reason: 'mirror geometry sits below the source in local Y',
+    );
+    expect(baked.pages.first.findShapeById(1)!.reflection.enabled, isTrue,
+        reason: 'the in-memory source keeps the live effect; XML Size is 0');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final savedSource = savedDoc.pages.first.findShapeById(1)!;
+    expect(savedSource.reflection.enabled, isFalse);
+    expect(savedSource.reflection.distanceInches, closeTo(0.08, 1e-9));
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
+    expect(savedPlate.fill.foreground?.value, colour.value);
+    expect(savedPlate.fill.foregroundTransparency, closeTo(0.4, 1e-9));
+
+    final flipped = shape.copyWith(id: 2, name: 'FlipMirror', flipY: true);
+    expect(shapeNeedsLibvisioReflectionBake(flipped), isTrue);
+    var flipDoc = parser.parse(blank);
+    flipDoc = flipDoc.replacePage(0, flipDoc.pages.first.addShape(flipped));
+    final flippedPlate = documentForLibvisioWrite(flipDoc)
+        .pages
+        .first
+        .shapes
+        .firstWhere(isLibvisioReflectionPlate);
+    expect(
+      flippedPlate.geometries.single.commands.any((c) => switch (c) {
+            MoveTo(:final y) => y > flipped.height + 1e-6,
+            LineTo(:final y) => y > flipped.height + 1e-6,
+            _ => false,
+          }),
+      isTrue,
+      reason: 'FlipY mirror continues past local max Y (visual bottom)',
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+    expect(
+      after.toLowerCase(),
+      contains('cc5533'),
+      reason: 'libvisio must fill the Reflection plate',
+    );
+    _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #cc5533']);
   });
 
   test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {

@@ -2037,6 +2037,56 @@ void main() {
     );
   });
 
+  test('Reflection bakes a sibling plate and clears on disable', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFF336699), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.4,
+            distanceInches: 0.06,
+            transparency: 0.5,
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    expect(
+      midDoc.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+    );
+    expect(midDoc.pages.first.findShapeById(id)!.reflection.enabled, isFalse);
+
+    doc = midDoc.replacePage(
+      0,
+      midDoc.pages.first.copyWith(
+        shapes: [
+          for (final s in midDoc.pages.first.shapes)
+            if (!isLibvisioReflectionPlate(s)) s,
+        ],
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioReflectionPlate),
+      isEmpty,
+      reason: 'deleting the baked plate must drop it on save',
+    );
+  });
+
   test('Background / BackPage attributes round-trip', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -7501,9 +7551,14 @@ void main() {
     mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
     doc = parser.parse(mid);
     final midShape = doc.pages.first.findShapeById(id)!;
-    expect(midShape.reflection.enabled, isTrue);
+    expect(midShape.reflection.enabled, isFalse,
+        reason: 'Reflection* is not a token; Size is baked to 0');
     expect(midShape.reflection.distanceInches, closeTo(0.12, 1e-6));
     expect(midShape.reflection.blurInches, closeTo(0.08, 1e-6));
+    expect(
+      doc.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+    );
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
@@ -8000,7 +8055,8 @@ void main() {
     doc = parser.parse(mid);
     final shape = doc.pages.first.findShapeById(id)!;
     expect(shape.glow.enabled, isTrue);
-    expect(shape.reflection.enabled, isTrue);
+    expect(shape.reflection.enabled, isFalse,
+        reason: 'Reflection* is not a token; Size is baked to 0');
     expect(shape.glow.transparency, closeTo(0.25, 1e-6));
     expect(shape.reflection.transparency, closeTo(0.3, 1e-6));
     doc = doc.replacePage(
@@ -8017,15 +8073,20 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
+    final sourceEl = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Shape' && e.getAttribute('ID') == '$id',
+        );
     for (final entry in {
       'GlowColorTrans': 0.25,
       'ReflectionTransparency': 0.3,
     }.entries) {
-      final cell = XmlDocument.parse(outXml)
-          .descendants
-          .whereType<XmlElement>()
-          .firstWhere(
-            (e) => e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
+      final cell = sourceEl.children.whereType<XmlElement>().firstWhere(
+            (e) =>
+                e.name.local == 'Cell' && e.getAttribute('N') == entry.key,
           );
       expect(cell.getAttribute('F'), isNull, reason: entry.key);
       expect(double.parse(cell.getAttribute('V')!), closeTo(entry.value, 1e-6),

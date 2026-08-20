@@ -61,6 +61,9 @@
 /// writes Letterspace 0. Page `PageColor` is not a token either
 /// (`readPageSheetProperties` only stores size, scale, and ShdwOffset*) —
 /// a save prepends a locked full-page plate so Draw paints the sheet.
+/// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
+/// 2-D shape bakes a locked sibling plate whose FillForegndTrans Draw
+/// collects, then `ReflectionSize` is written 0.
 library;
 
 import 'dart:math' as math;
@@ -95,7 +98,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
     bakeImageAdjustmentsForLibvisioWrite(
-      bakeOverlineForLibvisioWrite(hopped),
+      bakeReflectionForLibvisioWrite(
+        bakeOverlineForLibvisioWrite(hopped),
+      ),
     ),
   );
 }
@@ -189,6 +194,370 @@ VsdxDocument bakePageColorForLibvisioWrite(VsdxDocument document) {
     pages.add(next);
   }
   return changed ? document.copyWith(pages: pages) : document;
+}
+
+/// Name prefix of the sibling plate `Reflection*` becomes for Draw.
+const kLibvisioReflectionShapeNamePrefix = 'LibvisioReflection.';
+
+bool isLibvisioReflectionPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioReflectionShapeNamePrefix);
+
+int? libvisioReflectionSourceId(VsdxShape plate) {
+  if (!isLibvisioReflectionPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioReflectionShapeNamePrefix.length),
+  );
+}
+
+double _combinedTransparency(double a, double b) =>
+    1 - (1 - a.clamp(0.0, 1.0)) * (1 - b.clamp(0.0, 1.0));
+
+double _paintY(VsdxShape shape, double localY) {
+  final sy = shape.flipY ? -1.0 : 1.0;
+  return sy * (localY - shape.effectiveLocPinY);
+}
+
+double _localYFromPaint(VsdxShape shape, double paintY) {
+  final sy = shape.flipY ? -1.0 : 1.0;
+  return shape.effectiveLocPinY + sy * paintY;
+}
+
+bool _ptsNear(Offset2D a, Offset2D b) =>
+    (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9;
+
+Offset2D _intersectAtY(Offset2D a, Offset2D b, double y) {
+  final dy = b.y - a.y;
+  if (dy.abs() < 1e-15) return Offset2D(a.x, y);
+  final t = (y - a.y) / dy;
+  return Offset2D(a.x + t * (b.x - a.x), y);
+}
+
+/// Sutherland–Hodgman against `y >= ymin` (paint-space Y-up).
+List<Offset2D> _clipKeepYAtLeast(
+  List<Offset2D> pts,
+  double ymin, {
+  required bool closed,
+}) {
+  if (pts.length < 2) return const <Offset2D>[];
+  var ring = pts;
+  if (closed && ring.length >= 2 && _ptsNear(ring.first, ring.last)) {
+    ring = ring.sublist(0, ring.length - 1);
+  }
+  if (ring.length < 2) return const <Offset2D>[];
+  final out = <Offset2D>[];
+  final n = closed ? ring.length : ring.length - 1;
+  for (var i = 0; i < n; i++) {
+    final start = ring[i];
+    final end = closed ? ring[(i + 1) % ring.length] : ring[i + 1];
+    final startIn = start.y >= ymin - 1e-12;
+    final endIn = end.y >= ymin - 1e-12;
+    if (closed) {
+      if (endIn) {
+        if (!startIn) out.add(_intersectAtY(start, end, ymin));
+        out.add(end);
+      } else if (startIn) {
+        out.add(_intersectAtY(start, end, ymin));
+      }
+    } else {
+      if (i == 0 && startIn) out.add(start);
+      if (startIn && endIn) {
+        out.add(end);
+      } else if (startIn && !endIn) {
+        out.add(_intersectAtY(start, end, ymin));
+      } else if (!startIn && endIn) {
+        out.add(_intersectAtY(start, end, ymin));
+        out.add(end);
+      }
+    }
+  }
+  if (closed && out.length >= 2 && !_ptsNear(out.first, out.last)) {
+    out.add(out.first);
+  }
+  return out.length >= 2 ? out : const <Offset2D>[];
+}
+
+List<VsdxPathCommand> _closedCommandsForRing(List<Offset2D> pts) {
+  if (pts.length < 2) return const <VsdxPathCommand>[];
+  var ring = pts;
+  if (_ptsNear(ring.first, ring.last)) {
+    ring = ring.sublist(0, ring.length - 1);
+  }
+  if (ring.length < 2) return const <VsdxPathCommand>[];
+  return <VsdxPathCommand>[
+    MoveTo(ring.first.x, ring.first.y),
+    for (var i = 1; i < ring.length; i++) LineTo(ring[i].x, ring[i].y),
+    LineTo(ring.first.x, ring.first.y),
+  ];
+}
+
+List<Offset2D> _aabbRing(VsdxShape shape) => <Offset2D>[
+      const Offset2D(0, 0),
+      Offset2D(shape.width, 0),
+      Offset2D(shape.width, shape.height),
+      Offset2D(0, shape.height),
+      const Offset2D(0, 0),
+    ];
+
+List<Offset2D> _reflectFillRing(
+  List<Offset2D> local,
+  VsdxShape shape, {
+  required double dist,
+  required double clipHeight,
+}) {
+  if (local.length < 2) return const <Offset2D>[];
+  final paint = <Offset2D>[
+    for (final p in local) Offset2D(p.x, _paintY(shape, p.y)),
+  ];
+  var bottom = paint.first.y;
+  var top = paint.first.y;
+  for (final p in paint) {
+    if (p.y < bottom) bottom = p.y;
+    if (p.y > top) top = p.y;
+  }
+  final span = top - bottom;
+  final reflected = <Offset2D>[
+    for (final p in paint) Offset2D(p.x, 2 * bottom - p.y - dist),
+  ];
+  final clipped = span <= 1e-9 || clipHeight >= span - 1e-9
+      ? reflected
+      : _clipKeepYAtLeast(
+          reflected,
+          bottom - dist - clipHeight,
+          closed: true,
+        );
+  return <Offset2D>[
+    for (final p in clipped) Offset2D(p.x, _localYFromPaint(shape, p.y)),
+  ];
+}
+
+List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
+  final dist = math.max(shape.reflection.distanceInches, 0.0);
+  final frac = shape.reflection.sizeInches.clamp(0.01, 1.0);
+  final out = <VsdxGeometry>[];
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noFill) continue;
+    final pts = _strokedVertices(geometry, shape);
+    if (pts == null || pts.length < 2) continue;
+    var bottom = _paintY(shape, pts.first.y);
+    var top = bottom;
+    for (final p in pts) {
+      final y = _paintY(shape, p.y);
+      if (y < bottom) bottom = y;
+      if (y > top) top = y;
+    }
+    final clipH = (top - bottom) * frac;
+    final ring = _reflectFillRing(pts, shape, dist: dist, clipHeight: clipH);
+    final commands = _closedCommandsForRing(ring);
+    if (commands.length < 3) continue;
+    out.add(
+      VsdxGeometry(
+        noFill: false,
+        noLine: true,
+        commands: commands,
+      ),
+    );
+  }
+  if (out.isNotEmpty) return out;
+  final fallback = _aabbRing(shape);
+  var bottom = _paintY(shape, fallback.first.y);
+  var top = bottom;
+  for (final p in fallback) {
+    final y = _paintY(shape, p.y);
+    if (y < bottom) bottom = y;
+    if (y > top) top = y;
+  }
+  final ring = _reflectFillRing(
+    fallback,
+    shape,
+    dist: dist,
+    clipHeight: (top - bottom) * frac,
+  );
+  final commands = _closedCommandsForRing(ring);
+  if (commands.length < 3) return const <VsdxGeometry>[];
+  return <VsdxGeometry>[
+    VsdxGeometry(noFill: false, noLine: true, commands: commands),
+  ];
+}
+
+/// `true` when Reflection* must become a sibling plate Draw actually fills.
+///
+/// `tokens.txt` has no ReflectionSize. Canvas / SVG already paint the mirror;
+/// LibreOffice only sees Fill / Line / Geometry, so a filled 2-D leaf bakes a
+/// NoLine sibling (FillForegndTrans is a token) and the live cells go to 0.
+bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
+  if (isLibvisioReflectionPlate(shape)) return false;
+  if (shape.is1D) return false;
+  final reflection = shape.reflection;
+  if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
+  if (reflection.transparency >= 1 - 1e-9) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  return _shapePaintsFill(shape, shape.geometries);
+}
+
+VsdxShape _reflectionPlateForLibvisioWrite(VsdxShape source, {required int id}) {
+  final trans = source.reflection.transparency;
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioReflectionShapeNamePrefix${source.id}',
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width,
+    height: source.height,
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: _reflectionGeometriesForLibvisioWrite(source),
+    fill: source.fill.copyWith(
+      foregroundTransparency: _combinedTransparency(
+        source.fill.foregroundTransparency,
+        trans,
+      ),
+      backgroundTransparency: _combinedTransparency(
+        source.fill.backgroundTransparency,
+        trans,
+      ),
+    ),
+    line: const VsdxLine(pattern: 0),
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+int _maxShapeId(List<VsdxShape> shapes) {
+  var maxId = 0;
+  void walk(VsdxShape shape) {
+    if (shape.id > maxId) maxId = shape.id;
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in shapes) {
+    walk(shape);
+  }
+  return maxId;
+}
+
+void _collectReflectionPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioReflectionSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectReflectionPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioReflectionBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioReflectionPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioReflectionBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeReflectionTree(
+  List<VsdxShape> shapes, {
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioReflectionPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeReflectionTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioReflectionBake(next)) {
+      final plate = _reflectionPlateForLibvisioWrite(
+        next,
+        id: plateIds[next.id] ?? nextId(),
+      );
+      if (plate.geometries.isNotEmpty) {
+        out.add(plate);
+        changed = true;
+      }
+    } else {
+      final existingId = plateIds[next.id];
+      if (existingId != null) {
+        VsdxShape? kept;
+        for (final candidate in shapes) {
+          if (candidate.id == existingId) {
+            kept = candidate;
+            break;
+          }
+        }
+        if (kept != null) {
+          out.add(kept);
+        }
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+VsdxPage bakeReflectionPageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioReflectionBake(page)) return page;
+  final plateIds = <int, int>{};
+  _collectReflectionPlateIds(page.shapes, plateIds);
+  var nextId = _maxShapeId(page.shapes) + 1;
+  return page.copyWith(
+    shapes: _bakeReflectionTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    ),
+  );
+}
+
+/// Insert (or strip) the sibling plates Draw uses in place of `Reflection*`.
+VsdxDocument bakeReflectionForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeReflectionPageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
+}
+
+/// Cells Draw will collect. Size is 0 after a sibling-plate bake.
+VsdxReflection reflectionForLibvisioWrite(VsdxShape shape) {
+  if (!shapeNeedsLibvisioReflectionBake(shape)) return shape.reflection;
+  return shape.reflection.copyWith(enabled: false, sizeInches: 0);
 }
 
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).

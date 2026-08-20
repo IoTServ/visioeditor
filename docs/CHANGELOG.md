@@ -588,6 +588,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `ShdwOffset*`), so a save prepends a locked full-page plate Draw can
   fill. Clearing the page colour drops that plate. Canvas and SVG already
   painted the sheet.
+- Shape `Reflection*` now survives a save into LibreOffice. Those cells
+  are not tokens, so a filled 2-D shape bakes a locked sibling plate
+  (`FillForegndTrans` is collected) clipped by `ReflectionSize`, then
+  `ReflectionSize` is written 0. Canvas and SVG already painted the
+  mirror.
 - Paragraph `Bullet` 1–7 now paint the same default glyphs LibreOffice’s
   libvisio importer emits (`VSDContentCollector::_bulletFromParaFormat`).
   Types 5 and 6 were a black diamond and an en-dash; they are now U+2756
