@@ -170,7 +170,7 @@ VsdxShape _expectedWritten(VsdxShape shape) {
     fill: write.fill.copyWith(
       pattern: fillPatternForLibvisioWrite(write.fill),
     ),
-    shadow: shadowForLibvisioWrite(shape.shadow),
+    shadow: shadowCellsForLibvisioWrite(shape),
     richText: shape.richText.copyWith(
       textBlock: textBlockForLibvisioWrite(shape),
       runs: [
@@ -467,9 +467,12 @@ List<String> _diffPage(VsdxPage a, VsdxPage b) {
     }
   }
 
-  final bById = {for (final s in b.shapes) s.id: s};
-  if (a.shapes.length != b.shapes.length) {
-    out.add('page.shapeCount: ${a.shapes.length} -> ${b.shapes.length}');
+  // Render-only siblings a save adds for Draw (PageColor plate, Gaussian
+  // shadow / glow PNGs, …) are write-time artifacts, not authoring state.
+  final bShapes = b.shapes.where((s) => !isLibvisioBakePlate(s)).toList();
+  final bById = {for (final s in bShapes) s.id: s};
+  if (a.shapes.length != bShapes.length) {
+    out.add('page.shapeCount: ${a.shapes.length} -> ${bShapes.length}');
   }
   for (final sa in a.shapes) {
     final sb = bById[sa.id];
@@ -846,10 +849,13 @@ void main() {
 
     final before = c.document!;
     final after = _parser.parse(c.exportToBytes());
-    expect(after.pages.first.shapes.length, before.pages.first.shapes.length,
+    // The page background bakes a render-only full-page PageColor plate.
+    final afterShapes =
+        after.pages.first.shapes.where((s) => !isLibvisioBakePlate(s)).toList();
+    expect(afterShapes.length, before.pages.first.shapes.length,
         reason: 'shape count / z-order changed');
     // Shape order (z-order) must be preserved id-for-id.
-    expect(after.pages.first.shapes.map((s) => s.id).toList(),
+    expect(afterShapes.map((s) => s.id).toList(),
         before.pages.first.shapes.map((s) => s.id).toList(),
         reason: 'z-order drift');
     final diffs = _diffPage(before.pages.first, after.pages.first);

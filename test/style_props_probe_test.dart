@@ -506,11 +506,22 @@ void main() {
     );
     final out = writer.write(originalBytes: blank, edited: doc);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.richText.textBlock.backgroundTransparency, closeTo(0.5, 1e-6));
+    // `TextBkgndTrans` has no VSDX collector case and `xmlStringToColour`
+    // zeroes alpha, so the save premultiplies the opacity into `TextBkgnd`
+    // RGB toward white and writes Trans 0. Draw paints the same tint.
+    final premultiplied =
+        colourForLibvisioAlpha(const VsdxColor(0xFFFF0000), 0.5);
+    expect(after.richText.textBlock.backgroundTransparency, closeTo(0, 1e-9));
+    expect(after.richText.textBlock.backgroundColor, premultiplied);
     final svg = VsdxToSvgSerializer().serializePage(
       parser.parse(out).pages.first,
     );
-    expect(svg.contains('fill-opacity="0.5"'), isTrue);
+    String pair(int v) => v.toRadixString(16).padLeft(2, '0');
+    expect(
+      svg.toLowerCase(),
+      contains('#${pair(premultiplied.red)}${pair(premultiplied.green)}'
+          '${pair(premultiplied.blue)}'),
+    );
   });
 
   test('SVG exports SoftEdgesSize blur filter', () {
@@ -821,8 +832,16 @@ void main() {
     bytes = writer.write(originalBytes: bytes, edited: doc);
     doc = parser.parse(bytes);
     final refl = doc.pages.first.findShapeById(id)!.reflection;
-    expect(refl.enabled, isTrue);
-    expect(refl.sizeInches, greaterThan(0));
+    // `Reflection*` is not a token, so the default size bakes a sibling plate
+    // and `ReflectionSize` goes to 0. The companions must still be the fresh
+    // defaults, not the previous custom Dist / Blur.
+    expect(refl.enabled, isFalse);
+    expect(refl.sizeInches, closeTo(0, 1e-9));
+    expect(
+      doc.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+      reason: 'the mirror is painted by the baked plate',
+    );
     expect(refl.distanceInches, closeTo(0.0, 1e-6));
     expect(refl.blurInches, closeTo(0.02, 1e-6));
     expect(refl.transparency, closeTo(0.6, 1e-6));
@@ -967,10 +986,18 @@ void main() {
     bytes = writer.write(originalBytes: bytes, edited: doc);
     doc = parser.parse(bytes);
     final sh = doc.pages.first.findShapeById(id)!.shadow;
-    expect(sh.enabled, isTrue);
+    // `ShadowBlur` is not a token, so the default 0.04 blur bakes a Gaussian
+    // PNG sibling and the source cells go to 0. The companions must still be
+    // the fresh defaults, not the previous custom offset / colour.
+    expect(sh.enabled, isFalse);
+    expect(sh.blurInches, closeTo(0, 1e-9));
+    expect(
+      doc.pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'the blurred shadow is painted by the baked plate',
+    );
     expect(sh.offsetXInches, closeTo(0.05, 1e-6));
     expect(sh.offsetYInches, closeTo(0.05, 1e-6));
-    expect(sh.blurInches, closeTo(0.04, 1e-6));
     expect(sh.transparency, closeTo(0.4, 1e-6));
     expect(sh.color, isNull);
   });

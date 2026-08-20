@@ -1457,7 +1457,13 @@ int? libvisioLabelBorderSourceId(VsdxShape plate) {
   );
 }
 
-bool _isLibvisioBakePlate(VsdxShape shape) =>
+/// `true` when [shape] is a render-only sibling a save added for Draw.
+///
+/// These plates carry an effect `tokens.txt` cannot express, so they appear
+/// in the saved package (and therefore after a reopen) even though the
+/// authoring model only had the effect cell. Round-trip checks should skip
+/// them; a second save recognises and reuses them instead of stacking.
+bool isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioSketchPlate(shape) ||
     isLibvisioGlowPlate(shape) ||
     isLibvisioReflectionPlate(shape) ||
@@ -1468,6 +1474,8 @@ bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioCurvedTextPlate(shape) ||
     isLibvisioShapeInsidePlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
+
+bool _isLibvisioBakePlate(VsdxShape shape) => isLibvisioBakePlate(shape);
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
@@ -6440,6 +6448,18 @@ VsdxShadow shadowForLibvisioWrite(VsdxShadow shadow) {
     transparency: 0,
     clearThemeColorIndex: true,
   );
+}
+
+/// Every shadow cell Draw will collect for [shape].
+///
+/// Adds the shape-level half [shadowForLibvisioWrite] cannot see: `ShdwPattern`
+/// and `ShadowBlur` go to 0 once a Gaussian PNG sibling carries the blur, so
+/// Draw does not add a second hard copy. Mirrors
+/// [reflectionForLibvisioWrite].
+VsdxShadow shadowCellsForLibvisioWrite(VsdxShape shape) {
+  final shadow = shadowForLibvisioWrite(shape.shadow);
+  if (!shapeNeedsLibvisioShadowBake(shape)) return shadow;
+  return shadow.copyWith(enabled: false, blurInches: 0);
 }
 
 /// Layer `Color` / `ColorTrans` Draw will collect.

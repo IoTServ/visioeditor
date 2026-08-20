@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Visio `CompoundType` 4 (triple) now has a translation in every shipped
+  locale. The Format control was localised only in English and Chinese, so
+  the other 35 locales fell back to the raw `compoundTriple` key.
+- Round-trip checks now treat the render-only siblings a save adds for Draw
+  (`LibvisioPageColor`, the Gaussian shadow / glow / reflection PNGs, …) as
+  write-time artifacts rather than model drift, and compare effect cells
+  against what the writer actually emits. The new public
+  `isLibvisioBakePlate` and `shadowCellsForLibvisioWrite` expose that
+  contract — the latter mirrors `reflectionForLibvisioWrite` by reporting
+  the `ShdwPattern` / `ShadowBlur` zeroing a Gaussian PNG bake performs.
 - Page `PageColor` now survives a save into LibreOffice. The cell is not a
   token (`readPageSheetProperties` only stores size, scale, and
   `ShdwOffset*`), so a save prepends a locked full-page plate Draw can

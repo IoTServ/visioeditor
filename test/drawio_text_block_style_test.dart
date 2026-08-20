@@ -65,6 +65,10 @@ void main() {
       expect(block.backgroundColor, const VsdxColor(0xFFFFCC33));
       value.redo();
 
+      // `TextBkgndTrans` has no VSDX collector case, so a save premultiplies
+      // the opacity into `TextBkgnd` RGB toward white and writes Trans 0.
+      final written =
+          textBlockForLibvisioWrite(value.currentPage!.findShapeById(id)!);
       final reopened = const DocumentParser()
           .parse(value.exportToBytes())
           .pages
@@ -72,8 +76,10 @@ void main() {
           .findShapeById(id)!
           .richText
           .textBlock;
-      expect(reopened.backgroundColor, const VsdxColor(0xFFFFCC33));
-      expect(reopened.backgroundTransparency, closeTo(0.35, 1e-6));
+      expect(reopened.backgroundColor, written.backgroundColor);
+      expect(reopened.backgroundColor, isNot(const VsdxColor(0xFFFFCC33)));
+      expect(reopened.backgroundTransparency,
+          closeTo(written.backgroundTransparency, 1e-6));
       expect(reopened.marginLeftInches, closeTo(0.1, 1e-6));
       expect(reopened.marginRightInches, closeTo(0.15, 1e-6));
       expect(reopened.marginTopInches, closeTo(0.2, 1e-6));
