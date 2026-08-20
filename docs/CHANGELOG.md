@@ -701,6 +701,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   and SVG already paint, then writes ShdwPattern 0 and ShadowBlur 0 so
   Draw does not add a second hard copy. Theme-only shadow colours, 1-D
   and unrecognised geometry keep the native cells.
+- PageSheet `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` now survive a
+  save into LibreOffice. Those cells are not in `tokens.txt` at all —
+  `readPageSheetProperties` collects only `ShdwOffset*` — so Draw painted a
+  plain offset copy of every shadow on an oblique page. A hard-edged shadow
+  now bakes the same scaled, sheared silhouette canvas and SVG already paint
+  into a locked NoLine sibling (`LibvisioPageShadow.{id}`) whose
+  `FillForegndTrans` Draw collects, then writes `ShdwPattern` 0 so Draw adds
+  no second unsheared copy. Blurred shadows keep the Gaussian PNG path; 1-D,
+  groups and theme-only shadow colours keep the native cells.
 - draw.io Curved Text now survives a save into LibreOffice. `User.veCurvedText`
   is not a token, so a save places locked per-glyph siblings
   (`LibvisioCurved.{i}.{id}`) along the same quadratic arc canvas and SVG

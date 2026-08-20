@@ -2405,6 +2405,43 @@ void main() {
             ),
           ),
         );
+    var obliqueShadowDocument = parser.parse(blank);
+    final obliqueShadowPage = obliqueShadowDocument.pages.first;
+    obliqueShadowDocument = obliqueShadowDocument.replacePage(
+      0,
+      obliqueShadowPage
+          .copyWith(
+            pageSheet: obliqueShadowPage.pageSheet.copyWith(
+              shadowType: 1,
+              shadowObliqueAngle: 0.6,
+              shadowScaleFactor: 1.0,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: obliqueShadowPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 2,
+              height: 2,
+              name: 'ObliqueShadowBox',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFEEEEEE),
+                pattern: 1,
+              ),
+              line: const VsdxLine(pattern: 0),
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.3,
+                offsetYInches: -0.3,
+                blurInches: 0,
+                transparency: 0,
+              ),
+            ),
+          ),
+    );
     var curvedTextDocument = parser.parse(blank);
     final curvedTextPage = curvedTextDocument.pages.first;
     curvedTextDocument = curvedTextDocument.replacePage(
@@ -2591,6 +2628,10 @@ void main() {
       'reflection_stroke': writer.write(
         originalBytes: blank,
         edited: reflectionStrokeDocument,
+      ),
+      'oblique_shadow': writer.write(
+        originalBytes: blank,
+        edited: obliqueShadowDocument,
       ),
       'curved_text': writer.write(
         originalBytes: blank,
@@ -3898,6 +3939,93 @@ void main() {
             greaterThan(200),
             reason: 'the band interior must stay hollow, not a filled mirror; '
                 'interiorR=${bandInterior.r} interiorB=${bandInterior.b}',
+          );
+        }
+        if (entry.key == 'oblique_shadow') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          expect(page.pageSheet.shadowType, 1);
+          expect(page.pageSheet.shadowObliqueAngle, closeTo(0.6, 1e-9));
+          final source =
+              page.shapes.firstWhere((s) => s.name == 'ObliqueShadowBox');
+          expect(source.shadow.enabled, isFalse,
+              reason: 'ShdwPattern 0 so Draw adds no unsheared copy');
+          final plate = page.shapes.where(isLibvisioPageShadowPlate).single;
+          expect(plate.fill.foreground?.value, 0xFF000000);
+          expect(plate.line.pattern, 0);
+          expect(
+              page.shapes.indexOf(plate),
+              lessThan(
+                page.shapes.indexOf(source),
+              ));
+        }
+        if (entry.key == 'oblique_shadow' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          // Positive ShdwObliqueAngle leans the shadow's top edge right, so
+          // the band past the shape's right edge is dark while the mirrored
+          // upper-left band still shows the light shape body.
+          final leanRight = meanLuma(5.45, 5.90, 6.00, 6.10);
+          final bodyUpperLeft = meanLuma(3.35, 5.90, 3.90, 6.10);
+          final below = meanLuma(3.20, 4.25, 4.40, 4.45);
+          expect(
+            leanRight,
+            lessThan(120),
+            reason: 'LibreOffice must paint the sheared shadow leaning right; '
+                'leanRight=$leanRight bodyUpperLeft=$bodyUpperLeft',
+          );
+          expect(
+            bodyUpperLeft,
+            greaterThan(200),
+            reason: 'the mirrored side must stay the light shape body, '
+                'proving the shear direction; leanRight=$leanRight '
+                'bodyUpperLeft=$bodyUpperLeft',
+          );
+          expect(
+            below,
+            lessThan(120),
+            reason: 'the offset shadow must still sit below the shape; '
+                'below=$below',
           );
         }
         if (entry.key == 'curved_text' && pdftoppm != null) {

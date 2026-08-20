@@ -1752,6 +1752,158 @@ void main() {
     expect(oracleSoft.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('page oblique shadow bakes a sheared sibling for LibreOffice', () {
+    const colour = VsdxColor(0xFF000000);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 1.4,
+      height: 0.8,
+      name: 'ObliqueShadow',
+      fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: colour,
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0,
+        transparency: 0.4,
+      ),
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final upright = doc.pages.first.addShape(shape);
+    expect(
+      shapeNeedsLibvisioPageShadowBake(shape, upright),
+      isFalse,
+      reason: 'a plain page keeps the native ShdwOffset* Draw collects',
+    );
+
+    final obliquePage = upright.copyWith(
+      pageSheet: upright.pageSheet.copyWith(
+        shadowType: 1,
+        shadowObliqueAngle: 0.5,
+        shadowScaleFactor: 1.2,
+      ),
+    );
+    expect(pageSheetShearsLibvisioShadows(obliquePage.pageSheet), isTrue);
+    expect(shapeNeedsLibvisioPageShadowBake(shape, obliquePage), isTrue);
+    expect(
+      shapeNeedsLibvisioPageShadowBake(
+        shape.copyWith(shadow: shape.shadow.copyWith(blurInches: 0.08)),
+        obliquePage,
+      ),
+      isFalse,
+      reason: 'a blurred shadow keeps the Gaussian PNG path',
+    );
+
+    doc = doc.replacePage(0, obliquePage);
+    expect(pageNeedsLibvisioPageShadowBake(doc.pages.first), isTrue);
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioPageShadowPlate).toList();
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.name, '${kLibvisioPageShadowShapeNamePrefix}1');
+    expect(plate.locked, isTrue);
+    expect(plate.line.pattern, 0);
+    expect(plate.fill.pattern, 1);
+    expect(plate.fill.foreground?.value, 0xFF000000);
+    // colourAlpha 1.0 × (1 - 0.4) opacity → FillForegndTrans 0.4.
+    expect(plate.fill.foregroundTransparency, closeTo(0.4, 1e-9));
+    // The page-space offset rides on the pin, like the Gaussian PNG plate.
+    expect(plate.pinX, closeTo(3.2, 1e-9));
+    expect(plate.pinY, closeTo(2.85, 1e-9));
+
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shadow.enabled, isFalse,
+        reason: 'ShdwPattern 0 so Draw adds no unsheared copy');
+    expect(source.fill.foreground?.value, 0xFF1565C0);
+    expect(
+      baked.pages.first.shapes.indexOf(plate),
+      lessThan(baked.pages.first.shapes.indexOf(source)),
+      reason: 'the shadow paints behind its shape',
+    );
+
+    // The silhouette must be sheared: a rectangle becomes a parallelogram,
+    // so top and bottom edges no longer share an X range.
+    final xs = <double>[
+      for (final c in plate.geometries.single.commands)
+        switch (c) {
+          MoveTo(:final x) => x,
+          LineTo(:final x) => x,
+          _ => double.nan,
+        },
+    ]..removeWhere((v) => v.isNaN);
+    final ys = <double>[
+      for (final c in plate.geometries.single.commands)
+        switch (c) {
+          MoveTo(:final y) => y,
+          LineTo(:final y) => y,
+          _ => double.nan,
+        },
+    ]..removeWhere((v) => v.isNaN);
+    expect(xs, isNotEmpty);
+    final topXs = <double>[
+      for (var i = 0; i < xs.length; i++)
+        if (ys[i] > shape.height / 2) xs[i],
+    ];
+    final bottomXs = <double>[
+      for (var i = 0; i < xs.length; i++)
+        if (ys[i] <= shape.height / 2) xs[i],
+    ];
+    expect(topXs, isNotEmpty);
+    expect(bottomXs, isNotEmpty);
+    expect(
+      topXs.reduce(math.min),
+      greaterThan(bottomXs.reduce(math.min) + 1e-6),
+      reason: 'positive oblique angle must lean the top edge right',
+    );
+    expect(
+      ys.reduce(math.max) - ys.reduce(math.min),
+      greaterThan(shape.height + 1e-6),
+      reason: 'ShdwScaleFactor 1.2 must grow the silhouette',
+    );
+
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioPageShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another sheared plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.pageSheet.shadowType, 1);
+    expect(
+      savedDoc.pages.first.pageSheet.shadowObliqueAngle,
+      closeTo(0.5, 1e-9),
+    );
+    expect(
+      savedDoc.pages.first.pageSheet.shadowScaleFactor,
+      closeTo(1.2, 1e-9),
+    );
+    expect(savedDoc.pages.first.findShapeById(1)!.shadow.enabled, isFalse);
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioPageShadowShapeNamePrefix}1');
+    expect(savedPlate.fill.foreground?.value, 0xFF000000);
+    expect(
+        savedPlate.geometries.single.commands.whereType<LineTo>(), isNotEmpty);
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+    _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #000000']);
+  });
+
   test('picture ShadowBlur bakes a Gaussian PNG sibling for LibreOffice', () {
     const part = '/visio/media/shadow.png';
     final rasterImage = raster.Image(width: 16, height: 16);

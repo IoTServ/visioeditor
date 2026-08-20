@@ -63,6 +63,11 @@
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
 /// Draw does not add a second hard copy. A Foreign picture with blur
 /// bakes the same way from the image-frame silhouette canvas uses.
+/// PageSheet `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not
+/// tokens at all — `readPageSheetProperties` only collects ShdwOffset* — so
+/// a hard-edged shadow on an oblique page bakes the sheared, scaled
+/// silhouette canvas `_applyPageShadowXform` paints into a locked NoLine
+/// sibling whose FillForegndTrans Draw collects, then ShdwPattern goes to 0.
 /// Character Overline is a token whose `readCharIX` case is empty, so a
 /// save inserts U+0305 combining overlines and clears the cell. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a FillForegndTrans
@@ -162,11 +167,13 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                   bakeGlowPlateForLibvisioWrite(
                     bakeGlassForLibvisioWrite(
                       bakeSketchForLibvisioWrite(
-                        bakeShadowForLibvisioWrite(
-                          bakeCurvedTextForLibvisioWrite(
-                            bakeShapeOpacityForLibvisioWrite(
-                              bakeOverlineForLibvisioWrite(
-                                bakeAutoRotateLabelForLibvisioWrite(hopped),
+                        bakePageShadowForLibvisioWrite(
+                          bakeShadowForLibvisioWrite(
+                            bakeCurvedTextForLibvisioWrite(
+                              bakeShapeOpacityForLibvisioWrite(
+                                bakeOverlineForLibvisioWrite(
+                                  bakeAutoRotateLabelForLibvisioWrite(hopped),
+                                ),
                               ),
                             ),
                           ),
@@ -1471,6 +1478,7 @@ bool isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioLabelBorderPlate(shape) ||
     isLibvisioSoftEdgesPlate(shape) ||
     isLibvisioShadowPlate(shape) ||
+    isLibvisioPageShadowPlate(shape) ||
     isLibvisioCurvedTextPlate(shape) ||
     isLibvisioShapeInsidePlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
@@ -4890,6 +4898,259 @@ VsdxDocument bakeShadowForLibvisioWrite(VsdxDocument document) {
   }
   if (!changed) return document;
   return document.copyWith(pages: pages, images: registry);
+}
+
+/// Name prefix of the sheared sibling a page oblique shadow becomes for Draw.
+const kLibvisioPageShadowShapeNamePrefix = 'LibvisioPageShadow.';
+
+bool isLibvisioPageShadowPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioPageShadowShapeNamePrefix);
+
+int? libvisioPageShadowSourceId(VsdxShape plate) {
+  if (!isLibvisioPageShadowPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioPageShadowShapeNamePrefix.length),
+  );
+}
+
+/// `true` when the PageSheet skews or scales drop shadows.
+///
+/// `readPageSheetProperties` only collects `ShdwOffsetX` / `ShdwOffsetY`;
+/// `ShdwType`, `ShdwObliqueAngle` and `ShdwScaleFactor` are not even in
+/// `tokens.txt`, so Draw always paints a plain offset copy.
+bool pageSheetShearsLibvisioShadows(VsdxPageSheet sheet) =>
+    sheet.shadowType != 0 ||
+    sheet.shadowObliqueAngle.abs() > 1e-9 ||
+    (sheet.shadowScaleFactor - 1.0).abs() > 1e-9;
+
+/// `true` when a page oblique shadow must become a sheared sibling for Draw.
+///
+/// Canvas `_applyPageShadowXform` scales and shears the silhouette about the
+/// shape LocPin before offsetting it. Blurred shadows already bake a Gaussian
+/// PNG, so this covers the hard-edged ones Draw would otherwise draw
+/// unsheared. 1-D, groups and unresolved theme colours stay native.
+bool shapeNeedsLibvisioPageShadowBake(VsdxShape shape, VsdxPage page) {
+  if (!pageSheetShearsLibvisioShadows(page.pageSheet)) return false;
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D) return false;
+  if (shape.children.isNotEmpty) return false;
+  if (!shape.shadow.enabled) return false;
+  // Blur takes the Gaussian PNG path instead.
+  if (shape.shadow.blurInches > 1e-6) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (shape.shadow.color == null && shape.shadow.themeColorIndex != null) {
+    return false;
+  }
+  if (!_shapePaintsFill(shape, shape.geometries) && !shape.hasImage) {
+    return false;
+  }
+  return _pageShadowGeometriesForLibvisioWrite(shape, page).isNotEmpty;
+}
+
+/// The shape silhouette scaled and sheared about LocPin, matching canvas.
+///
+/// The page-space shadow offset rides on the plate pin (like the Gaussian PNG
+/// plate) so a rotated shape does not rotate its offset.
+List<VsdxGeometry> _pageShadowGeometriesForLibvisioWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
+  final sheet = page.pageSheet;
+  final scale = sheet.shadowScaleFactor;
+  final shear = math.tan(sheet.shadowObliqueAngle);
+  final cx = shape.effectiveLocPinX;
+  final cy = shape.effectiveLocPinY;
+  Offset2D map(Offset2D p) {
+    final qy = (p.y - cy) * scale;
+    final qx = (p.x - cx) * scale + shear * qy;
+    return Offset2D(qx + cx, qy + cy);
+  }
+
+  final out = <VsdxGeometry>[];
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow) continue;
+    // A Foreign frame is NoFill but still supplies the image silhouette.
+    if (geometry.noFill && !shape.hasImage) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 3) continue;
+    final commands = _closedCommandsForRing(
+      <Offset2D>[for (final p in points) map(p)],
+    );
+    if (commands.length < 3) continue;
+    out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+  }
+  return out;
+}
+
+VsdxShape _pageShadowPlateForLibvisioWrite(
+  VsdxShape source,
+  VsdxPage page, {
+  required int id,
+}) {
+  final sheet = page.pageSheet;
+  final dx = libvisioEffectiveShadowOffset(
+    source.shadow.offsetXInches,
+    sheet.shadowOffsetXInches,
+  );
+  final dy = libvisioEffectiveShadowOffset(
+    source.shadow.offsetYInches,
+    sheet.shadowOffsetYInches,
+  );
+  final colour = source.shadow.color ?? _kLibvisioShadowFallback;
+  // Canvas opacity is colourAlpha × (1 - ShdwForegndTrans) × (1 - FillTrans);
+  // FillForegndTrans is a token, so carry all three there.
+  final opacity = colour.alpha /
+      255 *
+      (1 - source.shadow.transparency.clamp(0.0, 1.0)) *
+      (1 - source.fill.foregroundTransparency.clamp(0.0, 1.0));
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioPageShadowShapeNamePrefix${source.id}',
+    pinX: source.pinX + dx,
+    pinY: source.pinY + dy,
+    width: source.width,
+    height: source.height,
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: _pageShadowGeometriesForLibvisioWrite(source, page),
+    fill: VsdxFill(
+      foreground: VsdxColor.argb(255, colour.red, colour.green, colour.blue),
+      pattern: 1,
+      foregroundTransparency: (1 - opacity).clamp(0.0, 1.0),
+    ),
+    line: const VsdxLine(pattern: 0),
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+/// `ShdwPattern` 0 so Draw does not add its own unsheared copy.
+VsdxShape _sourceForLibvisioPageShadowWrite(VsdxShape shape) =>
+    shape.copyWith(shadow: shape.shadow.copyWith(enabled: false));
+
+void _collectPageShadowPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioPageShadowSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectPageShadowPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioPageShadowBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioPageShadowPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioPageShadowBake(shape, page)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakePageShadowTree(
+  List<VsdxShape> shapes, {
+  required VsdxPage page,
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioPageShadowPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakePageShadowTree(
+        shape.children,
+        page: page,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioPageShadowBake(next, page)) {
+      final plate = _pageShadowPlateForLibvisioWrite(
+        next,
+        page,
+        id: plateIds[next.id] ?? nextId(),
+      );
+      if (plate.geometries.isNotEmpty) {
+        out.add(plate);
+        out.add(_sourceForLibvisioPageShadowWrite(next));
+        changed = true;
+        continue;
+      }
+    } else {
+      final existingId = plateIds[next.id];
+      if (existingId != null) {
+        VsdxShape? kept;
+        for (final candidate in shapes) {
+          if (candidate.id == existingId) {
+            kept = candidate;
+            break;
+          }
+        }
+        if (kept != null) {
+          out.add(kept);
+          changed = true;
+        }
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+/// Insert (or keep) the sheared siblings Draw uses for a page oblique shadow.
+VsdxDocument bakePageShadowForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    if (!pageNeedsLibvisioPageShadowBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, int>{};
+    _collectPageShadowPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakePageShadowTree(
+      page.shapes,
+      page: page,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
+  }
+  return changed ? document.copyWith(pages: pages) : document;
 }
 
 /// Cells and Geometry the writer should emit so Draw paints this shape.
