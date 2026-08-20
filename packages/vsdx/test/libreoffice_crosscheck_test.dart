@@ -1226,6 +1226,43 @@ void main() {
                 transparency: 0.4,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.picture(
+              id: id + 60,
+              pinX: 3.2,
+              pinY: 6.6,
+              width: 1.2,
+              height: 0.8,
+              imagePartName: '/visio/media/image_lo_tone.png',
+              name: 'PictureGlow',
+            ).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFF00CC66),
+                sizeInches: 0.08,
+                transparency: 0.4,
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.picture(
+              id: id + 61,
+              pinX: 5.0,
+              pinY: 6.6,
+              width: 1.2,
+              height: 0.8,
+              imagePartName: '/visio/media/image_lo_tone.png',
+              name: 'PictureShadow',
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.2,
+                offsetYInches: -0.15,
+                blurInches: 0.08,
+                transparency: 0.4,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1392,6 +1429,20 @@ void main() {
       (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowNoFill.id}',
     );
     expect(glowNoFillPlate.hasImage, isTrue);
+    final pictureGlow = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'PictureGlow');
+    expect(pictureGlow.glow.enabled, isFalse);
+    expect(pictureGlow.hasImage, isTrue);
+    expect(pictureGlow.line.pattern, 0);
+    final pictureGlowPlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlowShapeNamePrefix${pictureGlow.id}',
+    );
+    expect(pictureGlowPlate.hasImage, isTrue);
+    expect(pictureGlowPlate.width, greaterThan(pictureGlow.width));
+    final pictureShadow = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'PictureShadow');
+    expect(pictureShadow.shadow.enabled, isFalse);
+    expect(pictureShadow.shadow.blurInches, closeTo(0, 1e-9));
     expect(glowNoFillPlate.width, greaterThan(glowNoFill.width));
     final glowNoLine = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowNoLine');
@@ -1497,7 +1548,7 @@ void main() {
     expect(shadowBlur.shadow.blurInches, closeTo(0, 1e-9));
     expect(
       reopenedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
-      hasLength(1),
+      hasLength(2),
     );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
@@ -2185,6 +2236,75 @@ void main() {
         ),
       ),
     );
+    var glowPictureDocument = parser.parse(blank);
+    final glowPicturePage = glowPictureDocument.pages.first;
+    const glowPicturePart = '/visio/media/glow_picture.png';
+    glowPictureDocument = glowPictureDocument
+        .copyWith(
+          images: glowPictureDocument.images.withImage(
+            VsdxImage(
+              partName: glowPicturePart,
+              bytes: _solidPng(),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          glowPicturePage.addShape(
+            VsdxShapeFactory.picture(
+              id: glowPicturePage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              imagePartName: glowPicturePart,
+              name: 'GlowPicturePng',
+            ).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFF00CC66),
+                sizeInches: 0.28,
+                transparency: 0.15,
+              ),
+            ),
+          ),
+        );
+    var shadowPictureDocument = parser.parse(blank);
+    final shadowPicturePage = shadowPictureDocument.pages.first;
+    const shadowPicturePart = '/visio/media/shadow_picture.png';
+    shadowPictureDocument = shadowPictureDocument
+        .copyWith(
+          images: shadowPictureDocument.images.withImage(
+            VsdxImage(
+              partName: shadowPicturePart,
+              bytes: _solidPng(),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          shadowPicturePage.addShape(
+            VsdxShapeFactory.picture(
+              id: shadowPicturePage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              imagePartName: shadowPicturePart,
+              name: 'ShadowPicturePng',
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.4,
+                offsetYInches: -0.35,
+                blurInches: 0.15,
+                transparency: 0.35,
+              ),
+            ),
+          ),
+        );
     var curvedTextDocument = parser.parse(blank);
     final curvedTextPage = curvedTextDocument.pages.first;
     curvedTextDocument = curvedTextDocument.replacePage(
@@ -2355,6 +2475,14 @@ void main() {
       'glow_stroke': writer.write(
         originalBytes: blank,
         edited: glowStrokeDocument,
+      ),
+      'glow_picture': writer.write(
+        originalBytes: blank,
+        edited: glowPictureDocument,
+      ),
+      'shadow_picture': writer.write(
+        originalBytes: blank,
+        edited: shadowPictureDocument,
       ),
       'curved_text': writer.write(
         originalBytes: blank,
@@ -3342,6 +3470,166 @@ void main() {
                 'LibreOffice must paint the Gaussian green glow ring, not a '
                 'hard FillForegndTrans ribbon; bodyR=${body.r} haloG=${halo.g} '
                 'haloR=${halo.r}',
+          );
+        }
+        if (entry.key == 'glow_picture') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GlowPicturePng');
+          expect(source.glow.enabled, isFalse);
+          expect(source.hasImage, isTrue);
+          expect(source.line.pattern, 0);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioGlowPlate).single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.width, greaterThan(source.width + 0.1));
+        }
+        if (entry.key == 'glow_picture' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final halo = mean(2.28, 5.2, 2.52, 5.8);
+          expect(
+            body.r,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source picture; '
+                'bodyR=${body.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.g,
+            greaterThan(halo.r + 10),
+            reason:
+                'LibreOffice must paint the Gaussian green glow ring around '
+                'the picture, not a hard LineWeight halo; bodyR=${body.r} '
+                'haloG=${halo.g} haloR=${halo.r}',
+          );
+        }
+        if (entry.key == 'shadow_picture') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ShadowPicturePng');
+          expect(source.shadow.enabled, isFalse);
+          expect(source.hasImage, isTrue);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioShadowPlate).single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.width, greaterThan(source.width));
+        }
+        if (entry.key == 'shadow_picture' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          double meanRed(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                sum += rendered.getPixel(x, y).r;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          final body = meanRed(3.9, 5.2, 4.6, 5.8);
+          final halo = meanLuma(6.22, 5.3, 6.38, 5.7);
+          expect(
+            body,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source picture; '
+                'body=$body halo=$halo',
+          );
+          expect(
+            halo,
+            lessThan(220),
+            reason: 'LibreOffice must paint the Gaussian picture shadow halo; '
+                'body=$body halo=$halo',
           );
         }
         if (entry.key == 'curved_text' && pdftoppm != null) {

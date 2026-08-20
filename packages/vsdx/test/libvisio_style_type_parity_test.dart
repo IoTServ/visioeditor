@@ -54,7 +54,9 @@
 /// Draw collects, then `ReflectionSize` is written 0. Glow on a filled
 /// shape that already paints a stroke, a filled NoLine 2-D, or an unfilled
 /// 2-D stroke, bakes a locked Gaussian PNG sibling when RGB is resolved,
-/// then `GlowSize` is written 0. Theme-only glow still uses a LineWeight halo so THEMEVAL()
+/// then `GlowSize` is written 0. A Foreign picture with resolved RGB
+/// bakes the same Gaussian PNG ring around the image frame. Theme-only
+/// glow still uses a LineWeight halo so THEMEVAL()
 /// survives. Page `PageColor` is not a token, so
 /// a save prepends a locked full-page plate Draw can fill. draw.io Sketch
 /// is User rows libvisio never reads, so a save maps the hatch onto
@@ -74,7 +76,8 @@
 /// SoftEdges bakes the stroke ring the same way and drops the source
 /// line. A filled 2-D shape that also paints a solid stroke bakes both
 /// into one padded plate and drops fill and line. `ShadowBlur` is not a token,
-/// so a save bakes a Gaussian PNG sibling and clears ShdwPattern.
+/// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
+/// picture with blur bakes the same filled image-frame silhouette.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
 /// and drops `veCurvedText`. draw.io Shape Inside is also a User row, so
@@ -718,6 +721,102 @@ void main() {
     expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
     expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 1);
     expect(savedDoc.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioGlowShapeNamePrefix}1');
+    expect(savedPlate.hasImage, isTrue);
+    expect(savedPlate.width, greaterThan(shape.width));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+  });
+
+  test(
+      'Glow on a Foreign picture bakes a Gaussian PNG ring LibreOffice can collect',
+      () {
+    const part = '/visio/media/glow.png';
+    final rasterImage = raster.Image(width: 16, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 16; x++) {
+        rasterImage.setPixelRgba(x, y, 0, 0, 255, 255);
+      }
+    }
+    final sourceImage = VsdxImage(
+      partName: part,
+      bytes: Uint8List.fromList(raster.encodePng(rasterImage)),
+      mimeType: 'image/png',
+    );
+    const colour = VsdxColor(0xFF00CC66);
+    final shape = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      imagePartName: part,
+      name: 'GlowPicture',
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: colour,
+        sizeInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowPlateBake(shape), isTrue);
+    expect(shapeNeedsLibvisioGlowBake(shape), isFalse);
+    expect(glowForLibvisioWrite(shape).enabled, isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.copyWith(images: doc.images.withImage(sourceImage));
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another halo',
+    );
+    final plate = baked.pages.first.shapes.first;
+    expect(plate.name, '${kLibvisioGlowShapeNamePrefix}1');
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.width, greaterThan(shape.width));
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.hasImage, isTrue);
+    expect(source.imagePartName, part);
+    expect(source.line.pattern, 0,
+        reason: 'picture Glow must not steal Line as a hard halo');
+    expect(source.glow.enabled, isTrue,
+        reason: 'the in-memory source keeps the live effect; XML Size is 0');
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final centre = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    expect(centre.r, greaterThan(200),
+        reason: 'picture Glow PNG must keep a hollow interior');
+    var bestDelta = -1.0;
+    for (var x = 0; x < decoded.width ~/ 2; x++) {
+      final pixel = decoded.getPixel(x, decoded.height ~/ 2);
+      final delta = (pixel.g - pixel.r).toDouble();
+      if (delta > bestDelta) bestDelta = delta;
+    }
+    expect(bestDelta, greaterThan(8),
+        reason: 'picture Glow PNG must paint the green ring outside the body');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 0);
+    expect(savedDoc.pages.first.findShapeById(1)!.hasImage, isTrue);
     final savedPlate = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == '${kLibvisioGlowShapeNamePrefix}1');
     expect(savedPlate.hasImage, isTrue);
@@ -1648,6 +1747,96 @@ void main() {
     final oracleSoft = LibvisioOracle.tryLoad();
     if (oracleSoft == null) return;
     expect(oracleSoft.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('picture ShadowBlur bakes a Gaussian PNG sibling for LibreOffice', () {
+    const part = '/visio/media/shadow.png';
+    final rasterImage = raster.Image(width: 16, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 16; x++) {
+        rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+      }
+    }
+    final sourceImage = VsdxImage(
+      partName: part,
+      bytes: Uint8List.fromList(raster.encodePng(rasterImage)),
+      mimeType: 'image/png',
+    );
+    final shape = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+      name: 'ShadowPicture',
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+    expect(shapeNeedsLibvisioShadowBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.copyWith(images: doc.images.withImage(sourceImage));
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shadow.enabled, isFalse);
+    expect(source.shadow.blurInches, closeTo(0, 1e-9));
+    expect(source.hasImage, isTrue);
+    expect(source.imagePartName, part);
+    final plates = baked.pages.first.shapes.where(isLibvisioShadowPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.pinX, closeTo(2.2, 1e-9));
+    expect(plate.pinY, closeTo(1.85, 1e-9));
+    expect(plate.width, greaterThan(1.2));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    final cx = decoded!.width ~/ 2;
+    final cy = decoded.height ~/ 2;
+    expect(decoded.getPixel(cx, cy).a, greaterThan(80));
+    expect(
+      decoded.getPixel(decoded.width ~/ 8, cy).a,
+      greaterThan(0),
+      reason: 'Gaussian picture ShadowBlur must spread alpha into the pad',
+    );
+    expect(
+      decoded.getPixel(decoded.width ~/ 8, cy).a,
+      lessThan(decoded.getPixel(cx, cy).a),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Shadow plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.shadow.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('Curved Text bakes per-glyph siblings for LibreOffice', () {

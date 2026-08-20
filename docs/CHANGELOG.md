@@ -629,8 +629,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   2-D stroke with resolved RGB bakes a locked Gaussian PNG ring, and a
   filled 2-D (NoLine or already stroked) bakes a locked Gaussian PNG sibling
   (`LibvisioGlow.{id}`) when RGB is resolved so Draw shows the same blur
-  canvas already paints. Theme-only glow still uses a LineWeight halo so
-  THEMEVAL() survives. Then `GlowSize` is written 0.
+  canvas already paints. A Foreign picture with resolved RGB bakes the
+  same Gaussian PNG ring around the image frame. Theme-only glow still
+  uses a LineWeight halo so THEMEVAL() survives. Then `GlowSize` is
+  written 0.
 - draw.io Sketch now survives a save into LibreOffice. `User.veSketch*`
   rows are not tokens, so a save maps hachure / cross-hatch / dots onto
   classic `FillPattern` 2–24 (`draw:fill=hatch`, holes stay transparent)
@@ -679,13 +681,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Filled 2-D shapes that also paint a solid stroke bake fill and stroke
   into one padded plate and drop both, so Draw does not keep a hard outline.
   Dashes, compound rails and arrows stay native.
-- `ShadowBlur` now survives a save into LibreOffice on filled 2-D vectors.
-  The cell is not a token; libvisio only emits a hard `draw:shadow`. A save
-  bakes a locked Foreign sibling (`LibvisioShadow.{id}`) whose PNG is the
-  same Gaussian silhouette canvas and SVG already paint, then writes
-  ShdwPattern 0 and ShadowBlur 0 so Draw does not add a second hard copy.
-  Theme-only shadow colours, 1-D, pictures and unrecognised geometry keep
-  the native cells.
+- `ShadowBlur` now survives a save into LibreOffice on filled 2-D vectors
+  and Foreign pictures. The cell is not a token; libvisio only emits a
+  hard `draw:shadow`. A save bakes a locked Foreign sibling
+  (`LibvisioShadow.{id}`) whose PNG is the same Gaussian silhouette canvas
+  and SVG already paint, then writes ShdwPattern 0 and ShadowBlur 0 so
+  Draw does not add a second hard copy. Theme-only shadow colours, 1-D
+  and unrecognised geometry keep the native cells.
 - draw.io Curved Text now survives a save into LibreOffice. `User.veCurvedText`
   is not a token, so a save places locked per-glyph siblings
   (`LibvisioCurved.{i}.{id}`) along the same quadratic arc canvas and SVG

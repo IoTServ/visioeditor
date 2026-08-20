@@ -61,18 +61,22 @@
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
-/// Draw does not add a second hard copy. Character Overline
-/// is a token whose `readCharIX` case is empty, so a save inserts U+0305
-/// combining overlines and clears the cell. Glow* cells are not tokens;
-/// an unfilled 1-D stroke bakes a FillForegndTrans ribbon and an unfilled
-/// 2-D stroke with resolved RGB bakes a Gaussian PNG ring. A filled
-/// NoLine shape bakes a Gaussian PNG sibling (or a LineWeight halo when
-/// the colour is still THEMEVAL()), then GlowSize is written 0.
-/// Filled shapes that already paint a stroke keep their outline — stealing
-/// Line would drop CompoundType / dashes that Draw *does* collect.
-/// That case bakes a locked Gaussian PNG sibling (canvas `_drawGlow`)
-/// when the glow colour is resolved RGB; theme-only glow still uses a
-/// LineWeight halo so THEMEVAL() survives. Then `GlowSize` is written 0.
+/// Draw does not add a second hard copy. A Foreign picture with blur
+/// bakes the same way from the image-frame silhouette canvas uses.
+/// Character Overline is a token whose `readCharIX` case is empty, so a
+/// save inserts U+0305 combining overlines and clears the cell. Glow*
+/// cells are not tokens; an unfilled 1-D stroke bakes a FillForegndTrans
+/// ribbon and an unfilled 2-D stroke with resolved RGB bakes a Gaussian
+/// PNG ring. A filled NoLine shape bakes a Gaussian PNG sibling (or a
+/// LineWeight halo when the colour is still THEMEVAL()), then GlowSize
+/// is written 0. Filled shapes that already paint a stroke keep their
+/// outline — stealing Line would drop CompoundType / dashes that Draw
+/// *does* collect. That case bakes a locked Gaussian PNG sibling (canvas
+/// `_drawGlow`) when the glow colour is resolved RGB; theme-only glow
+/// still uses a LineWeight halo so THEMEVAL() survives. A Foreign
+/// picture with resolved RGB bakes the same Gaussian PNG ring canvas
+/// `_drawGlow` paints around the image frame. Then `GlowSize` is
+/// written 0.
 /// `Letterspace` is not a token; canvas / SVG already fold FontScale into
 /// tracking at 0.55×Size, and `readCharIX` *does* collect FontScale as
 /// `style:text-scale`, so a save adds Letterspace into FontScale and
@@ -663,12 +667,14 @@ bool _libvisioGlowEffectOn(VsdxShape shape) {
 /// a LineWeight stroke when the colour is still THEMEVAL(). Filled NoLine
 /// 2-D with resolved RGB also uses the PNG so Draw does not keep a hard
 /// LineWeight outline. Unfilled 2-D with resolved RGB uses a PNG ring so
-/// Draw does not keep a hard FillForegndTrans ribbon.
+/// Draw does not keep a hard FillForegndTrans ribbon. A Foreign picture
+/// with resolved RGB uses the same ring around the image frame.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.is1D) return false;
   if (_shapeCanLibvisioGlowPng(shape)) return true;
   if (_shapeCanLibvisioGlowStrokePng(shape)) return true;
+  if (_shapeCanLibvisioGlowPicturePng(shape)) return true;
   final paintsFill = _shapePaintsFill(shape, shape.geometries);
   if (!paintsFill && !shape.hasImage) return false;
   return shape.line.hasLine;
@@ -699,8 +705,23 @@ bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
 
+/// Foreign pictures: canvas `_drawGlow` blurs the image-frame path even
+/// when Fill and Line are off. The plate is 2-D, so a Gaussian PNG ring
+/// can hang beside the bitmap. Theme-only colour still steals Line.
+bool _shapeCanLibvisioGlowPicturePng(VsdxShape shape) {
+  if (!_libvisioGlowEffectOn(shape)) return false;
+  if (!shape.hasImage || shape.is1D) return false;
+  if (shape.children.isNotEmpty) return false;
+  if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
+    return false;
+  }
+  return _foreignFrameSilhouetteKind(shape) != null;
+}
+
 bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) =>
-    _shapeCanLibvisioGlowPng(shape) || _shapeCanLibvisioGlowStrokePng(shape);
+    _shapeCanLibvisioGlowPng(shape) ||
+    _shapeCanLibvisioGlowStrokePng(shape) ||
+    _shapeCanLibvisioGlowPicturePng(shape);
 
 ({Uint8List png, double padInches})? _glowPngForLibvisioWrite(VsdxShape shape) {
   final kind = _softEdgesSilhouetteKind(shape);
@@ -757,7 +778,8 @@ bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) =>
 ({Uint8List png, double padInches})? _glowStrokePngForLibvisioWrite(
   VsdxShape shape,
 ) {
-  final kind = _softEdgesStrokeSilhouetteKind(shape);
+  final kind = _softEdgesStrokeSilhouetteKind(shape) ??
+      _foreignFrameSilhouetteKind(shape);
   if (kind == null) return null;
   final color = shape.glow.color ?? _kLibvisioGlowFallback;
   final trans = _glowHaloTransparency(shape.glow).clamp(0.0, 1.0);
@@ -982,7 +1004,7 @@ List<VsdxShape> _bakeGlowPlateTree(
           );
         }
       }
-      if (plate == null && !_shapeCanLibvisioGlowStrokePng(next)) {
+      if (plate == null && !_shapeNeedsLibvisioGlowPngBake(next)) {
         plate = _glowPlateForLibvisioWrite(
           next,
           id: plateIds[next.id] ?? nextId(),
@@ -3875,6 +3897,33 @@ VsdxGeometry? _softEdgesStrokeGeometry(VsdxShape shape) {
   return null;
 }
 
+VsdxGeometry? _anyVisibleGeometry(VsdxShape shape) {
+  for (final candidate in shape.geometries) {
+    if (candidate.noShow) continue;
+    return candidate;
+  }
+  return null;
+}
+
+/// Image-frame silhouette canvas uses for Foreign pictures (NoFill/NoLine).
+SoftEdgesSilhouetteKind? _foreignFrameSilhouetteKind(VsdxShape shape) {
+  if (!shape.hasImage || shape.is1D) return null;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return null;
+  final geom = _anyVisibleGeometry(shape);
+  if (geom == null) return SoftEdgesSilhouetteKind.rectangle;
+  if (geom.commands.length == 1 && geom.commands.first is EllipseCmd) {
+    return SoftEdgesSilhouetteKind.ellipse;
+  }
+  final points = _softEdgesPolygonInches(shape, geom);
+  if (points == null || points.length < 3) {
+    return SoftEdgesSilhouetteKind.rectangle;
+  }
+  if (_softEdgesIsShapeBox(points, shape.width, shape.height)) {
+    return SoftEdgesSilhouetteKind.rectangle;
+  }
+  return SoftEdgesSilhouetteKind.polygon;
+}
+
 List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
   final w = shape.width.abs();
   final h = shape.height.abs();
@@ -4287,25 +4336,29 @@ const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 /// paints a hard `draw:shadow`. A filled 2-D vector bakes the same
 /// Gaussian silhouette canvas and SVG already paint into a locked
 /// Foreign sibling, then ShdwPattern and ShadowBlur go to 0 so Draw
-/// does not add a second copy. 1-D, pictures, groups, unresolved
-/// theme colours, and unrecognised geometry stay native.
+/// does not add a second copy. A Foreign picture with blur bakes the
+/// same filled image-frame silhouette canvas `_drawShadow` uses. 1-D,
+/// groups, unresolved theme colours, and unrecognised geometry stay
+/// native.
 bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.hasImage) return false;
+  if (shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
   if (!shape.shadow.enabled) return false;
   if (shape.shadow.blurInches <= 1e-6) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
-  if (!_shapePaintsFill(shape, shape.geometries)) return false;
   if (shape.shadow.color == null && shape.shadow.themeColorIndex != null) {
     return false;
   }
+  if (shape.hasImage) return _foreignFrameSilhouetteKind(shape) != null;
+  if (!_shapePaintsFill(shape, shape.geometries)) return false;
   return _softEdgesSilhouetteKind(shape) != null;
 }
 
 ({Uint8List png, double padInches})? _shadowPngForLibvisioWrite(
     VsdxShape shape) {
-  final kind = _softEdgesSilhouetteKind(shape);
+  final kind =
+      _softEdgesSilhouetteKind(shape) ?? _foreignFrameSilhouetteKind(shape);
   if (kind == null) return null;
   final color = shape.shadow.color ?? _kLibvisioShadowFallback;
   final trans = shape.shadow.transparency.clamp(0.0, 1.0);
@@ -4766,12 +4819,14 @@ VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
 /// RGB is resolved. Unfilled 1-D strokes become a FillForegndTrans
 /// ribbon (FillTrans is a token); unfilled 2-D with resolved RGB bakes
 /// a Gaussian PNG ring; filled NoLine with resolved RGB
-/// bakes the same Gaussian PNG sibling; pictures and theme-only NoLine
-/// still become a LineWeight halo (`xmlStringToColour` zeros
-/// LineColorTrans, so RGB is premultiplied toward white).
+/// bakes the same Gaussian PNG sibling; pictures with resolved RGB bake
+/// a Gaussian PNG ring around the image frame; theme-only NoLine still
+/// becomes a LineWeight halo (`xmlStringToColour` zeros LineColorTrans,
+/// so RGB is premultiplied toward white).
 bool shapeNeedsLibvisioGlowBake(VsdxShape shape) {
   if (_shapeCanLibvisioGlowPng(shape)) return false;
   if (_shapeCanLibvisioGlowStrokePng(shape)) return false;
+  if (_shapeCanLibvisioGlowPicturePng(shape)) return false;
   final glow = shape.glow;
   if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
   if (glow.transparency >= 1 - 1e-9) return false;
