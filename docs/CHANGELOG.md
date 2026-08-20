@@ -640,6 +640,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   not a token, so a save inserts a locked white top-light sibling
   (`LibvisioGlass.{id}`) whose `FillForegndTrans` Draw collects, then
   writes `veGlass=0`. Canvas and SVG already painted the glossy wave.
+- draw.io Shape Opacity now survives a save into LibreOffice.
+  `User.veOpacity` is not a token, so a save folds the fade into
+  `FillForegndTrans` (and line / image / text transparency) which
+  libvisio maps to `draw:opacity`, then drops the User row. Canvas and
+  SVG already composited the cell as one layer.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

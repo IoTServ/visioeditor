@@ -72,7 +72,10 @@
 /// the two jiggle strokes as locked siblings, then writes `veSketch=0`.
 /// draw.io Glass is likewise `User.veGlass` (not a token), so a save inserts
 /// a locked white top-light sibling whose FillForegndTrans Draw collects,
-/// then writes `veGlass=0`.
+/// then writes `veGlass=0`. draw.io Shape Opacity is `User.veOpacity`
+/// (not a token), so a save folds it into FillForegndTrans / line
+/// transparency / image Transparency Draw actually collects, then drops
+/// the User row.
 library;
 
 import 'dart:math' as math;
@@ -113,7 +116,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
         bakeGlowPlateForLibvisioWrite(
           bakeGlassForLibvisioWrite(
             bakeSketchForLibvisioWrite(
-              bakeOverlineForLibvisioWrite(hopped),
+              bakeShapeOpacityForLibvisioWrite(
+                bakeOverlineForLibvisioWrite(hopped),
+              ),
             ),
           ),
         ),
@@ -1580,6 +1585,184 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
   for (final page in document.pages) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes) bakeOverlineShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// `true` when `User.veOpacity` must fold into cells Draw actually paints.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so `veOpacity` never becomes ODF `draw:opacity`. FillForegndTrans
+/// *is* collected (`VSDContentCollector` maps it to `draw:opacity`), and
+/// unfilled LineColorTrans already bakes a FillForegndTrans ribbon, so a
+/// save multiplies the extra transparency into Fill / Line / Glow /
+/// Reflection / Shadow / image / text, then drops the User row.
+bool shapeNeedsLibvisioOpacityBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  return shape.shapeOpacity < 1 - 1e-9;
+}
+
+VsdxGradient? _gradientWithExtraTransparency(
+  VsdxGradient? gradient,
+  double extra,
+) {
+  if (gradient == null || extra <= 1e-9) return gradient;
+  return VsdxGradient(
+    stops: <VsdxGradientStop>[
+      for (final stop in gradient.stops)
+        VsdxGradientStop(
+          position: stop.position,
+          color: stop.color,
+          themeColorIndex: stop.themeColorIndex,
+          transparency: _combinedTransparency(stop.transparency, extra),
+        ),
+    ],
+    type: gradient.type,
+    angleRad: gradient.angleRad,
+    dir: gradient.dir,
+  );
+}
+
+VsdxFill _fillWithExtraTransparency(VsdxFill fill, double extra) {
+  return fill.copyWith(
+    foregroundTransparency:
+        _combinedTransparency(fill.foregroundTransparency, extra),
+    backgroundTransparency:
+        _combinedTransparency(fill.backgroundTransparency, extra),
+    gradient: _gradientWithExtraTransparency(fill.gradient, extra),
+  );
+}
+
+VsdxLine _lineWithExtraTransparency(VsdxLine line, double extra) {
+  var next = line.copyWith(
+    transparency: _combinedTransparency(line.transparency, extra),
+  );
+  final gradient = _gradientWithExtraTransparency(line.gradient, extra);
+  if (!identical(gradient, line.gradient)) {
+    next = next.copyWith(gradient: gradient);
+  }
+  return next;
+}
+
+VsdxRichText _richTextWithExtraTransparency(VsdxRichText rich, double extra) {
+  return rich.copyWith(
+    runs: <VsdxTextRun>[
+      for (final run in rich.runs)
+        run.copyWith(
+          charStyle: run.charStyle.copyWith(
+            transparency: _combinedTransparency(
+              run.charStyle.transparency,
+              extra,
+            ),
+          ),
+        ),
+    ],
+    textBlock: rich.textBlock.copyWith(
+      backgroundTransparency: _combinedTransparency(
+        rich.textBlock.backgroundTransparency,
+        extra,
+      ),
+    ),
+  );
+}
+
+VsdxShape _applyOpacityForLibvisioWrite(VsdxShape shape, double extra) {
+  var next = shape.withShapeOpacity(1);
+  if (extra <= 1e-9) return next;
+  if (next.fill.hasFill) {
+    next = next.copyWith(fill: _fillWithExtraTransparency(next.fill, extra));
+  }
+  if (next.line.hasLine) {
+    next = next.copyWith(line: _lineWithExtraTransparency(next.line, extra));
+  }
+  if (next.glow.enabled) {
+    next = next.copyWith(
+      glow: next.glow.copyWith(
+        transparency: _combinedTransparency(next.glow.transparency, extra),
+      ),
+    );
+  }
+  if (next.reflection.enabled) {
+    next = next.copyWith(
+      reflection: next.reflection.copyWith(
+        transparency: _combinedTransparency(next.reflection.transparency, extra),
+      ),
+    );
+  }
+  if (next.shadow.enabled) {
+    next = next.copyWith(
+      shadow: next.shadow.copyWith(
+        transparency: _combinedTransparency(next.shadow.transparency, extra),
+      ),
+    );
+  }
+  if (next.hasImage) {
+    next = next.copyWith(
+      imageTransparency:
+          _combinedTransparency(next.imageTransparency, extra),
+    );
+  }
+  if (next.richText.runs.isNotEmpty ||
+      next.richText.textBlock.backgroundColor != null) {
+    next = next.copyWith(
+      richText: _richTextWithExtraTransparency(next.richText, extra),
+    );
+  }
+  return next;
+}
+
+VsdxShape bakeShapeOpacityShapeForLibvisioWrite(
+  VsdxShape shape, {
+  double inheritedExtra = 0,
+}) {
+  final extra = _combinedTransparency(1 - shape.shapeOpacity, inheritedExtra);
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeShapeOpacityShapeForLibvisioWrite(child, inheritedExtra: extra),
+  ];
+  var next = extra > 1e-9 || shapeNeedsLibvisioOpacityBake(shape)
+      ? _applyOpacityForLibvisioWrite(shape, extra)
+      : shape;
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Fold `User.veOpacity` into FillForegndTrans / LineColorTrans cells Draw
+/// collects, including inherited fade on grouped children.
+VsdxDocument bakeShapeOpacityForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeShapeOpacityShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

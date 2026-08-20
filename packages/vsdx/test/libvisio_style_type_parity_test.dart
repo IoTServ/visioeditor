@@ -57,7 +57,8 @@
 /// FillPattern 2–24 and bakes the two jiggle strokes as locked siblings,
 /// then writes `veSketch=0`. draw.io Glass is also a User row, so a save
 /// bakes a locked white top-light sibling (`FillForegndTrans`) and writes
-/// `veGlass=0`.
+/// `veGlass=0`. draw.io Shape Opacity is a User row, so a save folds it
+/// into FillForegndTrans / line transparency and drops `veOpacity`.
 library;
 
 import 'dart:io';
@@ -646,6 +647,74 @@ void main() {
     expect(after, isNotEmpty);
     _expectVsd2rawCollected(saved, const <String>[
       'draw:fill-color: #ffffff',
+    ]);
+  });
+
+  test('Shape Opacity bakes FillForegndTrans LibreOffice can collect', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.6,
+      height: 0.8,
+      name: 'OpacityBox',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).withShapeOpacity(0.4);
+    expect(shapeNeedsLibvisioOpacityBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shapeOpacity, 1);
+    expect(source.fill.foregroundTransparency, closeTo(0.6, 1e-9));
+    expect(source.fill.foreground?.value, 0xFFFF0000);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .fill
+          .foregroundTransparency,
+      closeTo(0.6, 1e-9),
+      reason: 'a second save must not stack another fade',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.shapeOpacity, 1);
+    expect(after.fill.foregroundTransparency, closeTo(0.6, 1e-9));
+
+    final stroke = VsdxShapeFactory.line(
+      id: 2,
+      ax: 0,
+      ay: 0,
+      bx: 3,
+      by: 0,
+      line: const VsdxLine(
+        color: VsdxColor(0xFF0000FF),
+        pattern: 1,
+        weightInches: 0.08,
+      ),
+    ).withShapeOpacity(0.5);
+    var strokeDoc = parser.parse(blank);
+    strokeDoc = strokeDoc.replacePage(0, strokeDoc.pages.first.addShape(stroke));
+    final savedStroke = parser.parse(
+      writer.write(originalBytes: blank, edited: strokeDoc),
+    );
+    final strokeAfter = savedStroke.pages.first.findShapeById(2)!;
+    expect(strokeAfter.shapeOpacity, 1);
+    expect(strokeAfter.fill.hasFill, isTrue);
+    expect(strokeAfter.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+    _expectVsd2rawCollected(saved, const <String>[
+      'draw:opacity',
     ]);
   });
 

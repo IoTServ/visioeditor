@@ -2079,6 +2079,47 @@ void main() {
     );
   });
 
+  test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeOpacity(0.4),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    final after = midDoc.pages.first.findShapeById(id)!;
+    expect(after.shapeOpacity, 1);
+    expect(after.fill.foregroundTransparency, closeTo(0.6, 1e-9));
+
+    doc = midDoc.replacePage(
+      0,
+      midDoc.pages.first.updateShapeById(
+        id,
+        (shape) => shape.copyWith(fill: shape.fill.copyWith(
+          foregroundTransparency: 0,
+        )),
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    expect(
+      parser.parse(out).pages.first.findShapeById(id)!.fill.foregroundTransparency,
+      closeTo(0, 1e-9),
+      reason: 'clearing the baked fade must write FillForegndTrans 0',
+    );
+  });
+
   test('Reflection bakes a sibling plate and clears on disable', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

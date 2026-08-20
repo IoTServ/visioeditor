@@ -1057,6 +1057,19 @@ void main() {
                 weightInches: 0.02,
               ),
             ).withGlassEffect(true),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 51,
+              pinX: 7.2,
+              pinY: 7.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'OpacityBox',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+              line: const VsdxLine(pattern: 0),
+            ).withShapeOpacity(0.4),
           ),
     );
     doc = doc.copyWith(
@@ -1251,6 +1264,11 @@ void main() {
       glassPlate.geometries.single.commands.whereType<RelQuadBezTo>(),
       isNotEmpty,
     );
+    final opacityBox = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'OpacityBox');
+    expect(opacityBox.shapeOpacity, 1);
+    expect(opacityBox.fill.foregroundTransparency, closeTo(0.6, 1e-9));
+    expect(opacityBox.fill.foreground?.value, 0xFFFF0000);
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
     expect(overline.richText.runs.single.charStyle.overline, isFalse);
@@ -1665,6 +1683,23 @@ void main() {
         ).withGlassEffect(true),
       ),
     );
+    var opacityDocument = parser.parse(blank);
+    final opacityPage = opacityDocument.pages.first;
+    opacityDocument = opacityDocument.replacePage(
+      0,
+      opacityPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: opacityPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'OpacityBox',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeOpacity(0.5),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1690,6 +1725,10 @@ void main() {
       'glass': writer.write(
         originalBytes: blank,
         edited: glassDocument,
+      ),
+      'opacity': writer.write(
+        originalBytes: blank,
+        edited: opacityDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -1941,6 +1980,40 @@ void main() {
                 'top=$top bottom=$bottom',
           );
         }
+        if (entry.key == 'opacity' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var pinkPixels = 0;
+          var redPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 200 && pixel.g < 40 && pixel.b < 40) redPixels++;
+            if (pixel.r > 180 &&
+                pixel.g > 70 &&
+                pixel.g < 200 &&
+                pixel.b > 70 &&
+                pixel.b < 200) {
+              pinkPixels++;
+            }
+          }
+          expect(
+            pinkPixels,
+            greaterThan(redPixels),
+            reason: 'LibreOffice must paint FillForegndTrans as see-through '
+                'red, not opaque; pink=$pinkPixels red=$redPixels',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -1949,7 +2022,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts nine packages.
+      // default on a cold profile, and this case converts ten packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

@@ -84,7 +84,9 @@ void main() {
           .pages
           .single
           .findShapeById(id)!;
-      expect(reopened.shapeOpacity, closeTo(0.4, 1e-6));
+      expect(reopened.shapeOpacity, 1,
+          reason: 'User.veOpacity is not a token; save bakes FillForegndTrans');
+      expect(reopened.fill.foregroundTransparency, closeTo(0.6, 1e-6));
       expect(
         reopened.userCells
             .singleWhere((cell) => cell.name == 'foreignMeta')
