@@ -68,6 +68,8 @@
 /// a hard-edged shadow on an oblique page bakes the sheared, scaled
 /// silhouette canvas `_applyPageShadowXform` paints into a locked NoLine
 /// sibling whose FillForegndTrans Draw collects, then ShdwPattern goes to 0.
+/// A blurred shadow on the same page rasterizes that sheared silhouette into
+/// its Gaussian PNG instead, sized to the transformed bounding box.
 /// Character Overline is a token whose `readCharIX` case is empty, so a
 /// save inserts U+0305 combining overlines and clears the cell. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a FillForegndTrans
@@ -4698,6 +4700,121 @@ bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   return (png: png, padInches: padPx / innerWidthPx * w);
 }
 
+/// Gaussian PNG of the scaled, sheared silhouette an oblique page needs.
+///
+/// The plain path rasterizes the shape's own box, which cannot hold a sheared
+/// silhouette. Here the inner box is the transformed ring's bounding box, so
+/// the plate has to carry that box back to the source's local frame. Pictures
+/// use the same NoFill frame ring canvas `_drawShadow` shears.
+({
+  Uint8List png,
+  double minX,
+  double minY,
+  double width,
+  double height,
+  double padInches,
+})? _shearedShadowPngForLibvisioWrite(VsdxShape shape, VsdxPage page) {
+  final rings = _pageShadowRingsForLibvisioWrite(shape, page);
+  if (rings.isEmpty) return null;
+  final ring = rings.first;
+  if (ring.length < 3) return null;
+  var minX = ring.first.x;
+  var maxX = minX;
+  var minY = ring.first.y;
+  var maxY = minY;
+  for (final p in ring) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.y < minY) minY = p.y;
+    if (p.y > maxY) maxY = p.y;
+  }
+  final w = maxX - minX;
+  final h = maxY - minY;
+  if (w <= 1e-9 || h <= 1e-9) return null;
+  final color = shape.shadow.color ?? _kLibvisioShadowFallback;
+  final trans = shape.shadow.transparency.clamp(0.0, 1.0);
+  final fillTrans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final alpha =
+      (color.alpha * (1 - trans) * (1 - fillTrans)).round().clamp(0, 255);
+  var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx = math.max(8, (h * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(innerWidthPx, innerHeightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    innerWidthPx = math.max(8, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(8, (innerHeightPx * scale).round());
+  }
+  final sigmaPx = shape.shadow.blurInches / w * innerWidthPx;
+  final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
+  final polygon = <({double x, double y})>[
+    for (final p in ring)
+      (
+        x: (p.x - minX) / w * (innerWidthPx - 1),
+        y: (1 - (p.y - minY) / h) * (innerHeightPx - 1),
+      ),
+  ];
+  final png = bakeSilhouetteDropShadowPng(
+    innerWidthPx: innerWidthPx,
+    innerHeightPx: innerHeightPx,
+    padPx: padPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    blurSigmaPx: sigmaPx,
+    kind: SoftEdgesSilhouetteKind.polygon,
+    polygon: polygon,
+  );
+  if (png == null) return null;
+  return (
+    png: png,
+    minX: minX,
+    minY: minY,
+    width: w,
+    height: h,
+    padInches: padPx / innerWidthPx * w,
+  );
+}
+
+/// Plate for a shadow PNG whose inner box is not the shape's own box.
+VsdxShape _shadowBoxPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required String imagePartName,
+  required double minX,
+  required double minY,
+  required double boxWidth,
+  required double boxHeight,
+  required double padInches,
+  required double offsetXInches,
+  required double offsetYInches,
+}) {
+  final pad = padInches < 0 ? 0.0 : padInches;
+  return VsdxShapeFactory.picture(
+    id: id,
+    pinX: source.pinX + offsetXInches,
+    pinY: source.pinY + offsetYInches,
+    width: boxWidth + pad * 2,
+    height: boxHeight + pad * 2,
+    imagePartName: imagePartName,
+    name: '$kLibvisioShadowShapeNamePrefix${source.id}',
+  ).copyWith(
+    locPinXInches: source.effectiveLocPinX - (minX - pad),
+    locPinYInches: source.effectiveLocPinY - (minY - pad),
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    locked: true,
+    layerMemberIds: source.layerMemberIds,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
 VsdxShape _sourceForLibvisioShadowWrite(VsdxShape shape) {
   return shape.copyWith(
     shadow: shape.shadow.copyWith(enabled: false, blurInches: 0),
@@ -4797,6 +4914,46 @@ List<VsdxShape> _bakeShadowTree(
       }
     }
     if (shapeNeedsLibvisioShadowBake(next)) {
+      final dx = libvisioEffectiveShadowOffset(
+        next.shadow.offsetXInches,
+        page.pageSheet.shadowOffsetXInches,
+      );
+      final dy = libvisioEffectiveShadowOffset(
+        next.shadow.offsetYInches,
+        page.pageSheet.shadowOffsetYInches,
+      );
+      // An oblique page also skews the blur, and the sheared silhouette no
+      // longer fits the shape's own box.
+      final sheared = pageSheetShearsLibvisioShadows(page.pageSheet)
+          ? _shearedShadowPngForLibvisioWrite(next, page)
+          : null;
+      if (sheared != null) {
+        final part = allocatePart(next.id);
+        addImage(
+          VsdxImage(
+            partName: part,
+            bytes: sheared.png,
+            mimeType: 'image/png',
+          ),
+        );
+        out.add(
+          _shadowBoxPlateForLibvisioWrite(
+            next,
+            id: plateIds[next.id] ?? nextId(),
+            imagePartName: part,
+            minX: sheared.minX,
+            minY: sheared.minY,
+            boxWidth: sheared.width,
+            boxHeight: sheared.height,
+            padInches: sheared.padInches,
+            offsetXInches: dx,
+            offsetYInches: dy,
+          ),
+        );
+        out.add(_sourceForLibvisioShadowWrite(next));
+        changed = true;
+        continue;
+      }
       final raster = _shadowPngForLibvisioWrite(next);
       if (raster != null) {
         final part = allocatePart(next.id);
@@ -4806,14 +4963,6 @@ List<VsdxShape> _bakeShadowTree(
             bytes: raster.png,
             mimeType: 'image/png',
           ),
-        );
-        final dx = libvisioEffectiveShadowOffset(
-          next.shadow.offsetXInches,
-          page.pageSheet.shadowOffsetXInches,
-        );
-        final dy = libvisioEffectiveShadowOffset(
-          next.shadow.offsetYInches,
-          page.pageSheet.shadowOffsetYInches,
         );
         final plate = _shadowPlateForLibvisioWrite(
           next,
@@ -4951,7 +5100,7 @@ bool shapeNeedsLibvisioPageShadowBake(VsdxShape shape, VsdxPage page) {
 ///
 /// The page-space shadow offset rides on the plate pin (like the Gaussian PNG
 /// plate) so a rotated shape does not rotate its offset.
-List<VsdxGeometry> _pageShadowGeometriesForLibvisioWrite(
+List<List<Offset2D>> _pageShadowRingsForLibvisioWrite(
   VsdxShape shape,
   VsdxPage page,
 ) {
@@ -4966,16 +5115,25 @@ List<VsdxGeometry> _pageShadowGeometriesForLibvisioWrite(
     return Offset2D(qx + cx, qy + cy);
   }
 
-  final out = <VsdxGeometry>[];
+  final out = <List<Offset2D>>[];
   for (final geometry in shape.geometries) {
     if (geometry.noShow) continue;
     // A Foreign frame is NoFill but still supplies the image silhouette.
     if (geometry.noFill && !shape.hasImage) continue;
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 3) continue;
-    final commands = _closedCommandsForRing(
-      <Offset2D>[for (final p in points) map(p)],
-    );
+    out.add(<Offset2D>[for (final p in points) map(p)]);
+  }
+  return out;
+}
+
+List<VsdxGeometry> _pageShadowGeometriesForLibvisioWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
+  final out = <VsdxGeometry>[];
+  for (final ring in _pageShadowRingsForLibvisioWrite(shape, page)) {
+    final commands = _closedCommandsForRing(ring);
     if (commands.length < 3) continue;
     out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
   }

@@ -80,7 +80,10 @@
 /// line. A filled 2-D shape that also paints a solid stroke bakes both
 /// into one padded plate and drops fill and line. `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
-/// picture with blur bakes the same filled image-frame silhouette.
+/// picture with blur bakes the same filled image-frame silhouette. PageSheet
+/// `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not tokens, so a
+/// hard-edged shadow bakes a sheared vector sibling and a blurred shadow
+/// bakes a sheared Gaussian PNG.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
 /// and drops `veCurvedText`. draw.io Shape Inside is also a User row, so
@@ -1902,6 +1905,204 @@ void main() {
     final after = oracle.svgPages(saved)?.join() ?? '';
     expect(after, isNotEmpty);
     _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #000000']);
+  });
+
+  test('blurred shadow on an oblique page shears its Gaussian PNG', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 1.4,
+      height: 0.8,
+      name: 'ObliqueBlur',
+      fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+
+    final blank = writer.emptyDocument();
+    final base = parser.parse(blank);
+    final upright = base.pages.first.addShape(shape);
+
+    ({double width, double height, raster.Image png}) bake(VsdxPage page) {
+      final doc = base.replacePage(0, page);
+      final baked = documentForLibvisioWrite(doc);
+      // A blurred shadow stays on the Gaussian PNG path, never the vector one.
+      expect(
+          baked.pages.first.shapes.where(isLibvisioPageShadowPlate), isEmpty);
+      final plate =
+          baked.pages.first.shapes.where(isLibvisioShadowPlate).single;
+      expect(plate.hasImage, isTrue);
+      final bytes = baked.images.findByPart(plate.imagePartName!)!.bytes;
+      return (
+        width: plate.width,
+        height: plate.height,
+        png: raster.decodePng(bytes)!,
+      );
+    }
+
+    final plain = bake(upright);
+    final oblique = bake(
+      upright.copyWith(
+        pageSheet: upright.pageSheet.copyWith(
+          shadowType: 1,
+          shadowObliqueAngle: 0.6,
+        ),
+      ),
+    );
+    expect(
+      oblique.width,
+      greaterThan(plain.width + 0.1),
+      reason: 'the sheared silhouette needs a wider box than the shape',
+    );
+    expect(
+      oblique.height,
+      closeTo(plain.height, 0.06),
+      reason: 'an X shear must not change the height beyond blur-pad rounding',
+    );
+
+    // Shear leans the top right: the topmost opaque row starts further right
+    // than the bottom-most one.
+    int firstOpaqueX(raster.Image png, int y) {
+      for (var x = 0; x < png.width; x++) {
+        if (png.getPixel(x, y).a > 40) return x;
+      }
+      return -1;
+    }
+
+    final near = firstOpaqueX(oblique.png, (oblique.png.height * 0.25).round());
+    final far = firstOpaqueX(oblique.png, (oblique.png.height * 0.75).round());
+    expect(near, greaterThanOrEqualTo(0));
+    expect(far, greaterThanOrEqualTo(0));
+    expect(
+      near,
+      greaterThan(far + 2),
+      reason: 'positive ShdwObliqueAngle leans the top edge right; '
+          'near=$near far=$far',
+    );
+
+    final plainNear =
+        firstOpaqueX(plain.png, (plain.png.height * 0.25).round());
+    final plainFar = firstOpaqueX(plain.png, (plain.png.height * 0.75).round());
+    expect(
+      (plainNear - plainFar).abs(),
+      lessThanOrEqualTo(2),
+      reason: 'a plain page keeps the silhouette axis-aligned',
+    );
+
+    final doc = base.replacePage(
+      0,
+      upright.copyWith(
+        pageSheet: upright.pageSheet.copyWith(
+          shadowType: 1,
+          shadowObliqueAngle: 0.6,
+        ),
+      ),
+    );
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.shadow.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.shadow.blurInches, 0);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(savedDoc)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Shadow plate',
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('picture ShadowBlur on an oblique page shears its Gaussian PNG', () {
+    const part = '/visio/media/oblique_shadow.png';
+    final rasterImage = raster.Image(width: 16, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 16; x++) {
+        rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+      }
+    }
+    final sourceImage = VsdxImage(
+      partName: part,
+      bytes: Uint8List.fromList(raster.encodePng(rasterImage)),
+      mimeType: 'image/png',
+    );
+    final shape = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 1.4,
+      height: 0.8,
+      imagePartName: part,
+      name: 'ObliqueBlurPicture',
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+
+    final blank = writer.emptyDocument();
+    var base = parser.parse(blank);
+    base = base.copyWith(images: base.images.withImage(sourceImage));
+    final upright = base.pages.first.addShape(shape);
+
+    ({double width, raster.Image png}) bake(VsdxPage page) {
+      final doc = base.replacePage(0, page);
+      final baked = documentForLibvisioWrite(doc);
+      expect(
+          baked.pages.first.shapes.where(isLibvisioPageShadowPlate), isEmpty);
+      final plate =
+          baked.pages.first.shapes.where(isLibvisioShadowPlate).single;
+      return (
+        width: plate.width,
+        png: raster.decodePng(
+          baked.images.findByPart(plate.imagePartName!)!.bytes,
+        )!,
+      );
+    }
+
+    final plain = bake(upright);
+    final oblique = bake(
+      upright.copyWith(
+        pageSheet: upright.pageSheet.copyWith(
+          shadowType: 1,
+          shadowObliqueAngle: 0.6,
+        ),
+      ),
+    );
+    expect(oblique.width, greaterThan(plain.width + 0.1));
+
+    int firstOpaqueX(raster.Image png, int y) {
+      for (var x = 0; x < png.width; x++) {
+        if (png.getPixel(x, y).a > 40) return x;
+      }
+      return -1;
+    }
+
+    final near = firstOpaqueX(oblique.png, (oblique.png.height * 0.25).round());
+    final far = firstOpaqueX(oblique.png, (oblique.png.height * 0.75).round());
+    expect(near, greaterThan(far + 2));
   });
 
   test('picture ShadowBlur bakes a Gaussian PNG sibling for LibreOffice', () {

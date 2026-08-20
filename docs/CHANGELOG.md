@@ -708,8 +708,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   now bakes the same scaled, sheared silhouette canvas and SVG already paint
   into a locked NoLine sibling (`LibvisioPageShadow.{id}`) whose
   `FillForegndTrans` Draw collects, then writes `ShdwPattern` 0 so Draw adds
-  no second unsheared copy. Blurred shadows keep the Gaussian PNG path; 1-D,
-  groups and theme-only shadow colours keep the native cells.
+  no second unsheared copy. A blurred shadow on the same page bakes a
+  Gaussian PNG sibling (`LibvisioShadow.{id}`) whose inner box is the
+  sheared silhouette's AABB, so Draw keeps both the blur and the
+  page shear. 1-D, groups and theme-only shadow colours keep the native
+  cells.
 - draw.io Curved Text now survives a save into LibreOffice. `User.veCurvedText`
   is not a token, so a save places locked per-glyph siblings
   (`LibvisioCurved.{i}.{id}`) along the same quadratic arc canvas and SVG
