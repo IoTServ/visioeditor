@@ -674,6 +674,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   fills keep the cell. Unfilled 2-D strokes now bake the same way: a save
   rasters the stroke ring (padded for LineWeight and the blur halo),
   writes SoftEdgesSize 0 and drops the source line so Draw shows the plate.
+  Filled 2-D shapes that also paint a solid stroke bake fill and stroke
+  into one padded plate and drop both, so Draw does not keep a hard outline.
   Dashes, compound rails and arrows stay native.
 - `ShadowBlur` now survives a save into LibreOffice on filled 2-D vectors.
   The cell is not a token; libvisio only emits a hard `draw:shadow`. A save

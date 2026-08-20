@@ -68,7 +68,8 @@
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
 /// PNG sibling and drops the source fill. An unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
-/// line. `ShadowBlur` is not a token,
+/// line. A filled 2-D shape that also paints a solid stroke bakes both
+/// into one padded plate and drops fill and line. `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
@@ -1152,12 +1153,13 @@ void main() {
           line: const VsdxLine(
             color: VsdxColor(0xFF000000),
             weightInches: 0.04,
+            pattern: 2,
             softEdgesInches: 0.08,
           ),
         ),
       ),
       isTrue,
-      reason: 'filled SoftEdges still bakes; the stroke stays native',
+      reason: 'filled SoftEdges still bakes; a dashed stroke stays native',
     );
 
     final blank = writer.emptyDocument();
@@ -1238,6 +1240,102 @@ void main() {
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 0);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('filled+stroked SoftEdges bakes one feathered PNG for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'FillStrokeSoft',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.08,
+        softEdgesInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final dashed = VsdxShapeFactory.rectangle(
+      id: 9,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.08,
+        pattern: 2,
+        softEdgesInches: 0.08,
+      ),
+    );
+    final blank = writer.emptyDocument();
+    var dashedDoc = parser.parse(blank);
+    dashedDoc =
+        dashedDoc.replacePage(0, dashedDoc.pages.first.addShape(dashed));
+    final dashedBaked = documentForLibvisioWrite(dashedDoc);
+    expect(dashedBaked.pages.first.findShapeById(9)!.fill.pattern, 0);
+    expect(dashedBaked.pages.first.findShapeById(9)!.line.pattern, 2,
+        reason: 'dashes Draw collects stay native on a filled SoftEdges body');
+
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plates = baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.width, greaterThan(source.width + 0.05));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final centre = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    expect(centre.r, greaterThan(180),
+        reason: 'filled+stroked SoftEdges PNG must keep the red interior');
+    expect(centre.g, lessThan(80));
+    var ringLuma = 255.0;
+    final midY = decoded.height ~/ 2;
+    for (var x = 0; x < decoded.width ~/ 3; x++) {
+      final pixel = decoded.getPixel(x, midY);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < ringLuma) ringLuma = luma;
+    }
+    expect(
+      ringLuma,
+      lessThan(180),
+      reason: 'filled+stroked SoftEdges PNG must paint the feathered ring',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 0);
     expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 0);
     expect(
       savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),

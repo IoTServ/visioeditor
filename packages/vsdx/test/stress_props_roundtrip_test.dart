@@ -202,6 +202,15 @@ void main() {
     );
     doc = doc.replacePage(0, doc.pages.first.addShape(rect));
     final bytes1 = writer.write(originalBytes: blank, edited: doc);
+    final first = parser.parse(bytes1).pages.first.findShapeById(id)!;
+    expect(first.fill.pattern, 0);
+    expect(first.line.pattern, 0);
+    expect(first.line.softEdgesInches, closeTo(0, 1e-6));
+    expect(
+      parser.parse(bytes1).pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'default filled+stroked SoftEdges bakes one plate on first save',
+    );
 
     final mid = parser.parse(bytes1);
     final bytes2 = writer.write(
@@ -229,13 +238,14 @@ void main() {
       ),
     );
     final finalS = parser.parse(bytes3).pages.first.findShapeById(id)!;
-    expect(finalS.line.softEdgesInches, closeTo(0, 1e-6));
+    expect(finalS.line.softEdgesInches, closeTo(0.09, 1e-6));
+    expect(finalS.fill.pattern, 0);
     expect(finalS.line.pattern, 0);
     expect(
       parser.parse(bytes3).pages.first.shapes.where(isLibvisioSoftEdgesPlate),
       hasLength(1),
-      reason: 're-enabling SoftEdges on the leftover unfilled stroke bakes '
-          'a plate; SoftEdgesSize is not a token',
+      reason: 're-enabling SoftEdges on the leftover NoFill NoLine source '
+          'cannot bake again; the first-save plate stays',
     );
   });
 }

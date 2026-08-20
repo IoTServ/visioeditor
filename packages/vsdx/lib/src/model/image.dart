@@ -532,8 +532,10 @@ void _featherSourceAlpha(raster.Image work, double softSigmaPx) {
 /// Geometry SoftEdges on an unfilled 2-D stroke has no fill plate to steal.
 /// The PNG is padded so the outer half of [strokeWidthPx] and the blur halo
 /// are not clipped; Draw then shows the plate because `SoftEdgesSize` is
-/// not a token. Transparent pixels are composited onto opaque white because
-/// Draw / PDF flatten Foreign alpha against black.
+/// not a token. A filled body ([holeRed] etc.) paints the interior before
+/// the same SourceAlpha feather. Draw / PDF flatten Foreign alpha against
+/// black, so the result composites onto opaque white — the interior colour
+/// stays, and a hollow ring does not become a filled black plate.
 Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   required int innerWidthPx,
   required int innerHeightPx,
@@ -547,6 +549,10 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> outer = const <({double x, double y})>[],
   List<({double x, double y})> inner = const <({double x, double y})>[],
+  int? holeRed,
+  int? holeGreen,
+  int? holeBlue,
+  int? holeAlpha,
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
   if (padPx < 0) return null;
@@ -566,7 +572,15 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
       blue.clamp(0, 255),
       alpha.clamp(0, 255),
     );
-    final clear = raster.ColorRgba8(0, 0, 0, 0);
+    final hasHoleFill = holeAlpha != null && holeAlpha > 0;
+    final hole = hasHoleFill
+        ? raster.ColorRgba8(
+            (holeRed ?? 0).clamp(0, 255),
+            (holeGreen ?? 0).clamp(0, 255),
+            (holeBlue ?? 0).clamp(0, 255),
+            holeAlpha.clamp(0, 255),
+          )
+        : raster.ColorRgba8(0, 0, 0, 0);
     final half = math.max(strokeWidthPx / 2, 0.5);
     switch (kind) {
       case SoftEdgesSilhouetteKind.rectangle:
@@ -594,7 +608,7 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
             y1: iy1.clamp(0, heightPx - 1),
             x2: ix2.clamp(0, widthPx - 1),
             y2: iy2.clamp(0, heightPx - 1),
-            color: clear,
+            color: hole,
             alphaBlend: false,
           );
         }
@@ -615,7 +629,13 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
             if (rxIn > 1e-6 && ryIn > 1e-6) {
               final ix = (x + 0.5 - cx) / rxIn;
               final iy = (y + 0.5 - cy) / ryIn;
-              if (ix * ix + iy * iy <= 1) continue;
+              if (ix * ix + iy * iy <= 1) {
+                if (hasHoleFill) {
+                  work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
+                      hole.b.toInt(), hole.a.toInt());
+                }
+                continue;
+              }
             }
             work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
                 color.b.toInt(), color.a.toInt());
@@ -627,10 +647,14 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
           for (var x = 0; x < widthPx; x++) {
             final px = x + 0.5;
             final py = y + 0.5;
-            if (!_softEdgesPointInPolygon(outer, px, py)) continue;
             if (inner.length >= 3 && _softEdgesPointInPolygon(inner, px, py)) {
+              if (hasHoleFill) {
+                work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
+                    hole.b.toInt(), hole.a.toInt());
+              }
               continue;
             }
+            if (!_softEdgesPointInPolygon(outer, px, py)) continue;
             work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
                 color.b.toInt(), color.a.toInt());
           }
@@ -638,9 +662,10 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
     }
     _featherSourceAlpha(work, softSigmaPx);
     // Draw / PDF flatten transparent Foreign bitmaps against black, so a
-    // hollow ring would become a filled black plate. Composite onto opaque
-    // white — the same page colour canvas already assumes for an unfilled
-    // stroke — so the interior stays empty and the halo stays visible.
+    // hollow ring or a padded halo would become a filled black plate.
+    // Composite onto opaque white — the same page colour canvas already
+    // assumes for an unfilled stroke. An opaque hole fill stays that
+    // colour; a hollow interior stays empty.
     for (var y = 0; y < heightPx; y++) {
       for (var x = 0; x < widthPx; x++) {
         final pixel = work.getPixel(x, y);

@@ -55,7 +55,9 @@
 /// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
-/// line. `ShadowBlur` is likewise missing —
+/// line. A filled 2-D shape that also paints a solid stroke bakes fill
+/// and stroke into one padded plate and drops both, so Draw does not
+/// keep a hard outline. `ShadowBlur` is likewise missing —
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
@@ -3539,8 +3541,10 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// same SourceAlpha treatment into a locked Foreign sibling, then the
 /// source fill is dropped so the plate is the body. An unfilled 2-D
 /// stroke bakes the stroke ring the same way and drops the source line.
-/// 1-D, pictures, hatches, gradients, dashes, compound rails, arrows
-/// and unresolved theme colours stay native.
+/// A filled 2-D shape that also paints a solid stroke bakes both into
+/// one padded plate and drops fill and line, so Draw does not keep a
+/// hard outline. 1-D, pictures, hatches, gradients, dashes, compound
+/// rails, arrows and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -3563,9 +3567,7 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   return _softEdgesSilhouetteKind(shape) != null;
 }
 
-bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
-  if (!_softEdgesCommonOk(shape)) return false;
-  if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) return false;
+bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (!shape.line.hasLine || shape.line.pattern != 1) return false;
   if (shape.line.compoundType != 0) return false;
   if (shape.line.hasGradient) return false;
@@ -3577,6 +3579,16 @@ bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
   }
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
+
+bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
+  if (!_softEdgesCommonOk(shape)) return false;
+  if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) return false;
+  return _shapeHasBakeableSoftEdgesStroke(shape);
+}
+
+bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
+    _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
+    _shapeHasBakeableSoftEdgesStroke(shape);
 
 SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
   VsdxGeometry? geom;
@@ -3735,8 +3747,12 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
 }
 
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(
-  VsdxShape shape,
-) {
+  VsdxShape shape, {
+  int? holeRed,
+  int? holeGreen,
+  int? holeBlue,
+  int? holeAlpha,
+}) {
   final kind = _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null) return null;
   final color = shape.line.color ?? const VsdxColor(0xFF000000);
@@ -3790,12 +3806,34 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
     kind: kind,
     outer: outer,
     inner: inner,
+    holeRed: holeRed,
+    holeGreen: holeGreen,
+    holeBlue: holeBlue,
+    holeAlpha: holeAlpha,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
 }
 
+({Uint8List png, double padInches})? _softEdgesFillStrokePngForLibvisioWrite(
+  VsdxShape shape,
+) {
+  final fillColor = shape.fill.foreground!;
+  final fillTrans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final fillAlpha = (fillColor.alpha * (1 - fillTrans)).round().clamp(0, 255);
+  return _softEdgesStrokePngForLibvisioWrite(
+    shape,
+    holeRed: fillColor.red,
+    holeGreen: fillColor.green,
+    holeBlue: fillColor.blue,
+    holeAlpha: fillAlpha,
+  );
+}
+
 ({Uint8List png, double padInches})? _softEdgesBakePayload(VsdxShape shape) {
+  if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape)) {
+    return _softEdgesFillStrokePngForLibvisioWrite(shape);
+  }
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) {
     final png = _softEdgesPngForLibvisioWrite(shape);
     if (png == null) return null;
@@ -3810,7 +3848,7 @@ VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) {
     fill = const VsdxFill(pattern: 0);
   }
-  if (_shapeNeedsLibvisioStrokeSoftEdgesBake(shape)) {
+  if (_shapeHasBakeableSoftEdgesStroke(shape)) {
     line = line.copyWith(pattern: 0);
   }
   return shape.copyWith(fill: fill, line: line);
