@@ -1115,6 +1115,26 @@ void main() {
                   const VsdxLabelPadding(
                       left: 48, right: 24, top: 12, bottom: 36),
                 ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 54,
+              pinX: 2.6,
+              pinY: 7.4,
+              width: 0.8,
+              height: 0.6,
+              name: 'WordWrapBox',
+              fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+              line: const VsdxLine(pattern: 0),
+            )
+                .copyWith(
+                  richText: const VsdxRichText(
+                    runs: <VsdxTextRun>[
+                      VsdxTextRun(text: 'NO WRAP NO WRAP NO WRAP'),
+                    ],
+                  ),
+                )
+                .withWordWrap(false),
           ),
     );
     doc = doc.copyWith(
@@ -1339,6 +1359,14 @@ void main() {
     expect(
       labelPaddingBox.richText.textBlock.marginRightInches,
       closeTo(24 / kLibvisioLabelPaddingPxPerInch, 1e-9),
+    );
+    final wordWrapBox = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'WordWrapBox');
+    expect(wordWrapBox.wordWrap, isTrue);
+    expect(
+      wordWrapBox.richText.textBlock.widthInches,
+      greaterThan(0.8),
+      reason: 'User.veWordWrap is not a token; save expands TxtWidth',
     );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
@@ -1832,6 +1860,40 @@ void main() {
             .withLabelPadding(const VsdxLabelPadding(left: 48)),
       ),
     );
+    var wordWrapDocument = parser.parse(blank);
+    final wordWrapPage = wordWrapDocument.pages.first;
+    wordWrapDocument = wordWrapDocument.replacePage(
+      0,
+      wordWrapPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: wordWrapPage.nextFreeShapeId(),
+          pinX: 3.0,
+          pinY: 5.5,
+          width: 0.8,
+          height: 2,
+          name: 'WordWrapBox',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'NO WRAP NO WRAP NO WRAP NO WRAP',
+                    charStyle: VsdxCharStyle(
+                      fontSizeInches: 0.22,
+                      color: VsdxColor.black,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.middle,
+                ),
+              ),
+            )
+            .withWordWrap(false),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1869,6 +1931,10 @@ void main() {
       'label_padding': writer.write(
         originalBytes: blank,
         edited: labelPaddingDocument,
+      ),
+      'word_wrap': writer.write(
+        originalBytes: blank,
+        edited: wordWrapDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2258,6 +2324,62 @@ void main() {
                 'inset=$inset glyph=$glyph',
           );
         }
+        if (entry.key == 'word_wrap' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final box = page.shapes.firstWhere((s) => s.name == 'WordWrapBox');
+          expect(
+            box.richText.textBlock.widthInches,
+            greaterThan(0.8),
+          );
+          int darkPixels(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r < 80 && pixel.g < 80 && pixel.b < 80) count++;
+              }
+            }
+            return count;
+          }
+
+          final overflow = darkPixels(4.2, 5.35, 6.5, 5.65);
+          final wrapped = darkPixels(2.7, 4.7, 3.3, 5.1);
+          expect(
+            overflow,
+            greaterThan(20),
+            reason: 'LibreOffice must paint the unwrapped line past TxtWidth; '
+                'overflow=$overflow wrapped=$wrapped',
+          );
+          expect(
+            overflow,
+            greaterThan(wrapped * 2),
+            reason: 'Draw must not wrap the baked TxtWidth back into the box; '
+                'overflow=$overflow wrapped=$wrapped',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2266,7 +2388,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts twelve packages.
+      // default on a cold profile, and this case converts thirteen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

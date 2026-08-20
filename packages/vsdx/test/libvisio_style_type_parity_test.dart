@@ -63,7 +63,8 @@
 /// NoFill sibling whose LineColor Draw collects, then drops
 /// `veLabelBorderColor`. draw.io Label Padding is also a User row, so a
 /// save adds the pixel inset into Left/Right/Top/BottomMargin and drops
-/// `veLabelPadding`.
+/// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
+/// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
 library;
 
 import 'dart:io';
@@ -921,6 +922,110 @@ void main() {
     _expectVsd2rawCollected(saved, const <String>[
       'fo:padding-left',
     ]);
+  });
+
+  test('Word Wrap off bakes TxtWidth LibreOffice wraps against', () {
+    const label = 'NO WRAP NO WRAP NO WRAP';
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 0.8,
+      height: 0.6,
+      name: 'WordWrapBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    )
+        .copyWith(
+          formulas: const <String, String>{
+            'TxtWidth': 'Width*1',
+            'TxtLocPinX': 'TxtWidth*0.5',
+          },
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: label)],
+          ),
+        )
+        .withWordWrap(false);
+    expect(shapeNeedsLibvisioWordWrapBake(shape), isTrue);
+    final needed = nowrapTxtWidthForLibvisioWrite(shape);
+    expect(needed, greaterThan(0.8));
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.wordWrap, isTrue);
+    expect(source.formulas['TxtWidth'], isNull);
+    expect(source.formulas['TxtLocPinX'], isNull);
+    expect(source.richText.textBlock.widthInches, closeTo(needed, 1e-9));
+    expect(
+      source.richText.textBlock.locPinXInches,
+      closeTo(0.4, 1e-9),
+      reason: 'left-aligned overflow must keep the original left edge',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .widthInches,
+      closeTo(needed, 1e-9),
+      reason: 'a second save must not stack another TxtWidth',
+    );
+
+    final centered = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 0.8,
+      height: 0.6,
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    )
+        .copyWith(
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: label,
+                paraStyle: const VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        )
+        .withWordWrap(false);
+    var centerDoc = parser.parse(blank);
+    centerDoc =
+        centerDoc.replacePage(0, centerDoc.pages.first.addShape(centered));
+    final centerBlock = documentForLibvisioWrite(centerDoc)
+        .pages
+        .first
+        .findShapeById(2)!
+        .richText
+        .textBlock;
+    expect(
+      centerBlock.widthInches,
+      closeTo(nowrapTxtWidthForLibvisioWrite(centered), 1e-9),
+    );
+    expect(
+      centerBlock.locPinXInches,
+      closeTo(centerBlock.widthInches! / 2, 1e-9),
+      reason: 'centered overflow must grow equally on both sides',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.wordWrap, isTrue);
+    expect(after.richText.textBlock.widthInches, closeTo(needed, 1e-6));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {

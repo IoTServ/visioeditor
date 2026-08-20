@@ -51,7 +51,9 @@ void main() {
           ),
         ),
       );
-      value.setWordWrap(false);
+      value
+        ..setShapeText(id, 'NO WRAP NO WRAP NO WRAP')
+        ..setWordWrap(false);
 
       final changed = value.currentPage!.findShapeById(id)!;
       expect(changed.wordWrap, isFalse);
@@ -67,10 +69,19 @@ void main() {
           .pages
           .single;
       final shape = reopened.findShapeById(id)!;
-      expect(shape.wordWrap, isFalse);
+      expect(
+        shape.wordWrap,
+        isTrue,
+        reason: 'User.veWordWrap is not a token; save expands TxtWidth',
+      );
       expect(
         shape.userCells.firstWhere((cell) => cell.name == 'foreignMeta').value,
         'keep',
+      );
+      expect(
+        shape.richText.textBlock.widthInches,
+        greaterThan(1.2),
+        reason: 'Draw wraps to TxtWidth; nowrap must widen the text frame',
       );
     },
   );

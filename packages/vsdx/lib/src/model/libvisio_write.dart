@@ -80,7 +80,9 @@
 /// Draw collects, then drops the User row. draw.io Label Padding is
 /// `User.veLabelPadding` (not a token), so a save adds the pixel inset
 /// into Left/Right/Top/BottomMargin (`fo:padding-*`) Draw collects, then
-/// drops the User row.
+/// drops the User row. draw.io Word Wrap is `User.veWordWrap` (not a
+/// token), so a save expands TxtWidth to the unwrapped line plus margins
+/// (`svg:width` Draw wraps against) and drops the User row.
 library;
 
 import 'dart:math' as math;
@@ -116,15 +118,17 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
-    bakeLabelBorderForLibvisioWrite(
-      bakeLabelPaddingForLibvisioWrite(
-        bakeImageAdjustmentsForLibvisioWrite(
-          bakeReflectionForLibvisioWrite(
-            bakeGlowPlateForLibvisioWrite(
-              bakeGlassForLibvisioWrite(
-                bakeSketchForLibvisioWrite(
-                  bakeShapeOpacityForLibvisioWrite(
-                    bakeOverlineForLibvisioWrite(hopped),
+    bakeWordWrapForLibvisioWrite(
+      bakeLabelBorderForLibvisioWrite(
+        bakeLabelPaddingForLibvisioWrite(
+          bakeImageAdjustmentsForLibvisioWrite(
+            bakeReflectionForLibvisioWrite(
+              bakeGlowPlateForLibvisioWrite(
+                bakeGlassForLibvisioWrite(
+                  bakeSketchForLibvisioWrite(
+                    bakeShapeOpacityForLibvisioWrite(
+                      bakeOverlineForLibvisioWrite(hopped),
+                    ),
                   ),
                 ),
               ),
@@ -1800,6 +1804,190 @@ VsdxDocument bakeLabelPaddingForLibvisioWrite(VsdxDocument document) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
         bakeLabelPaddingShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// Conservative unwrapped advance so Draw's wrap-at-`svg:width` stays one
+/// line. Latin uses 0.72 em (wider than the canvas 0.55 mean and DejaVu's
+/// ~0.70 bold) so a slightly tight estimate cannot re-wrap in Draw.
+double nowrapTextAdvanceInches(String text, VsdxCharStyle style) {
+  if (text.isEmpty) return 0;
+  var fs = math.max(style.effectiveFontSizeInchesForText(text), 0.04);
+  if (style.position != VsdxTextPosition.normal) fs *= 0.7;
+  final scale = fontScaleForLibvisioWrite(style, text);
+  final runes = text.runes.toList(growable: false);
+  var w = 0.0;
+  for (var i = 0; i < runes.length; i++) {
+    final r = runes[i];
+    final chFs = isVisioComplexScriptRune(r) || isVisioAsianScriptRune(r)
+        ? fs
+        : fs * 0.72;
+    w += chFs;
+    if (i + 1 < runes.length) {
+      w += fs * (scale - 1.0) * kLibvisioMeanLatinAdvance;
+    }
+  }
+  return w;
+}
+
+double nowrapLabelAdvanceInches(VsdxShape shape) {
+  var widest = 0.0;
+  var current = 0.0;
+  void addRun(String text, VsdxCharStyle style) {
+    final parts = text.split(RegExp(r'\r\n|\n|\r'));
+    for (var i = 0; i < parts.length; i++) {
+      current += nowrapTextAdvanceInches(parts[i], style);
+      if (i < parts.length - 1) {
+        if (current > widest) widest = current;
+        current = 0;
+      }
+    }
+  }
+
+  if (!shape.richText.isEmpty) {
+    for (final run in shape.richText.runs) {
+      addRun(run.text, run.charStyle);
+    }
+  } else if (shape.text != null && shape.text!.isNotEmpty) {
+    addRun(shape.text!, VsdxCharStyle.defaults);
+  }
+  if (current > widest) widest = current;
+  return widest;
+}
+
+/// Extra TxtWidth Draw needs so an unwrapped label stays one line.
+double nowrapTxtWidthForLibvisioWrite(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  return nowrapLabelAdvanceInches(shape) +
+      block.marginLeftInches +
+      block.marginRightInches +
+      0.06;
+}
+
+/// `true` when `User.veWordWrap=0` must expand TxtWidth so Draw does not wrap.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so `veWordWrap` never becomes ODF `fo:wrap-option`. TxtWidth *is*
+/// collected (`svg:width` of the text object), and Draw wraps to that box,
+/// so a save widens the frame to the unwrapped line and drops the User row.
+/// Glueable 1-D labels, vertical text, curved text, and tabbed labels stay
+/// native — their layout is not a single horizontal measure.
+bool shapeNeedsLibvisioWordWrapBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (shape.wordWrap) return false;
+  if (shape.curvedText) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.richText.textBlock.textDirection == 1) return false;
+  for (final cell in shape.userCells) {
+    if (cell.name == VsdxShape.userShapeInside && cell.value == '1') {
+      return false;
+    }
+  }
+  final hasText =
+      !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
+  if (!hasText) return false;
+  final plain =
+      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
+  if (plain.contains('\t')) return false;
+  return nowrapTxtWidthForLibvisioWrite(shape) > 1e-9;
+}
+
+VsdxHorzAlign _nowrapAlign(VsdxShape shape) {
+  if (shape.richText.runs.isEmpty) return VsdxHorzAlign.left;
+  return shape.richText.runs.first.paraStyle.effectiveHorizontalAlign;
+}
+
+VsdxShape _sourceForLibvisioWordWrapWrite(VsdxShape shape) {
+  final others = <VsdxUserCell>[
+    for (final cell in shape.userCells)
+      if (cell.name != VsdxShape.userWordWrap) cell,
+  ];
+  final block = shape.richText.textBlock;
+  final tw = (block.widthInches ?? shape.width).abs();
+  final needed = nowrapTxtWidthForLibvisioWrite(shape);
+  var nextBlock = block;
+  var formulas = shape.formulas;
+  if (needed > tw + 1e-9) {
+    final pinX = block.pinXInches ?? shape.width / 2;
+    final locX = block.locPinXInches ?? tw / 2;
+    final left = pinX - locX;
+    final right = left + tw;
+    final align = _nowrapAlign(shape);
+    late final double newLeft;
+    switch (align) {
+      case VsdxHorzAlign.right:
+        newLeft = right - needed;
+      case VsdxHorzAlign.center:
+        newLeft = left - (needed - tw) / 2;
+      case VsdxHorzAlign.left:
+      case VsdxHorzAlign.justify:
+      case VsdxHorzAlign.full:
+        newLeft = left;
+    }
+    nextBlock = block.copyWith(
+      widthInches: needed,
+      locPinXInches: pinX - newLeft,
+    );
+    formulas = Map<String, String>.of(shape.formulas)
+      ..remove('TxtWidth')
+      ..remove('TxtLocPinX');
+  }
+  return shape.copyWith(
+    userCells: others,
+    richText: shape.richText.copyWith(textBlock: nextBlock),
+    formulas: formulas,
+  );
+}
+
+VsdxShape bakeWordWrapShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeWordWrapShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioWordWrapBake(shape)) {
+    next = _sourceForLibvisioWordWrapWrite(shape);
+  }
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Expand TxtWidth so Draw keeps an unwrapped draw.io label on one line.
+VsdxDocument bakeWordWrapForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) bakeWordWrapShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

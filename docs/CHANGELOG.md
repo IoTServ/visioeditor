@@ -658,6 +658,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Canvas and SVG already padded tight plates and text-flow bands.
   Glueable connector labels keep the User row — their loose plate
   depends on layout.
+- draw.io Word Wrap off now survives a save into LibreOffice.
+  `User.veWordWrap` is not a token, so a save expands `TxtWidth` to the
+  unwrapped line plus margins (`svg:width` Draw wraps against) and
+  drops the User row. Left-aligned overflow keeps the original left
+  edge; centered overflow grows equally. Canvas and SVG already skipped
+  wrapping. Glueable connector labels, vertical text, curved text and
+  tabbed labels keep the User row.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

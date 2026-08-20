@@ -2190,6 +2190,54 @@ void main() {
     );
   });
 
+  test('Word Wrap off bakes TxtWidth and clears the User row', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    const label = 'NO WRAP NO WRAP NO WRAP';
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 0.8,
+          height: 0.6,
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          formulas: const <String, String>{
+            'TxtWidth': 'Width*1',
+            'TxtLocPinX': 'TxtWidth*0.5',
+          },
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: label)],
+          ),
+        ).withWordWrap(false),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    final after = midDoc.pages.first.findShapeById(id)!;
+    expect(after.wordWrap, isTrue);
+    expect(
+      after.richText.textBlock.widthInches,
+      greaterThan(0.8),
+    );
+    expect(after.formulas['TxtWidth'], isNull,
+        reason: 'Width*1 would snap Draw back to the shape width');
+    expect(after.formulas['TxtLocPinX'], isNull);
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    final twice = parser.parse(again).pages.first.findShapeById(id)!;
+    expect(
+      twice.richText.textBlock.widthInches,
+      closeTo(after.richText.textBlock.widthInches!, 1e-12),
+      reason: 'a second save must not stack another TxtWidth',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
