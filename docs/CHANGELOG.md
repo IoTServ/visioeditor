@@ -672,6 +672,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   SoftEdgesSize 0 and drops the source fill so Draw shows the plate.
   Pictures still feather in place. 1-D, hatches, gradients and theme-only
   fills keep the cell.
+- `ShadowBlur` now survives a save into LibreOffice on filled 2-D vectors.
+  The cell is not a token; libvisio only emits a hard `draw:shadow`. A save
+  bakes a locked Foreign sibling (`LibvisioShadow.{id}`) whose PNG is the
+  same Gaussian silhouette canvas and SVG already paint, then writes
+  ShdwPattern 0 and ShadowBlur 0 so Draw does not add a second hard copy.
+  Theme-only shadow colours, 1-D, pictures and unrecognised geometry keep
+  the native cells.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

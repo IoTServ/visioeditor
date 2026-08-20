@@ -163,7 +163,14 @@ void main() {
           .where(isLibvisioGlowPlate),
       hasLength(1),
     );
-    expect(rectAfter.shadow.enabled, isTrue);
+    expect(rectAfter.shadow.enabled, isFalse,
+        reason: 'ShadowBlur is not a token; Draw paints a PNG sibling');
+    expect(
+      after.shapes
+          .expand((s) => <VsdxShape>[s, ...s.children])
+          .where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
     expect(rectAfter.richText.textBlock.verticalAlign, VsdxVertAlign.top);
 
     final dblAfter = after.findShapeById(dblId)!;

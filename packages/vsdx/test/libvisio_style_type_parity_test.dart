@@ -66,7 +66,8 @@
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
-/// PNG sibling and drops the source fill.
+/// PNG sibling and drops the source fill. `ShadowBlur` is not a token,
+/// so a save bakes a Gaussian PNG sibling and clears ShdwPattern.
 library;
 
 import 'dart:io';
@@ -1111,6 +1112,101 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('ShadowBlur bakes a Gaussian PNG sibling for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'ShadowBlur',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+    expect(shapeNeedsLibvisioShadowBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shadow.enabled, isFalse);
+    expect(source.shadow.blurInches, closeTo(0, 1e-9));
+    expect(source.fill.pattern, 1, reason: 'shadow bake keeps the source fill');
+    final plates = baked.pages.first.shapes.where(isLibvisioShadowPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.pinX, closeTo(2.2, 1e-9));
+    expect(plate.pinY, closeTo(1.85, 1e-9));
+    expect(plate.width, greaterThan(1.2));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    final cx = decoded!.width ~/ 2;
+    final cy = decoded.height ~/ 2;
+    expect(decoded.getPixel(cx, cy).a, greaterThan(80));
+    expect(
+      decoded.getPixel(decoded.width ~/ 8, cy).a,
+      greaterThan(0),
+      reason: 'Gaussian ShadowBlur must spread alpha into the pad',
+    );
+    expect(
+      decoded.getPixel(decoded.width ~/ 8, cy).a,
+      lessThan(decoded.getPixel(cx, cy).a),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Shadow plate',
+    );
+
+    final oval = VsdxShapeFactory.ellipse(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        blurInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+    expect(shapeNeedsLibvisioShadowBake(oval), isTrue);
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.shadow.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
+
+    final oracleSoft = LibvisioOracle.tryLoad();
+    if (oracleSoft == null) return;
+    expect(oracleSoft.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {
@@ -2390,6 +2486,7 @@ void main() {
           offsetXInches: 0.08,
           offsetYInches: 0.08,
           transparency: 0,
+          blurInches: 0,
         ),
         richText: const VsdxRichText(
           runs: [

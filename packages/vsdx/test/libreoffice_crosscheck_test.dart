@@ -1148,6 +1148,28 @@ void main() {
                   const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
               line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 56,
+              pinX: 5.5,
+              pinY: 8.6,
+              width: 1.4,
+              height: 0.6,
+              name: 'ShadowBlur',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+              line: const VsdxLine(pattern: 0),
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.18,
+                offsetYInches: -0.12,
+                blurInches: 0.08,
+                transparency: 0.4,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1387,6 +1409,14 @@ void main() {
     expect(geometrySoft.line.softEdgesInches, closeTo(0, 1e-9));
     expect(
       reopenedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    final shadowBlur = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'ShadowBlur');
+    expect(shadowBlur.shadow.enabled, isFalse);
+    expect(shadowBlur.shadow.blurInches, closeTo(0, 1e-9));
+    expect(
+      reopenedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
       hasLength(1),
     );
     final overline =
@@ -1932,6 +1962,32 @@ void main() {
         ),
       ),
     );
+    var shadowBlurDocument = parser.parse(blank);
+    final shadowBlurPage = shadowBlurDocument.pages.first;
+    shadowBlurDocument = shadowBlurDocument.replacePage(
+      0,
+      shadowBlurPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: shadowBlurPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ShadowBlur',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            color: VsdxColor(0xFF000000),
+            offsetXInches: 0.4,
+            offsetYInches: -0.35,
+            blurInches: 0.15,
+            transparency: 0.35,
+          ),
+        ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1977,6 +2033,10 @@ void main() {
       'geometry_soft': writer.write(
         originalBytes: blank,
         edited: geometrySoftDocument,
+      ),
+      'shadow_blur': writer.write(
+        originalBytes: blank,
+        edited: shadowBlurDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2474,6 +2534,79 @@ void main() {
                 'hard fill; centre=$centre edge=$edge',
           );
         }
+        if (entry.key == 'shadow_blur' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          double meanRed(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                sum += rendered.getPixel(x, y).r;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          final body = meanRed(3.9, 5.2, 4.6, 5.8);
+          final halo = meanLuma(6.22, 5.3, 6.38, 5.7);
+          expect(
+            body,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source fill; '
+                'body=$body halo=$halo',
+          );
+          expect(
+            halo,
+            lessThan(220),
+            reason: 'LibreOffice must paint the Gaussian shadow halo past '
+                'the hard-offset box; body=$body halo=$halo',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2482,7 +2615,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts fourteen packages.
+      // default on a cold profile, and this case converts fifteen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

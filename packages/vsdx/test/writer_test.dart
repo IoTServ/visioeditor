@@ -2273,6 +2273,50 @@ void main() {
     );
   });
 
+  test('ShadowBlur bakes a PNG sibling and clears the source shadow', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.2,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            color: VsdxColor(0xFF000000),
+            offsetXInches: 0.2,
+            offsetYInches: -0.15,
+            blurInches: 0.08,
+            transparency: 0.4,
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    expect(midDoc.pages.first.findShapeById(id)!.shadow.enabled, isFalse);
+    expect(midDoc.pages.first.findShapeById(id)!.shadow.blurInches, 0);
+    expect(midDoc.pages.first.findShapeById(id)!.fill.pattern, 1);
+    expect(
+      midDoc.pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    expect(
+      parser.parse(again).pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Shadow plate',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2435,7 +2479,7 @@ void main() {
       page.updateShapeById(
         target.id,
         (s) => s.copyWith(
-          shadow: const VsdxShadow(),
+          shadow: const VsdxShadow(blurInches: 0),
           richText: const VsdxRichText(
             runs: <VsdxTextRun>[
               VsdxTextRun(
@@ -5425,7 +5469,7 @@ void main() {
         line: const VsdxLine(color: VsdxColor.black, transparency: 0.25),
       ).copyWith(
         flipX: true,
-        shadow: const VsdxShadow(),
+        shadow: const VsdxShadow(blurInches: 0),
         // Off-centre LocPin (not the default width/2, height/2).
         locPinXInches: 0.25,
         locPinYInches: 0.75,
@@ -7031,7 +7075,11 @@ void main() {
       width: 2,
       height: 1,
     ).copyWith(
-      shadow: const VsdxShadow(enabled: true, offsetXInches: 0.1),
+      shadow: const VsdxShadow(
+        enabled: true,
+        offsetXInches: 0.1,
+        blurInches: 0,
+      ),
     );
     outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
     final saved = writer.write(originalBytes: blank, edited: outDoc);
@@ -7076,6 +7124,7 @@ void main() {
             enabled: true,
             pattern: 3,
             offsetXInches: 0.1,
+            blurInches: 0,
           ),
         ),
       ),
@@ -7871,7 +7920,7 @@ void main() {
     expect(after.reflection.blurInches, closeTo(0.08, 1e-6));
   });
 
-  test('ShadowBlur F=Inh keeps cached blur while shadow stays on', () {
+  test('ShadowBlur cell is literal 0 on the source after bake', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -7894,39 +7943,27 @@ void main() {
         ),
       ),
     );
-    var mid = writer.write(originalBytes: blank, edited: doc);
-    final archive = ZipDecoder().decodeBytes(mid);
-    final pageFile =
-        archive.firstWhere((f) => f.name.contains('pages/page1.xml'));
-    var pageXml = utf8.decode(pageFile.content as List<int>);
-    pageXml = pageXml.replaceFirst(
-      RegExp(r'<Cell N="ShadowBlur"[^/]*/>'),
-      '<Cell N="ShadowBlur" V="0.09" F="Inh"/>',
-    );
-    mid = _rezipWith(mid, pageFile.name, utf8.encode(pageXml));
-    doc = parser.parse(mid);
-    expect(doc.pages.first.findShapeById(id)!.shadow.blurInches,
-        closeTo(0.09, 1e-6));
-    doc = doc.replacePage(
-      0,
-      doc.pages.first.updateShapeById(
-        id,
-        (s) => s.copyWith(pinX: s.pinX + 0.1),
-      ),
-    );
-    final out = writer.write(originalBytes: mid, edited: doc);
-    final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.shadow.blurInches, closeTo(0.09, 1e-6));
-    final cell = XmlDocument.parse(utf8.decode(
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    expect(
+        parser.parse(mid).pages.first.findShapeById(id)!.shadow.blurInches, 0);
+    final outXml = utf8.decode(
       ZipDecoder()
-          .decodeBytes(out)
+          .decodeBytes(mid)
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
-    )).descendants.whereType<XmlElement>().firstWhere(
-          (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'ShadowBlur',
+    );
+    final source = XmlDocument.parse(outXml)
+        .descendants
+        .whereType<XmlElement>()
+        .firstWhere(
+          (e) =>
+              e.name.local == 'Shape' && e.getAttribute('ID') == id.toString(),
         );
-    expect(double.parse(cell.getAttribute('V')!), closeTo(0.09, 1e-6));
-    expect(cell.getAttribute('F'), isNull);
+    final blur = source.childElements.firstWhere(
+      (e) => e.name.local == 'Cell' && e.getAttribute('N') == 'ShadowBlur',
+    );
+    expect(blur.getAttribute('V'), '0');
+    expect(blur.getAttribute('F'), isNull);
   });
 
   test('GlowSize F=Inh scrubs to literal 0 when glow disabled', () {
@@ -8255,6 +8292,7 @@ void main() {
             pattern: 1,
             offsetXInches: 0.12,
             transparency: 0.35,
+            blurInches: 0,
           ),
         ),
       ),
@@ -8573,7 +8611,7 @@ void main() {
           pinY: 1,
           width: 2,
           height: 1,
-        ).copyWith(shadow: const VsdxShadow(enabled: true)),
+        ).copyWith(shadow: const VsdxShadow(enabled: true, blurInches: 0)),
       ),
     );
     var mid = writer.write(originalBytes: blank, edited: doc);
@@ -9979,6 +10017,7 @@ void main() {
             enabled: true,
             offsetXInches: 0.25,
             offsetYInches: -0.2,
+            blurInches: 0,
           ),
         ),
       ),
@@ -10290,6 +10329,7 @@ void main() {
             enabled: true,
             pattern: 1,
             color: VsdxColor(0xFF334455),
+            blurInches: 0,
           ),
         ),
       ),
@@ -10905,7 +10945,7 @@ void main() {
           pinY: 1,
           width: 2,
           height: 1,
-        ).copyWith(shadow: const VsdxShadow(enabled: true)),
+        ).copyWith(shadow: const VsdxShadow(enabled: true, blurInches: 0)),
       ),
     );
     final mid = writer.write(originalBytes: blank, edited: doc);
@@ -14363,7 +14403,8 @@ void main() {
           // Enabled effects with no solid/theme colour — rebuild omits
           // ShadowForegnd / GlowColor; residual F=Inh must still be scrubbed.
           // transparency: 0 so ShdwForegndTrans is not premultiplied into RGB.
-          shadow: const VsdxShadow(enabled: true, pattern: 1, transparency: 0),
+          shadow: const VsdxShadow(
+              enabled: true, pattern: 1, transparency: 0, blurInches: 0),
           glow: const VsdxGlow(enabled: true, sizeInches: 0.08),
         ),
       ),

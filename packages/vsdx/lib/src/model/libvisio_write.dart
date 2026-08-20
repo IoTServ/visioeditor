@@ -52,7 +52,11 @@
 /// same missing token: a filled 2-D shape bakes a locked Foreign sibling
 /// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use,
 /// then SoftEdgesSize is written 0 and the source fill is dropped so the
-/// plate is the body Draw paints. Character Overline
+/// plate is the body Draw paints. `ShadowBlur` is likewise missing —
+/// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
+/// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
+/// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
+/// Draw does not add a second hard copy. Character Overline
 /// is a token whose `readCharIX` case is empty, so a save inserts U+0305
 /// combining overlines and clears the cell. Glow* cells are not tokens;
 /// an unfilled stroke bakes a FillForegndTrans ribbon and a filled
@@ -132,8 +136,10 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                 bakeGlowPlateForLibvisioWrite(
                   bakeGlassForLibvisioWrite(
                     bakeSketchForLibvisioWrite(
-                      bakeShapeOpacityForLibvisioWrite(
-                        bakeOverlineForLibvisioWrite(hopped),
+                      bakeShadowForLibvisioWrite(
+                        bakeShapeOpacityForLibvisioWrite(
+                          bakeOverlineForLibvisioWrite(hopped),
+                        ),
                       ),
                     ),
                   ),
@@ -840,6 +846,9 @@ const kLibvisioSoftEdgesShapeNamePrefix = 'LibvisioSoftEdges.';
 /// Pixel density of the SourceAlpha PNG geometry SoftEdges bakes for Draw.
 const kLibvisioSoftEdgesPxPerInch = 96.0;
 
+/// Name prefix of the Gaussian PNG sibling ShadowBlur becomes.
+const kLibvisioShadowShapeNamePrefix = 'LibvisioShadow.';
+
 bool isLibvisioSoftEdgesPlate(VsdxShape shape) =>
     shape.name.startsWith(kLibvisioSoftEdgesShapeNamePrefix);
 
@@ -847,6 +856,16 @@ int? libvisioSoftEdgesSourceId(VsdxShape plate) {
   if (!isLibvisioSoftEdgesPlate(plate)) return null;
   return int.tryParse(
     plate.name.substring(kLibvisioSoftEdgesShapeNamePrefix.length),
+  );
+}
+
+bool isLibvisioShadowPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioShadowShapeNamePrefix);
+
+int? libvisioShadowSourceId(VsdxShape plate) {
+  if (!isLibvisioShadowPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioShadowShapeNamePrefix.length),
   );
 }
 
@@ -867,6 +886,7 @@ bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioGlassPlate(shape) ||
     isLibvisioLabelBorderPlate(shape) ||
     isLibvisioSoftEdgesPlate(shape) ||
+    isLibvisioShadowPlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
@@ -2545,6 +2565,20 @@ List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
         points.add(Offset2D(fx * w, fy * h));
       case RelLineTo(:final fx, :final fy):
         points.add(Offset2D(fx * w, fy * h));
+      case QuadBezTo(:final x, :final y):
+        points.add(Offset2D(x, y));
+      case RelQuadBezTo(:final fx, :final fy):
+        points.add(Offset2D(fx * w, fy * h));
+      case CubBezTo(:final x, :final y):
+        points.add(Offset2D(x, y));
+      case RelCubBezTo(:final fx, :final fy):
+        points.add(Offset2D(fx * w, fy * h));
+      case ArcTo(:final x, :final y):
+        points.add(Offset2D(x, y));
+      case RelArcTo(:final fx, :final fy):
+        points.add(Offset2D(fx * w, fy * h));
+      case EllipticalArcTo(:final x, :final y):
+        points.add(Offset2D(x, y));
       default:
         return null;
     }
@@ -2792,6 +2826,289 @@ VsdxDocument bakeGeometrySoftEdgesForLibvisioWrite(VsdxDocument document) {
     var nextId = _maxShapeId(page.shapes) + 1;
     final shapes = _bakeGeometrySoftEdgesTree(
       page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+      allocatePart: allocatePart,
+      addImage: (image) {
+        registry = registry.withImage(image);
+        changed = true;
+      },
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
+  }
+  if (!changed) return document;
+  return document.copyWith(pages: pages, images: registry);
+}
+
+/// Canvas fallback when ShadowForegnd is unset (`_drawShadow`).
+const _kLibvisioShadowFallback = VsdxColor(0x99000000);
+
+/// `true` when ShadowBlur must become a Gaussian PNG sibling for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has
+/// ShdwPattern / ShdwOffset* / ShdwForegnd but no ShadowBlur, so Draw
+/// paints a hard `draw:shadow`. A filled 2-D vector bakes the same
+/// Gaussian silhouette canvas and SVG already paint into a locked
+/// Foreign sibling, then ShdwPattern and ShadowBlur go to 0 so Draw
+/// does not add a second copy. 1-D, pictures, groups, unresolved
+/// theme colours, and unrecognised geometry stay native.
+bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.hasImage) return false;
+  if (shape.children.isNotEmpty) return false;
+  if (!shape.shadow.enabled) return false;
+  if (shape.shadow.blurInches <= 1e-6) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (!_shapePaintsFill(shape, shape.geometries)) return false;
+  if (shape.shadow.color == null && shape.shadow.themeColorIndex != null) {
+    return false;
+  }
+  return _softEdgesSilhouetteKind(shape) != null;
+}
+
+({Uint8List png, double padInches})? _shadowPngForLibvisioWrite(
+    VsdxShape shape) {
+  final kind = _softEdgesSilhouetteKind(shape);
+  if (kind == null) return null;
+  final color = shape.shadow.color ?? _kLibvisioShadowFallback;
+  final trans = shape.shadow.transparency.clamp(0.0, 1.0);
+  final fillTrans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final alpha =
+      (color.alpha * (1 - trans) * (1 - fillTrans)).round().clamp(0, 255);
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx = math.max(8, (h * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(innerWidthPx, innerHeightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    innerWidthPx = math.max(8, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(8, (innerHeightPx * scale).round());
+  }
+  final sigmaPx = shape.shadow.blurInches / w * innerWidthPx;
+  final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
+  final polygon = <({double x, double y})>[];
+  if (kind == SoftEdgesSilhouetteKind.polygon) {
+    VsdxGeometry? geom;
+    for (final candidate in shape.geometries) {
+      if (candidate.noShow || candidate.noFill) continue;
+      geom = candidate;
+      break;
+    }
+    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
+    if (inches == null) return null;
+    for (final p in inches) {
+      polygon.add((
+        x: p.x / w * (innerWidthPx - 1),
+        y: (1 - p.y / h) * (innerHeightPx - 1),
+      ));
+    }
+  }
+  final png = bakeSilhouetteDropShadowPng(
+    innerWidthPx: innerWidthPx,
+    innerHeightPx: innerHeightPx,
+    padPx: padPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    blurSigmaPx: sigmaPx,
+    kind: kind,
+    polygon: polygon,
+  );
+  if (png == null) return null;
+  return (png: png, padInches: padPx / innerWidthPx * w);
+}
+
+VsdxShape _sourceForLibvisioShadowWrite(VsdxShape shape) {
+  return shape.copyWith(
+    shadow: shape.shadow.copyWith(enabled: false, blurInches: 0),
+  );
+}
+
+VsdxShape _shadowPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required String imagePartName,
+  required double padInches,
+  required double offsetXInches,
+  required double offsetYInches,
+}) {
+  return VsdxShapeFactory.picture(
+    id: id,
+    pinX: source.pinX + offsetXInches,
+    pinY: source.pinY + offsetYInches,
+    width: source.width.abs() + padInches * 2,
+    height: source.height.abs() + padInches * 2,
+    imagePartName: imagePartName,
+    name: '$kLibvisioShadowShapeNamePrefix${source.id}',
+  ).copyWith(
+    locPinXInches: source.effectiveLocPinX + padInches,
+    locPinYInches: source.effectiveLocPinY + padInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    locked: true,
+    layerMemberIds: source.layerMemberIds,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+void _collectShadowPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioShadowSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectShadowPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioShadowBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioShadowPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioShadowBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+typedef _ShadowImageSink = void Function(VsdxImage image);
+
+List<VsdxShape> _bakeShadowTree(
+  List<VsdxShape> shapes, {
+  required VsdxPage page,
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+  required String Function(int shapeId) allocatePart,
+  required _ShadowImageSink addImage,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioShadowPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeShadowTree(
+        shape.children,
+        page: page,
+        plateIds: plateIds,
+        nextId: nextId,
+        allocatePart: allocatePart,
+        addImage: addImage,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioShadowBake(next)) {
+      final raster = _shadowPngForLibvisioWrite(next);
+      if (raster != null) {
+        final part = allocatePart(next.id);
+        addImage(
+          VsdxImage(
+            partName: part,
+            bytes: raster.png,
+            mimeType: 'image/png',
+          ),
+        );
+        final dx = libvisioEffectiveShadowOffset(
+          next.shadow.offsetXInches,
+          page.pageSheet.shadowOffsetXInches,
+        );
+        final dy = libvisioEffectiveShadowOffset(
+          next.shadow.offsetYInches,
+          page.pageSheet.shadowOffsetYInches,
+        );
+        final plate = _shadowPlateForLibvisioWrite(
+          next,
+          id: plateIds[next.id] ?? nextId(),
+          imagePartName: part,
+          padInches: raster.padInches,
+          offsetXInches: dx,
+          offsetYInches: dy,
+        );
+        out.add(plate);
+        out.add(_sourceForLibvisioShadowWrite(next));
+        changed = true;
+        continue;
+      }
+    } else {
+      final existingId = plateIds[next.id];
+      if (existingId != null) {
+        VsdxShape? kept;
+        for (final candidate in shapes) {
+          if (candidate.id == existingId) {
+            kept = candidate;
+            break;
+          }
+        }
+        if (kept != null) {
+          out.add(kept);
+          changed = true;
+        }
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+/// Insert (or keep) the Gaussian PNG siblings Draw uses for ShadowBlur.
+VsdxDocument bakeShadowForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_shdw_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_shdw_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    if (!pageNeedsLibvisioShadowBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, int>{};
+    _collectShadowPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeShadowTree(
+      page.shapes,
+      page: page,
       plateIds: plateIds,
       nextId: () => nextId++,
       allocatePart: allocatePart,

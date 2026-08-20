@@ -479,3 +479,86 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
     return null;
   }
 }
+
+/// Rasterize a solid silhouette and Gaussian-blur it for a drop-shadow PNG.
+///
+/// SoftEdges feathers SourceAlpha *inside* the box. ShadowBlur must spread
+/// alpha into [padPx] around the silhouette so Draw can show the halo —
+/// `tokens.txt` has no ShadowBlur, and libvisio only emits a hard
+/// `draw:shadow`.
+Uint8List? bakeSilhouetteDropShadowPng({
+  required int innerWidthPx,
+  required int innerHeightPx,
+  required int padPx,
+  required int red,
+  required int green,
+  required int blue,
+  required int alpha,
+  required double blurSigmaPx,
+  SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
+  List<({double x, double y})> polygon = const <({double x, double y})>[],
+}) {
+  if (innerWidthPx < 2 || innerHeightPx < 2) return null;
+  if (padPx < 0) return null;
+  if (alpha <= 0) return null;
+  final widthPx = innerWidthPx + padPx * 2;
+  final heightPx = innerHeightPx + padPx * 2;
+  try {
+    var work = raster.Image(
+      width: widthPx,
+      height: heightPx,
+      numChannels: 4,
+    );
+    final color = raster.ColorRgba8(
+      red.clamp(0, 255),
+      green.clamp(0, 255),
+      blue.clamp(0, 255),
+      alpha.clamp(0, 255),
+    );
+    switch (kind) {
+      case SoftEdgesSilhouetteKind.rectangle:
+        raster.fillRect(
+          work,
+          x1: padPx,
+          y1: padPx,
+          x2: padPx + innerWidthPx - 1,
+          y2: padPx + innerHeightPx - 1,
+          color: color,
+          radius: 0,
+          alphaBlend: false,
+        );
+      case SoftEdgesSilhouetteKind.ellipse:
+        final cx = padPx + (innerWidthPx - 1) / 2;
+        final cy = padPx + (innerHeightPx - 1) / 2;
+        final rx = math.max((innerWidthPx - 1) / 2, 0.5);
+        final ry = math.max((innerHeightPx - 1) / 2, 0.5);
+        for (var y = padPx; y < padPx + innerHeightPx; y++) {
+          for (var x = padPx; x < padPx + innerWidthPx; x++) {
+            final nx = (x + 0.5 - cx) / rx;
+            final ny = (y + 0.5 - cy) / ry;
+            if (nx * nx + ny * ny <= 1) {
+              work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+                  color.b.toInt(), color.a.toInt());
+            }
+          }
+        }
+      case SoftEdgesSilhouetteKind.polygon:
+        if (polygon.length < 3) return null;
+        raster.fillPolygon(
+          work,
+          vertices: <raster.Point>[
+            for (final p in polygon) raster.Point(p.x + padPx, p.y + padPx),
+          ],
+          color: color,
+        );
+    }
+    final blur = blurSigmaPx.clamp(0.0, 256.0);
+    if (blur > 1e-6) {
+      final radius = math.max(1, (blur * 1.5).round());
+      work = raster.gaussianBlur(work, radius: radius);
+    }
+    return raster.encodePng(work);
+  } catch (_) {
+    return null;
+  }
+}
