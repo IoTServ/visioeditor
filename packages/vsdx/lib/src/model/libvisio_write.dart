@@ -65,7 +65,8 @@
 /// is a token whose `readCharIX` case is empty, so a save inserts U+0305
 /// combining overlines and clears the cell. Glow* cells are not tokens;
 /// an unfilled stroke bakes a FillForegndTrans ribbon and a filled
-/// NoLine shape bakes a LineWeight halo, then GlowSize is written 0.
+/// NoLine shape bakes a Gaussian PNG sibling (or a LineWeight halo when
+/// the colour is still THEMEVAL()), then GlowSize is written 0.
 /// Filled shapes that already paint a stroke keep their outline — stealing
 /// Line would drop CompoundType / dashes that Draw *does* collect.
 /// That case bakes a locked Gaussian PNG sibling (canvas `_drawGlow`)
@@ -642,33 +643,45 @@ int? libvisioGlowSourceId(VsdxShape plate) {
   );
 }
 
-/// `true` when Glow* must become a sibling halo because Line is already in use.
+bool _libvisioGlowEffectOn(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  final glow = shape.glow;
+  if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
+  if (glow.transparency >= 1 - 1e-9) return false;
+  return shape.width.abs() > 1e-9 && shape.height.abs() > 1e-9;
+}
+
+/// `true` when Glow* must become a sibling halo because Line is already in use
+/// or because a filled NoLine 2-D can carry the blur as a Gaussian PNG.
 ///
 /// Same-shape `bakeGlowForLibvisio` steals Fill (unfilled stroke) or Line
 /// (filled NoLine). A default rectangle has both, so Draw would lose the
 /// outline if we reused Line. A locked sibling carries the halo — a
 /// Gaussian PNG when the colour is resolved RGB (canvas `_drawGlow`), or
-/// a LineWeight stroke when the colour is still THEMEVAL().
+/// a LineWeight stroke when the colour is still THEMEVAL(). Filled NoLine
+/// 2-D with resolved RGB also uses the PNG so Draw does not keep a hard
+/// LineWeight outline.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.is1D) return false;
-  final glow = shape.glow;
-  if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
-  if (glow.transparency >= 1 - 1e-9) return false;
-  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (_shapeCanLibvisioGlowPng(shape)) return true;
   final paintsFill = _shapePaintsFill(shape, shape.geometries);
   if (!paintsFill && !shape.hasImage) return false;
   return shape.line.hasLine;
 }
 
-bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) {
-  if (!shapeNeedsLibvisioGlowPlateBake(shape)) return false;
-  if (shape.hasImage) return false;
+bool _shapeCanLibvisioGlowPng(VsdxShape shape) {
+  if (!_libvisioGlowEffectOn(shape)) return false;
+  if (shape.is1D || shape.hasImage) return false;
   if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
     return false;
   }
+  if (!_shapePaintsFill(shape, shape.geometries)) return false;
   return _softEdgesSilhouetteKind(shape) != null;
 }
+
+bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) =>
+    _shapeCanLibvisioGlowPng(shape);
 
 ({Uint8List png, double padInches})? _glowPngForLibvisioWrite(VsdxShape shape) {
   final kind = _softEdgesSilhouetteKind(shape);
@@ -917,7 +930,8 @@ List<VsdxShape> _bakeGlowPlateTree(
   return changed ? out : shapes;
 }
 
-/// Insert (or keep) the sibling halos Draw uses when Glow cannot steal Line.
+/// Insert (or keep) the sibling halos Draw uses when Glow cannot steal Line,
+/// and the Gaussian PNG a filled NoLine 2-D uses instead of a hard outline.
 VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
   var registry = document.images;
@@ -4667,10 +4681,12 @@ VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
 /// keeps that outline — Line is shape-level, so a halo would replace
 /// CompoundType / dashes; that case bakes a Gaussian PNG sibling when
 /// RGB is resolved. Unfilled strokes become a FillForegndTrans
-/// ribbon (FillTrans is a token); filled NoLine / pictures become a
-/// LineWeight halo (`xmlStringToColour` zeros LineColorTrans, so RGB is
-/// premultiplied toward white).
+/// ribbon (FillTrans is a token); filled NoLine with resolved RGB
+/// bakes the same Gaussian PNG sibling; pictures and theme-only NoLine
+/// still become a LineWeight halo (`xmlStringToColour` zeros
+/// LineColorTrans, so RGB is premultiplied toward white).
 bool shapeNeedsLibvisioGlowBake(VsdxShape shape) {
+  if (_shapeCanLibvisioGlowPng(shape)) return false;
   final glow = shape.glow;
   if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
   if (glow.transparency >= 1 - 1e-9) return false;

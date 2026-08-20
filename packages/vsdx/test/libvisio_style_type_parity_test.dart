@@ -28,7 +28,8 @@
 /// here even though `readCharIX` skips it; a save inserts U+0305 combining
 /// marks so Draw paints the line too. Glow* is not a token: unfilled
 /// strokes bake a FillForegndTrans ribbon and filled NoLine shapes bake a
-/// LineWeight halo. Character ColorTrans, filled-shape
+/// Gaussian PNG sibling when RGB is resolved (theme-only NoLine still
+/// uses a LineWeight halo). Character ColorTrans, filled-shape
 /// LineColorTrans, and ShdwForegndTrans cannot carry alpha through
 /// `xmlStringToColour`, so a save premultiplies those into RGB toward white
 /// and writes Trans=0 (theme-bound RGB-less cells keep THEMEVAL).
@@ -50,9 +51,10 @@
 /// (canvas `canvasStrokeJoin`). `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
 /// Draw collects, then `ReflectionSize` is written 0. Glow on a filled
-/// shape that already paints a stroke bakes a locked Gaussian PNG sibling
-/// when RGB is resolved, then `GlowSize` is written 0. Theme-only glow
-/// still uses a LineWeight halo so THEMEVAL() survives. Page `PageColor` is not a token, so
+/// shape that already paints a stroke, or a filled NoLine 2-D, bakes a
+/// locked Gaussian PNG sibling when RGB is resolved, then `GlowSize` is
+/// written 0. Theme-only glow still uses a LineWeight halo so THEMEVAL()
+/// survives. Page `PageColor` is not a token, so
 /// a save prepends a locked full-page plate Draw can fill. draw.io Sketch
 /// is User rows libvisio never reads, so a save maps the hatch onto
 /// FillPattern 2–24 and bakes the two jiggle strokes as locked siblings,
@@ -417,11 +419,13 @@ void main() {
         transparency: 0.5,
       ),
     );
-    expect(shapeNeedsLibvisioGlowBake(filled), isTrue);
+    expect(shapeNeedsLibvisioGlowBake(filled), isFalse,
+        reason: 'filled NoLine RGB bakes a Gaussian PNG sibling');
+    expect(shapeNeedsLibvisioGlowPlateBake(filled), isTrue);
     final filledWrite = libvisioShapeWrite(filled);
-    expect(filledWrite.line.hasLine, isTrue);
-    expect(filledWrite.line.weightInches, closeTo(0.16, 1e-9));
+    expect(filledWrite.line.hasLine, isFalse);
     expect(filledWrite.fill.pattern, 1);
+    expect(glowForLibvisioWrite(filled).enabled, isFalse);
 
     final outlined = VsdxShapeFactory.rectangle(
       id: 3,
@@ -440,6 +444,27 @@ void main() {
     expect(shapeNeedsLibvisioGlowPlateBake(outlined), isTrue,
         reason: 'filled 2-D with a stroke bakes a sibling Gaussian PNG');
     expect(glowForLibvisioWrite(outlined).enabled, isFalse);
+
+    final themeFilled = VsdxShapeFactory.rectangle(
+      id: 4,
+      pinX: 1,
+      pinY: 1,
+      width: 1.5,
+      height: 0.8,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      glow: const VsdxGlow(
+        themeColorIndex: 2,
+        sizeInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowBake(themeFilled), isTrue,
+        reason: 'theme-only NoLine still steals Line so THEMEVAL() survives');
+    expect(shapeNeedsLibvisioGlowPlateBake(themeFilled), isFalse);
+    final themeWrite = libvisioShapeWrite(themeFilled);
+    expect(themeWrite.line.hasLine, isTrue);
+    expect(themeWrite.line.weightInches, closeTo(0.16, 1e-9));
   });
 
   test('Glow on a filled stroke bakes a sibling halo LibreOffice can collect',
@@ -508,6 +533,83 @@ void main() {
     final savedDoc = parser.parse(saved);
     expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
     expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 1);
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioGlowShapeNamePrefix}1');
+    expect(savedPlate.hasImage, isTrue);
+    expect(savedPlate.width, greaterThan(shape.width));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+  });
+
+  test(
+      'Glow on a filled NoLine bakes a sibling Gaussian PNG LibreOffice can collect',
+      () {
+    const colour = VsdxColor(0xFFFF00FF);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'GlowNoLine',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: colour,
+        sizeInches: 0.08,
+        transparency: 0.5,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowPlateBake(shape), isTrue);
+    expect(shapeNeedsLibvisioGlowBake(shape), isFalse);
+    expect(glowForLibvisioWrite(shape).enabled, isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another halo',
+    );
+    final plate = baked.pages.first.shapes.first;
+    expect(plate.name, '${kLibvisioGlowShapeNamePrefix}1');
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.width, greaterThan(shape.width));
+    expect(plate.line.hasLine, isFalse);
+    expect(baked.pages.first.findShapeById(1)!.line.pattern, 0,
+        reason: 'the source must stay NoLine');
+    expect(baked.pages.first.findShapeById(1)!.glow.enabled, isTrue,
+        reason: 'the in-memory source keeps the live effect; XML Size is 0');
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    var glowRed = 0;
+    for (var x = 0; x < decoded.width ~/ 4; x++) {
+      final pixel = decoded.getPixel(x, decoded.height ~/ 2);
+      if (pixel.r > glowRed) glowRed = pixel.r.toInt();
+    }
+    expect(glowRed, greaterThan(80),
+        reason: 'Glow PNG must paint the magenta halo outside the body');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 0);
     final savedPlate = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == '${kLibvisioGlowShapeNamePrefix}1');
     expect(savedPlate.hasImage, isTrue);
@@ -3405,9 +3507,13 @@ void main() {
     final glowNoLine =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowNoLine');
     expect(glowNoLine.glow.enabled, isFalse,
-        reason: 'GlowSize is not a token; the halo is a LineWeight bake');
-    expect(glowNoLine.line.hasLine, isTrue);
-    expect(glowNoLine.line.weightInches, closeTo(0.16, 1e-9));
+        reason: 'GlowSize is not a token; filled NoLine RGB bakes a PNG');
+    expect(glowNoLine.line.pattern, 0);
+    final glowNoLinePlate = savedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowNoLine.id}',
+    );
+    expect(glowNoLinePlate.hasImage, isTrue);
+    expect(glowNoLinePlate.width, greaterThan(glowNoLine.width));
     final glowStroke =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowStroke');
     expect(glowStroke.glow.enabled, isFalse);

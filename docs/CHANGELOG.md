@@ -625,12 +625,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - Character `Overline` and `Glow*` now survive a save into LibreOffice.
   libvisio's `readCharIX` has an empty `Overline` case, so a save inserts
   combining U+0305 marks and clears the cell. Glow cells are not tokens:
-  an unfilled stroke bakes a `FillForegndTrans` ribbon, a filled NoLine
-  shape bakes a `LineWeight` halo, and a filled shape that already paints
-  a stroke bakes a locked Gaussian PNG sibling (`LibvisioGlow.{id}`) when
-  RGB is resolved so Draw shows the same blur canvas already paints. Theme-only
-  glow still uses a LineWeight halo so THEMEVAL() survives. Then `GlowSize`
-  is written 0.
+  an unfilled stroke bakes a `FillForegndTrans` ribbon, and a filled 2-D
+  (NoLine or already stroked) bakes a locked Gaussian PNG sibling
+  (`LibvisioGlow.{id}`) when RGB is resolved so Draw shows the same blur
+  canvas already paints. Theme-only glow still uses a LineWeight halo so
+  THEMEVAL() survives. Then `GlowSize` is written 0.
 - draw.io Sketch now survives a save into LibreOffice. `User.veSketch*`
   rows are not tokens, so a save maps hachure / cross-hatch / dots onto
   classic `FillPattern` 2–24 (`draw:fill=hatch`, holes stay transparent)
