@@ -587,6 +587,7 @@ class EditorL10n {
   String get compoundDouble => _t('compoundDouble');
   String get compoundThickThin => _t('compoundThickThin');
   String get compoundThinThick => _t('compoundThinThick');
+  String get compoundTriple => _t('compoundTriple');
   String get arrowFilled => _t('arrowFilled');
   String get arrowOpen => _t('arrowOpen');
   String get arrowThin => _t('arrowThin');

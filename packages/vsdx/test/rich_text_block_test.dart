@@ -121,6 +121,26 @@ void main() {
     expect(style.overline, isTrue);
   });
 
+  test('libvisioBulletGlyph matches VSDContentCollector defaults 1–7', () {
+    expect(libvisioBulletGlyph(0), isEmpty);
+    expect(libvisioBulletGlyph(1), '\u2022');
+    expect(libvisioBulletGlyph(2), '\u25CB');
+    expect(libvisioBulletGlyph(3), '\u25A0');
+    expect(libvisioBulletGlyph(4), '\u25A1');
+    expect(libvisioBulletGlyph(5), '\u2756');
+    expect(libvisioBulletGlyph(6), '\u27A2');
+    expect(libvisioBulletGlyph(7), '\u2714');
+    expect(libvisioBulletGlyph(8), '\u2022');
+    expect(
+      const VsdxParaStyle(bullet: 6).resolvedBulletGlyph,
+      '\u27A2',
+    );
+    expect(
+      const VsdxParaStyle(bullet: 6, bulletStr: '>>').resolvedBulletGlyph,
+      '>>',
+    );
+  });
+
   test('Character Highlight parses V=hex and V=0 clears', () {
     final marked = parser.parse(
       shape(

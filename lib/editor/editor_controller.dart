@@ -9525,10 +9525,10 @@ class EditorController extends ChangeNotifier {
   void clearTextFormatting() =>
       _updateText(char: (_) => VsdxCharStyle.defaults);
 
-  /// Visio `CompoundType` (0=single, 1=double, 2=thick-thin, 3=thin-thick).
+  /// Visio `CompoundType` (0=single … 4=triple).
   void setCompoundType(int type) => _updateSelectedShapes(
         (s) => s.copyWith(
-          line: s.line.copyWith(compoundType: type.clamp(0, 3)),
+          line: s.line.copyWith(compoundType: type.clamp(0, 4)),
         ),
         rememberStyle: true,
       );

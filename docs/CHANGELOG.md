@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Paragraph `Bullet` 1–7 now paint the same default glyphs LibreOffice’s
+  libvisio importer emits (`VSDContentCollector::_bulletFromParaFormat`).
+  Types 5 and 6 were a black diamond and an en-dash; they are now U+2756
+  and U+27A2 so canvas, SVG, and Draw agree when `BulletStr` is empty.
+  Every classic `FillPattern` 2–40, `LinePattern` 2–23 and bullet 1–7 is
+  in the style-parity SVG check; soffice opens a seven-style list.
+- Visio `CompoundType` 4 (triple) is selectable in Format and no longer
+  clamped to thin-thick. Canvas, SVG and the LibreOffice rail bake already
+  knew type 4; the editor control did not.
 - `ConLineJump*` hops and Image Properties (Transparency / Brightness /
   Contrast / Blur) now survive a save into LibreOffice. libvisio has no
   collector for those cells, so a save bakes hops as `ArcTo` / `MoveTo` /

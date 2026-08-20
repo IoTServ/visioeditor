@@ -1697,6 +1697,8 @@ void main() {
     expect(c.currentPage!.findShapeById(id)!.line.compoundType, 1);
     c.setCompoundType(2);
     expect(c.selectedLine?.compoundType, 2);
+    c.setCompoundType(4);
+    expect(c.selectedLine?.compoundType, 4);
 
     c.setSpaceBeforeInches(12 / 72);
     c.setSpaceAfterInches(6 / 72);

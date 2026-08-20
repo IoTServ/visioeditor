@@ -5664,19 +5664,7 @@ class VsdxToSvgSerializer {
                     : kLibreOfficeFontCellLineHeightFactor));
   }
 
-  String _svgBulletGlyph(VsdxParaStyle style) {
-    final custom = style.bulletStr;
-    if (custom != null && custom.isNotEmpty) return custom;
-    return switch (style.bullet) {
-      2 => '○',
-      3 => '■',
-      4 => '□',
-      5 => '◆',
-      6 => '–',
-      7 => '✓',
-      _ => '•',
-    };
-  }
+  String _svgBulletGlyph(VsdxParaStyle style) => style.resolvedBulletGlyph;
 
   /// Place glyphs along a quadratic arc (draw.io CurvedText / canvas path).
   void _writeCurvedText(

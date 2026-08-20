@@ -7144,6 +7144,7 @@ class _PropertyPanel extends StatelessWidget {
         1: el.compoundDouble,
         2: el.compoundThickThin,
         3: el.compoundThinThick,
+        4: el.compoundTriple,
       };
 
   Widget _compoundTypeRow(BuildContext context, EditorController controller) {

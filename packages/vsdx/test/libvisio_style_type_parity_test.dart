@@ -787,6 +787,127 @@ void main() {
     );
   });
 
+  test('every FillPattern 2–40, LinePattern 2–23, and Bullet 1–7 paints', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first;
+    var nextId = page.nextFreeShapeId();
+
+    for (var pattern = 2; pattern <= 40; pattern++) {
+      page = page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: nextId++,
+          pinX: 2,
+          pinY: 4,
+          width: 1,
+          height: 0.5,
+          name: 'Fill$pattern',
+          fill: VsdxFill(
+            foreground: const VsdxColor(0xFFFF0000),
+            background: const VsdxColor(0xFF0000FF),
+            pattern: pattern,
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      );
+    }
+    for (var pattern = 2; pattern <= 23; pattern++) {
+      page = page.addShape(
+        VsdxShape(
+          id: nextId++,
+          name: 'Dash$pattern',
+          pinX: 4,
+          pinY: 4,
+          width: 2,
+          height: 0.2,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[MoveTo(0, 0.1), LineTo(2, 0.1)],
+            ),
+          ],
+          line: VsdxLine(
+            color: const VsdxColor(0xFF000000),
+            pattern: pattern,
+          ),
+        ),
+      );
+    }
+    for (var bullet = 1; bullet <= 7; bullet++) {
+      page = page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: nextId++,
+          pinX: 6,
+          pinY: 4,
+          width: 1.4,
+          height: 0.4,
+          name: 'Bullet$bullet',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'x',
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'x',
+                paraStyle: VsdxParaStyle(bullet: bullet),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    doc = doc.replacePage(0, page);
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      RegExp(r'<pattern\b').allMatches(svg).length,
+      greaterThanOrEqualTo(23),
+      reason: 'each hatch FillPattern 2–24 must emit a <pattern>',
+    );
+    expect(svg, contains('linearGradient'),
+        reason: 'classic FillPattern 25–34 are linear');
+    expect(svg, contains('radialGradient'),
+        reason: 'classic FillPattern 35–40 are radial');
+    expect(
+      RegExp(r'stroke-dasharray="').allMatches(svg).length,
+      greaterThanOrEqualTo(22),
+      reason: 'each LinePattern 2–23 must dash',
+    );
+    for (var bullet = 1; bullet <= 7; bullet++) {
+      expect(
+        svg,
+        contains(libvisioBulletGlyph(bullet)),
+        reason: 'Bullet $bullet must paint the libvisio default glyph',
+      );
+    }
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes
+          .where((s) => s.name.startsWith('Bullet'))
+          .map((s) => s.richText.runs.single.paraStyle.bullet)
+          .toList(),
+      <int>[1, 2, 3, 4, 5, 6, 7],
+      reason: 'Bullet 1–7 cells must round-trip for Draw to collect',
+    );
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final afterPages = oracle.svgPages(saved);
+    expect(afterPages, isNotNull);
+    final after = afterPages!.join();
+    expect(after, contains('svg:path'), reason: 'hatches and dashes collect');
+    expect(
+      RegExp(r'stroke-dasharray:').allMatches(after).length,
+      greaterThanOrEqualTo(22),
+      reason: 'libvisio must dash LinePattern 2–23',
+    );
+    // RVNGSVGDrawingGenerator drops list markers (and span fo:background-color).
+    // vsd2raw still records the bullet-char Draw paints.
+    _expectVsd2rawCollected(saved, const <String>['text:bullet-char']);
+  });
+
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

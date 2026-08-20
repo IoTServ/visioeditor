@@ -81,9 +81,7 @@ class VsdxTabSet {
 
   @override
   bool operator ==(Object other) =>
-      other is VsdxTabSet &&
-      other.ix == ix &&
-      _listEq(other.stops, stops);
+      other is VsdxTabSet && other.ix == ix && _listEq(other.stops, stops);
 
   @override
   int get hashCode => Object.hash(ix, Object.hashAll(stops));
@@ -284,7 +282,16 @@ bool isVisioRightToLeftText(String text, {String? langId}) {
   if (subtags.contains('latn') || subtags.contains('deva')) return false;
   final language = subtags.firstOrNull;
   return const <String>{
-    'ar', 'dv', 'fa', 'he', 'iw', 'ku', 'ps', 'sd', 'ur', 'yi',
+    'ar',
+    'dv',
+    'fa',
+    'he',
+    'iw',
+    'ku',
+    'ps',
+    'sd',
+    'ur',
+    'yi',
   }.contains(language);
 }
 
@@ -549,6 +556,24 @@ class VsdxFontStyle {
 /// uses a 423-unit cell and a 568-unit advance at 120%, yielding 1.12.
 const double kLibreOfficeFontCellLineHeightFactor = 1.12;
 
+/// Default `BulletStr` libvisio emits when the cell is empty.
+///
+/// `VSDContentCollector::_bulletFromParaFormat` maps Visio `Bullet` 1–7 onto
+/// these UCS-4 code points; LibreOffice Draw paints the same list. Unknown
+/// ids fall through to the disc, matching that `default` branch.
+String libvisioBulletGlyph(int bullet) {
+  if (bullet == 0) return '';
+  return switch (bullet) {
+    2 => '\u25CB', // ○ WHITE CIRCLE
+    3 => '\u25A0', // ■ BLACK SQUARE
+    4 => '\u25A1', // □ WHITE SQUARE
+    5 => '\u2756', // ❖ BLACK DIAMOND MINUS WHITE X
+    6 => '\u27A2', // ➢ THREE-D TOP-LIGHTED RIGHTWARDS ARROWHEAD
+    7 => '\u2714', // ✓ HEAVY CHECK MARK
+    _ => '\u2022', // • BULLET (1 and unknown)
+  };
+}
+
 /// Visio paragraph style (`<Section N="Paragraph">`).
 @immutable
 class VsdxParaStyle {
@@ -631,6 +656,16 @@ class VsdxParaStyle {
       VsdxHorzAlign.right => VsdxHorzAlign.left,
       _ => horizontalAlign,
     };
+  }
+
+  /// Glyph canvas / SVG / Draw paint when [bullet] is non-zero.
+  ///
+  /// A non-empty [bulletStr] wins. Otherwise this is
+  /// [libvisioBulletGlyph] so empty `BulletStr` cells match LibreOffice.
+  String get resolvedBulletGlyph {
+    final custom = bulletStr;
+    if (custom != null && custom.isNotEmpty) return custom;
+    return libvisioBulletGlyph(bullet);
   }
 
   static const VsdxParaStyle defaults = VsdxParaStyle();
@@ -813,7 +848,8 @@ class VsdxTextBlock {
 
   /// Drop [backgroundColor] (transparent TextBkgnd). Prefer this over
   /// [copyWith] with `backgroundColor: null`, which cannot clear the field.
-  VsdxTextBlock withoutBackgroundColor() => copyWith(clearBackgroundColor: true);
+  VsdxTextBlock withoutBackgroundColor() =>
+      copyWith(clearBackgroundColor: true);
 
   VsdxTextBlock copyWith({
     double? pinXInches,
@@ -855,8 +891,7 @@ class VsdxTextBlock {
         backgroundTransparency:
             backgroundTransparency ?? this.backgroundTransparency,
         textDirection: textDirection ?? this.textDirection,
-        defaultTabStopInches:
-            defaultTabStopInches ?? this.defaultTabStopInches,
+        defaultTabStopInches: defaultTabStopInches ?? this.defaultTabStopInches,
       );
 }
 

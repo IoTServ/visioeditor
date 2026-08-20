@@ -964,9 +964,9 @@ class VsdxPainter extends CustomPainter {
   }
 
   /// Draw a stroke honouring Visio `CompoundType`
-  /// (0=single, 1=double, 2=thick-thin, 3=thin-thick).
+  /// (0=single, 1=double, 2=thick-thin, 3=thin-thick, 4=triple).
   ///
-  /// Types 1–3 are drawn as two parallel offset rails (see [compoundRails])
+  /// Types 1–4 are drawn as parallel offset rails (see [compoundRails])
   /// so thick-thin / thin-thick are visually distinct. Falls back to a
   /// concentric clear-gap double when the path cannot be sampled.
   ///
@@ -3986,19 +3986,7 @@ class VsdxPainter extends CustomPainter {
   }
 
   /// Default Visio-style bullet glyph for [VsdxParaStyle.bullet] (1…).
-  static String _bulletGlyph(VsdxParaStyle style) {
-    final custom = style.bulletStr;
-    if (custom != null && custom.isNotEmpty) return custom;
-    return switch (style.bullet) {
-      2 => '○',
-      3 => '■',
-      4 => '□',
-      5 => '◆',
-      6 => '–',
-      7 => '✓',
-      _ => '•',
-    };
-  }
+  static String _bulletGlyph(VsdxParaStyle style) => style.resolvedBulletGlyph;
 
   /// Split rich-text runs into paragraphs at `\n` (Visio paragraph breaks).
   List<({List<VsdxTextRun> runs, VsdxParaStyle style})> _splitParagraphs(

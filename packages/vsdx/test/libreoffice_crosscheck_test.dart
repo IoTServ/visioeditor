@@ -953,6 +953,30 @@ void main() {
                 endArrow: 40,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 46,
+              pinX: 4.4,
+              pinY: 8.4,
+              width: 2.2,
+              height: 1.6,
+              name: 'Bullets',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: '1234567',
+              richText: VsdxRichText(
+                runs: <VsdxTextRun>[
+                  for (var bullet = 1; bullet <= 7; bullet++)
+                    VsdxTextRun(
+                      text: bullet == 7 ? '$bullet' : '$bullet\n',
+                      paraStyle: VsdxParaStyle(bullet: bullet),
+                    ),
+                ],
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1088,6 +1112,19 @@ void main() {
         reason:
             'libvisio marker 40 is a filled TODO stub; Geometry is the halo');
     expect(todoArrow.geometries.any((g) => !g.noFill), isTrue);
+    final bullets =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Bullets');
+    expect(
+      bullets.richText.runs.map((run) => run.paraStyle.bullet).toList(),
+      <int>[1, 2, 3, 4, 5, 6, 7],
+      reason: 'Bullet 1–7 must round-trip; Draw collects the cell',
+    );
+    expect(
+      bullets.richText.runs.map((run) => run.paraStyle.resolvedBulletGlyph),
+      <String>[
+        for (var bullet = 1; bullet <= 7; bullet++) libvisioBulletGlyph(bullet),
+      ],
+    );
     final glowStroke = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowStroke');
     expect(glowStroke.glow.enabled, isFalse);
