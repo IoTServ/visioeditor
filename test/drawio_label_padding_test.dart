@@ -81,12 +81,43 @@ void main() {
     expect(double.parse(plate!.group(1)!), lessThan(2));
     expect(double.parse(plate.group(2)!), lessThan(1));
 
+    final before = value.currentPage!.findShapeById(source)!;
+    final base = before.richText.textBlock;
     final reopened = const DocumentParser()
         .parse(value.exportToBytes())
         .pages
         .single
         .findShapeById(source)!;
-    expect(reopened.labelPadding, expected);
+    expect(
+      reopened.labelPadding.isZero,
+      isTrue,
+      reason: 'User.veLabelPadding is not a token; save bakes into Margin',
+    );
+    expect(
+      reopened.richText.textBlock.marginLeftInches,
+      closeTo(
+        base.marginLeftInches + 16 / kLibvisioLabelPaddingPxPerInch,
+        1e-6,
+      ),
+    );
+    expect(
+      reopened.richText.textBlock.marginRightInches,
+      closeTo(
+        base.marginRightInches + 8 / kLibvisioLabelPaddingPxPerInch,
+        1e-6,
+      ),
+    );
+    expect(
+      reopened.richText.textBlock.marginTopInches,
+      closeTo(base.marginTopInches + 4 / kLibvisioLabelPaddingPxPerInch, 1e-6),
+    );
+    expect(
+      reopened.richText.textBlock.marginBottomInches,
+      closeTo(
+        base.marginBottomInches + 12 / kLibvisioLabelPaddingPxPerInch,
+        1e-6,
+      ),
+    );
 
     value.copyStyle();
     final target = rectangle(value, 5);

@@ -77,7 +77,10 @@
 /// transparency / image Transparency Draw actually collects, then drops
 /// the User row. draw.io Label Border is `User.veLabelBorderColor`
 /// (not a token), so a save inserts a locked NoFill sibling whose LineColor
-/// Draw collects, then drops the User row.
+/// Draw collects, then drops the User row. draw.io Label Padding is
+/// `User.veLabelPadding` (not a token), so a save adds the pixel inset
+/// into Left/Right/Top/BottomMargin (`fo:padding-*`) Draw collects, then
+/// drops the User row.
 library;
 
 import 'dart:math' as math;
@@ -114,13 +117,15 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
     bakeLabelBorderForLibvisioWrite(
-      bakeImageAdjustmentsForLibvisioWrite(
-        bakeReflectionForLibvisioWrite(
-          bakeGlowPlateForLibvisioWrite(
-            bakeGlassForLibvisioWrite(
-              bakeSketchForLibvisioWrite(
-                bakeShapeOpacityForLibvisioWrite(
-                  bakeOverlineForLibvisioWrite(hopped),
+      bakeLabelPaddingForLibvisioWrite(
+        bakeImageAdjustmentsForLibvisioWrite(
+          bakeReflectionForLibvisioWrite(
+            bakeGlowPlateForLibvisioWrite(
+              bakeGlassForLibvisioWrite(
+                bakeSketchForLibvisioWrite(
+                  bakeShapeOpacityForLibvisioWrite(
+                    bakeOverlineForLibvisioWrite(hopped),
+                  ),
                 ),
               ),
             ),
@@ -814,6 +819,9 @@ const kLibvisioLabelBorderShapeNamePrefix = 'LibvisioLabelBorder.';
 
 /// Pixel density canvas / SVG use for the 1px label-border hairline.
 const kLibvisioLabelBorderPxPerInch = 96.0;
+
+/// Pixel density canvas / SVG use for draw.io `labelPadding`.
+const kLibvisioLabelPaddingPxPerInch = 96.0;
 
 bool isLibvisioLabelBorderPlate(VsdxShape shape) =>
     shape.name.startsWith(kLibvisioLabelBorderShapeNamePrefix);
@@ -1727,6 +1735,90 @@ VsdxDocument bakeLabelBorderForLibvisioWrite(VsdxDocument document) {
     pages.add(next);
   }
   return changed ? document.copyWith(pages: pages) : document;
+}
+
+/// `true` when `User.veLabelPadding` must fold into Margin cells Draw paints.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so `veLabelPadding` never becomes ODF padding. Left/Right/Top/
+/// BottomMargin *are* collected (`VSDContentCollector` maps them to
+/// `fo:padding-*`), so a save adds the pixel inset at 96 dpi and drops
+/// the User row. Glueable 1-D labels stay native — their loose plate
+/// depends on layout.
+bool shapeNeedsLibvisioLabelPaddingBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (shape.labelPadding.isZero) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  final hasText =
+      !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
+  return hasText;
+}
+
+VsdxShape bakeLabelPaddingShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeLabelPaddingShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioLabelPaddingBake(shape)) {
+    final pad = shape.labelPadding;
+    final block = shape.richText.textBlock;
+    final px = kLibvisioLabelPaddingPxPerInch;
+    next = shape
+        .copyWith(
+          richText: shape.richText.copyWith(
+            textBlock: block.copyWith(
+              marginLeftInches: block.marginLeftInches + pad.left / px,
+              marginRightInches: block.marginRightInches + pad.right / px,
+              marginTopInches: block.marginTopInches + pad.top / px,
+              marginBottomInches: block.marginBottomInches + pad.bottom / px,
+            ),
+          ),
+        )
+        .withLabelPadding(VsdxLabelPadding.zero);
+  }
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Fold `User.veLabelPadding` into Left/Right/Top/BottomMargin Draw collects.
+VsdxDocument bakeLabelPaddingForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeLabelPaddingShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
 }
 
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).

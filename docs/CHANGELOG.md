@@ -651,6 +651,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   collects, then drops the User row. Canvas and SVG already stroked the
   text frame. Glueable connector labels keep the User row — their loose
   plate depends on layout.
+- draw.io Label Padding now survives a save into LibreOffice.
+  `User.veLabelPadding` is not a token, so a save adds the pixel inset
+  into `LeftMargin` / `RightMargin` / `TopMargin` / `BottomMargin`
+  (`fo:padding-*`) which libvisio collects, then drops the User row.
+  Canvas and SVG already padded tight plates and text-flow bands.
+  Glueable connector labels keep the User row — their loose plate
+  depends on layout.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

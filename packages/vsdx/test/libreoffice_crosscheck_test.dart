@@ -1088,6 +1088,33 @@ void main() {
                   ),
                 )
                 .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 53,
+              pinX: 4.2,
+              pinY: 7.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'LabelPaddingBox',
+              fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+              line: const VsdxLine(pattern: 0),
+            )
+                .copyWith(
+                  richText: const VsdxRichText(
+                    runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+                    textBlock: VsdxTextBlock(
+                      marginLeftInches: 0,
+                      marginRightInches: 0,
+                      marginTopInches: 0,
+                      marginBottomInches: 0,
+                    ),
+                  ),
+                )
+                .withLabelPadding(
+                  const VsdxLabelPadding(
+                      left: 48, right: 24, top: 12, bottom: 36),
+                ),
           ),
     );
     doc = doc.copyWith(
@@ -1301,6 +1328,17 @@ void main() {
     expect(
       labelBorderPlate.line.weightInches,
       closeTo(1 / kLibvisioLabelBorderPxPerInch, 1e-9),
+    );
+    final labelPaddingBox = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LabelPaddingBox');
+    expect(labelPaddingBox.labelPadding.isZero, isTrue);
+    expect(
+      labelPaddingBox.richText.textBlock.marginLeftInches,
+      closeTo(48 / kLibvisioLabelPaddingPxPerInch, 1e-9),
+    );
+    expect(
+      labelPaddingBox.richText.textBlock.marginRightInches,
+      closeTo(24 / kLibvisioLabelPaddingPxPerInch, 1e-9),
     );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
@@ -1756,6 +1794,44 @@ void main() {
             .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
       ),
     );
+    var labelPaddingDocument = parser.parse(blank);
+    final labelPaddingPage = labelPaddingDocument.pages.first;
+    labelPaddingDocument = labelPaddingDocument.replacePage(
+      0,
+      labelPaddingPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: labelPaddingPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'LabelPaddingBox',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'H',
+                    charStyle: VsdxCharStyle(
+                      fontSizeInches: 0.4,
+                      color: VsdxColor.black,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  marginLeftInches: 0,
+                  marginRightInches: 0,
+                  marginTopInches: 0,
+                  marginBottomInches: 0,
+                  verticalAlign: VsdxVertAlign.middle,
+                ),
+              ),
+            )
+            .withLabelPadding(const VsdxLabelPadding(left: 48)),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1789,6 +1865,10 @@ void main() {
       'label_border': writer.write(
         originalBytes: blank,
         edited: labelBorderDocument,
+      ),
+      'label_padding': writer.write(
+        originalBytes: blank,
+        edited: labelPaddingDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2127,6 +2207,57 @@ void main() {
                 'edge=$edge interior=$interior',
           );
         }
+        if (entry.key == 'label_padding' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          int darkPixels(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r < 80 && pixel.g < 80 && pixel.b < 80) count++;
+              }
+            }
+            return count;
+          }
+
+          final inset = darkPixels(2.80, 5.2, 3.10, 5.8);
+          final glyph = darkPixels(3.30, 5.2, 4.40, 5.8);
+          expect(
+            glyph,
+            greaterThan(20),
+            reason: 'LibreOffice must paint the padded label; '
+                'inset=$inset glyph=$glyph',
+          );
+          expect(
+            glyph,
+            greaterThan(inset * 2),
+            reason: 'LibreOffice must honour baked LeftMargin as fo:padding; '
+                'inset=$inset glyph=$glyph',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2135,7 +2266,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts eleven packages.
+      // default on a cold profile, and this case converts twelve packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

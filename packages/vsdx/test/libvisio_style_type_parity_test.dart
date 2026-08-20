@@ -61,7 +61,9 @@
 /// into FillForegndTrans / line transparency and drops `veOpacity`.
 /// draw.io Label Border is also a User row, so a save bakes a locked
 /// NoFill sibling whose LineColor Draw collects, then drops
-/// `veLabelBorderColor`.
+/// `veLabelBorderColor`. draw.io Label Padding is also a User row, so a
+/// save adds the pixel inset into Left/Right/Top/BottomMargin and drops
+/// `veLabelPadding`.
 library;
 
 import 'dart:io';
@@ -836,6 +838,88 @@ void main() {
     expect(after, isNotEmpty);
     _expectVsd2rawCollected(saved, const <String>[
       'svg:stroke-color: #1565c0',
+    ]);
+  });
+
+  test('Label Padding bakes into Margin cells LibreOffice can collect', () {
+    const pad = VsdxLabelPadding(top: 12, right: 24, bottom: 36, left: 48);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.6,
+      height: 0.8,
+      name: 'LabelPaddingBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    )
+        .copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+            ),
+          ),
+        )
+        .withLabelPadding(pad);
+    expect(shapeNeedsLibvisioLabelPaddingBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.labelPadding.isZero, isTrue);
+    expect(
+      source.richText.textBlock.marginLeftInches,
+      closeTo(48 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+    );
+    expect(
+      source.richText.textBlock.marginRightInches,
+      closeTo(24 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+    );
+    expect(
+      source.richText.textBlock.marginTopInches,
+      closeTo(12 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+    );
+    expect(
+      source.richText.textBlock.marginBottomInches,
+      closeTo(36 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .marginLeftInches,
+      closeTo(48 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+      reason: 'a second save must not stack another inset',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.labelPadding.isZero, isTrue);
+    expect(
+      after.richText.textBlock.marginLeftInches,
+      closeTo(0.5, 1e-9),
+    );
+    expect(
+      after.richText.textBlock.marginRightInches,
+      closeTo(0.25, 1e-9),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final svg = oracle.svgPages(saved)?.join() ?? '';
+    expect(svg, isNotEmpty);
+    _expectVsd2rawCollected(saved, const <String>[
+      'fo:padding-left',
     ]);
   });
 

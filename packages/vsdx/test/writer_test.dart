@@ -2128,6 +2128,68 @@ void main() {
     );
   });
 
+  test('Label Padding bakes into Margin cells and clears the User row', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+                textBlock: VsdxTextBlock(
+                  marginLeftInches: 0.04,
+                  marginRightInches: 0.04,
+                  marginTopInches: 0.04,
+                  marginBottomInches: 0.04,
+                ),
+              ),
+            )
+            .withLabelPadding(
+              const VsdxLabelPadding(top: 4, right: 8, bottom: 12, left: 16),
+            ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    final after = midDoc.pages.first.findShapeById(id)!;
+    expect(after.labelPadding.isZero, isTrue);
+    expect(
+      after.richText.textBlock.marginLeftInches,
+      closeTo(0.04 + 16 / kLibvisioLabelPaddingPxPerInch, 1e-9),
+    );
+    expect(
+      after.richText.textBlock.marginRightInches,
+      closeTo(0.04 + 8 / kLibvisioLabelPaddingPxPerInch, 1e-9),
+    );
+    expect(
+      after.richText.textBlock.marginTopInches,
+      closeTo(0.04 + 4 / kLibvisioLabelPaddingPxPerInch, 1e-9),
+    );
+    expect(
+      after.richText.textBlock.marginBottomInches,
+      closeTo(0.04 + 12 / kLibvisioLabelPaddingPxPerInch, 1e-9),
+    );
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    final twice = parser.parse(again).pages.first.findShapeById(id)!;
+    expect(
+      twice.richText.textBlock.marginLeftInches,
+      closeTo(after.richText.textBlock.marginLeftInches, 1e-12),
+      reason: 'a second save must not stack another inset',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
