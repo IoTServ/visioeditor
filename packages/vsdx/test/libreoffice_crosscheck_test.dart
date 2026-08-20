@@ -1171,6 +1171,22 @@ void main() {
                 transparency: 0.4,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 57,
+              pinX: 3.2,
+              pinY: 7.6,
+              width: 1.4,
+              height: 0.6,
+              name: 'StrokeSoft',
+              fill: const VsdxFill(pattern: 0),
+              line: const VsdxLine(
+                color: VsdxColor(0xFF000000),
+                weightInches: 0.08,
+                softEdgesInches: 0.08,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1410,8 +1426,12 @@ void main() {
     expect(geometrySoft.line.softEdgesInches, closeTo(0, 1e-9));
     expect(
       reopenedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
-      hasLength(1),
+      hasLength(2),
     );
+    final strokeSoft = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'StrokeSoft');
+    expect(strokeSoft.line.pattern, 0);
+    expect(strokeSoft.line.softEdgesInches, closeTo(0, 1e-9));
     final shadowBlur = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'ShadowBlur');
     expect(shadowBlur.shadow.enabled, isFalse);
@@ -1963,6 +1983,27 @@ void main() {
         ),
       ),
     );
+    var strokeSoftDocument = parser.parse(blank);
+    final strokeSoftPage = strokeSoftDocument.pages.first;
+    strokeSoftDocument = strokeSoftDocument.replacePage(
+      0,
+      strokeSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: strokeSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'StrokeSoft',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.14,
+            softEdgesInches: 0.18,
+          ),
+        ),
+      ),
+    );
     var shadowBlurDocument = parser.parse(blank);
     final shadowBlurPage = shadowBlurDocument.pages.first;
     shadowBlurDocument = shadowBlurDocument.replacePage(
@@ -2135,6 +2176,10 @@ void main() {
       'geometry_soft': writer.write(
         originalBytes: blank,
         edited: geometrySoftDocument,
+      ),
+      'stroke_soft': writer.write(
+        originalBytes: blank,
+        edited: strokeSoftDocument,
       ),
       'shadow_blur': writer.write(
         originalBytes: blank,
@@ -2648,6 +2693,75 @@ void main() {
                 'hard fill; centre=$centre edge=$edge',
           );
         }
+        if (entry.key == 'stroke_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'StrokeSoft');
+          expect(source.line.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'stroke_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          final interior = meanLuma(3.9, 5.2, 4.6, 5.8);
+          final onStroke = meanLuma(2.68, 5.2, 2.82, 5.8);
+          expect(
+            interior,
+            greaterThan(220),
+            reason: 'LibreOffice must keep the unfilled interior empty; '
+                'interior=$interior onStroke=$onStroke',
+          );
+          expect(
+            onStroke,
+            lessThan(200),
+            reason: 'LibreOffice must paint the soft stroke ring; '
+                'interior=$interior onStroke=$onStroke',
+          );
+        }
         if (entry.key == 'shadow_blur' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
@@ -2972,7 +3086,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts eighteen packages.
+      // default on a cold profile, and this case converts nineteen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

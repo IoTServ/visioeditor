@@ -671,7 +671,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   SourceAlpha feather canvas and SVG already paint, then writes
   SoftEdgesSize 0 and drops the source fill so Draw shows the plate.
   Pictures still feather in place. 1-D, hatches, gradients and theme-only
-  fills keep the cell.
+  fills keep the cell. Unfilled 2-D strokes now bake the same way: a save
+  rasters the stroke ring (padded for LineWeight and the blur halo),
+  writes SoftEdgesSize 0 and drops the source line so Draw shows the plate.
+  Dashes, compound rails and arrows stay native.
 - `ShadowBlur` now survives a save into LibreOffice on filled 2-D vectors.
   The cell is not a token; libvisio only emits a hard `draw:shadow`. A save
   bakes a locked Foreign sibling (`LibvisioShadow.{id}`) whose PNG is the

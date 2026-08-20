@@ -480,6 +480,183 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
   }
 }
 
+bool _softEdgesPointInPolygon(
+  List<({double x, double y})> polygon,
+  double x,
+  double y,
+) {
+  var inside = false;
+  for (var i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+    final yi = polygon[i].y;
+    final yj = polygon[j].y;
+    final xi = polygon[i].x;
+    final xj = polygon[j].x;
+    final crosses = (yi > y) != (yj > y);
+    if (!crosses) continue;
+    final denom = (yj - yi).abs() < 1e-18 ? 1e-18 : (yj - yi);
+    if (x < (xj - xi) * (y - yi) / denom + xi) inside = !inside;
+  }
+  return inside;
+}
+
+void _featherSourceAlpha(raster.Image work, double softSigmaPx) {
+  final sigma = softSigmaPx.clamp(0.0, 256.0);
+  if (sigma <= 1e-6) return;
+  final radius = math.max(1, (sigma * 1.5).round());
+  final pad = radius * 2;
+  var mask = raster.Image(
+    width: work.width + pad * 2,
+    height: work.height + pad * 2,
+    numChannels: 4,
+  );
+  for (var y = 0; y < work.height; y++) {
+    for (var x = 0; x < work.width; x++) {
+      final pixel = work.getPixel(x, y);
+      final a = (pixel.aNormalized * 255).round();
+      if (a <= 0) continue;
+      mask.setPixelRgba(x + pad, y + pad, 255, 255, 255, a);
+    }
+  }
+  mask = raster.gaussianBlur(mask, radius: radius);
+  for (var y = 0; y < work.height; y++) {
+    for (var x = 0; x < work.width; x++) {
+      final pixel = work.getPixel(x, y);
+      final m = mask.getPixel(x + pad, y + pad);
+      pixel.aNormalized = (pixel.aNormalized * m.aNormalized).clamp(0.0, 1.0);
+    }
+  }
+}
+
+/// Rasterize a stroked silhouette and feather SourceAlpha like canvas SoftEdges.
+///
+/// Geometry SoftEdges on an unfilled 2-D stroke has no fill plate to steal.
+/// The PNG is padded so the outer half of [strokeWidthPx] and the blur halo
+/// are not clipped; Draw then shows the plate because `SoftEdgesSize` is
+/// not a token. Transparent pixels are composited onto opaque white because
+/// Draw / PDF flatten Foreign alpha against black.
+Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
+  required int innerWidthPx,
+  required int innerHeightPx,
+  required int padPx,
+  required int red,
+  required int green,
+  required int blue,
+  required int alpha,
+  required double softSigmaPx,
+  required double strokeWidthPx,
+  SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
+  List<({double x, double y})> outer = const <({double x, double y})>[],
+  List<({double x, double y})> inner = const <({double x, double y})>[],
+}) {
+  if (innerWidthPx < 2 || innerHeightPx < 2) return null;
+  if (padPx < 0) return null;
+  if (alpha <= 0) return null;
+  if (strokeWidthPx <= 1e-6) return null;
+  final widthPx = innerWidthPx + padPx * 2;
+  final heightPx = innerHeightPx + padPx * 2;
+  try {
+    final work = raster.Image(
+      width: widthPx,
+      height: heightPx,
+      numChannels: 4,
+    );
+    final color = raster.ColorRgba8(
+      red.clamp(0, 255),
+      green.clamp(0, 255),
+      blue.clamp(0, 255),
+      alpha.clamp(0, 255),
+    );
+    final clear = raster.ColorRgba8(0, 0, 0, 0);
+    final half = math.max(strokeWidthPx / 2, 0.5);
+    switch (kind) {
+      case SoftEdgesSilhouetteKind.rectangle:
+        final x1 = padPx.toDouble();
+        final y1 = padPx.toDouble();
+        final x2 = (padPx + innerWidthPx - 1).toDouble();
+        final y2 = (padPx + innerHeightPx - 1).toDouble();
+        raster.fillRect(
+          work,
+          x1: (x1 - half).floor().clamp(0, widthPx - 1),
+          y1: (y1 - half).floor().clamp(0, heightPx - 1),
+          x2: (x2 + half).ceil().clamp(0, widthPx - 1),
+          y2: (y2 + half).ceil().clamp(0, heightPx - 1),
+          color: color,
+          alphaBlend: false,
+        );
+        final ix1 = (x1 + half).ceil();
+        final iy1 = (y1 + half).ceil();
+        final ix2 = (x2 - half).floor();
+        final iy2 = (y2 - half).floor();
+        if (ix1 < ix2 && iy1 < iy2) {
+          raster.fillRect(
+            work,
+            x1: ix1.clamp(0, widthPx - 1),
+            y1: iy1.clamp(0, heightPx - 1),
+            x2: ix2.clamp(0, widthPx - 1),
+            y2: iy2.clamp(0, heightPx - 1),
+            color: clear,
+            alphaBlend: false,
+          );
+        }
+      case SoftEdgesSilhouetteKind.ellipse:
+        final cx = padPx + (innerWidthPx - 1) / 2;
+        final cy = padPx + (innerHeightPx - 1) / 2;
+        final rx = math.max((innerWidthPx - 1) / 2, 0.5);
+        final ry = math.max((innerHeightPx - 1) / 2, 0.5);
+        final rxOut = math.max(rx + half, 0.5);
+        final ryOut = math.max(ry + half, 0.5);
+        final rxIn = math.max(rx - half, 0.0);
+        final ryIn = math.max(ry - half, 0.0);
+        for (var y = 0; y < heightPx; y++) {
+          for (var x = 0; x < widthPx; x++) {
+            final nx = (x + 0.5 - cx) / rxOut;
+            final ny = (y + 0.5 - cy) / ryOut;
+            if (nx * nx + ny * ny > 1) continue;
+            if (rxIn > 1e-6 && ryIn > 1e-6) {
+              final ix = (x + 0.5 - cx) / rxIn;
+              final iy = (y + 0.5 - cy) / ryIn;
+              if (ix * ix + iy * iy <= 1) continue;
+            }
+            work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+                color.b.toInt(), color.a.toInt());
+          }
+        }
+      case SoftEdgesSilhouetteKind.polygon:
+        if (outer.length < 3) return null;
+        for (var y = 0; y < heightPx; y++) {
+          for (var x = 0; x < widthPx; x++) {
+            final px = x + 0.5;
+            final py = y + 0.5;
+            if (!_softEdgesPointInPolygon(outer, px, py)) continue;
+            if (inner.length >= 3 && _softEdgesPointInPolygon(inner, px, py)) {
+              continue;
+            }
+            work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+                color.b.toInt(), color.a.toInt());
+          }
+        }
+    }
+    _featherSourceAlpha(work, softSigmaPx);
+    // Draw / PDF flatten transparent Foreign bitmaps against black, so a
+    // hollow ring would become a filled black plate. Composite onto opaque
+    // white — the same page colour canvas already assumes for an unfilled
+    // stroke — so the interior stays empty and the halo stays visible.
+    for (var y = 0; y < heightPx; y++) {
+      for (var x = 0; x < widthPx; x++) {
+        final pixel = work.getPixel(x, y);
+        final a = pixel.aNormalized;
+        pixel.r = (pixel.r * a + 255 * (1 - a)).round().clamp(0, 255);
+        pixel.g = (pixel.g * a + 255 * (1 - a)).round().clamp(0, 255);
+        pixel.b = (pixel.b * a + 255 * (1 - a)).round().clamp(0, 255);
+        pixel.a = 255;
+      }
+    }
+    return raster.encodePng(work);
+  } catch (_) {
+    return null;
+  }
+}
+
 /// Rasterize a solid silhouette and Gaussian-blur it for a drop-shadow PNG.
 ///
 /// SoftEdges feathers SourceAlpha *inside* the box. ShadowBlur must spread

@@ -229,6 +229,13 @@ void main() {
       ),
     );
     final finalS = parser.parse(bytes3).pages.first.findShapeById(id)!;
-    expect(finalS.line.softEdgesInches, closeTo(0.09, 1e-6));
+    expect(finalS.line.softEdgesInches, closeTo(0, 1e-6));
+    expect(finalS.line.pattern, 0);
+    expect(
+      parser.parse(bytes3).pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 're-enabling SoftEdges on the leftover unfilled stroke bakes '
+          'a plate; SoftEdgesSize is not a token',
+    );
   });
 }

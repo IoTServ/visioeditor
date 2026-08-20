@@ -66,7 +66,9 @@
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
-/// PNG sibling and drops the source fill. `ShadowBlur` is not a token,
+/// PNG sibling and drops the source fill. An unfilled 2-D stroke with
+/// SoftEdges bakes the stroke ring the same way and drops the source
+/// line. `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
@@ -1111,6 +1113,132 @@ void main() {
     final saved = writer.write(originalBytes: blank, edited: doc);
     final savedDoc = parser.parse(saved);
     expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 0);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('unfilled stroke SoftEdges bakes a feathered PNG ring for LibreOffice',
+      () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'StrokeSoft',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.1,
+        softEdgesInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 9,
+          pinX: 2,
+          pinY: 2,
+          width: 1.2,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.04,
+            softEdgesInches: 0.08,
+          ),
+        ),
+      ),
+      isTrue,
+      reason: 'filled SoftEdges still bakes; the stroke stays native',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plates = baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.width, greaterThan(source.width + 0.05));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'stroke SoftEdges PNG must keep the hollow interior empty',
+    );
+    var ringLuma = 255.0;
+    final midY = decoded.height ~/ 2;
+    for (var x = 0; x < decoded.width ~/ 3; x++) {
+      final pixel = decoded.getPixel(x, midY);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < ringLuma) ringLuma = luma;
+    }
+    expect(
+      ringLuma,
+      lessThan(180),
+      reason: 'stroke SoftEdges PNG must paint the feathered ring',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+
+    final oval = VsdxShapeFactory.ellipse(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF1565C0),
+        weightInches: 0.1,
+        softEdgesInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(oval), isTrue);
+    var ovalDoc = parser.parse(blank);
+    ovalDoc = ovalDoc.replacePage(0, ovalDoc.pages.first.addShape(oval));
+    final ovalBaked = documentForLibvisioWrite(ovalDoc);
+    final ovalPlate =
+        ovalBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final ovalPng = ovalBaked.images.findByPart(ovalPlate.imagePartName!);
+    final ovalDecoded = raster.decodePng(ovalPng!.bytes)!;
+    expect(
+      ovalDecoded.getPixel(ovalDecoded.width ~/ 2, ovalDecoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'ellipse stroke SoftEdges PNG must stay hollow',
+    );
+    expect(
+      ovalDecoded.getPixel(0, 0).r,
+      greaterThan(200),
+      reason: 'ellipse stroke SoftEdges PNG must keep corners empty',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 0);
     expect(
       savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
       hasLength(1),
