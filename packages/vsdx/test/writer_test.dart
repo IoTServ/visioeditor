@@ -2317,6 +2317,65 @@ void main() {
     );
   });
 
+  test('Curved Text bakes per-glyph siblings and hides the source', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 4,
+          pinY: 5,
+          width: 1.0,
+          height: 3.0,
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ARC',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    final source = midDoc.pages.first.findShapeById(id)!;
+    expect(source.curvedText, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(source.richText.plainText, 'ARC');
+    final plates =
+        midDoc.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(3));
+    expect(
+      plates.map((s) => s.richText.plainText).join(),
+      'ARC',
+    );
+    expect(plates[1].pinY, greaterThan(plates[0].pinY + 0.08));
+    expect(plates[1].pinY, greaterThan(plates[2].pinY + 0.08));
+    expect(plates[0].pinX, lessThan(plates[1].pinX));
+    expect(plates[1].pinX, lessThan(plates[2].pinX));
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    expect(
+      parser.parse(again).pages.first.shapes.where(isLibvisioCurvedTextPlate),
+      hasLength(3),
+      reason: 'a second save must not stack another Curved Text plate',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

@@ -31,26 +31,33 @@ void main() {
       final id = page.nextFreeShapeId();
       page = page.addShape(
         VsdxShapeFactory.rectangle(
-          id: id,
-          pinX: 2,
-          pinY: 2,
-          width: 2,
-          height: 1,
-          name: 'Arc',
-        ).withCurvedText(true).copyWith(
+              id: id,
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 1,
+              name: 'Arc',
+            )
+            .withCurvedText(true)
+            .copyWith(
               richText: const VsdxRichText(
-                runs: <VsdxTextRun>[
-                  VsdxTextRun(text: 'Hello'),
-                ],
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'Hello')],
               ),
             ),
       );
       doc = doc.replacePage(0, page);
-      final after =
-          parser.parse(writer.write(originalBytes: blank, edited: doc));
+      final after = parser.parse(
+        writer.write(originalBytes: blank, edited: doc),
+      );
       final shape = after.pages.first.findShapeById(id)!;
-      expect(shape.curvedText, isTrue);
+      expect(shape.curvedText, isFalse);
+      expect(shape.richText.textBlock.hideText, isTrue);
       expect(shape.richText.plainText, 'Hello');
+      final plates = after.pages.first.shapes
+          .where(isLibvisioCurvedTextPlate)
+          .toList(growable: false);
+      expect(plates, hasLength(5));
+      expect(plates.map((s) => s.richText.plainText).join(), 'Hello');
     });
   });
 

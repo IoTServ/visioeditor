@@ -1988,6 +1988,39 @@ void main() {
         ),
       ),
     );
+    var curvedTextDocument = parser.parse(blank);
+    final curvedTextPage = curvedTextDocument.pages.first;
+    curvedTextDocument = curvedTextDocument.replacePage(
+      0,
+      curvedTextPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: curvedTextPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.0,
+          height: 3.0,
+          name: 'CurvedText',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ARC',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2037,6 +2070,10 @@ void main() {
       'shadow_blur': writer.write(
         originalBytes: blank,
         edited: shadowBlurDocument,
+      ),
+      'curved_text': writer.write(
+        originalBytes: blank,
+        edited: curvedTextDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2607,6 +2644,105 @@ void main() {
                 'the hard-offset box; body=$body halo=$halo',
           );
         }
+        if (entry.key == 'curved_text' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final plates = page.shapes
+              .where(isLibvisioCurvedTextPlate)
+              .toList(growable: false)
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(3));
+          expect(plates[1].pinY, greaterThan(plates[0].pinY + 0.08));
+
+          int darkCount(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < 180) count++;
+              }
+            }
+            return count;
+          }
+
+          int inkAt(VsdxShape plate) {
+            const r = 0.2;
+            return darkCount(
+              plate.pinX - r,
+              plate.pinY - r,
+              plate.pinX + r,
+              plate.pinY + r,
+            );
+          }
+
+          final midInk = inkAt(plates[1]);
+          final leftInk = inkAt(plates[0]);
+          final rightInk = inkAt(plates[2]);
+          final belowMid = darkCount(
+            plates[1].pinX - 0.05,
+            plates[0].pinY - 0.05,
+            plates[1].pinX + 0.05,
+            plates[0].pinY + 0.05,
+          );
+          expect(
+            midInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the raised middle glyph; '
+                'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
+          );
+          expect(
+            leftInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the left glyph; '
+                'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
+          );
+          expect(
+            rightInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the right glyph; '
+                'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
+          );
+          expect(
+            belowMid,
+            lessThan(3),
+            reason: 'The middle glyph must sit on the upward arc, not on the '
+                'straight baseline of the side letters; '
+                'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2615,7 +2751,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts fifteen packages.
+      // default on a cold profile, and this case converts sixteen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

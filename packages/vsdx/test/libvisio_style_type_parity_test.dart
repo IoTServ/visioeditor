@@ -68,6 +68,9 @@
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
 /// PNG sibling and drops the source fill. `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern.
+/// draw.io Curved Text is also a User row, so a save bakes locked
+/// per-glyph siblings along the canvas quadratic arc, hides the source
+/// and drops `veCurvedText`.
 library;
 
 import 'dart:io';
@@ -1207,6 +1210,104 @@ void main() {
     final oracleSoft = LibvisioOracle.tryLoad();
     if (oracleSoft == null) return;
     expect(oracleSoft.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Curved Text bakes per-glyph siblings for LibreOffice', () {
+    VsdxShape arcBox({
+      required int id,
+      bool curved = true,
+      bool flipX = false,
+    }) =>
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 4,
+          pinY: 5,
+          width: 1.0,
+          height: 3.0,
+          name: 'Arc',
+        ).copyWith(flipX: flipX).withCurvedText(curved).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ARC',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            );
+
+    final shape = arcBox(id: 1);
+    expect(shapeNeedsLibvisioCurvedTextBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioCurvedTextBake(arcBox(id: 8, flipX: true)),
+      isFalse,
+    );
+    expect(
+      shapeNeedsLibvisioCurvedTextBake(
+        VsdxShapeFactory.line(
+          id: 9,
+          ax: 1,
+          ay: 1,
+          bx: 4,
+          by: 2,
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'ARC')],
+              ),
+            ),
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.curvedText, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(3));
+    expect(plates.every((p) => p.locked), isTrue);
+    expect(plates.every((p) => p.fill.pattern == 0), isTrue);
+    expect(plates.every((p) => p.line.pattern == 0), isTrue);
+    expect(plates.map((p) => p.richText.plainText).join(), 'ARC');
+    expect(libvisioCurvedTextSourceId(plates[0]), 1);
+    expect(plates[1].pinY, greaterThan(plates[0].pinY + 0.08));
+    expect(plates[1].pinY, greaterThan(plates[2].pinY + 0.08));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioCurvedTextPlate),
+      hasLength(3),
+      reason: 'a second save must not stack another Curved Text plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.curvedText, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioCurvedTextPlate),
+      hasLength(3),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {

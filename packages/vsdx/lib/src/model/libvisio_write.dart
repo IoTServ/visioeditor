@@ -88,7 +88,10 @@
 /// Draw collects, then drops the User row. draw.io Label Padding is
 /// `User.veLabelPadding` (not a token), so a save adds the pixel inset
 /// into Left/Right/Top/BottomMargin (`fo:padding-*`) Draw collects, then
-/// drops the User row. draw.io Word Wrap is `User.veWordWrap` (not a
+/// drops the User row. draw.io Curved Text is `User.veCurvedText`
+/// (not a token), so a save inserts locked per-glyph siblings along the
+/// same quadratic arc canvas / SVG already paint, hides the source
+/// (`HideText` is a token) and drops the User row. draw.io Word Wrap is `User.veWordWrap` (not a
 /// token), so a save expands TxtWidth to the unwrapped line plus margins
 /// (`svg:width` Draw wraps against) and drops the User row.
 library;
@@ -137,8 +140,10 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                   bakeGlassForLibvisioWrite(
                     bakeSketchForLibvisioWrite(
                       bakeShadowForLibvisioWrite(
-                        bakeShapeOpacityForLibvisioWrite(
-                          bakeOverlineForLibvisioWrite(hopped),
+                        bakeCurvedTextForLibvisioWrite(
+                          bakeShapeOpacityForLibvisioWrite(
+                            bakeOverlineForLibvisioWrite(hopped),
+                          ),
                         ),
                       ),
                     ),
@@ -859,6 +864,17 @@ int? libvisioSoftEdgesSourceId(VsdxShape plate) {
   );
 }
 
+/// Name prefix of the per-glyph siblings `User.veCurvedText` becomes.
+const kLibvisioCurvedTextShapeNamePrefix = 'LibvisioCurved.';
+
+bool isLibvisioCurvedTextPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioCurvedTextShapeNamePrefix);
+
+int? libvisioCurvedTextSourceId(VsdxShape plate) {
+  if (!isLibvisioCurvedTextPlate(plate)) return null;
+  return int.tryParse(plate.name.split('.').last);
+}
+
 bool isLibvisioShadowPlate(VsdxShape shape) =>
     shape.name.startsWith(kLibvisioShadowShapeNamePrefix);
 
@@ -887,6 +903,7 @@ bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioLabelBorderPlate(shape) ||
     isLibvisioSoftEdgesPlate(shape) ||
     isLibvisioShadowPlate(shape) ||
+    isLibvisioCurvedTextPlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
@@ -2169,6 +2186,355 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
     }
   }
   if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+const _kLibvisioCurvedTextMaxGlyphs = 64;
+
+/// `true` when `User.veCurvedText` must become per-glyph siblings for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so the arc never becomes ODF text-on-path. Pin / Angle / Font /
+/// HideText *are* collected, so a save places one locked character shape
+/// per glyph on the same quadratic arc canvas / SVG already paint, then
+/// hides the source and drops the User row. Glueable 1-D labels, vertical
+/// text, flipped shapes and tabbed labels stay native.
+bool shapeNeedsLibvisioCurvedTextBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (!shape.curvedText) return false;
+  if (shape.flipX || shape.flipY) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.richText.textBlock.textDirection == 1) return false;
+  if (shape.richText.textBlock.angleRad.abs() > 1e-12) return false;
+  final plain = _curvedTextPlain(shape);
+  if (plain.isEmpty) return false;
+  if (plain.contains('\t')) return false;
+  var n = 0;
+  for (final r in plain.runes) {
+    if (r == 0x20) continue;
+    n++;
+    if (n > _kLibvisioCurvedTextMaxGlyphs) return false;
+  }
+  return n > 0;
+}
+
+String _libvisioInitialCaps(String text) {
+  final buf = StringBuffer();
+  var start = true;
+  for (final r in text.runes) {
+    final ch = String.fromCharCode(r);
+    if (ch == ' ' || ch == '\n' || ch == '\t') {
+      buf.write(ch);
+      start = true;
+      continue;
+    }
+    buf.write(start ? ch.toUpperCase() : ch);
+    start = false;
+  }
+  return buf.toString();
+}
+
+String _curvedTextPlain(VsdxShape shape) {
+  final raw =
+      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
+  var text = raw.replaceAll('\n', ' ').replaceAll('\r', ' ').trim();
+  final style = shape.richText.runs.isNotEmpty
+      ? shape.richText.runs.first.charStyle
+      : VsdxCharStyle.defaults;
+  return switch (style.textCase) {
+    VsdxTextCase.allCaps => text.toUpperCase(),
+    VsdxTextCase.initialCaps => _libvisioInitialCaps(text),
+    VsdxTextCase.normal => text,
+  };
+}
+
+VsdxCharStyle _curvedTextStyle(VsdxShape shape) {
+  final style = shape.richText.runs.isNotEmpty
+      ? shape.richText.runs.first.charStyle
+      : VsdxCharStyle.defaults;
+  return style.copyWith(textCase: VsdxTextCase.normal);
+}
+
+Offset2D _quadBezPoint(Offset2D p0, Offset2D p1, Offset2D p2, double t) {
+  final u = 1 - t;
+  return Offset2D(
+    u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+    u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+  );
+}
+
+Offset2D _quadBezTangent(Offset2D p0, Offset2D p1, Offset2D p2, double t) {
+  return Offset2D(
+    2 * (1 - t) * (p1.x - p0.x) + 2 * t * (p2.x - p1.x),
+    2 * (1 - t) * (p1.y - p0.y) + 2 * t * (p2.y - p1.y),
+  );
+}
+
+double _arcTForDistance(List<double> cum, double dist) {
+  final n = cum.length - 1;
+  if (n <= 0) return 0;
+  if (dist <= 0) return 0;
+  if (dist >= cum.last) return 1;
+  var lo = 0;
+  var hi = n;
+  while (lo + 1 < hi) {
+    final mid = (lo + hi) >> 1;
+    if (cum[mid] <= dist) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  final seg = cum[hi] - cum[lo];
+  final local = seg <= 1e-12 ? 0.0 : (dist - cum[lo]) / seg;
+  return (lo + local) / n;
+}
+
+List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
+  VsdxShape source, {
+  required List<int> plateIds,
+  required int Function() nextId,
+}) {
+  final style = _curvedTextStyle(source);
+  final plain = _curvedTextPlain(source);
+  final block = source.richText.textBlock;
+  final tw = (block.widthInches ?? source.width).abs();
+  final th = (block.heightInches ?? source.height).abs();
+  final ml = block.marginLeftInches;
+  final mr = block.marginRightInches;
+  final pinX = block.pinXInches ?? source.width / 2;
+  final pinY = block.pinYInches ?? source.height / 2;
+  final locX = block.locPinXInches ?? tw / 2;
+  final locY = block.locPinYInches ?? th / 2;
+  final originX = pinX - locX;
+  final originY = pinY - locY;
+  final midY = th * 0.58;
+  final bulge = math.min(th * 0.32, th * 0.45);
+  final p0 = Offset2D(ml, midY);
+  final p1 = Offset2D(tw / 2, midY - bulge);
+  final p2 = Offset2D(tw - mr, midY);
+  const samples = 48;
+  final cum = <double>[0.0];
+  var prev = p0;
+  for (var i = 1; i <= samples; i++) {
+    final o = _quadBezPoint(p0, p1, p2, i / samples);
+    final dx = o.x - prev.x;
+    final dy = o.y - prev.y;
+    cum.add(cum.last + math.sqrt(dx * dx + dy * dy));
+    prev = o;
+  }
+  final arcLen = cum.last;
+  if (arcLen <= 1e-9) return const <VsdxShape>[];
+  final runes = plain.runes.toList(growable: false);
+  final widths = <double>[
+    for (final r in runes)
+      nowrapTextAdvanceInches(String.fromCharCode(r), style),
+  ];
+  var totalW = 0.0;
+  for (final w in widths) {
+    totalW += w;
+  }
+  final pad = math.max(0.0, (arcLen - totalW) / 2);
+  final out = <VsdxShape>[];
+  var cursor = pad;
+  var glyph = 0;
+  for (var i = 0; i < runes.length; i++) {
+    final w = widths[i];
+    final ch = String.fromCharCode(runes[i]);
+    if (runes[i] != 0x20 && ch.trim().isNotEmpty) {
+      final centerDist = (cursor + w / 2).clamp(0.0, arcLen);
+      final t = _arcTForDistance(cum, centerDist);
+      final pos = _quadBezPoint(p0, p1, p2, t);
+      final tan = _quadBezTangent(p0, p1, p2, t);
+      final localAngle = -math.atan2(tan.y, tan.x);
+      final local = Offset2D(originX + pos.x, originY + th - pos.y);
+      final page = _parentFromLocal(source, local);
+      final fs = math.max(style.effectiveFontSizeInchesForText(ch), 0.04);
+      // Wider / taller than the advance so Draw's wrap-at-svg:width and
+      // baseline padding cannot clip a single rotated glyph.
+      final gw = math.max(w, fs) * 1.2;
+      final gh = fs * 1.6;
+      final id = glyph < plateIds.length ? plateIds[glyph] : nextId();
+      out.add(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: page.x,
+          pinY: page.y,
+          width: gw,
+          height: gh,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+          name: '$kLibvisioCurvedTextShapeNamePrefix$glyph.${source.id}',
+        ).copyWith(
+          locPinXInches: gw / 2,
+          locPinYInches: gh / 2,
+          angleRad: source.angleRad + localAngle,
+          locked: true,
+          layerMemberIds: source.layerMemberIds,
+          text: ch,
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: ch,
+                charStyle: style,
+                paraStyle: const VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              widthInches: gw,
+              heightInches: gh,
+              locPinXInches: gw / 2,
+              locPinYInches: gh / 2,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+          ),
+        ),
+      );
+      glyph++;
+    }
+    cursor += w;
+  }
+  return out;
+}
+
+VsdxShape _sourceForLibvisioCurvedTextWrite(VsdxShape shape) {
+  return shape.withCurvedText(false).copyWith(
+        richText: shape.richText.copyWith(
+          textBlock: shape.richText.textBlock.copyWith(hideText: true),
+        ),
+      );
+}
+
+void _collectCurvedTextPlateIds(
+  List<VsdxShape> shapes,
+  Map<int, List<int>> into,
+) {
+  for (final shape in shapes) {
+    final sourceId = libvisioCurvedTextSourceId(shape);
+    if (sourceId != null) {
+      (into[sourceId] ??= <int>[]).add(shape.id);
+    }
+    _collectCurvedTextPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioCurvedTextBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioCurvedTextPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioCurvedTextBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+VsdxShape? _findShapeById(List<VsdxShape> shapes, int id) {
+  for (final shape in shapes) {
+    if (shape.id == id) return shape;
+    final nested = _findShapeById(shape.children, id);
+    if (nested != null) return nested;
+  }
+  return null;
+}
+
+List<VsdxShape> _bakeCurvedTextTree(
+  List<VsdxShape> shapes, {
+  required Map<int, List<int>> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioCurvedTextPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeCurvedTextTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioCurvedTextBake(next)) {
+      final plates = _curvedTextPlatesForLibvisioWrite(
+        next,
+        plateIds: plateIds[next.id] ?? const <int>[],
+        nextId: nextId,
+      );
+      if (plates.isNotEmpty) {
+        // Body first, then glyphs: later Draw z-order paints text on top,
+        // and later Shadow/Sketch bakes keep that order when they rewrite
+        // the source in place.
+        out.add(_sourceForLibvisioCurvedTextWrite(next));
+        out.addAll(plates);
+        changed = true;
+        continue;
+      }
+    } else {
+      final existing = plateIds[next.id];
+      if (existing != null) {
+        out.add(next);
+        for (final id in existing) {
+          final kept = _findShapeById(shapes, id);
+          if (kept != null) {
+            out.add(kept);
+          }
+        }
+        changed = true;
+        continue;
+      }
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+/// Insert (or keep) the per-glyph siblings Draw uses for Curved Text.
+VsdxDocument bakeCurvedTextForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    if (!pageNeedsLibvisioCurvedTextBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, List<int>>{};
+    _collectCurvedTextPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeCurvedTextTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
+  }
+  if (!changed) return document;
   return document.copyWith(pages: pages);
 }
 
