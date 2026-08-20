@@ -925,6 +925,19 @@ void main() {
                 ],
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.picture(
+              id: id + 44,
+              pinX: 6.0,
+              pinY: 9.4,
+              width: 1.2,
+              height: 0.8,
+              imagePartName: '/visio/media/image_lo_tone.png',
+              name: 'PictureSoft',
+            ).copyWith(
+              line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1049,6 +1062,11 @@ void main() {
     expect(pictureTone.imageBrightness, closeTo(0.5, 1e-6));
     expect(pictureTone.imageContrast, closeTo(0.5, 1e-6));
     expect(pictureTone.imagePartName, isNot('/visio/media/image_lo_tone.png'));
+    final pictureSoft = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'PictureSoft');
+    expect(pictureSoft.line.softEdgesInches, closeTo(0, 1e-6),
+        reason: 'SoftEdgesSize is not a token; the halo is PNG alpha');
+    expect(pictureSoft.imagePartName, isNot('/visio/media/image_lo_tone.png'));
     final glowStroke = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowStroke');
     expect(glowStroke.glow.enabled, isFalse);

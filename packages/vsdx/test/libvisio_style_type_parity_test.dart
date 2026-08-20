@@ -38,7 +38,10 @@
 /// actually load. Mixed Latin+CJK runs keep `Font`. Character `Letterspace`
 /// is not a token; canvas / SVG already fold FontScale into tracking at
 /// 0.55×Size, so a save adds Letterspace into FontScale and writes
-/// Letterspace 0. Unknown `FillPattern` ids above 40 snap to solid `1`.
+/// Letterspace 0. Picture `SoftEdgesSize` is not a token; an uncropped
+/// 2-D Foreign bitmap bakes the same SourceAlpha feather canvas / SVG
+/// use into PNG alpha, then SoftEdgesSize is written 0. Unknown
+/// `FillPattern` ids above 40 snap to solid `1`.
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
 /// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
 /// bake LineTo chamfers; arcs joins bake the same fillets as round
@@ -48,6 +51,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:image/image.dart' as raster;
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -400,6 +404,69 @@ void main() {
     );
     expect(shapeNeedsLibvisioGlowBake(outlined), isFalse,
         reason: 'a painted outline must not be stolen for the halo');
+  });
+
+  test('picture SoftEdges bakes into PNG for LibreOffice', () {
+    final rasterImage = raster.Image(width: 32, height: 32);
+    for (var y = 0; y < 32; y++) {
+      for (var x = 0; x < 32; x++) {
+        rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+      }
+    }
+    final bytes = Uint8List.fromList(raster.encodePng(rasterImage));
+    const part = '/visio/media/soft.png';
+    final source =
+        VsdxImage(partName: part, bytes: bytes, mimeType: 'image/png');
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+    ).copyWith(
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(imageSoftEdgesInchesForLibvisioWrite(pic), closeTo(0.08, 1e-12));
+    expect(
+      visioImageAdjustmentsNeedBake(
+        transparency: 0,
+        blur: 0,
+        brightness: 0.5,
+        contrast: 0.5,
+        softEdgesInches: 0.08,
+      ),
+      isTrue,
+    );
+    final baked = bakeVisioImageAdjustmentsPng(
+      image: source,
+      transparency: 0,
+      blur: 0,
+      brightness: 0.5,
+      contrast: 0.5,
+      displayWidthInches: 1.2,
+      softEdgesInches: 0.08,
+    );
+    expect(baked, isNotNull);
+    final decoded = raster.decodePng(baked!);
+    expect(decoded, isNotNull);
+    expect(decoded!.getPixel(0, 0).a, lessThan(decoded.getPixel(16, 16).a));
+    expect(decoded.getPixel(16, 16).a, greaterThan(200));
+
+    final cropped = pic.copyWith(imgOffsetXInches: 0.1);
+    expect(imageSoftEdgesInchesForLibvisioWrite(cropped), 0);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.softEdgesInches, closeTo(0, 1e-9));
+    expect(after.imagePartName, isNot(part));
   });
 
   test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {

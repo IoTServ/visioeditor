@@ -588,6 +588,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   collector for those cells, so a save bakes hops as `ArcTo` / `MoveTo` /
   `LineTo` (then `ConLineJumpCode=1`) and bakes picture tone into a PNG
   with the cells reset. Unchanged packages stay byte-identical.
+- Picture `SoftEdgesSize` now survives a save into LibreOffice on uncropped
+  2-D Foreign bitmaps. The cell is not a token, so a save feathers PNG
+  alpha with the same SourceAlpha blur canvas and SVG use, then writes
+  SoftEdgesSize 0. Cropped pictures keep the cell so ImgOffset still
+  frames the original pixels. Geometry-only SoftEdges cannot be a raster.
 - Character `Letterspace` now survives a save into LibreOffice. The cell is
   not a token, but `FontScale` is collected as `style:text-scale`. A save
   folds tracking into FontScale with the same 0.55×Size mean Latin advance

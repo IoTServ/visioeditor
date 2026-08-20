@@ -41,7 +41,11 @@
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
-/// a save bakes them into a PNG and zeros the cells. Character Overline
+/// a save bakes them into a PNG and zeros the cells. Picture `SoftEdgesSize`
+/// is not a token either: an uncropped 2-D Foreign bitmap bakes the same
+/// SourceAlpha feather canvas / SVG use, then SoftEdgesSize is written 0.
+/// Cropped pictures keep the cell — feathering the PNG would miss the
+/// ImgOffset frame Draw still collects. Character Overline
 /// is a token whose `readCharIX` case is empty, so a save inserts U+0305
 /// combining overlines and clears the cell. Glow* cells are not tokens;
 /// an unfilled stroke bakes a FillForegndTrans ribbon and a filled
@@ -207,6 +211,26 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
   return document.copyWith(pages: pages);
 }
 
+/// SoftEdgesSize Draw will collect for this picture (0 = do not bake).
+///
+/// Canvas / SVG feather the Foreign frame. Img* crop cells *are* tokens, so
+/// a cropped bitmap must keep its pixels; only an uncropped 2-D picture can
+/// bake the halo into PNG alpha.
+double imageSoftEdgesInchesForLibvisioWrite(VsdxShape shape) {
+  if (!shape.hasImage || shape.is1D) return 0;
+  if (shape.imgOffsetXInches.abs() > 1e-6) return 0;
+  if (shape.imgOffsetYInches.abs() > 1e-6) return 0;
+  if (shape.imgWidthInches != null &&
+      (shape.imgWidthInches! - shape.width).abs() > 1e-6) {
+    return 0;
+  }
+  if (shape.imgHeightInches != null &&
+      (shape.imgHeightInches! - shape.height).abs() > 1e-6) {
+    return 0;
+  }
+  return shape.line.softEdgesInches;
+}
+
 /// Bake Image Properties into PNG pixels and reset the cells Draw ignores.
 VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
   var registry = document.images;
@@ -232,12 +256,14 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
       for (final child in shape.children) rewrite(child),
     ];
     var next = shape;
+    final soft = imageSoftEdgesInchesForLibvisioWrite(shape);
     if (shape.hasImage &&
         visioImageAdjustmentsNeedBake(
           transparency: shape.imageTransparency,
           blur: shape.imageBlur,
           brightness: shape.imageBrightness,
           contrast: shape.imageContrast,
+          softEdgesInches: soft,
         )) {
       final part = shape.imagePartName;
       final source = part == null
@@ -248,7 +274,7 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
               ));
       if (source != null) {
         final key = '$part|${shape.imageTransparency}|${shape.imageBlur}|'
-            '${shape.imageBrightness}|${shape.imageContrast}|'
+            '${shape.imageBrightness}|${shape.imageContrast}|$soft|'
             '${shape.effectiveImgWidth}';
         var bakedPart = cache[key];
         if (bakedPart == null) {
@@ -259,6 +285,7 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
             brightness: shape.imageBrightness,
             contrast: shape.imageContrast,
             displayWidthInches: shape.effectiveImgWidth,
+            softEdgesInches: soft,
           );
           if (png != null) {
             bakedPart = allocatePart(shape.id);
@@ -287,6 +314,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
             imageBlur: 0,
             imageBrightness: 0.5,
             imageContrast: 0.5,
+            line: soft > 1e-6
+                ? shape.line.copyWith(softEdgesInches: 0)
+                : shape.line,
           );
           changed = true;
         }

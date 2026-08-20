@@ -150,7 +150,8 @@ class VsdxImage {
 
   /// Visio `<ForeignData ForeignType>` for this media (MS-VSDX / libvisio).
   /// `EnhMetaFile` for EMF, `MetaFile` for WMF, otherwise `Bitmap`.
-  String get foreignType => foreignTypeFor(mimeType: mimeType, partName: partName);
+  String get foreignType =>
+      foreignTypeFor(mimeType: mimeType, partName: partName);
 
   /// Optional Visio `CompressionType` for bitmap payloads.
   String? get compressionType =>
@@ -203,8 +204,7 @@ class VsdxImage {
   int get hashCode => partName.hashCode;
 
   @override
-  String toString() =>
-      'VsdxImage($partName, ${bytes.length} bytes, $mimeType)';
+  String toString() => 'VsdxImage($partName, ${bytes.length} bytes, $mimeType)';
 }
 
 /// Lookup table for `Master="N"`-style indirection — the parser populates
@@ -242,18 +242,23 @@ class ImageRegistry {
   }
 }
 
-/// `true` when Image Properties cells would change LibreOffice's paint
-/// (`tokens.txt` has no Transparency / Brightness / Contrast / Blur).
+/// `true` when Image Properties or picture SoftEdges would change Draw.
+///
+/// `tokens.txt` has no Transparency / Brightness / Contrast / Blur, and no
+/// SoftEdgesSize. [softEdgesInches] is the size this picture should bake
+/// (0 when the frame is cropped or 1-D — those cannot feather the PNG).
 bool visioImageAdjustmentsNeedBake({
   required double transparency,
   required double blur,
   required double brightness,
   required double contrast,
+  double softEdgesInches = 0,
 }) {
   return transparency > 1e-6 ||
       blur > 1e-6 ||
       (brightness - 0.5).abs() > 1e-3 ||
-      (contrast - 0.5).abs() > 1e-3;
+      (contrast - 0.5).abs() > 1e-3 ||
+      softEdgesInches > 1e-6;
 }
 
 /// Bake Visio Image Properties into PNG pixels so Draw paints the same
@@ -267,12 +272,14 @@ Uint8List? bakeVisioImageAdjustmentsPng({
   required double brightness,
   required double contrast,
   required double displayWidthInches,
+  double softEdgesInches = 0,
 }) {
   if (!visioImageAdjustmentsNeedBake(
     transparency: transparency,
     blur: blur,
     brightness: brightness,
     contrast: contrast,
+    softEdgesInches: softEdgesInches,
   )) {
     return null;
   }
@@ -300,9 +307,10 @@ Uint8List? bakeVisioImageAdjustmentsPng({
   final blurClamped = blur.clamp(0.0, 1.0);
   final bright = brightness.clamp(0.0, 1.0);
   final contrastClamped = contrast.clamp(0.0, 1.0);
+  final softClamped = softEdgesInches.clamp(0.0, 4.0);
   try {
+    final displayed = math.max(displayWidthInches.abs(), 1e-6);
     if (blurClamped > 1e-6) {
-      final displayed = math.max(displayWidthInches.abs(), 1e-6);
       final sigmaPx = 0.08 * blurClamped / displayed * work.width;
       final radius = math.max(1, (sigmaPx * 1.5).round());
       work = raster.gaussianBlur(work, radius: radius);
@@ -324,6 +332,32 @@ Uint8List? bakeVisioImageAdjustmentsPng({
         if (trans > 1e-6) {
           pixel.aNormalized =
               (pixel.aNormalized * (1.0 - trans)).clamp(0.0, 1.0);
+        }
+      }
+    }
+    if (softClamped > 1e-6) {
+      // Canvas / SVG feather SourceAlpha against empty surroundings. A
+      // full-frame blur would clamp and leave the bitmap edge opaque.
+      final sigmaPx = softClamped / displayed * work.width;
+      final radius = math.max(1, (sigmaPx * 1.5).round());
+      final pad = radius * 2;
+      var mask = raster.Image(
+        width: work.width + pad * 2,
+        height: work.height + pad * 2,
+        numChannels: 4,
+      );
+      for (var y = 0; y < work.height; y++) {
+        for (var x = 0; x < work.width; x++) {
+          mask.setPixelRgba(x + pad, y + pad, 255, 255, 255, 255);
+        }
+      }
+      mask = raster.gaussianBlur(mask, radius: radius);
+      for (var y = 0; y < work.height; y++) {
+        for (var x = 0; x < work.width; x++) {
+          final pixel = work.getPixel(x, y);
+          final m = mask.getPixel(x + pad, y + pad);
+          pixel.aNormalized =
+              (pixel.aNormalized * m.aNormalized).clamp(0.0, 1.0);
         }
       }
     }
