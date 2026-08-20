@@ -64,7 +64,8 @@
 /// Draw does not add a second hard copy. Character Overline
 /// is a token whose `readCharIX` case is empty, so a save inserts U+0305
 /// combining overlines and clears the cell. Glow* cells are not tokens;
-/// an unfilled stroke bakes a FillForegndTrans ribbon and a filled
+/// an unfilled 1-D stroke bakes a FillForegndTrans ribbon and an unfilled
+/// 2-D stroke with resolved RGB bakes a Gaussian PNG ring. A filled
 /// NoLine shape bakes a Gaussian PNG sibling (or a LineWeight halo when
 /// the colour is still THEMEVAL()), then GlowSize is written 0.
 /// Filled shapes that already paint a stroke keep their outline — stealing
@@ -652,19 +653,22 @@ bool _libvisioGlowEffectOn(VsdxShape shape) {
 }
 
 /// `true` when Glow* must become a sibling halo because Line is already in use
-/// or because a filled NoLine 2-D can carry the blur as a Gaussian PNG.
+/// or because a filled NoLine 2-D / unfilled 2-D stroke can carry the blur
+/// as a Gaussian PNG.
 ///
-/// Same-shape `bakeGlowForLibvisio` steals Fill (unfilled stroke) or Line
-/// (filled NoLine). A default rectangle has both, so Draw would lose the
-/// outline if we reused Line. A locked sibling carries the halo — a
-/// Gaussian PNG when the colour is resolved RGB (canvas `_drawGlow`), or
+/// Same-shape `bakeGlowForLibvisio` steals Fill (unfilled 1-D) or Line
+/// (theme-only filled NoLine). A default rectangle has both, so Draw would
+/// lose the outline if we reused Line. A locked sibling carries the halo —
+/// a Gaussian PNG when the colour is resolved RGB (canvas `_drawGlow`), or
 /// a LineWeight stroke when the colour is still THEMEVAL(). Filled NoLine
 /// 2-D with resolved RGB also uses the PNG so Draw does not keep a hard
-/// LineWeight outline.
+/// LineWeight outline. Unfilled 2-D with resolved RGB uses a PNG ring so
+/// Draw does not keep a hard FillForegndTrans ribbon.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.is1D) return false;
   if (_shapeCanLibvisioGlowPng(shape)) return true;
+  if (_shapeCanLibvisioGlowStrokePng(shape)) return true;
   final paintsFill = _shapePaintsFill(shape, shape.geometries);
   if (!paintsFill && !shape.hasImage) return false;
   return shape.line.hasLine;
@@ -680,8 +684,23 @@ bool _shapeCanLibvisioGlowPng(VsdxShape shape) {
   return _softEdgesSilhouetteKind(shape) != null;
 }
 
+/// Unfilled 2-D with a stroke: canvas `_drawGlow` blurs a path stroke, not
+/// a filled silhouette (that would paint the interior). 1-D stays a ribbon
+/// because a Foreign plate cannot use a zero-height 1-D XForm.
+bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
+  if (!_libvisioGlowEffectOn(shape)) return false;
+  if (shape.is1D || shape.hasImage) return false;
+  if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
+    return false;
+  }
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  if (!shape.line.hasLine) return false;
+  if (shape.line.compoundType != 0) return false;
+  return _softEdgesStrokeSilhouetteKind(shape) != null;
+}
+
 bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) =>
-    _shapeCanLibvisioGlowPng(shape);
+    _shapeCanLibvisioGlowPng(shape) || _shapeCanLibvisioGlowStrokePng(shape);
 
 ({Uint8List png, double padInches})? _glowPngForLibvisioWrite(VsdxShape shape) {
   final kind = _softEdgesSilhouetteKind(shape);
@@ -730,6 +749,66 @@ bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) =>
     blurSigmaPx: sigmaPx,
     kind: kind,
     polygon: polygon,
+  );
+  if (png == null) return null;
+  return (png: png, padInches: padPx / innerWidthPx * w);
+}
+
+({Uint8List png, double padInches})? _glowStrokePngForLibvisioWrite(
+  VsdxShape shape,
+) {
+  final kind = _softEdgesStrokeSilhouetteKind(shape);
+  if (kind == null) return null;
+  final color = shape.glow.color ?? _kLibvisioGlowFallback;
+  final trans = _glowHaloTransparency(shape.glow).clamp(0.0, 1.0);
+  final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx = math.max(8, (h * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(innerWidthPx, innerHeightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    innerWidthPx = math.max(8, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(8, (innerHeightPx * scale).round());
+  }
+  final strokeInches = math.max(shape.glow.sizeInches * 2, 0.02);
+  final sigmaPx = shape.glow.sizeInches / w * innerWidthPx;
+  final padInches = strokeInches / 2 + shape.glow.sizeInches * 3;
+  final padPx = math.max(1, (padInches / w * innerWidthPx).ceil());
+  final strokeWidthPx = strokeInches / w * innerWidthPx;
+  var outer = const <({double x, double y})>[];
+  var inner = const <({double x, double y})>[];
+  if (kind == SoftEdgesSilhouetteKind.polygon) {
+    final geom = _softEdgesStrokeGeometry(shape);
+    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
+    if (inches == null || inches.length < 3) return null;
+    final half = strokeInches / 2;
+    final left = offsetPolyline(inches, half, closed: true);
+    final right = offsetPolyline(inches, -half, closed: true);
+    if (left.length < 3 || right.length < 3) return null;
+    ({double x, double y}) toPx(Offset2D p) => (
+          x: padPx + p.x / w * (innerWidthPx - 1),
+          y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
+        );
+    outer = <({double x, double y})>[for (final p in left) toPx(p)];
+    inner = <({double x, double y})>[for (final p in right) toPx(p)];
+  }
+  final png = bakeStrokedSilhouetteSoftEdgesPng(
+    innerWidthPx: innerWidthPx,
+    innerHeightPx: innerHeightPx,
+    padPx: padPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    softSigmaPx: sigmaPx,
+    strokeWidthPx: strokeWidthPx,
+    kind: kind,
+    outer: outer,
+    inner: inner,
+    gaussianBlur: true,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
@@ -883,7 +962,9 @@ List<VsdxShape> _bakeGlowPlateTree(
     if (shapeNeedsLibvisioGlowPlateBake(next)) {
       VsdxShape? plate;
       if (_shapeNeedsLibvisioGlowPngBake(next)) {
-        final payload = _glowPngForLibvisioWrite(next);
+        final payload = _shapeCanLibvisioGlowPng(next)
+            ? _glowPngForLibvisioWrite(next)
+            : _glowStrokePngForLibvisioWrite(next);
         if (payload != null) {
           final part = allocatePart(next.id);
           addImage(
@@ -901,11 +982,13 @@ List<VsdxShape> _bakeGlowPlateTree(
           );
         }
       }
-      plate ??= _glowPlateForLibvisioWrite(
-        next,
-        id: plateIds[next.id] ?? nextId(),
-      );
-      if (plate.geometries.isNotEmpty || plate.hasImage) {
+      if (plate == null && !_shapeCanLibvisioGlowStrokePng(next)) {
+        plate = _glowPlateForLibvisioWrite(
+          next,
+          id: plateIds[next.id] ?? nextId(),
+        );
+      }
+      if (plate != null && (plate.geometries.isNotEmpty || plate.hasImage)) {
         out.add(plate);
         changed = true;
       }
@@ -931,7 +1014,7 @@ List<VsdxShape> _bakeGlowPlateTree(
 }
 
 /// Insert (or keep) the sibling halos Draw uses when Glow cannot steal Line,
-/// and the Gaussian PNG a filled NoLine 2-D uses instead of a hard outline.
+/// including the Gaussian PNG a filled NoLine 2-D or unfilled 2-D stroke uses.
 VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
   var registry = document.images;
@@ -4680,13 +4763,15 @@ VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
 /// `tokens.txt` has no GlowSize. Filled 2-D that already paints a stroke
 /// keeps that outline — Line is shape-level, so a halo would replace
 /// CompoundType / dashes; that case bakes a Gaussian PNG sibling when
-/// RGB is resolved. Unfilled strokes become a FillForegndTrans
-/// ribbon (FillTrans is a token); filled NoLine with resolved RGB
+/// RGB is resolved. Unfilled 1-D strokes become a FillForegndTrans
+/// ribbon (FillTrans is a token); unfilled 2-D with resolved RGB bakes
+/// a Gaussian PNG ring; filled NoLine with resolved RGB
 /// bakes the same Gaussian PNG sibling; pictures and theme-only NoLine
 /// still become a LineWeight halo (`xmlStringToColour` zeros
 /// LineColorTrans, so RGB is premultiplied toward white).
 bool shapeNeedsLibvisioGlowBake(VsdxShape shape) {
   if (_shapeCanLibvisioGlowPng(shape)) return false;
+  if (_shapeCanLibvisioGlowStrokePng(shape)) return false;
   final glow = shape.glow;
   if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
   if (glow.transparency >= 1 - 1e-9) return false;

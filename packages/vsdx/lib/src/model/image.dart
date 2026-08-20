@@ -536,6 +536,8 @@ void _featherSourceAlpha(raster.Image work, double softSigmaPx) {
 /// the same SourceAlpha feather. Draw / PDF flatten Foreign alpha against
 /// black, so the result composites onto opaque white — the interior colour
 /// stays, and a hollow ring does not become a filled black plate.
+/// [gaussianBlur] uses the same Gaussian as canvas `_drawGlow` instead of
+/// SourceAlpha feather, so an unfilled Glow ring spreads instead of eroding.
 Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   required int innerWidthPx,
   required int innerHeightPx,
@@ -553,6 +555,7 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   int? holeGreen,
   int? holeBlue,
   int? holeAlpha,
+  bool gaussianBlur = false,
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
   if (padPx < 0) return null;
@@ -561,7 +564,7 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   final widthPx = innerWidthPx + padPx * 2;
   final heightPx = innerHeightPx + padPx * 2;
   try {
-    final work = raster.Image(
+    var work = raster.Image(
       width: widthPx,
       height: heightPx,
       numChannels: 4,
@@ -660,7 +663,15 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
           }
         }
     }
-    _featherSourceAlpha(work, softSigmaPx);
+    if (gaussianBlur) {
+      final blur = softSigmaPx.clamp(0.0, 256.0);
+      if (blur > 1e-6) {
+        final radius = math.max(1, (blur * 1.5).round());
+        work = raster.gaussianBlur(work, radius: radius);
+      }
+    } else {
+      _featherSourceAlpha(work, softSigmaPx);
+    }
     // Draw / PDF flatten transparent Foreign bitmaps against black, so a
     // hollow ring or a padded halo would become a filled black plate.
     // Composite onto opaque white — the same page colour canvas already

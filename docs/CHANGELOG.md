@@ -625,8 +625,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - Character `Overline` and `Glow*` now survive a save into LibreOffice.
   libvisio's `readCharIX` has an empty `Overline` case, so a save inserts
   combining U+0305 marks and clears the cell. Glow cells are not tokens:
-  an unfilled stroke bakes a `FillForegndTrans` ribbon, and a filled 2-D
-  (NoLine or already stroked) bakes a locked Gaussian PNG sibling
+  an unfilled 1-D stroke bakes a `FillForegndTrans` ribbon, an unfilled
+  2-D stroke with resolved RGB bakes a locked Gaussian PNG ring, and a
+  filled 2-D (NoLine or already stroked) bakes a locked Gaussian PNG sibling
   (`LibvisioGlow.{id}`) when RGB is resolved so Draw shows the same blur
   canvas already paints. Theme-only glow still uses a LineWeight halo so
   THEMEVAL() survives. Then `GlowSize` is written 0.

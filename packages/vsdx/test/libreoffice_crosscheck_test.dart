@@ -1204,6 +1204,28 @@ void main() {
                 softEdgesInches: 0.08,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 59,
+              pinX: 5.1,
+              pinY: 7.6,
+              width: 1.4,
+              height: 0.6,
+              name: 'GlowNoFill',
+              fill: const VsdxFill(pattern: 0),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                pattern: 1,
+                weightInches: 0.04,
+              ),
+            ).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFF00CC66),
+                sizeInches: 0.08,
+                transparency: 0.4,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1361,6 +1383,16 @@ void main() {
     expect(glowStroke.glow.enabled, isFalse);
     expect(glowStroke.fill.hasFill, isTrue);
     expect(glowStroke.geometries.any((g) => !g.noFill), isTrue);
+    final glowNoFill = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'GlowNoFill');
+    expect(glowNoFill.glow.enabled, isFalse);
+    expect(glowNoFill.fill.hasFill, isFalse);
+    expect(glowNoFill.line.pattern, 1);
+    final glowNoFillPlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowNoFill.id}',
+    );
+    expect(glowNoFillPlate.hasImage, isTrue);
+    expect(glowNoFillPlate.width, greaterThan(glowNoFill.width));
     final glowNoLine = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowNoLine');
     expect(glowNoLine.glow.enabled, isFalse);
@@ -2127,6 +2159,32 @@ void main() {
         ),
       ),
     );
+    var glowStrokeDocument = parser.parse(blank);
+    final glowStrokePage = glowStrokeDocument.pages.first;
+    glowStrokeDocument = glowStrokeDocument.replacePage(
+      0,
+      glowStrokePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: glowStrokePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GlowStrokePng',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.04,
+          ),
+        ).copyWith(
+          glow: const VsdxGlow(
+            color: VsdxColor(0xFF00CC66),
+            sizeInches: 0.28,
+            transparency: 0.15,
+          ),
+        ),
+      ),
+    );
     var curvedTextDocument = parser.parse(blank);
     final curvedTextPage = curvedTextDocument.pages.first;
     curvedTextDocument = curvedTextDocument.replacePage(
@@ -2293,6 +2351,10 @@ void main() {
       'glow_noline': writer.write(
         originalBytes: blank,
         edited: glowNolineDocument,
+      ),
+      'glow_stroke': writer.write(
+        originalBytes: blank,
+        edited: glowStrokeDocument,
       ),
       'curved_text': writer.write(
         originalBytes: blank,
@@ -3206,6 +3268,82 @@ void main() {
                 'haloG=${halo.g} haloR=${halo.r}',
           );
         }
+        if (entry.key == 'glow_stroke') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GlowStrokePng');
+          expect(source.glow.enabled, isFalse);
+          expect(source.fill.hasFill, isFalse);
+          expect(source.line.pattern, 1);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioGlowPlate).single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.width, greaterThan(source.width + 0.1));
+        }
+        if (entry.key == 'glow_stroke' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final halo = mean(2.28, 5.2, 2.52, 5.8);
+          expect(
+            body.r,
+            greaterThan(200),
+            reason: 'LibreOffice must keep the unfilled interior empty; '
+                'bodyR=${body.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.g,
+            greaterThan(halo.r + 10),
+            reason:
+                'LibreOffice must paint the Gaussian green glow ring, not a '
+                'hard FillForegndTrans ribbon; bodyR=${body.r} haloG=${halo.g} '
+                'haloR=${halo.r}',
+          );
+        }
         if (entry.key == 'curved_text' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
@@ -3457,7 +3595,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts twenty-two packages.
+      // default on a cold profile, and this case converts twenty-three packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'
