@@ -2812,6 +2812,19 @@ void main() {
       parser.parse(saved).pages.first.shapes.where(isLibvisioGlowPlate),
       hasLength(1),
     );
+    expect(
+      parser
+          .parse(saved)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlowPlate)
+          .single
+          .line
+          .hasLine,
+      isTrue,
+      reason: 'theme-only Glow keeps a LineWeight halo so THEMEVAL() survives',
+    );
   });
 
   test('HideText / TextBkgnd / Rounding / Glow round-trip', () {
@@ -2863,6 +2876,11 @@ void main() {
     expect(
       savedDoc.pages.first.shapes.where(isLibvisioGlowPlate),
       hasLength(1),
+    );
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlowPlate).single.hasImage,
+      isTrue,
+      reason: 'resolved RGB Glow on a filled stroke bakes a Gaussian PNG',
     );
   });
 

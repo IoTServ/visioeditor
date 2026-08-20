@@ -68,6 +68,9 @@
 /// NoLine shape bakes a LineWeight halo, then GlowSize is written 0.
 /// Filled shapes that already paint a stroke keep their outline — stealing
 /// Line would drop CompoundType / dashes that Draw *does* collect.
+/// That case bakes a locked Gaussian PNG sibling (canvas `_drawGlow`)
+/// when the glow colour is resolved RGB; theme-only glow still uses a
+/// LineWeight halo so THEMEVAL() survives. Then `GlowSize` is written 0.
 /// `Letterspace` is not a token; canvas / SVG already fold FontScale into
 /// tracking at 0.55×Size, and `readCharIX` *does* collect FontScale as
 /// `style:text-scale`, so a save adds Letterspace into FontScale and
@@ -76,10 +79,7 @@
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
 /// 2-D shape bakes a locked sibling plate whose FillForegndTrans Draw
-/// collects, then `ReflectionSize` is written 0. Glow on a filled shape
-/// that already paints a stroke cannot steal Line (CompoundType / dashes
-/// would vanish); that case bakes a locked sibling whose LineWeight halo
-/// Draw collects, then `GlowSize` is written 0. draw.io Sketch lives in
+/// collects, then `ReflectionSize` is written 0. draw.io Sketch lives in
 /// `User.veSketch*` rows libvisio never reads, so a save maps hachure /
 /// cross-hatch / dots onto FillPattern 2–24 (`draw:fill=hatch`) and bakes
 /// the two jiggle strokes as locked siblings, then writes `veSketch=0`.
@@ -646,7 +646,9 @@ int? libvisioGlowSourceId(VsdxShape plate) {
 ///
 /// Same-shape `bakeGlowForLibvisio` steals Fill (unfilled stroke) or Line
 /// (filled NoLine). A default rectangle has both, so Draw would lose the
-/// outline if we reused Line. A locked sibling can carry the halo stroke.
+/// outline if we reused Line. A locked sibling carries the halo — a
+/// Gaussian PNG when the colour is resolved RGB (canvas `_drawGlow`), or
+/// a LineWeight stroke when the colour is still THEMEVAL().
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
@@ -657,6 +659,67 @@ bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
   final paintsFill = _shapePaintsFill(shape, shape.geometries);
   if (!paintsFill && !shape.hasImage) return false;
   return shape.line.hasLine;
+}
+
+bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) {
+  if (!shapeNeedsLibvisioGlowPlateBake(shape)) return false;
+  if (shape.hasImage) return false;
+  if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
+    return false;
+  }
+  return _softEdgesSilhouetteKind(shape) != null;
+}
+
+({Uint8List png, double padInches})? _glowPngForLibvisioWrite(VsdxShape shape) {
+  final kind = _softEdgesSilhouetteKind(shape);
+  if (kind == null) return null;
+  final color = shape.glow.color ?? _kLibvisioGlowFallback;
+  final trans = _glowHaloTransparency(shape.glow).clamp(0.0, 1.0);
+  final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx = math.max(8, (h * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(innerWidthPx, innerHeightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    innerWidthPx = math.max(8, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(8, (innerHeightPx * scale).round());
+  }
+  final sigmaPx = shape.glow.sizeInches / w * innerWidthPx;
+  final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
+  final polygon = <({double x, double y})>[];
+  if (kind == SoftEdgesSilhouetteKind.polygon) {
+    VsdxGeometry? geom;
+    for (final candidate in shape.geometries) {
+      if (candidate.noShow || candidate.noFill) continue;
+      geom = candidate;
+      break;
+    }
+    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
+    if (inches == null) return null;
+    for (final p in inches) {
+      polygon.add((
+        x: p.x / w * (innerWidthPx - 1),
+        y: (1 - p.y / h) * (innerHeightPx - 1),
+      ));
+    }
+  }
+  final png = bakeSilhouetteDropShadowPng(
+    innerWidthPx: innerWidthPx,
+    innerHeightPx: innerHeightPx,
+    padPx: padPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    blurSigmaPx: sigmaPx,
+    kind: kind,
+    polygon: polygon,
+  );
+  if (png == null) return null;
+  return (png: png, padInches: padPx / innerWidthPx * w);
 }
 
 List<VsdxGeometry> _glowPlateGeometriesForLibvisioWrite(VsdxShape shape) {
@@ -715,6 +778,39 @@ VsdxShape _glowPlateForLibvisioWrite(VsdxShape source, {required int id}) {
   );
 }
 
+VsdxShape _glowPngPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required String imagePartName,
+  required double padInches,
+}) {
+  final pad = padInches < 0 ? 0.0 : padInches;
+  return VsdxShapeFactory.picture(
+    id: id,
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width.abs() + pad * 2,
+    height: source.height.abs() + pad * 2,
+    imagePartName: imagePartName,
+    name: '$kLibvisioGlowShapeNamePrefix${source.id}',
+  ).copyWith(
+    locPinXInches:
+        pad > 1e-12 ? source.effectiveLocPinX + pad : source.locPinXInches,
+    locPinYInches:
+        pad > 1e-12 ? source.effectiveLocPinY + pad : source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    locked: true,
+    layerMemberIds: source.layerMemberIds,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
 void _collectGlowPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
   for (final shape in shapes) {
     final sourceId = libvisioGlowSourceId(shape);
@@ -747,6 +843,8 @@ List<VsdxShape> _bakeGlowPlateTree(
   List<VsdxShape> shapes, {
   required Map<int, int> plateIds,
   required int Function() nextId,
+  required String Function(int shapeId) allocatePart,
+  required void Function(VsdxImage image) addImage,
 }) {
   final out = <VsdxShape>[];
   var changed = false;
@@ -761,6 +859,8 @@ List<VsdxShape> _bakeGlowPlateTree(
         shape.children,
         plateIds: plateIds,
         nextId: nextId,
+        allocatePart: allocatePart,
+        addImage: addImage,
       );
       if (!identical(children, shape.children)) {
         next = shape.copyWith(children: children);
@@ -768,11 +868,31 @@ List<VsdxShape> _bakeGlowPlateTree(
       }
     }
     if (shapeNeedsLibvisioGlowPlateBake(next)) {
-      final plate = _glowPlateForLibvisioWrite(
+      VsdxShape? plate;
+      if (_shapeNeedsLibvisioGlowPngBake(next)) {
+        final payload = _glowPngForLibvisioWrite(next);
+        if (payload != null) {
+          final part = allocatePart(next.id);
+          addImage(
+            VsdxImage(
+              partName: part,
+              bytes: payload.png,
+              mimeType: 'image/png',
+            ),
+          );
+          plate = _glowPngPlateForLibvisioWrite(
+            next,
+            id: plateIds[next.id] ?? nextId(),
+            imagePartName: part,
+            padInches: payload.padInches,
+          );
+        }
+      }
+      plate ??= _glowPlateForLibvisioWrite(
         next,
         id: plateIds[next.id] ?? nextId(),
       );
-      if (plate.geometries.isNotEmpty) {
+      if (plate.geometries.isNotEmpty || plate.hasImage) {
         out.add(plate);
         changed = true;
       }
@@ -797,31 +917,53 @@ List<VsdxShape> _bakeGlowPlateTree(
   return changed ? out : shapes;
 }
 
-VsdxPage bakeGlowPlatePageForLibvisioWrite(VsdxPage page) {
-  if (!pageNeedsLibvisioGlowPlateBake(page)) return page;
-  final plateIds = <int, int>{};
-  _collectGlowPlateIds(page.shapes, plateIds);
-  var nextId = _maxShapeId(page.shapes) + 1;
-  return page.copyWith(
-    shapes: _bakeGlowPlateTree(
-      page.shapes,
-      plateIds: plateIds,
-      nextId: () => nextId++,
-    ),
-  );
-}
-
 /// Insert (or keep) the sibling halos Draw uses when Glow cannot steal Line.
 VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_glow_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_glow_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
   final pages = <VsdxPage>[];
   var changed = false;
   for (final page in document.pages) {
-    final next = bakeGlowPlatePageForLibvisioWrite(page);
-    changed |= !identical(next, page);
-    pages.add(next);
+    if (!pageNeedsLibvisioGlowPlateBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, int>{};
+    _collectGlowPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeGlowPlateTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+      allocatePart: allocatePart,
+      addImage: (image) {
+        registry = registry.withImage(image);
+        changed = true;
+      },
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
   }
-  return changed ? document.copyWith(pages: pages) : document;
+  if (!changed) return document;
+  return document.copyWith(pages: pages, images: registry);
 }
 
 /// Name prefix of the jiggle strokes `User.veSketch` becomes for Draw.
@@ -4523,7 +4665,8 @@ VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
 ///
 /// `tokens.txt` has no GlowSize. Filled 2-D that already paints a stroke
 /// keeps that outline — Line is shape-level, so a halo would replace
-/// CompoundType / dashes. Unfilled strokes become a FillForegndTrans
+/// CompoundType / dashes; that case bakes a Gaussian PNG sibling when
+/// RGB is resolved. Unfilled strokes become a FillForegndTrans
 /// ribbon (FillTrans is a token); filled NoLine / pictures become a
 /// LineWeight halo (`xmlStringToColour` zeros LineColorTrans, so RGB is
 /// premultiplied toward white).

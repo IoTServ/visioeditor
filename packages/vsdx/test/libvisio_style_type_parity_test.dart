@@ -50,8 +50,9 @@
 /// (canvas `canvasStrokeJoin`). `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
 /// Draw collects, then `ReflectionSize` is written 0. Glow on a filled
-/// shape that already paints a stroke bakes a locked sibling LineWeight
-/// halo, then `GlowSize` is written 0. Page `PageColor` is not a token, so
+/// shape that already paints a stroke bakes a locked Gaussian PNG sibling
+/// when RGB is resolved, then `GlowSize` is written 0. Theme-only glow
+/// still uses a LineWeight halo so THEMEVAL() survives. Page `PageColor` is not a token, so
 /// a save prepends a locked full-page plate Draw can fill. draw.io Sketch
 /// is User rows libvisio never reads, so a save maps the hatch onto
 /// FillPattern 2–24 and bakes the two jiggle strokes as locked siblings,
@@ -437,7 +438,7 @@ void main() {
     expect(shapeNeedsLibvisioGlowBake(outlined), isFalse,
         reason: 'a painted outline must not be stolen for the halo');
     expect(shapeNeedsLibvisioGlowPlateBake(outlined), isTrue,
-        reason: 'filled 2-D with a stroke bakes a sibling LineWeight halo');
+        reason: 'filled 2-D with a stroke bakes a sibling Gaussian PNG');
     expect(glowForLibvisioWrite(outlined).enabled, isFalse);
   });
 
@@ -485,14 +486,23 @@ void main() {
     final plate = baked.pages.first.shapes.first;
     expect(plate.name, '${kLibvisioGlowShapeNamePrefix}1');
     expect(plate.locked, isTrue);
-    expect(plate.fill.pattern, 0);
-    expect(plate.line.hasLine, isTrue);
-    expect(plate.line.weightInches, closeTo(0.16, 1e-9));
-    expect(plate.line.pattern, 1);
+    expect(plate.hasImage, isTrue);
+    expect(plate.width, greaterThan(shape.width));
+    expect(plate.line.hasLine, isFalse);
     expect(baked.pages.first.findShapeById(1)!.line.pattern, 1,
         reason: 'the source outline must stay on the source');
     expect(baked.pages.first.findShapeById(1)!.glow.enabled, isTrue,
         reason: 'the in-memory source keeps the live effect; XML Size is 0');
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    var glowGreen = 0;
+    for (var x = 0; x < decoded.width ~/ 4; x++) {
+      final pixel = decoded.getPixel(x, decoded.height ~/ 2);
+      if (pixel.g > glowGreen) glowGreen = pixel.g.toInt();
+    }
+    expect(glowGreen, greaterThan(80),
+        reason: 'Glow PNG must paint the green halo outside the body');
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final savedDoc = parser.parse(saved);
@@ -500,25 +510,13 @@ void main() {
     expect(savedDoc.pages.first.findShapeById(1)!.line.pattern, 1);
     final savedPlate = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == '${kLibvisioGlowShapeNamePrefix}1');
-    expect(savedPlate.line.weightInches, closeTo(0.16, 1e-9));
-    expect(savedPlate.line.color?.value, isNot(colour.value),
-        reason: 'LineColorTrans is not a token; RGB is premultiplied');
+    expect(savedPlate.hasImage, isTrue);
+    expect(savedPlate.width, greaterThan(shape.width));
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     final after = oracle.svgPages(saved)?.join() ?? '';
     expect(after, isNotEmpty);
-    final hex = savedPlate.line.color!.value
-        .toRadixString(16)
-        .padLeft(8, '0')
-        .substring(2);
-    expect(
-      after.toLowerCase(),
-      contains(hex.toLowerCase()),
-      reason: 'libvisio must stroke the Glow plate',
-    );
-    _expectVsd2rawCollected(
-        saved, <String>['svg:stroke-color: #${hex.toLowerCase()}']);
   });
 
   test('Sketch bakes hatch and jiggle strokes LibreOffice can collect', () {
@@ -3419,13 +3417,13 @@ void main() {
     final glowFillStroke = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowFillStroke');
     expect(glowFillStroke.glow.enabled, isFalse,
-        reason: 'filled stroke Glow bakes a sibling LineWeight halo');
+        reason: 'filled stroke Glow bakes a sibling Gaussian PNG');
     expect(glowFillStroke.line.pattern, 1);
     final glowFillPlate = savedDoc.pages.first.shapes.firstWhere(
       (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowFillStroke.id}',
     );
-    expect(glowFillPlate.line.weightInches, closeTo(0.16, 1e-9));
-    expect(glowFillPlate.fill.pattern, 0);
+    expect(glowFillPlate.hasImage, isTrue);
+    expect(glowFillPlate.width, greaterThan(glowFillStroke.width));
     expect(
       savedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'FillUnknown')
