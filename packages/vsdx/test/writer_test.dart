@@ -2079,6 +2079,55 @@ void main() {
     );
   });
 
+  test('Label Border bakes a sibling stroke and clears on disable', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+              ),
+            )
+            .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    expect(
+      midDoc.pages.first.shapes.where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+    );
+    expect(midDoc.pages.first.findShapeById(id)!.labelBorderColor, isNull);
+
+    doc = midDoc.replacePage(
+      0,
+      midDoc.pages.first.copyWith(
+        shapes: [
+          for (final s in midDoc.pages.first.shapes)
+            if (!isLibvisioLabelBorderPlate(s)) s,
+        ],
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioLabelBorderPlate),
+      isEmpty,
+      reason: 'deleting the baked plate must drop it on save',
+    );
+  });
+
   test('Shape Opacity bakes FillForegndTrans and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2107,14 +2156,21 @@ void main() {
       0,
       midDoc.pages.first.updateShapeById(
         id,
-        (shape) => shape.copyWith(fill: shape.fill.copyWith(
+        (shape) => shape.copyWith(
+            fill: shape.fill.copyWith(
           foregroundTransparency: 0,
         )),
       ),
     );
     final out = writer.write(originalBytes: mid, edited: doc);
     expect(
-      parser.parse(out).pages.first.findShapeById(id)!.fill.foregroundTransparency,
+      parser
+          .parse(out)
+          .pages
+          .first
+          .findShapeById(id)!
+          .fill
+          .foregroundTransparency,
       closeTo(0, 1e-9),
       reason: 'clearing the baked fade must write FillForegndTrans 0',
     );

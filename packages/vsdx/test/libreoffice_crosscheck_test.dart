@@ -1070,6 +1070,24 @@ void main() {
                   const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
               line: const VsdxLine(pattern: 0),
             ).withShapeOpacity(0.4),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 52,
+              pinX: 5.6,
+              pinY: 7.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'LabelBorderBox',
+              fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+              line: const VsdxLine(pattern: 0),
+            )
+                .copyWith(
+                  richText: const VsdxRichText(
+                    runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+                  ),
+                )
+                .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
           ),
     );
     doc = doc.copyWith(
@@ -1269,6 +1287,21 @@ void main() {
     expect(opacityBox.shapeOpacity, 1);
     expect(opacityBox.fill.foregroundTransparency, closeTo(0.6, 1e-9));
     expect(opacityBox.fill.foreground?.value, 0xFFFF0000);
+    final labelBorderBox = reopenedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'LabelBorderBox');
+    expect(labelBorderBox.labelBorderColor, isNull);
+    final labelBorderPlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) =>
+          s.name == '$kLibvisioLabelBorderShapeNamePrefix${labelBorderBox.id}',
+    );
+    expect(labelBorderPlate.locked, isTrue);
+    expect(labelBorderPlate.fill.pattern, 0);
+    expect(labelBorderPlate.line.pattern, 1);
+    expect(labelBorderPlate.line.color?.value, 0xFF1565C0);
+    expect(
+      labelBorderPlate.line.weightInches,
+      closeTo(1 / kLibvisioLabelBorderPxPerInch, 1e-9),
+    );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
     expect(overline.richText.runs.single.charStyle.overline, isFalse);
@@ -1700,6 +1733,29 @@ void main() {
         ).withShapeOpacity(0.5),
       ),
     );
+    var labelBorderDocument = parser.parse(blank);
+    final labelBorderPage = labelBorderDocument.pages.first;
+    labelBorderDocument = labelBorderDocument.replacePage(
+      0,
+      labelBorderPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: labelBorderPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'LabelBorderBox',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+              ),
+            )
+            .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1729,6 +1785,10 @@ void main() {
       'opacity': writer.write(
         originalBytes: blank,
         edited: opacityDocument,
+      ),
+      'label_border': writer.write(
+        originalBytes: blank,
+        edited: labelBorderDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -1976,7 +2036,8 @@ void main() {
           expect(
             top,
             greaterThan(bottom + 12),
-            reason: 'LibreOffice must paint the Glass highlight above the fill; '
+            reason:
+                'LibreOffice must paint the Glass highlight above the fill; '
                 'top=$top bottom=$bottom',
           );
         }
@@ -2014,6 +2075,58 @@ void main() {
                 'red, not opaque; pink=$pinkPixels red=$redPixels',
           );
         }
+        if (entry.key == 'label_border' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          bool isBlueStroke(raster.Pixel pixel) =>
+              pixel.b > pixel.r + 30 && pixel.b > pixel.g + 10 && pixel.r < 200;
+          int countBlue(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (isBlueStroke(rendered.getPixel(x, y))) count++;
+              }
+            }
+            return count;
+          }
+
+          final edge = countBlue(2.68, 4.5, 2.82, 6.5);
+          final interior = countBlue(3.4, 5.1, 5.1, 5.9);
+          expect(
+            edge,
+            greaterThan(20),
+            reason: 'LibreOffice must paint the Label Border stroke; '
+                'edge=$edge interior=$interior',
+          );
+          expect(
+            edge,
+            greaterThan(interior * 2),
+            reason: 'Label Border must be a frame, not a fill; '
+                'edge=$edge interior=$interior',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2022,7 +2135,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts ten packages.
+      // default on a cold profile, and this case converts eleven packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

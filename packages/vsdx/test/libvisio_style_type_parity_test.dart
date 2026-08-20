@@ -59,6 +59,9 @@
 /// bakes a locked white top-light sibling (`FillForegndTrans`) and writes
 /// `veGlass=0`. draw.io Shape Opacity is a User row, so a save folds it
 /// into FillForegndTrans / line transparency and drops `veOpacity`.
+/// draw.io Label Border is also a User row, so a save bakes a locked
+/// NoFill sibling whose LineColor Draw collects, then drops
+/// `veLabelBorderColor`.
 library;
 
 import 'dart:io';
@@ -638,8 +641,8 @@ void main() {
       savedPlate.geometries.single.commands.whereType<RelQuadBezTo>(),
       isNotEmpty,
     );
-    expect(savedPlate.geometries.single.commands.whereType<QuadBezTo>(),
-        isEmpty);
+    expect(
+        savedPlate.geometries.single.commands.whereType<QuadBezTo>(), isEmpty);
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
@@ -701,7 +704,8 @@ void main() {
       ),
     ).withShapeOpacity(0.5);
     var strokeDoc = parser.parse(blank);
-    strokeDoc = strokeDoc.replacePage(0, strokeDoc.pages.first.addShape(stroke));
+    strokeDoc =
+        strokeDoc.replacePage(0, strokeDoc.pages.first.addShape(stroke));
     final savedStroke = parser.parse(
       writer.write(originalBytes: blank, edited: strokeDoc),
     );
@@ -715,6 +719,123 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
     _expectVsd2rawCollected(saved, const <String>[
       'draw:opacity',
+    ]);
+  });
+
+  test('Label Border bakes a stroke sibling LibreOffice can collect', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.6,
+      height: 0.8,
+      name: 'LabelBorderBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    )
+        .copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+          ),
+        )
+        .withLabelBorderColor(const VsdxColor(0xFF1565C0));
+    expect(shapeNeedsLibvisioLabelBorderBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Label Border stroke',
+    );
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.labelBorderColor, isNull);
+    expect(source.fill.foreground?.value, VsdxColor.white.value);
+    final plate =
+        baked.pages.first.shapes.firstWhere(isLibvisioLabelBorderPlate);
+    expect(plate.name, '${kLibvisioLabelBorderShapeNamePrefix}1');
+    expect(plate.locked, isTrue);
+    expect(plate.fill.pattern, 0);
+    expect(plate.line.pattern, 1);
+    expect(plate.line.color?.value, 0xFF1565C0);
+    expect(
+      plate.line.weightInches,
+      closeTo(1 / kLibvisioLabelBorderPxPerInch, 1e-12),
+    );
+    expect(plate.pinX, closeTo(2, 1e-9));
+    expect(plate.pinY, closeTo(2, 1e-9));
+    expect(plate.width, closeTo(1.6, 1e-9));
+    expect(plate.height, closeTo(0.8, 1e-9));
+    expect(
+      plate.geometries.single.commands.whereType<RelLineTo>(),
+      hasLength(4),
+    );
+
+    final custom = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 3,
+      width: 1.6,
+      height: 0.8,
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    )
+        .copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'Hi')],
+            textBlock: VsdxTextBlock(
+              pinXInches: 0.2,
+              pinYInches: 0.1,
+              widthInches: 0.8,
+              heightInches: 0.4,
+            ),
+          ),
+        )
+        .withLabelBorderColor(const VsdxColor(0xFFE53935));
+    var customDoc = parser.parse(blank);
+    customDoc =
+        customDoc.replacePage(0, customDoc.pages.first.addShape(custom));
+    final customPlate = documentForLibvisioWrite(customDoc)
+        .pages
+        .first
+        .shapes
+        .firstWhere(isLibvisioLabelBorderPlate);
+    expect(customPlate.width, closeTo(0.8, 1e-9));
+    expect(customPlate.height, closeTo(0.4, 1e-9));
+    expect(customPlate.pinX, closeTo(4.4, 1e-9));
+    expect(customPlate.pinY, closeTo(2.7, 1e-9));
+    expect(customPlate.line.color?.value, 0xFFE53935);
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.labelBorderColor, isNull);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+    );
+    final savedPlate =
+        savedDoc.pages.first.shapes.firstWhere(isLibvisioLabelBorderPlate);
+    expect(savedPlate.line.color?.value, 0xFF1565C0);
+    expect(savedPlate.fill.pattern, 0);
+    expect(savedPlate.geometries.single.commands.whereType<RelLineTo>(),
+        hasLength(4));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+    _expectVsd2rawCollected(saved, const <String>[
+      'svg:stroke-color: #1565c0',
     ]);
   });
 

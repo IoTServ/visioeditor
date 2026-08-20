@@ -66,7 +66,12 @@ void main() {
         .findShapeById(id)!;
     expect(
       reopened.richText.runs.first.charStyle.transparency,
-      closeTo(0.65, 1e-6),
+      closeTo(0, 1e-6),
+      reason: 'ColorTrans is not a token; save premultiplies into Color',
+    );
+    expect(
+      reopened.richText.runs.first.charStyle.color?.value,
+      colourForLibvisioAlpha(VsdxColor.black, 0.65).value,
     );
     final svg = VsdxToSvgSerializer().serializePage(value.currentPage!);
     expect(svg, contains('fill-opacity="0.35"'));
@@ -104,12 +109,24 @@ void main() {
     expect(svg, contains('stroke="#1565c0"'));
     expect(svg, contains('stroke-width="0.01"'));
 
-    final reopened = const DocumentParser()
-        .parse(value.exportToBytes())
-        .pages
-        .single
-        .findShapeById(id)!;
-    expect(reopened.labelBorderColor, const VsdxColor(0xFF1565C0));
+    final reopenedDoc = const DocumentParser().parse(value.exportToBytes());
+    final reopened = reopenedDoc.pages.single.findShapeById(id)!;
+    expect(
+      reopened.labelBorderColor,
+      isNull,
+      reason: 'User.veLabelBorderColor is not a token; save bakes a sibling',
+    );
+    expect(
+      reopenedDoc.pages.single.shapes.where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+    );
+    expect(
+      reopenedDoc.pages.single.shapes
+          .firstWhere(isLibvisioLabelBorderPlate)
+          .line
+          .color,
+      const VsdxColor(0xFF1565C0),
+    );
     expect(
       reopened.userCells
           .singleWhere((cell) => cell.name == 'foreignMeta')

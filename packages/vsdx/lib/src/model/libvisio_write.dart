@@ -75,7 +75,9 @@
 /// then writes `veGlass=0`. draw.io Shape Opacity is `User.veOpacity`
 /// (not a token), so a save folds it into FillForegndTrans / line
 /// transparency / image Transparency Draw actually collects, then drops
-/// the User row.
+/// the User row. draw.io Label Border is `User.veLabelBorderColor`
+/// (not a token), so a save inserts a locked NoFill sibling whose LineColor
+/// Draw collects, then drops the User row.
 library;
 
 import 'dart:math' as math;
@@ -111,13 +113,15 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
-    bakeImageAdjustmentsForLibvisioWrite(
-      bakeReflectionForLibvisioWrite(
-        bakeGlowPlateForLibvisioWrite(
-          bakeGlassForLibvisioWrite(
-            bakeSketchForLibvisioWrite(
-              bakeShapeOpacityForLibvisioWrite(
-                bakeOverlineForLibvisioWrite(hopped),
+    bakeLabelBorderForLibvisioWrite(
+      bakeImageAdjustmentsForLibvisioWrite(
+        bakeReflectionForLibvisioWrite(
+          bakeGlowPlateForLibvisioWrite(
+            bakeGlassForLibvisioWrite(
+              bakeSketchForLibvisioWrite(
+                bakeShapeOpacityForLibvisioWrite(
+                  bakeOverlineForLibvisioWrite(hopped),
+                ),
               ),
             ),
           ),
@@ -805,11 +809,28 @@ int? libvisioGlassSourceId(VsdxShape plate) {
   );
 }
 
+/// Name prefix of the text-frame stroke `User.veLabelBorderColor` becomes.
+const kLibvisioLabelBorderShapeNamePrefix = 'LibvisioLabelBorder.';
+
+/// Pixel density canvas / SVG use for the 1px label-border hairline.
+const kLibvisioLabelBorderPxPerInch = 96.0;
+
+bool isLibvisioLabelBorderPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioLabelBorderShapeNamePrefix);
+
+int? libvisioLabelBorderSourceId(VsdxShape plate) {
+  if (!isLibvisioLabelBorderPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioLabelBorderShapeNamePrefix.length),
+  );
+}
+
 bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioSketchPlate(shape) ||
     isLibvisioGlowPlate(shape) ||
     isLibvisioReflectionPlate(shape) ||
     isLibvisioGlassPlate(shape) ||
+    isLibvisioLabelBorderPlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
@@ -1487,6 +1508,227 @@ VsdxDocument bakeGlassForLibvisioWrite(VsdxDocument document) {
   return changed ? document.copyWith(pages: pages) : document;
 }
 
+/// libvisio never reads User rows. The 1px text-frame stroke canvas / SVG
+/// paint from `User.veLabelBorderColor` is therefore a locked NoFill sibling
+/// whose LineColor Draw collects, then the User row is dropped. Glueable
+/// 1-D labels stay native — their loose plate depends on layout.
+bool shapeNeedsLibvisioLabelBorderBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  final color = shape.labelBorderColor;
+  if (color == null || color.alpha == 0) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  final hasText =
+      !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
+  if (!hasText) return false;
+  final block = shape.richText.textBlock;
+  final tw = (block.widthInches ?? shape.width).abs();
+  final th = (block.heightInches ?? shape.height).abs();
+  return tw > 1e-9 && th > 1e-9;
+}
+
+Offset2D _parentFromLocal(VsdxShape shape, Offset2D local) {
+  var dx = local.x - shape.effectiveLocPinX;
+  var dy = local.y - shape.effectiveLocPinY;
+  if (shape.flipX) dx = -dx;
+  if (shape.flipY) dy = -dy;
+  if (shape.angleRad != 0) {
+    final cosA = math.cos(shape.angleRad);
+    final sinA = math.sin(shape.angleRad);
+    final rx = dx * cosA - dy * sinA;
+    final ry = dx * sinA + dy * cosA;
+    dx = rx;
+    dy = ry;
+  }
+  return Offset2D(shape.pinX + dx, shape.pinY + dy);
+}
+
+VsdxShape _labelBorderPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+}) {
+  final block = source.richText.textBlock;
+  final tw = (block.widthInches ?? source.width).abs();
+  final th = (block.heightInches ?? source.height).abs();
+  final defaultFrame = block.pinXInches == null &&
+      block.pinYInches == null &&
+      block.widthInches == null &&
+      block.heightInches == null &&
+      block.angleRad.abs() < 1e-12;
+  late final Offset2D pin;
+  late final double? locPinX;
+  late final double? locPinY;
+  late final double angle;
+  if (defaultFrame) {
+    pin = Offset2D(source.pinX, source.pinY);
+    locPinX = source.locPinXInches;
+    locPinY = source.locPinYInches;
+    angle = source.angleRad;
+  } else {
+    pin = _parentFromLocal(
+      source,
+      Offset2D(
+        block.pinXInches ?? source.width / 2,
+        block.pinYInches ?? source.height / 2,
+      ),
+    );
+    locPinX = block.locPinXInches;
+    locPinY = block.locPinYInches;
+    angle = source.angleRad + block.angleRad;
+  }
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioLabelBorderShapeNamePrefix${source.id}',
+    pinX: pin.x,
+    pinY: pin.y,
+    width: tw,
+    height: th,
+    locPinXInches: locPinX,
+    locPinYInches: locPinY,
+    angleRad: angle,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: const <VsdxGeometry>[
+      VsdxGeometry(
+        noFill: true,
+        commands: <VsdxPathCommand>[
+          RelMoveTo(0, 0),
+          RelLineTo(1, 0),
+          RelLineTo(1, 1),
+          RelLineTo(0, 1),
+          RelLineTo(0, 0),
+        ],
+      ),
+    ],
+    fill: const VsdxFill(pattern: 0),
+    line: VsdxLine(
+      color: source.labelBorderColor,
+      pattern: 1,
+      weightInches: 1 / kLibvisioLabelBorderPxPerInch,
+      cap: LineCap.extended,
+    ),
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+VsdxShape _sourceForLibvisioLabelBorderWrite(VsdxShape shape) =>
+    shape.withLabelBorderColor(null);
+
+void _collectLabelBorderPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioLabelBorderSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectLabelBorderPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioLabelBorderBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioLabelBorderPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioLabelBorderBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeLabelBorderTree(
+  List<VsdxShape> shapes, {
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioLabelBorderPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeLabelBorderTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioLabelBorderBake(next)) {
+      out.add(_sourceForLibvisioLabelBorderWrite(next));
+      final plate = _labelBorderPlateForLibvisioWrite(
+        next,
+        id: plateIds[next.id] ?? nextId(),
+      );
+      out.add(plate);
+      changed = true;
+      continue;
+    }
+    out.add(next);
+    final existingId = plateIds[next.id];
+    if (existingId != null) {
+      VsdxShape? kept;
+      for (final candidate in shapes) {
+        if (candidate.id == existingId) {
+          kept = candidate;
+          break;
+        }
+      }
+      if (kept != null) {
+        out.add(kept);
+        changed = true;
+      }
+    }
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+VsdxPage bakeLabelBorderPageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioLabelBorderBake(page)) return page;
+  final plateIds = <int, int>{};
+  _collectLabelBorderPlateIds(page.shapes, plateIds);
+  var nextId = _maxShapeId(page.shapes) + 1;
+  return page.copyWith(
+    shapes: _bakeLabelBorderTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    ),
+  );
+}
+
+/// Insert (or keep) the text-frame stroke siblings Draw uses for Label Border.
+VsdxDocument bakeLabelBorderForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeLabelBorderPageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
+}
+
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).
 const kLibvisioCombiningOverline = '\u0305';
 
@@ -1702,7 +1944,8 @@ VsdxShape _applyOpacityForLibvisioWrite(VsdxShape shape, double extra) {
   if (next.reflection.enabled) {
     next = next.copyWith(
       reflection: next.reflection.copyWith(
-        transparency: _combinedTransparency(next.reflection.transparency, extra),
+        transparency:
+            _combinedTransparency(next.reflection.transparency, extra),
       ),
     );
   }
@@ -1715,8 +1958,7 @@ VsdxShape _applyOpacityForLibvisioWrite(VsdxShape shape, double extra) {
   }
   if (next.hasImage) {
     next = next.copyWith(
-      imageTransparency:
-          _combinedTransparency(next.imageTransparency, extra),
+      imageTransparency: _combinedTransparency(next.imageTransparency, extra),
     );
   }
   if (next.richText.runs.isNotEmpty ||

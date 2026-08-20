@@ -645,6 +645,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `FillForegndTrans` (and line / image / text transparency) which
   libvisio maps to `draw:opacity`, then drops the User row. Canvas and
   SVG already composited the cell as one layer.
+- draw.io Label Border now survives a save into LibreOffice.
+  `User.veLabelBorderColor` is not a token, so a save inserts a locked
+  NoFill sibling (`LibvisioLabelBorder.{id}`) whose `LineColor` Draw
+  collects, then drops the User row. Canvas and SVG already stroked the
+  text frame. Glueable connector labels keep the User row — their loose
+  plate depends on layout.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *
