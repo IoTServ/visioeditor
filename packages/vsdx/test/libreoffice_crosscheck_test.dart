@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as raster;
@@ -2057,6 +2058,38 @@ void main() {
             ),
       ),
     );
+    var autoRotateDocument = parser.parse(blank);
+    final autoRotatePage = autoRotateDocument.pages.first;
+    autoRotateDocument = autoRotateDocument.replacePage(
+      0,
+      autoRotatePage.addShape(
+        VsdxShapeFactory.line(
+          id: autoRotatePage.nextFreeShapeId(),
+          ax: 2,
+          ay: 3,
+          bx: 6.5,
+          by: 7.5,
+          name: 'AutoRotate',
+          line: const VsdxLine(pattern: 0),
+        ).withAutoRotateLabel(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ROTATE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.35,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2114,6 +2147,10 @@ void main() {
       'shape_inside': writer.write(
         originalBytes: blank,
         edited: shapeInsideDocument,
+      ),
+      'auto_rotate': writer.write(
+        originalBytes: blank,
+        edited: autoRotateDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -2855,6 +2892,78 @@ void main() {
                 'into the ellipse corner; line=$lineInk corner=$cornerInk',
           );
         }
+        if (entry.key == 'auto_rotate') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes.single;
+          expect(source.autoRotateLabel, isFalse);
+          expect(
+            source.richText.textBlock.angleRad,
+            closeTo(math.pi / 4, 1e-6),
+          );
+          expect(source.richText.textBlock.widthInches, greaterThan(0.5));
+        }
+        if (entry.key == 'auto_rotate' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+
+          int darkCount(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < 180) count++;
+              }
+            }
+            return count;
+          }
+
+          // Midpoint of (2,3)-(6.5,7.5) is (4.25, 5.25). Sample along the
+          // +45° tangent (where rotated "ROTATE" sits) vs the horizontal
+          // from the same pin (where an unrotated Draw label would sit).
+          final tangentInk = darkCount(4.55, 5.55, 4.95, 5.95);
+          final horizontalInk = darkCount(4.70, 5.10, 5.20, 5.40);
+          expect(
+            tangentInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the label along the route; '
+                'tangent=$tangentInk horizontal=$horizontalInk',
+          );
+          expect(
+            horizontalInk,
+            lessThan(tangentInk),
+            reason: 'LibreOffice must not leave the label axis-aligned; '
+                'tangent=$tangentInk horizontal=$horizontalInk',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -2863,7 +2972,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts seventeen packages.
+      // default on a cold profile, and this case converts eighteen packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

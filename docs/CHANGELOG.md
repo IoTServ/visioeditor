@@ -691,6 +691,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas and SVG already paint, writes `HideText=1` on the source and
   drops the User row. Glueable connector labels, flipped shapes, vertical
   text, curved text and tabbed labels keep the User row.
+- draw.io Rotate with Edge now survives a save into LibreOffice.
+  `User.veAutoRotateLabel` is not a token, so a save writes the same upright
+  route tangent canvas and SVG already paint into `TxtAngle` (which
+  libvisio collects) and drops the User row. Vertices stay native.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

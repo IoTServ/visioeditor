@@ -94,9 +94,12 @@
 /// (`HideText` is a token) and drops the User row. draw.io Shape Inside is
 /// `User.veShapeInside` (not a token), so a save inserts locked per-line
 /// siblings in the same outline bands canvas / SVG already paint, hides
-/// the source and drops the User row. draw.io Word Wrap is `User.veWordWrap` (not a
-/// token), so a save expands TxtWidth to the unwrapped line plus margins
-/// (`svg:width` Draw wraps against) and drops the User row.
+/// the source and drops the User row. draw.io Rotate with Edge is
+/// `User.veAutoRotateLabel` (not a token), so a save writes the route
+/// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
+/// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
+/// to the unwrapped line plus margins (`svg:width` Draw wraps against) and
+/// drops the User row.
 library;
 
 import 'dart:math' as math;
@@ -147,7 +150,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                         bakeShadowForLibvisioWrite(
                           bakeCurvedTextForLibvisioWrite(
                             bakeShapeOpacityForLibvisioWrite(
-                              bakeOverlineForLibvisioWrite(hopped),
+                              bakeOverlineForLibvisioWrite(
+                                bakeAutoRotateLabelForLibvisioWrite(hopped),
+                              ),
                             ),
                           ),
                         ),
@@ -3001,6 +3006,188 @@ VsdxDocument bakeShapeInsideForLibvisioWrite(VsdxDocument document) {
     }
   }
   if (!changed) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// `true` when `User.veAutoRotateLabel` must become a `TxtAngle` Draw paints.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so `labelAutoRotate` never becomes ODF rotation. `TxtAngle` *is*
+/// collected (`m_txtxform->angle` → `transformAngle`), so a save writes the
+/// same upright route tangent canvas / SVG already paint and drops the
+/// User row. Vertices stay native.
+bool shapeNeedsLibvisioAutoRotateLabelBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.isGlueableConnector) return false;
+  if (!shape.autoRotateLabel) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.richText.textBlock.textDirection == 1) return false;
+  return !shape.richText.isEmpty ||
+      (shape.text != null && shape.text!.isNotEmpty);
+}
+
+Offset2D _libvisioRouteMidpoint(List<Offset2D> route) {
+  if (route.isEmpty) return const Offset2D(0, 0);
+  if (route.length == 1) return route.first;
+  var total = 0.0;
+  for (var i = 1; i < route.length; i++) {
+    final dx = route[i].x - route[i - 1].x;
+    final dy = route[i].y - route[i - 1].y;
+    total += math.sqrt(dx * dx + dy * dy);
+  }
+  if (total <= 1e-18) return route.first;
+  var remaining = total / 2;
+  for (var i = 1; i < route.length; i++) {
+    final a = route[i - 1];
+    final b = route[i];
+    final dx = b.x - a.x;
+    final dy = b.y - a.y;
+    final length = math.sqrt(dx * dx + dy * dy);
+    if (length >= remaining) {
+      final t = length <= 1e-18 ? 0.0 : remaining / length;
+      return Offset2D(a.x + dx * t, a.y + dy * t);
+    }
+    remaining -= length;
+  }
+  return route.last;
+}
+
+bool _autoRotateLabelDefaultFrame(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  return block.pinXInches == null &&
+      block.pinYInches == null &&
+      block.widthInches == null &&
+      block.heightInches == null;
+}
+
+VsdxShape _sourceForLibvisioAutoRotateLabelWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
+  final others = <VsdxUserCell>[
+    for (final cell in shape.userCells)
+      if (cell.name != VsdxShape.userAutoRotateLabel) cell,
+  ];
+  final angle = page.effectiveConnectorLabelAngle(shape);
+  final previous = shape.richText.textBlock;
+  var pinX = previous.pinXInches;
+  var pinY = previous.pinYInches;
+  var locPinX = previous.locPinXInches;
+  var locPinY = previous.locPinYInches;
+  var tw = previous.widthInches;
+  var th = previous.heightInches;
+  if (_autoRotateLabelDefaultFrame(shape)) {
+    final style = shape.richText.runs.isNotEmpty
+        ? shape.richText.runs.first.charStyle
+        : VsdxCharStyle.defaults;
+    final plain =
+        shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
+    final lines =
+        plain.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    var fs = math.max(style.effectiveFontSizeInchesForText(plain), 0.04);
+    if (style.position != VsdxTextPosition.normal) fs *= 0.7;
+    final lineHeight = fs * kLibreOfficeFontCellLineHeightFactor;
+    tw = math.max(
+      nowrapLabelAdvanceInches(shape) +
+          previous.marginLeftInches +
+          previous.marginRightInches +
+          0.06,
+      0.2,
+    );
+    th = math.max(
+      lines.length * lineHeight +
+          previous.marginTopInches +
+          previous.marginBottomInches,
+      0.2,
+    );
+    final route = page.drawnConnectorPagePolyline(shape);
+    final mid = route.length >= 2
+        ? _libvisioRouteMidpoint(route)
+        : VsdxPage.connectorMidpoint(shape);
+    final local = page.pageToLocalDeep(shape.id, mid);
+    pinX = local.x;
+    pinY = local.y;
+    locPinX = tw / 2;
+    locPinY = th / 2;
+  }
+  // `copyWith(angleRad: 0)` cannot clear a previous TxtAngle because `??`
+  // treats 0 as absent. Reconstruct so a horizontal route still writes 0.
+  final block = VsdxTextBlock(
+    pinXInches: pinX,
+    pinYInches: pinY,
+    locPinXInches: locPinX,
+    locPinYInches: locPinY,
+    widthInches: tw,
+    heightInches: th,
+    angleRad: angle,
+    verticalAlign: previous.verticalAlign,
+    marginLeftInches: previous.marginLeftInches,
+    marginRightInches: previous.marginRightInches,
+    marginTopInches: previous.marginTopInches,
+    marginBottomInches: previous.marginBottomInches,
+    hideText: previous.hideText,
+    backgroundColor: previous.backgroundColor,
+    backgroundTransparency: previous.backgroundTransparency,
+    textDirection: previous.textDirection,
+    defaultTabStopInches: previous.defaultTabStopInches,
+  );
+  return shape.copyWith(
+    userCells: others,
+    richText: shape.richText.copyWith(textBlock: block),
+  );
+}
+
+VsdxShape bakeAutoRotateLabelShapeForLibvisioWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeAutoRotateLabelShapeForLibvisioWrite(child, page),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shapeNeedsLibvisioAutoRotateLabelBake(shape)
+      ? _sourceForLibvisioAutoRotateLabelWrite(shape, page)
+      : shape;
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Write `TxtAngle` Draw collects for Rotate with Edge, then drop the User row.
+VsdxDocument bakeAutoRotateLabelForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeAutoRotateLabelShapeForLibvisioWrite(shape, page),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
   return document.copyWith(pages: pages);
 }
 

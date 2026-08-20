@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -2432,6 +2433,59 @@ void main() {
       parser.parse(again).pages.first.shapes.where(isLibvisioShapeInsidePlate),
       hasLength(plates.length),
       reason: 'a second save must not stack another Shape Inside plate',
+    );
+  });
+
+  test('Rotate with Edge bakes TxtAngle and clears the User row', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: id,
+          ax: 2,
+          ay: 3,
+          bx: 6.5,
+          by: 7.5,
+        ).withAutoRotateLabel(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ROTATE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.35,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    final source = midDoc.pages.first.findShapeById(id)!;
+    expect(source.autoRotateLabel, isFalse);
+    expect(source.richText.textBlock.angleRad, closeTo(math.pi / 4, 1e-6));
+    expect(source.richText.textBlock.widthInches, greaterThan(0.5));
+
+    final again = writer.write(originalBytes: mid, edited: midDoc);
+    expect(
+      parser
+          .parse(again)
+          .pages
+          .first
+          .findShapeById(id)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(math.pi / 4, 1e-6),
     );
   });
 

@@ -72,10 +72,12 @@
 /// per-glyph siblings along the canvas quadratic arc, hides the source
 /// and drops `veCurvedText`. draw.io Shape Inside is also a User row, so
 /// a save bakes locked per-line siblings in the outline bands, hides the
-/// source and drops `veShapeInside`.
+/// source and drops `veShapeInside`. draw.io Rotate with Edge is also a
+/// User row, so a save writes `TxtAngle` and drops `veAutoRotateLabel`.
 library;
 
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:image/image.dart' as raster;
@@ -1410,6 +1412,109 @@ void main() {
     final oracleInside = LibvisioOracle.tryLoad();
     if (oracleInside == null) return;
     expect(oracleInside.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Rotate with Edge bakes TxtAngle for LibreOffice', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 2,
+      ay: 3,
+      bx: 6.5,
+      by: 7.5,
+      name: 'Edge',
+    ).withAutoRotateLabel(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'ROTATE',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.35,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioAutoRotateLabelBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioAutoRotateLabelBake(
+        VsdxShapeFactory.rectangle(
+          id: 9,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).withAutoRotateLabel(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[VsdxTextRun(text: 'NO')],
+              ),
+            ),
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.autoRotateLabel, isFalse);
+    expect(source.richText.textBlock.angleRad, closeTo(math.pi / 4, 1e-6));
+    expect(source.richText.textBlock.widthInches, greaterThan(0.5));
+    expect(source.richText.textBlock.heightInches, greaterThan(0.2));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(math.pi / 4, 1e-6),
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.autoRotateLabel, isFalse);
+    expect(
+      savedDoc.pages.first.findShapeById(1)!.richText.textBlock.angleRad,
+      closeTo(math.pi / 4, 1e-6),
+    );
+
+    final horiz = VsdxShapeFactory.line(
+      id: 2,
+      ax: 1,
+      ay: 2,
+      bx: 5,
+      by: 2,
+      name: 'Horiz',
+    ).withAutoRotateLabel(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'FLAT',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.2,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(angleRad: 0.4),
+          ),
+        );
+    doc = doc.replacePage(0, doc.pages.first.addShape(horiz));
+    final bakedHoriz =
+        documentForLibvisioWrite(doc).pages.first.findShapeById(2)!;
+    expect(bakedHoriz.autoRotateLabel, isFalse);
+    expect(bakedHoriz.richText.textBlock.angleRad, closeTo(0, 1e-6));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {

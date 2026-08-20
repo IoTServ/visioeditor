@@ -57,7 +57,8 @@ void main() {
         .pages
         .single
         .findShapeById(id)!;
-    expect(changed.autoRotateLabel, isTrue);
+    expect(changed.autoRotateLabel, isFalse);
+    expect(changed.richText.textBlock.angleRad, closeTo(0, 1e-6));
     expect(
       changed.userCells.firstWhere((cell) => cell.name == 'foreignMeta').value,
       'keep',
