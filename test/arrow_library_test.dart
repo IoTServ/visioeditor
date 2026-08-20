@@ -39,9 +39,10 @@ void main() {
   });
 
   test('all libvisio marker ids 0 through 45 are implemented', () {
-    expect(supportedArrowIds().toSet(), containsAll(<int>{
-      for (var id = 0; id <= 45; id++) id,
-    }));
+    expect(
+      supportedArrowIds().toSet(),
+      containsAll(<int>{for (var id = 0; id <= 45; id++) id}),
+    );
   });
 
   test('id 13 keeps libvisio long-triangle proportions', () {
@@ -89,13 +90,27 @@ void main() {
     expect(bounds.height, closeTo(2.2, 0.02));
   });
 
-  test('libvisio TODO aliases keep their upstream marker paths', () {
-    expect(arrowDescriptor(40)!.filled, isTrue);
+  test('libvisio TODO stubs use the documented Visio silhouettes', () {
+    expect(arrowDescriptor(40)!.filled, isFalse);
+    expect(
+      arrowDescriptor(26)!.path.getBounds().width,
+      greaterThan(arrowDescriptor(25)!.path.getBounds().width - 1e-9),
+    );
+    expect(
+      arrowDescriptor(33)!.path.getBounds().width,
+      greaterThan(arrowDescriptor(31)!.path.getBounds().width),
+    );
+    expect(
+      arrowDescriptor(34)!.path.getBounds().width,
+      greaterThan(arrowDescriptor(41)!.path.getBounds().width),
+    );
     for (final id in <int>[43, 44, 45]) {
-      final marker = arrowDescriptor(id)!;
-      expect(marker.filled, isFalse, reason: 'marker $id');
-      expect(marker.path.getBounds(), arrowDescriptor(3)!.path.getBounds());
+      expect(arrowDescriptor(id)!.filled, isFalse, reason: 'marker $id');
     }
+    expect(
+      arrowDescriptor(45)!.path.getBounds().width,
+      greaterThan(arrowDescriptor(3)!.path.getBounds().width),
+    );
   });
 
   test('only libvisio marker-center ids are centred', () {
@@ -107,26 +122,31 @@ void main() {
     }
   });
 
-  test('id 34 aliases the full open-circle path like libvisio', () {
+  test('id 34 is an open circle with a diamond, not an alias of 33', () {
     final marker34 = arrowDescriptor(34)!;
-    final marker33 = arrowDescriptor(33)!;
     expect(marker34.filled, isFalse);
     expect(marker34.centered, isFalse);
-    expect(marker34.path.getBounds(), marker33.path.getBounds());
+    expect(
+      marker34.path.getBounds().width,
+      greaterThan(arrowDescriptor(33)!.path.getBounds().width),
+    );
   });
 
   test('non-centred markers trim the body but centred markers do not', () {
-    expect(arrowBodyTrimInches(31, 0.25, 0.04), closeTo(0.23, 1e-9));
+    expect(arrowBodyTrimInches(31, 0.25, 0.04), closeTo(0.2175, 1e-4));
     expect(arrowBodyTrimInches(39, 0.25, 0.04), closeTo(0.28, 1e-6));
     expect(arrowBodyTrimInches(20, 0.25, 0.04), 0);
     expect(arrowBodyTrimInches(27, 0.25, 0.04), 0);
   });
 
-  test('ids 35–37 put the bar before the filled circle', () {
+  test('ids 35–37 put extra bars behind the filled circle', () {
     final marker = arrowDescriptor(35)!;
     expect(marker.path.contains(const Offset(-0.9, 0.45)), isTrue);
     expect(marker.path.contains(const Offset(-0.02, 0.45)), isFalse);
-    expect(marker.path.getBounds(), arrowDescriptor(37)!.path.getBounds());
+    expect(
+      arrowDescriptor(37)!.path.getBounds().width,
+      greaterThan(marker.path.getBounds().width),
+    );
   });
 
   test('id 7 aliases the open-chevron path of id 19 like libvisio', () {

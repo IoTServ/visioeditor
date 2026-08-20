@@ -1657,7 +1657,7 @@ void main() {
     expect(svg.split('markerWidth="0.069"').length - 1, 2);
   });
 
-  test('SVG arrows 21/22/34 match libvisio square/diamond/circle', () {
+  test('SVG arrows 21/22/34 match square, diamond, and circle-plus-diamond', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1691,10 +1691,10 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" '
-        'fill="none" stroke="#000000"',
+        'd="M 6 5 m -3.5,0 a 3.5,3.5 0 1,0 7,0 a 3.5,3.5 0 1,0 -7,0 '
+        'M 0 5 L 2 1.5 L 4 5 L 2 8.5 Z" fill="none"',
       ),
-      reason: 'libvisio aliases arrow 34 to the full open-circle path',
+      reason: 'arrow 34 is an open circle with a diamond, not the id-20 stub',
     );
   });
 
@@ -1746,7 +1746,7 @@ void main() {
     expect(svgFor(42, baked: true), contains('translate(-10 -5)'));
   });
 
-  test('SVG arrows 27/28/29/33 match libvisio ER/circle styles', () {
+  test('SVG arrows 27/28/29/33 match ER crow-foot and circle-plus-bars', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -1779,10 +1779,10 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" '
-        'fill="none" stroke="#000000"',
+        'd="M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+        'M 0 1 V 9 M 1.5 1 V 9 M 3 1 V 9" fill="none"',
       ),
-      reason: 'libvisio currently renders marker 33 as an open circle',
+      reason: 'arrow 33 is an open circle with three bars, not the id-20 stub',
     );
     expect(
       svg,
@@ -2298,7 +2298,7 @@ void main() {
     expect(svg.contains('objectBoundingBox'), isFalse);
   });
 
-  test('SVG arrow 31 follows libvisio open-circle fallback', () {
+  test('SVG arrow 31 is an open circle with one bar', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2315,7 +2315,7 @@ void main() {
     expect(
       svg,
       contains(
-        'd="M 5 5 m -5,0 a 5,5 0 1,0 10,0 a 5,5 0 1,0 -10,0" '
+        'd="M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 M 0 1 V 9" '
         'fill="none" stroke="#000000"',
       ),
     );
@@ -2393,14 +2393,20 @@ void main() {
     );
     final lines = reopened.pages.first.shapes.where((shape) => shape.is1D);
     expect(lines.map((shape) => shape.line.beginArrow), <int>[
-      for (var arrowId = 1; arrowId <= 45; arrowId++) arrowId,
+      for (var arrowId = 1; arrowId <= 45; arrowId++)
+        libvisioMarkerPathIsIncomplete(arrowId) ? 0 : arrowId,
     ]);
     expect(lines.map((shape) => shape.line.endArrow), <int>[
-      for (var arrowId = 1; arrowId <= 45; arrowId++) arrowId,
+      for (var arrowId = 1; arrowId <= 45; arrowId++)
+        libvisioMarkerPathIsIncomplete(arrowId) ? 0 : arrowId,
     ]);
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
-    expect(RegExp(r'marker-start=').allMatches(svg), hasLength(45));
-    expect(RegExp(r'marker-end=').allMatches(svg), hasLength(45));
+    final nativeCount = [
+      for (var arrowId = 1; arrowId <= 45; arrowId++)
+        if (!libvisioMarkerPathIsIncomplete(arrowId)) arrowId
+    ].length;
+    expect(RegExp(r'marker-start=').allMatches(svg), hasLength(nativeCount));
+    expect(RegExp(r'marker-end=').allMatches(svg), hasLength(nativeCount));
     expect(
       svg,
       contains('d="M 0 -6 L 10 16 M 5 -6 V 16"'),
@@ -2688,7 +2694,7 @@ void main() {
     expect(svg, contains('marker-end='));
   });
 
-  test('SVG arrows 25/26 share libvisio double one-bar fallback', () {
+  test('SVG arrows 25/26 distinguish two-bar and three-bar CF marks', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -2715,10 +2721,17 @@ void main() {
     final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
     expect(
       RegExp(
+        r'd="M 8 1 V 9 M 5\.5 1 V 9 M 3 1 V 9" fill="none"',
+      ).allMatches(svg).length,
+      1,
+      reason: 'id 26 is three hash strokes; 25 stays two',
+    );
+    expect(
+      RegExp(
         r'd="M 7 1 V 9 M 4\.5 1 V 9" fill="none"',
       ).allMatches(svg).length,
-      2,
-      reason: 'libvisio currently emits the same marker for ids 25 and 26',
+      1,
+      reason: 'id 25 keeps two hash strokes',
     );
     // markerWidth = size * reach = 0.2 * 0.85 = 0.17.
     expect(svg, contains('markerWidth="0.17"'));

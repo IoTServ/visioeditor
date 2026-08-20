@@ -89,28 +89,28 @@ final Map<int, ArrowDescriptor Function()> _arrowBuilders = {
   23: _backslash,
   24: _databaseOne,
   25: _crossfoot,
-  // libvisio currently emits the same marker path for 25 and 26.
-  26: _crossfoot,
+  // libvisio's TODO stub copies 25; Visio 26 is three hash strokes.
+  26: _crossfootThree,
   27: _databaseMany,
   28: _databaseManyOne,
   29: _databaseOptionalMany,
   30: _databaseOptionalOne,
-  31: _openCircleTerminator,
-  32: _openCircleTerminator,
-  33: _openCircleTerminator,
-  34: _openCircleTerminator,
-  35: _filledCircleWithLine,
-  36: _filledCircleWithLine,
-  37: _filledCircleWithLine,
-  38: _filledCircleTerminator,
+  31: () => _openCircleWithBars(1),
+  32: () => _openCircleWithBars(2),
+  33: () => _openCircleWithBars(3),
+  34: _openCircleWithDiamond,
+  35: () => _filledCircleWithBars(1),
+  36: () => _filledCircleWithBars(2),
+  37: () => _filledCircleWithBars(3),
+  38: _filledCircleWithDiamond,
   39: _doubleTriangle,
-  // libvisio currently emits the same filled marker path for 39 and 40.
-  40: _doubleTriangle,
+  // libvisio's TODO stub fills 40; Visio 40 is the unfilled double triangle.
+  40: _doubleTriangleOpen,
   41: _openCircleTerminator,
   42: _filledCircleTerminator,
-  43: _openArrow,
-  44: _openArrow,
-  45: _openArrow,
+  43: _doubleOpenArrow,
+  44: _openArrowWithBar,
+  45: _doubleOpenArrowWithBar,
 };
 
 ArrowDescriptor _empty() => ArrowDescriptor(path: Path(), filled: false);
@@ -198,13 +198,14 @@ ArrowDescriptor _filledCircle() {
   return ArrowDescriptor(path: p, filled: true);
 }
 
-ArrowDescriptor _filledCircleWithLine() {
-  // libvisio uses this same filled-circle + leading bar marker for ids 35–37.
-  // LibreOffice shortens the line to the bar, then places the circle between
-  // the bar and the authored endpoint.
+ArrowDescriptor _filledCircleWithBars(int bars) {
+  // libvisio TODO-stubs 36–37 copy the one-bar path of 35. Visio adds extra
+  // bars behind the circle (same layout the Geometry bake uses).
   final p = Path()
-    ..addOval(Rect.fromCircle(center: const Offset(-0.4, 0), radius: 0.4))
-    ..addRect(const Rect.fromLTWH(-1.0, -0.5, 0.2, 1.0));
+    ..addOval(Rect.fromCircle(center: const Offset(-0.4, 0), radius: 0.4));
+  for (var i = 0; i < bars; i++) {
+    p.addRect(Rect.fromLTWH(-1.0 - i * 0.25, -0.5, 0.2, 1.0));
+  }
   return ArrowDescriptor(path: p, filled: true);
 }
 
@@ -237,14 +238,12 @@ ArrowDescriptor _openCircleTerminator() {
 }
 
 ArrowDescriptor _square() {
-  final p = Path()
-    ..addRect(const Rect.fromLTWH(-0.85, -0.4, 0.85, 0.8));
+  final p = Path()..addRect(const Rect.fromLTWH(-0.85, -0.4, 0.85, 0.8));
   return ArrowDescriptor(path: p, filled: true);
 }
 
 ArrowDescriptor _openSquare() {
-  final p = Path()
-    ..addRect(const Rect.fromLTWH(-0.85, -0.4, 0.85, 0.8));
+  final p = Path()..addRect(const Rect.fromLTWH(-0.85, -0.4, 0.85, 0.8));
   return ArrowDescriptor(path: p, filled: false);
 }
 
@@ -279,6 +278,86 @@ ArrowDescriptor _crossfoot() {
     ..lineTo(-0.3, 0.5)
     ..moveTo(-0.55, -0.5)
     ..lineTo(-0.55, 0.5);
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _crossfootThree() {
+  // libvisio TODO 26 copies the two-bar path of 25.
+  final p = Path()
+    ..moveTo(-0.2, -0.5)
+    ..lineTo(-0.2, 0.5)
+    ..moveTo(-0.4, -0.5)
+    ..lineTo(-0.4, 0.5)
+    ..moveTo(-0.6, -0.5)
+    ..lineTo(-0.6, 0.5);
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _openCircleWithBars(int bars) {
+  final p = Path()
+    ..addOval(Rect.fromCircle(center: const Offset(-0.4, 0), radius: 0.4));
+  for (var i = 0; i < bars; i++) {
+    final x = -0.95 - i * 0.25;
+    p
+      ..moveTo(x, -0.5)
+      ..lineTo(x, 0.5);
+  }
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _openCircleWithDiamond() {
+  final p = Path()
+    ..addOval(Rect.fromCircle(center: const Offset(-0.35, 0), radius: 0.35))
+    ..moveTo(-0.8, 0)
+    ..lineTo(-1.15, -0.35)
+    ..lineTo(-1.5, 0)
+    ..lineTo(-1.15, 0.35)
+    ..close();
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _filledCircleWithDiamond() {
+  final p = Path()
+    ..addOval(Rect.fromCircle(center: const Offset(-0.35, 0), radius: 0.35))
+    ..moveTo(-0.8, 0)
+    ..lineTo(-1.15, -0.35)
+    ..lineTo(-1.5, 0)
+    ..lineTo(-1.15, 0.35)
+    ..close();
+  return ArrowDescriptor(path: p, filled: true);
+}
+
+ArrowDescriptor _doubleOpenArrow() {
+  final p = Path()
+    ..moveTo(-0.5, -0.4)
+    ..lineTo(0, 0)
+    ..lineTo(-0.5, 0.4)
+    ..moveTo(-1.0, -0.4)
+    ..lineTo(-0.5, 0)
+    ..lineTo(-1.0, 0.4);
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _openArrowWithBar() {
+  final p = Path()
+    ..moveTo(-1, -0.4)
+    ..lineTo(0, 0)
+    ..lineTo(-1, 0.4)
+    ..moveTo(-1.2, -0.5)
+    ..lineTo(-1.2, 0.5);
+  return ArrowDescriptor(path: p, filled: false);
+}
+
+ArrowDescriptor _doubleOpenArrowWithBar() {
+  final p = Path()
+    ..moveTo(-0.5, -0.4)
+    ..lineTo(0, 0)
+    ..lineTo(-0.5, 0.4)
+    ..moveTo(-1.0, -0.4)
+    ..lineTo(-0.5, 0)
+    ..lineTo(-1.0, 0.4)
+    ..moveTo(-1.2, -0.5)
+    ..lineTo(-1.2, 0.5);
   return ArrowDescriptor(path: p, filled: false);
 }
 
@@ -386,6 +465,19 @@ ArrowDescriptor _doubleTriangle() {
   return ArrowDescriptor(path: p, filled: true);
 }
 
+ArrowDescriptor _doubleTriangleOpen() {
+  final p = Path()
+    ..moveTo(0, 0)
+    ..lineTo(-0.6, -0.35)
+    ..lineTo(-0.6, 0.35)
+    ..close()
+    ..moveTo(-0.6, 0)
+    ..lineTo(-1.2, -0.35)
+    ..lineTo(-1.2, 0.35)
+    ..close();
+  return ArrowDescriptor(path: p, filled: false);
+}
+
 ArrowDescriptor _openChevron() {
   final p = Path()
     ..moveTo(-0.55, -0.5)
@@ -408,11 +500,7 @@ double arrowDebugReach(int id) {
 ///
 /// The marker remains anchored at the authored endpoint; trimming prevents
 /// open circles and line arrows from showing the body through their interior.
-double arrowBodyTrimInches(
-  int id,
-  double sizeInches,
-  double lineWeightInches,
-) {
+double arrowBodyTrimInches(int id, double sizeInches, double lineWeightInches) {
   final desc = arrowDescriptor(id);
   if (desc == null || desc.centered || id == 0) return 0;
   final reach = math.max(0.0, -desc.path.getBounds().left);

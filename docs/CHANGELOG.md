@@ -588,6 +588,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   collector for those cells, so a save bakes hops as `ArcTo` / `MoveTo` /
   `LineTo` (then `ConLineJumpCode=1`) and bakes picture tone into a PNG
   with the cells reset. Unchanged packages stay byte-identical.
+- Marker ids whose libvisio `_linePropertiesMarkerPath` is still a TODO stub
+  (26, 31–34, 36–38, 40, 43–45) now bake as Geometry on save so LibreOffice
+  Draw does not reuse a sibling silhouette. Canvas and SVG paint the
+  documented Visio variants (three-bar CF, circle+bars/diamond, unfilled
+  double triangle, double open arrow) instead of those stubs.
 - Picture `SoftEdgesSize` now survives a save into LibreOffice on uncropped
   2-D Foreign bitmaps. The cell is not a token, so a save feathers PNG
   alpha with the same SourceAlpha blur canvas and SVG use, then writes

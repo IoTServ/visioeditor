@@ -938,6 +938,21 @@ void main() {
             ).copyWith(
               line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: id + 45,
+              ax: 1.0,
+              ay: 9.4,
+              bx: 2.6,
+              by: 9.4,
+              name: 'TodoArrow',
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                weightInches: 0.04,
+                endArrow: 40,
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1067,6 +1082,12 @@ void main() {
     expect(pictureSoft.line.softEdgesInches, closeTo(0, 1e-6),
         reason: 'SoftEdgesSize is not a token; the halo is PNG alpha');
     expect(pictureSoft.imagePartName, isNot('/visio/media/image_lo_tone.png'));
+    final todoArrow =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'TodoArrow');
+    expect(todoArrow.line.endArrow, 0,
+        reason:
+            'libvisio marker 40 is a filled TODO stub; Geometry is the halo');
+    expect(todoArrow.geometries.any((g) => !g.noFill), isTrue);
     final glowStroke = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowStroke');
     expect(glowStroke.glow.enabled, isFalse);
