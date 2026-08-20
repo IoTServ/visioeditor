@@ -1020,6 +1020,26 @@ void main() {
                 transparency: 0.4,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 49,
+              pinX: 8.8,
+              pinY: 9.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'SketchBox',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFF2244AA), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                pattern: 1,
+                weightInches: 0.02,
+              ),
+            )
+                .withSketchEffect(true)
+                .withSketchJiggle(3)
+                .withSketchFillStyle(VsdxSketchFillStyle.hachure),
           ),
     );
     doc = doc.copyWith(
@@ -1191,6 +1211,14 @@ void main() {
     );
     expect(glowFillPlate.line.weightInches, closeTo(0.16, 1e-9));
     expect(glowFillPlate.line.hasLine, isTrue);
+    final sketchBox =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'SketchBox');
+    expect(sketchBox.sketchEffect, isFalse);
+    expect(sketchBox.fill.pattern, 15);
+    expect(
+      reopenedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
     expect(overline.richText.runs.single.charStyle.overline, isFalse);

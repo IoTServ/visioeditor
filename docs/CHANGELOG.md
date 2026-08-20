@@ -629,6 +629,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   shape bakes a `LineWeight` halo, and a filled shape that already paints
   a stroke bakes a locked sibling halo (`LibvisioGlow.{id}`) so the
   outline keeps CompoundType / dashes, then `GlowSize` is written 0.
+- draw.io Sketch now survives a save into LibreOffice. `User.veSketch*`
+  rows are not tokens, so a save maps hachure / cross-hatch / dots onto
+  classic `FillPattern` 2–24 (`draw:fill=hatch`, holes stay transparent)
+  and bakes the two jiggle strokes as locked siblings
+  (`LibvisioSketch.{0,1}.{id}`), then writes `veSketch=0`. Canvas and SVG
+  already painted the rough.js treatment. Arrowed strokes keep native
+  Sketch so Draw does not hang extra markers.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

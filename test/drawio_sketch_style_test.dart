@@ -71,13 +71,17 @@ void main() {
     value.undo();
     expect(value.selectedSketchJiggle, 2);
     value.redo();
-    final reopened = const DocumentParser()
-        .parse(value.exportToBytes())
-        .pages
-        .single
-        .findShapeById(id)!;
-    expect(reopened.sketchEffect, isTrue);
+    final exported = value.exportToBytes();
+    final reopenedDoc = const DocumentParser().parse(exported);
+    final reopened = reopenedDoc.pages.single.findShapeById(id)!;
+    expect(reopened.sketchEffect, isFalse,
+        reason: 'Sketch User rows are not tokens; veSketch is written 0');
     expect(reopened.sketchJiggle, closeTo(3.5, 1e-6));
+    expect(reopened.fill.pattern, 23);
+    expect(
+      reopenedDoc.pages.single.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
     expect(reopened.sketchFillStyle, VsdxSketchFillStyle.crossHatch);
     expect(reopened.sketchHachureGapPx, 6);
     expect(reopened.sketchHachureAngleDegrees, -30);

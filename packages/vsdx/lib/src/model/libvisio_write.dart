@@ -66,7 +66,10 @@
 /// collects, then `ReflectionSize` is written 0. Glow on a filled shape
 /// that already paints a stroke cannot steal Line (CompoundType / dashes
 /// would vanish); that case bakes a locked sibling whose LineWeight halo
-/// Draw collects, then `GlowSize` is written 0.
+/// Draw collects, then `GlowSize` is written 0. draw.io Sketch lives in
+/// `User.veSketch*` rows libvisio never reads, so a save maps hachure /
+/// cross-hatch / dots onto FillPattern 2–24 (`draw:fill=hatch`) and bakes
+/// the two jiggle strokes as locked siblings, then writes `veSketch=0`.
 library;
 
 import 'dart:math' as math;
@@ -88,6 +91,8 @@ import 'rich_text.dart';
 import 'rounding.dart';
 import 'shape.dart';
 import 'shape_factory.dart';
+import 'sketch_style.dart';
+import 'user_property.dart';
 
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
 VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
@@ -103,7 +108,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     bakeImageAdjustmentsForLibvisioWrite(
       bakeReflectionForLibvisioWrite(
         bakeGlowPlateForLibvisioWrite(
-          bakeOverlineForLibvisioWrite(hopped),
+          bakeSketchForLibvisioWrite(
+            bakeOverlineForLibvisioWrite(hopped),
+          ),
         ),
       ),
     ),
@@ -389,7 +396,9 @@ List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
 /// LibreOffice only sees Fill / Line / Geometry, so a filled 2-D leaf bakes a
 /// NoLine sibling (FillForegndTrans is a token) and the live cells go to 0.
 bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
-  if (isLibvisioReflectionPlate(shape)) return false;
+  if (isLibvisioReflectionPlate(shape) || isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   if (shape.is1D) return false;
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
@@ -584,7 +593,9 @@ int? libvisioGlowSourceId(VsdxShape plate) {
 /// (filled NoLine). A default rectangle has both, so Draw would lose the
 /// outline if we reused Line. A locked sibling can carry the halo stroke.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
-  if (isLibvisioGlowPlate(shape) || isLibvisioReflectionPlate(shape)) {
+  if (isLibvisioGlowPlate(shape) ||
+      isLibvisioReflectionPlate(shape) ||
+      isLibvisioSketchPlate(shape)) {
     return false;
   }
   if (shape.is1D) return false;
@@ -756,6 +767,499 @@ VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
   var changed = false;
   for (final page in document.pages) {
     final next = bakeGlowPlatePageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
+}
+
+/// Name prefix of the jiggle strokes `User.veSketch` becomes for Draw.
+const kLibvisioSketchShapeNamePrefix = 'LibvisioSketch.';
+
+/// Pixel density canvas / SVG use for draw.io jiggle, so the baked offsets
+/// match the editor's two-pass Sketch treatment.
+const kLibvisioSketchPxPerInch = 96.0;
+
+bool isLibvisioSketchPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioSketchShapeNamePrefix);
+
+int? libvisioSketchSourceId(VsdxShape plate) {
+  if (!isLibvisioSketchPlate(plate)) return null;
+  return int.tryParse(plate.name.split('.').last);
+}
+
+bool _isLibvisioBakePlate(VsdxShape shape) =>
+    isLibvisioSketchPlate(shape) ||
+    isLibvisioGlowPlate(shape) ||
+    isLibvisioReflectionPlate(shape) ||
+    shape.name == kLibvisioPageColorShapeName;
+
+bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.sketchEffect) return false;
+  if (!shape.line.hasLine) return false;
+  if (shape.line.beginArrow != 0 || shape.line.endArrow != 0) return false;
+  return shape.width.abs() > 1e-12 || shape.height.abs() > 1e-12;
+}
+
+bool shapeNeedsLibvisioSketchFillBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  return shape.usesSketchPatternFill;
+}
+
+bool shapeNeedsLibvisioSketchBake(VsdxShape shape) =>
+    shapeNeedsLibvisioSketchStrokeBake(shape) ||
+    shapeNeedsLibvisioSketchFillBake(shape);
+
+double _hatchAngleDelta(double a, double b) {
+  var d = (a - b) % 180.0;
+  if (d < 0) d += 180.0;
+  if (d > 90.0) d = 180.0 - d;
+  return d;
+}
+
+/// Classic FillPattern 2–24 whose hatch is closest to the sketch fill.
+int? sketchFillPatternForLibvisioWrite(VsdxShape shape) {
+  if (!shape.usesSketchPatternFill) return null;
+  final dense = shape.sketchHachureGapPx / kLibvisioSketchPxPerInch < 0.075;
+  final style = switch (shape.effectiveSketchFillStyle) {
+    VsdxSketchFillStyle.crossHatch => VsdxHatchStyle.double,
+    VsdxSketchFillStyle.dots => VsdxHatchStyle.triple,
+    VsdxSketchFillStyle.hachure ||
+    VsdxSketchFillStyle.auto ||
+    VsdxSketchFillStyle.solid =>
+      VsdxHatchStyle.single,
+  };
+  final angle = shape.sketchHachureAngleDegrees;
+  var bestId = dense ? 13 : 6;
+  var bestDelta = 1e9;
+  for (var id = 2; id <= 24; id++) {
+    final spec = libvisioHatchSpec(id);
+    if (spec == null || spec.style != style) continue;
+    if ((spec.distanceInches < 0.075) != dense) continue;
+    final delta = _hatchAngleDelta(angle, spec.angleDegrees.toDouble());
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      bestId = id;
+    }
+  }
+  return bestId;
+}
+
+VsdxPathCommand _translateSketchCommand(
+  VsdxPathCommand command, {
+  required double dx,
+  required double dy,
+  required double width,
+  required double height,
+}) {
+  Offset2D shift(double x, double y, {bool relX = false, bool relY = false}) {
+    final ox = relX ? (width.abs() < 1e-12 ? 0.0 : dx / width) : dx;
+    final oy = relY ? (height.abs() < 1e-12 ? 0.0 : dy / height) : dy;
+    return Offset2D(x + ox, y + oy);
+  }
+
+  return switch (command) {
+    MoveTo(:final x, :final y) => MoveTo(shift(x, y).x, shift(x, y).y),
+    LineTo(:final x, :final y) => LineTo(shift(x, y).x, shift(x, y).y),
+    RelMoveTo(:final fx, :final fy) => RelMoveTo(
+        shift(fx, fy, relX: true, relY: true).x,
+        shift(fx, fy, relX: true, relY: true).y,
+      ),
+    RelLineTo(:final fx, :final fy) => RelLineTo(
+        shift(fx, fy, relX: true, relY: true).x,
+        shift(fx, fy, relX: true, relY: true).y,
+      ),
+    CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2) =>
+      CubBezTo(
+        x: shift(x, y).x,
+        y: shift(x, y).y,
+        x1: shift(x1, y1).x,
+        y1: shift(x1, y1).y,
+        x2: shift(x2, y2).x,
+        y2: shift(x2, y2).y,
+      ),
+    RelCubBezTo(
+      :final fx,
+      :final fy,
+      :final fx1,
+      :final fy1,
+      :final fx2,
+      :final fy2,
+    ) =>
+      RelCubBezTo(
+        fx: shift(fx, fy, relX: true, relY: true).x,
+        fy: shift(fx, fy, relX: true, relY: true).y,
+        fx1: shift(fx1, fy1, relX: true, relY: true).x,
+        fy1: shift(fx1, fy1, relX: true, relY: true).y,
+        fx2: shift(fx2, fy2, relX: true, relY: true).x,
+        fy2: shift(fx2, fy2, relX: true, relY: true).y,
+      ),
+    QuadBezTo(:final x, :final y, :final x1, :final y1) => QuadBezTo(
+        x: shift(x, y).x,
+        y: shift(x, y).y,
+        x1: shift(x1, y1).x,
+        y1: shift(x1, y1).y,
+      ),
+    RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1) => RelQuadBezTo(
+        fx: shift(fx, fy, relX: true, relY: true).x,
+        fy: shift(fx, fy, relX: true, relY: true).y,
+        fx1: shift(fx1, fy1, relX: true, relY: true).x,
+        fy1: shift(fx1, fy1, relX: true, relY: true).y,
+      ),
+    ArcTo(:final x, :final y, :final bow) =>
+      ArcTo(x: shift(x, y).x, y: shift(x, y).y, bow: bow),
+    RelArcTo(:final fx, :final fy, :final fbow) => RelArcTo(
+        fx: shift(fx, fy, relX: true, relY: true).x,
+        fy: shift(fx, fy, relX: true, relY: true).y,
+        fbow: fbow,
+      ),
+    EllipticalArcTo(
+      :final x,
+      :final y,
+      :final controlX,
+      :final controlY,
+      :final angle,
+      :final eccentricity,
+    ) =>
+      EllipticalArcTo(
+        x: shift(x, y).x,
+        y: shift(x, y).y,
+        controlX: shift(controlX, controlY).x,
+        controlY: shift(controlX, controlY).y,
+        angle: angle,
+        eccentricity: eccentricity,
+      ),
+    RelEllipticalArcTo(
+      :final fx,
+      :final fy,
+      :final fcx,
+      :final fcy,
+      :final angle,
+      :final eccentricity,
+    ) =>
+      RelEllipticalArcTo(
+        fx: shift(fx, fy, relX: true, relY: true).x,
+        fy: shift(fx, fy, relX: true, relY: true).y,
+        fcx: shift(fcx, fcy, relX: true, relY: true).x,
+        fcy: shift(fcx, fcy, relX: true, relY: true).y,
+        angle: angle,
+        eccentricity: eccentricity,
+      ),
+    EllipseCmd(
+      :final cx,
+      :final cy,
+      :final aX,
+      :final aY,
+      :final bX,
+      :final bY
+    ) =>
+      EllipseCmd(
+        cx: shift(cx, cy).x,
+        cy: shift(cx, cy).y,
+        aX: shift(aX, aY).x,
+        aY: shift(aX, aY).y,
+        bX: shift(bX, bY).x,
+        bY: shift(bX, bY).y,
+      ),
+    PolylineTo(
+      :final x,
+      :final y,
+      :final vertices,
+      :final relative,
+      :final vertsRelative,
+      :final vertsYRelative,
+    ) =>
+      PolylineTo(
+        x: shift(x, y, relX: relative, relY: relative).x,
+        y: shift(x, y, relX: relative, relY: relative).y,
+        vertices: <Offset2D>[
+          for (final v in vertices)
+            shift(v.x, v.y, relX: vertsRelative, relY: vertsYRelative),
+        ],
+        relative: relative,
+        vertsRelative: vertsRelative,
+        vertsYRelative: vertsYRelative,
+      ),
+    InfiniteLineCmd(:final x, :final y, :final a, :final b, :final relative) =>
+      InfiniteLineCmd(
+        x: shift(x, y, relX: relative, relY: relative).x,
+        y: shift(x, y, relX: relative, relY: relative).y,
+        a: shift(a, b, relX: relative, relY: relative).x,
+        b: shift(a, b, relX: relative, relY: relative).y,
+        relative: relative,
+      ),
+    SplineStart(
+      :final x,
+      :final y,
+      :final a,
+      :final b,
+      :final c,
+      :final degree,
+      :final relative,
+    ) =>
+      SplineStart(
+        x: shift(x, y, relX: relative, relY: relative).x,
+        y: shift(x, y, relX: relative, relY: relative).y,
+        a: a,
+        b: b,
+        c: c,
+        degree: degree,
+        relative: relative,
+      ),
+    SplineKnot(:final x, :final y, :final knot, :final relative) => SplineKnot(
+        x: shift(x, y, relX: relative, relY: relative).x,
+        y: shift(x, y, relX: relative, relY: relative).y,
+        knot: knot,
+        relative: relative,
+      ),
+    NurbsTo(
+      :final x,
+      :final y,
+      :final controlPoints,
+      :final weights,
+      :final knots,
+      :final degree,
+      :final relative,
+      :final cpRelative,
+      :final cpYRelative,
+    ) =>
+      NurbsTo(
+        x: shift(x, y, relX: relative, relY: relative).x,
+        y: shift(x, y, relX: relative, relY: relative).y,
+        controlPoints: <Offset2D>[
+          for (final p in controlPoints)
+            shift(p.x, p.y, relX: cpRelative, relY: cpYRelative),
+        ],
+        weights: weights,
+        knots: knots,
+        degree: degree,
+        relative: relative,
+        cpRelative: cpRelative,
+        cpYRelative: cpYRelative,
+      ),
+  };
+}
+
+VsdxGeometry _translateSketchGeometry(
+  VsdxGeometry geometry,
+  Offset2D offset,
+  VsdxShape shape,
+) {
+  return geometry.copyWith(
+    noFill: true,
+    noLine: false,
+    commandFormulas: const <Map<String, String>>[],
+    commands: <VsdxPathCommand>[
+      for (final command in geometry.commands)
+        _translateSketchCommand(
+          command,
+          dx: offset.x,
+          dy: offset.y,
+          width: shape.width,
+          height: shape.height,
+        ),
+    ],
+  );
+}
+
+List<VsdxGeometry> _sketchStrokeGeometriesForLibvisioWrite(
+  VsdxShape shape,
+  Offset2D offset,
+) {
+  final fromLine = <VsdxGeometry>[
+    for (final geometry in shape.geometries)
+      if (!geometry.noShow && !geometry.noLine && !geometry.hitBox)
+        _translateSketchGeometry(geometry, offset, shape),
+  ];
+  if (fromLine.isNotEmpty) return fromLine;
+  return <VsdxGeometry>[
+    for (final geometry in shape.geometries)
+      if (!geometry.noShow && !geometry.noFill)
+        _translateSketchGeometry(geometry, offset, shape),
+  ];
+}
+
+VsdxShape _sketchPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required int pass,
+  required Offset2D offset,
+}) {
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioSketchShapeNamePrefix$pass.${source.id}',
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width,
+    height: source.height,
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: _sketchStrokeGeometriesForLibvisioWrite(source, offset),
+    fill: const VsdxFill(pattern: 0),
+    line: source.line,
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+VsdxShape _sourceForLibvisioSketchWrite(VsdxShape shape) {
+  var next = shape;
+  if (shapeNeedsLibvisioSketchStrokeBake(shape)) {
+    next = next.copyWith(
+      geometries: <VsdxGeometry>[
+        for (final geometry in shape.geometries)
+          geometry.noLine ? geometry : geometry.copyWith(noLine: true),
+      ],
+    );
+  }
+  final pattern = sketchFillPatternForLibvisioWrite(shape);
+  if (pattern != null) {
+    next = next.copyWith(
+      fill: shape.fill.copyWith(
+        pattern: pattern,
+        backgroundTransparency: 1,
+        gradient: null,
+      ),
+    );
+  }
+  final others = <VsdxUserCell>[
+    for (final cell in next.userCells)
+      if (cell.name != VsdxShape.userSketchEffect) cell,
+  ];
+  return next.copyWith(
+    userCells: <VsdxUserCell>[
+      ...others,
+      const VsdxUserCell(name: VsdxShape.userSketchEffect, value: '0'),
+    ],
+  );
+}
+
+void _collectSketchPlateIds(List<VsdxShape> shapes, Map<String, int> into) {
+  for (final shape in shapes) {
+    if (isLibvisioSketchPlate(shape)) into[shape.name] = shape.id;
+    _collectSketchPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioSketchBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioSketchPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioSketchBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeSketchTree(
+  List<VsdxShape> shapes, {
+  required Map<String, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioSketchPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeSketchTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioSketchBake(next)) {
+      final source = _sourceForLibvisioSketchWrite(next);
+      out.add(source);
+      if (shapeNeedsLibvisioSketchStrokeBake(next)) {
+        final offsets = drawioSketchStrokeOffsets(
+          next.id,
+          next.sketchJiggle,
+          pxPerInch: kLibvisioSketchPxPerInch,
+        );
+        for (var pass = 0; pass < offsets.length; pass++) {
+          final name = '$kLibvisioSketchShapeNamePrefix$pass.${next.id}';
+          final plate = _sketchPlateForLibvisioWrite(
+            next,
+            id: plateIds[name] ?? nextId(),
+            pass: pass,
+            offset: offsets[pass],
+          );
+          if (plate.geometries.isNotEmpty) {
+            out.add(plate);
+            changed = true;
+          }
+        }
+      }
+      changed = true;
+      continue;
+    }
+    final kept = <VsdxShape>[];
+    for (var pass = 0; pass < 2; pass++) {
+      final name = '$kLibvisioSketchShapeNamePrefix$pass.${next.id}';
+      final existingId = plateIds[name];
+      if (existingId == null) continue;
+      for (final candidate in shapes) {
+        if (candidate.id == existingId) {
+          kept.add(candidate);
+          break;
+        }
+      }
+    }
+    out.add(next);
+    out.addAll(kept);
+    if (kept.isNotEmpty || !identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+VsdxPage bakeSketchPageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioSketchBake(page)) return page;
+  final plateIds = <String, int>{};
+  _collectSketchPlateIds(page.shapes, plateIds);
+  var nextId = _maxShapeId(page.shapes) + 1;
+  return page.copyWith(
+    shapes: _bakeSketchTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    ),
+  );
+}
+
+/// Insert (or keep) the Sketch strokes / hatch Draw can actually collect.
+VsdxDocument bakeSketchForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeSketchPageForLibvisioWrite(page);
     changed |= !identical(next, page);
     pages.add(next);
   }

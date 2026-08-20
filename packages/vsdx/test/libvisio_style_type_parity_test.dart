@@ -52,7 +52,10 @@
 /// Draw collects, then `ReflectionSize` is written 0. Glow on a filled
 /// shape that already paints a stroke bakes a locked sibling LineWeight
 /// halo, then `GlowSize` is written 0. Page `PageColor` is not a token, so
-/// a save prepends a locked full-page plate Draw can fill.
+/// a save prepends a locked full-page plate Draw can fill. draw.io Sketch
+/// is User rows libvisio never reads, so a save maps the hatch onto
+/// FillPattern 2–24 and bakes the two jiggle strokes as locked siblings,
+/// then writes `veSketch=0`.
 library;
 
 import 'dart:io';
@@ -494,6 +497,78 @@ void main() {
     );
     _expectVsd2rawCollected(
         saved, <String>['svg:stroke-color: #${hex.toLowerCase()}']);
+  });
+
+  test('Sketch bakes hatch and jiggle strokes LibreOffice can collect', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.6,
+      height: 0.8,
+      name: 'SketchBox',
+      fill: const VsdxFill(foreground: VsdxColor(0xFF2244AA), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.02,
+      ),
+    )
+        .withSketchEffect(true)
+        .withSketchJiggle(3.5)
+        .withSketchFillStyle(VsdxSketchFillStyle.hachure);
+    expect(shapeNeedsLibvisioSketchBake(shape), isTrue);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioSketchFillBake(shape), isTrue);
+    expect(sketchFillPatternForLibvisioWrite(shape), 15);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSketchPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another pair of Sketch strokes',
+    );
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.sketchEffect, isFalse);
+    expect(source.sketchJiggle, closeTo(3.5, 1e-9));
+    expect(source.fill.pattern, 15);
+    expect(source.fill.backgroundTransparency, closeTo(1, 1e-9));
+    expect(source.geometries.every((g) => g.noLine), isTrue);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate).every(
+            (s) => s.locked && s.line.hasLine && s.fill.pattern == 0,
+          ),
+      isTrue,
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.sketchEffect, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 15);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+    _expectVsd2rawCollected(saved, const <String>[
+      'draw:fill: hatch',
+      'draw:rotation: 315',
+    ]);
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {
