@@ -590,9 +590,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   painted the sheet.
 - Shape `Reflection*` now survives a save into LibreOffice. Those cells
   are not tokens, so a filled 2-D shape bakes a locked sibling plate
-  (`FillForegndTrans` is collected) clipped by `ReflectionSize`, and a
+  (`FillForegndTrans` is collected) clipped by `ReflectionSize`, an
+  unfilled 2-D stroke bakes a locked PNG band of the mirrored stroke
+  (filling the mirror would paint an interior Draw leaves empty), and a
   Foreign picture bakes a locked Gaussian PNG sibling of the same mirrored
   bitmap canvas and SVG already paint, then `ReflectionSize` is written 0.
+  Theme-only stroke colours and FlipY keep the native cells.
 - Paragraph `Bullet` 1–7 now paint the same default glyphs LibreOffice’s
   libvisio importer emits (`VSDContentCollector::_bulletFromParaFormat`).
   Types 5 and 6 were a black diamond and an en-dash; they are now U+2756

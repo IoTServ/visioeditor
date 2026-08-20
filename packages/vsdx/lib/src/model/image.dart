@@ -569,100 +569,31 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
       height: heightPx,
       numChannels: 4,
     );
-    final color = raster.ColorRgba8(
-      red.clamp(0, 255),
-      green.clamp(0, 255),
-      blue.clamp(0, 255),
-      alpha.clamp(0, 255),
+    final painted = _paintStrokedRing(
+      work,
+      innerWidthPx: innerWidthPx,
+      innerHeightPx: innerHeightPx,
+      padPx: padPx,
+      color: raster.ColorRgba8(
+        red.clamp(0, 255),
+        green.clamp(0, 255),
+        blue.clamp(0, 255),
+        alpha.clamp(0, 255),
+      ),
+      strokeWidthPx: strokeWidthPx,
+      kind: kind,
+      outer: outer,
+      inner: inner,
+      holeColor: holeAlpha != null && holeAlpha > 0
+          ? raster.ColorRgba8(
+              (holeRed ?? 0).clamp(0, 255),
+              (holeGreen ?? 0).clamp(0, 255),
+              (holeBlue ?? 0).clamp(0, 255),
+              holeAlpha.clamp(0, 255),
+            )
+          : null,
     );
-    final hasHoleFill = holeAlpha != null && holeAlpha > 0;
-    final hole = hasHoleFill
-        ? raster.ColorRgba8(
-            (holeRed ?? 0).clamp(0, 255),
-            (holeGreen ?? 0).clamp(0, 255),
-            (holeBlue ?? 0).clamp(0, 255),
-            holeAlpha.clamp(0, 255),
-          )
-        : raster.ColorRgba8(0, 0, 0, 0);
-    final half = math.max(strokeWidthPx / 2, 0.5);
-    switch (kind) {
-      case SoftEdgesSilhouetteKind.rectangle:
-        final x1 = padPx.toDouble();
-        final y1 = padPx.toDouble();
-        final x2 = (padPx + innerWidthPx - 1).toDouble();
-        final y2 = (padPx + innerHeightPx - 1).toDouble();
-        raster.fillRect(
-          work,
-          x1: (x1 - half).floor().clamp(0, widthPx - 1),
-          y1: (y1 - half).floor().clamp(0, heightPx - 1),
-          x2: (x2 + half).ceil().clamp(0, widthPx - 1),
-          y2: (y2 + half).ceil().clamp(0, heightPx - 1),
-          color: color,
-          alphaBlend: false,
-        );
-        final ix1 = (x1 + half).ceil();
-        final iy1 = (y1 + half).ceil();
-        final ix2 = (x2 - half).floor();
-        final iy2 = (y2 - half).floor();
-        if (ix1 < ix2 && iy1 < iy2) {
-          raster.fillRect(
-            work,
-            x1: ix1.clamp(0, widthPx - 1),
-            y1: iy1.clamp(0, heightPx - 1),
-            x2: ix2.clamp(0, widthPx - 1),
-            y2: iy2.clamp(0, heightPx - 1),
-            color: hole,
-            alphaBlend: false,
-          );
-        }
-      case SoftEdgesSilhouetteKind.ellipse:
-        final cx = padPx + (innerWidthPx - 1) / 2;
-        final cy = padPx + (innerHeightPx - 1) / 2;
-        final rx = math.max((innerWidthPx - 1) / 2, 0.5);
-        final ry = math.max((innerHeightPx - 1) / 2, 0.5);
-        final rxOut = math.max(rx + half, 0.5);
-        final ryOut = math.max(ry + half, 0.5);
-        final rxIn = math.max(rx - half, 0.0);
-        final ryIn = math.max(ry - half, 0.0);
-        for (var y = 0; y < heightPx; y++) {
-          for (var x = 0; x < widthPx; x++) {
-            final nx = (x + 0.5 - cx) / rxOut;
-            final ny = (y + 0.5 - cy) / ryOut;
-            if (nx * nx + ny * ny > 1) continue;
-            if (rxIn > 1e-6 && ryIn > 1e-6) {
-              final ix = (x + 0.5 - cx) / rxIn;
-              final iy = (y + 0.5 - cy) / ryIn;
-              if (ix * ix + iy * iy <= 1) {
-                if (hasHoleFill) {
-                  work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
-                      hole.b.toInt(), hole.a.toInt());
-                }
-                continue;
-              }
-            }
-            work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
-                color.b.toInt(), color.a.toInt());
-          }
-        }
-      case SoftEdgesSilhouetteKind.polygon:
-        if (outer.length < 3) return null;
-        for (var y = 0; y < heightPx; y++) {
-          for (var x = 0; x < widthPx; x++) {
-            final px = x + 0.5;
-            final py = y + 0.5;
-            if (inner.length >= 3 && _softEdgesPointInPolygon(inner, px, py)) {
-              if (hasHoleFill) {
-                work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
-                    hole.b.toInt(), hole.a.toInt());
-              }
-              continue;
-            }
-            if (!_softEdgesPointInPolygon(outer, px, py)) continue;
-            work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
-                color.b.toInt(), color.a.toInt());
-          }
-        }
-    }
+    if (!painted) return null;
     if (gaussianBlur) {
       final blur = softSigmaPx.clamp(0.0, 256.0);
       if (blur > 1e-6) {
@@ -672,21 +603,216 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
     } else {
       _featherSourceAlpha(work, softSigmaPx);
     }
-    // Draw / PDF flatten transparent Foreign bitmaps against black, so a
-    // hollow ring or a padded halo would become a filled black plate.
-    // Composite onto opaque white — the same page colour canvas already
-    // assumes for an unfilled stroke. An opaque hole fill stays that
-    // colour; a hollow interior stays empty.
-    for (var y = 0; y < heightPx; y++) {
-      for (var x = 0; x < widthPx; x++) {
-        final pixel = work.getPixel(x, y);
-        final a = pixel.aNormalized;
-        pixel.r = (pixel.r * a + 255 * (1 - a)).round().clamp(0, 255);
-        pixel.g = (pixel.g * a + 255 * (1 - a)).round().clamp(0, 255);
-        pixel.b = (pixel.b * a + 255 * (1 - a)).round().clamp(0, 255);
-        pixel.a = 255;
+    _compositeOntoWhite(work);
+    return raster.encodePng(work);
+  } catch (_) {
+    return null;
+  }
+}
+
+/// Paint a stroke ring of [strokeWidthPx] around the box inset by [padPx].
+///
+/// Shared by the SoftEdges / Glow ring and the Reflection band so all three
+/// use the same silhouette maths. Returns `false` for unusable polygons.
+bool _paintStrokedRing(
+  raster.Image work, {
+  required int innerWidthPx,
+  required int innerHeightPx,
+  required int padPx,
+  required raster.ColorRgba8 color,
+  required double strokeWidthPx,
+  required SoftEdgesSilhouetteKind kind,
+  required List<({double x, double y})> outer,
+  required List<({double x, double y})> inner,
+  raster.ColorRgba8? holeColor,
+}) {
+  final widthPx = work.width;
+  final heightPx = work.height;
+  final hasHoleFill = holeColor != null;
+  final hole = holeColor ?? raster.ColorRgba8(0, 0, 0, 0);
+  final half = math.max(strokeWidthPx / 2, 0.5);
+  switch (kind) {
+    case SoftEdgesSilhouetteKind.rectangle:
+      final x1 = padPx.toDouble();
+      final y1 = padPx.toDouble();
+      final x2 = (padPx + innerWidthPx - 1).toDouble();
+      final y2 = (padPx + innerHeightPx - 1).toDouble();
+      raster.fillRect(
+        work,
+        x1: (x1 - half).floor().clamp(0, widthPx - 1),
+        y1: (y1 - half).floor().clamp(0, heightPx - 1),
+        x2: (x2 + half).ceil().clamp(0, widthPx - 1),
+        y2: (y2 + half).ceil().clamp(0, heightPx - 1),
+        color: color,
+        alphaBlend: false,
+      );
+      final ix1 = (x1 + half).ceil();
+      final iy1 = (y1 + half).ceil();
+      final ix2 = (x2 - half).floor();
+      final iy2 = (y2 - half).floor();
+      if (ix1 < ix2 && iy1 < iy2) {
+        raster.fillRect(
+          work,
+          x1: ix1.clamp(0, widthPx - 1),
+          y1: iy1.clamp(0, heightPx - 1),
+          x2: ix2.clamp(0, widthPx - 1),
+          y2: iy2.clamp(0, heightPx - 1),
+          color: hole,
+          alphaBlend: false,
+        );
+      }
+    case SoftEdgesSilhouetteKind.ellipse:
+      final cx = padPx + (innerWidthPx - 1) / 2;
+      final cy = padPx + (innerHeightPx - 1) / 2;
+      final rx = math.max((innerWidthPx - 1) / 2, 0.5);
+      final ry = math.max((innerHeightPx - 1) / 2, 0.5);
+      final rxOut = math.max(rx + half, 0.5);
+      final ryOut = math.max(ry + half, 0.5);
+      final rxIn = math.max(rx - half, 0.0);
+      final ryIn = math.max(ry - half, 0.0);
+      for (var y = 0; y < heightPx; y++) {
+        for (var x = 0; x < widthPx; x++) {
+          final nx = (x + 0.5 - cx) / rxOut;
+          final ny = (y + 0.5 - cy) / ryOut;
+          if (nx * nx + ny * ny > 1) continue;
+          if (rxIn > 1e-6 && ryIn > 1e-6) {
+            final ix = (x + 0.5 - cx) / rxIn;
+            final iy = (y + 0.5 - cy) / ryIn;
+            if (ix * ix + iy * iy <= 1) {
+              if (hasHoleFill) {
+                work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
+                    hole.b.toInt(), hole.a.toInt());
+              }
+              continue;
+            }
+          }
+          work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+              color.b.toInt(), color.a.toInt());
+        }
+      }
+    case SoftEdgesSilhouetteKind.polygon:
+      if (outer.length < 3) return false;
+      for (var y = 0; y < heightPx; y++) {
+        for (var x = 0; x < widthPx; x++) {
+          final px = x + 0.5;
+          final py = y + 0.5;
+          if (inner.length >= 3 && _softEdgesPointInPolygon(inner, px, py)) {
+            if (hasHoleFill) {
+              work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
+                  hole.b.toInt(), hole.a.toInt());
+            }
+            continue;
+          }
+          if (!_softEdgesPointInPolygon(outer, px, py)) continue;
+          work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+              color.b.toInt(), color.a.toInt());
+        }
+      }
+  }
+  return true;
+}
+
+/// Draw / PDF flatten transparent Foreign bitmaps against black, so a hollow
+/// ring or a padded halo would become a filled black plate. Composite onto
+/// opaque white — the same page colour canvas already assumes for an
+/// unfilled stroke. An opaque hole fill stays that colour; a hollow
+/// interior stays empty.
+void _compositeOntoWhite(raster.Image work) {
+  for (var y = 0; y < work.height; y++) {
+    for (var x = 0; x < work.width; x++) {
+      final pixel = work.getPixel(x, y);
+      final a = pixel.aNormalized;
+      pixel.r = (pixel.r * a + 255 * (1 - a)).round().clamp(0, 255);
+      pixel.g = (pixel.g * a + 255 * (1 - a)).round().clamp(0, 255);
+      pixel.b = (pixel.b * a + 255 * (1 - a)).round().clamp(0, 255);
+      pixel.a = 255;
+    }
+  }
+}
+
+/// Rasterize the mirrored, faded stroke band an unfilled 2-D Reflection needs.
+///
+/// `tokens.txt` has no Reflection*, and an unfilled stroke has no fill plate
+/// to mirror — filling the mirror geometry would paint the interior Draw
+/// leaves empty. Canvas `_drawReflection` strokes the flipped path instead,
+/// clipped to [bandHeightPx] below the shape and faded toward the far edge.
+/// [padPx] keeps the outer stroke half and the blur halo from clipping; the
+/// band starts [padPx] rows in, so rows above it hold the stroke that spills
+/// past the mirror axis.
+Uint8List? bakeStrokedReflectionPng({
+  required int innerWidthPx,
+  required int innerHeightPx,
+  required int bandHeightPx,
+  required int padPx,
+  required int red,
+  required int green,
+  required int blue,
+  required int alpha,
+  required double strokeWidthPx,
+  required double blurSigmaPx,
+  SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
+  List<({double x, double y})> outer = const <({double x, double y})>[],
+  List<({double x, double y})> inner = const <({double x, double y})>[],
+}) {
+  if (innerWidthPx < 2 || innerHeightPx < 2) return null;
+  if (bandHeightPx < 1 || padPx < 0) return null;
+  if (alpha <= 0) return null;
+  if (strokeWidthPx <= 1e-6) return null;
+  try {
+    final ring = raster.Image(
+      width: innerWidthPx + padPx * 2,
+      height: innerHeightPx + padPx * 2,
+      numChannels: 4,
+    );
+    final painted = _paintStrokedRing(
+      ring,
+      innerWidthPx: innerWidthPx,
+      innerHeightPx: innerHeightPx,
+      padPx: padPx,
+      color: raster.ColorRgba8(
+        red.clamp(0, 255),
+        green.clamp(0, 255),
+        blue.clamp(0, 255),
+        alpha.clamp(0, 255),
+      ),
+      strokeWidthPx: strokeWidthPx,
+      kind: kind,
+      outer: outer,
+      inner: inner,
+    );
+    if (!painted) return null;
+    var work = raster.Image(
+      width: ring.width,
+      height: bandHeightPx + padPx * 2,
+      numChannels: 4,
+    );
+    // Mirror about the shape's bottom edge (largest y in this y-down image).
+    final axis = padPx + innerHeightPx - 1;
+    final denom = math.max(bandHeightPx - 1, 1);
+    for (var y = 0; y < work.height; y++) {
+      final srcY = axis - (y - padPx);
+      if (srcY < 0 || srcY >= ring.height) continue;
+      final fade = 1.0 - (math.max(y - padPx, 0) / denom).clamp(0.0, 1.0);
+      if (fade <= 0) continue;
+      for (var x = 0; x < work.width; x++) {
+        final pixel = ring.getPixel(x, srcY);
+        if (pixel.a <= 0) continue;
+        work.setPixelRgba(
+          x,
+          y,
+          pixel.r.toInt(),
+          pixel.g.toInt(),
+          pixel.b.toInt(),
+          (pixel.aNormalized * fade * 255).round().clamp(0, 255),
+        );
       }
     }
+    final blur = blurSigmaPx.clamp(0.0, 256.0);
+    if (blur > 1e-6) {
+      final radius = math.max(1, (blur * 1.5).round());
+      work = raster.gaussianBlur(work, radius: radius);
+    }
+    _compositeOntoWhite(work);
     return raster.encodePng(work);
   } catch (_) {
     return null;

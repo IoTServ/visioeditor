@@ -51,9 +51,10 @@
 /// bake LineTo chamfers; arcs joins bake the same fillets as round
 /// (canvas `canvasStrokeJoin`). `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
-/// Draw collects, then `ReflectionSize` is written 0. A Foreign picture
-/// bakes a locked Gaussian PNG sibling of the same mirrored bitmap canvas
-/// / SVG already paint. Glow on a filled
+/// Draw collects, then `ReflectionSize` is written 0. An unfilled 2-D
+/// stroke bakes a locked PNG band of the mirrored stroke, and a Foreign
+/// picture bakes a locked Gaussian PNG sibling of the same mirrored bitmap
+/// canvas / SVG already paint. Glow on a filled
 /// shape that already paints a stroke, a filled NoLine 2-D, or an unfilled
 /// 2-D stroke, bakes a locked Gaussian PNG sibling when RGB is resolved,
 /// then `GlowSize` is written 0. A Foreign picture with resolved RGB
@@ -2419,6 +2420,147 @@ void main() {
       reason: 'libvisio must fill the Reflection plate',
     );
     _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #cc5533']);
+  });
+
+  test('unfilled stroke Reflection bakes a mirrored PNG band for LibreOffice',
+      () {
+    const colour = VsdxColor(0xFF1565C0);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'StrokeMirror',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: colour,
+        weightInches: 0.04,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.3,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+    expect(reflectionForLibvisioWrite(shape).enabled, isFalse);
+    expect(reflectionForLibvisioWrite(shape).sizeInches, 0);
+    expect(
+      shapeNeedsLibvisioReflectionBake(
+        shape.copyWith(line: shape.line.withThemeColor(1)),
+      ),
+      isFalse,
+      reason: 'a theme-only stroke keeps the cell so THEMEVAL() survives',
+    );
+    expect(
+      shapeNeedsLibvisioReflectionBake(shape.copyWith(flipY: true)),
+      isFalse,
+      reason: 'FlipY would mirror the band twice; keep it native',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates = baked.pages.first.shapes.where(isLibvisioReflectionPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue,
+        reason: 'an unfilled stroke must not bake a filled mirror');
+    expect(
+      plate.pinY - plate.effectiveLocPinY,
+      lessThan(shape.pinY - shape.effectiveLocPinY),
+      reason: 'the band sits below the source in page Y',
+    );
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0,
+        reason: 'the source stays unfilled; only the band is baked');
+    expect(source.line.pattern, 1);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioReflectionPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Reflection plate',
+    );
+
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    final cx = decoded!.width ~/ 2;
+    final mid = decoded.height ~/ 2;
+    final rail = decoded.getPixel(2, mid);
+    expect(
+      rail.b,
+      greaterThan(rail.r + 20),
+      reason: 'the mirrored band must keep the blue side rails',
+    );
+    expect(
+      decoded.getPixel(cx, mid).r,
+      greaterThan(200),
+      reason: 'the band interior must stay hollow, not a filled mirror',
+    );
+    final near = decoded.getPixel(2, 3);
+    final far = decoded.getPixel(2, decoded.height - 3);
+    expect(
+      near.b - near.r,
+      greaterThan(far.b - far.r),
+      reason: 'the band must fade toward the far edge',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.reflection.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 0);
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
+    expect(savedPlate.hasImage, isTrue);
+
+    final ellipse = VsdxShapeFactory.ellipse(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(color: colour, weightInches: 0.04),
+    ).copyWith(reflection: shape.reflection);
+    expect(shapeNeedsLibvisioReflectionBake(ellipse), isTrue);
+    var ellipseDoc = parser.parse(blank);
+    ellipseDoc = ellipseDoc.replacePage(
+      0,
+      ellipseDoc.pages.first.addShape(ellipse),
+    );
+    final ellipseBaked = documentForLibvisioWrite(ellipseDoc);
+    final ellipsePlate =
+        ellipseBaked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(ellipsePlate.hasImage, isTrue);
+    final ellipsePng = raster.decodePng(ellipseBaked.images
+        .findByPart(
+          ellipsePlate.imagePartName!,
+        )!
+        .bytes)!;
+    final ellipseCentre = ellipsePng.getPixel(
+      ellipsePng.width ~/ 2,
+      ellipsePng.height ~/ 2,
+    );
+    expect(
+      ellipseCentre.r,
+      greaterThan(200),
+      reason: 'ellipse stroke band must keep a hollow interior',
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('picture Reflection bakes a Gaussian PNG sibling for LibreOffice', () {

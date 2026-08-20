@@ -2342,6 +2342,34 @@ void main() {
             ),
           ),
         );
+    var reflectionStrokeDocument = parser.parse(blank);
+    final reflectionStrokePage = reflectionStrokeDocument.pages.first;
+    reflectionStrokeDocument = reflectionStrokeDocument.replacePage(
+      0,
+      reflectionStrokePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: reflectionStrokePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ReflectionStrokePng',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF1565C0),
+            weightInches: 0.06,
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.6,
+            distanceInches: 0.06,
+            transparency: 0.15,
+            blurInches: 0,
+          ),
+        ),
+      ),
+    );
     var reflectionPictureDocument = parser.parse(blank);
     final reflectionPicturePage = reflectionPictureDocument.pages.first;
     const reflectionPicturePart = '/visio/media/reflection_picture.png';
@@ -2559,6 +2587,10 @@ void main() {
       'reflection_picture': writer.write(
         originalBytes: blank,
         edited: reflectionPictureDocument,
+      ),
+      'reflection_stroke': writer.write(
+        originalBytes: blank,
+        edited: reflectionStrokeDocument,
       ),
       'curved_text': writer.write(
         originalBytes: blank,
@@ -3784,6 +3816,88 @@ void main() {
             reason: 'LibreOffice must paint the blue (original bottom) '
                 'picture reflection below the source; '
                 'bodyR=${bodyTop.r} mirrorB=${mirror.b} mirrorR=${mirror.r}',
+          );
+        }
+        if (entry.key == 'reflection_stroke') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ReflectionStrokePng');
+          expect(source.reflection.enabled, isFalse);
+          expect(source.fill.pattern, 0);
+          expect(source.line.pattern, 1);
+          final plate = reopened.pages.first.shapes
+              .where(isLibvisioReflectionPlate)
+              .single;
+          expect(plate.hasImage, isTrue,
+              reason: 'an unfilled stroke must not bake a filled mirror');
+        }
+        if (entry.key == 'reflection_stroke' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          final sourceRail = mean(2.71, 5.0, 2.81, 6.0);
+          final bandRail = mean(2.71, 4.2, 2.81, 4.4);
+          final bandInterior = mean(4.0, 4.2, 4.5, 4.4);
+          expect(
+            sourceRail.b,
+            greaterThan(sourceRail.r + 20),
+            reason: 'LibreOffice must still stroke the source rail; '
+                'sourceB=${sourceRail.b} sourceR=${sourceRail.r}',
+          );
+          expect(
+            bandRail.b,
+            greaterThan(bandRail.r + 10),
+            reason: 'LibreOffice must paint the mirrored stroke band, not '
+                'drop it; bandB=${bandRail.b} bandR=${bandRail.r}',
+          );
+          expect(
+            bandInterior.r,
+            greaterThan(200),
+            reason: 'the band interior must stay hollow, not a filled mirror; '
+                'interiorR=${bandInterior.r} interiorB=${bandInterior.b}',
           );
         }
         if (entry.key == 'curved_text' && pdftoppm != null) {
