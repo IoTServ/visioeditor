@@ -2037,6 +2037,48 @@ void main() {
     );
   });
 
+  test('Glass bakes a sibling highlight and clears on disable', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+        ).withGlassEffect(true),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    expect(
+      midDoc.pages.first.shapes.where(isLibvisioGlassPlate),
+      hasLength(1),
+    );
+    expect(midDoc.pages.first.findShapeById(id)!.glassEffect, isFalse);
+
+    doc = midDoc.replacePage(
+      0,
+      midDoc.pages.first.copyWith(
+        shapes: [
+          for (final s in midDoc.pages.first.shapes)
+            if (!isLibvisioGlassPlate(s)) s,
+        ],
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioGlassPlate),
+      isEmpty,
+      reason: 'deleting the baked plate must drop it on save',
+    );
+  });
+
   test('Reflection bakes a sibling plate and clears on disable', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

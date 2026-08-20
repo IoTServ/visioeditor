@@ -70,6 +70,9 @@
 /// `User.veSketch*` rows libvisio never reads, so a save maps hachure /
 /// cross-hatch / dots onto FillPattern 2–24 (`draw:fill=hatch`) and bakes
 /// the two jiggle strokes as locked siblings, then writes `veSketch=0`.
+/// draw.io Glass is likewise `User.veGlass` (not a token), so a save inserts
+/// a locked white top-light sibling whose FillForegndTrans Draw collects,
+/// then writes `veGlass=0`.
 library;
 
 import 'dart:math' as math;
@@ -108,8 +111,10 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     bakeImageAdjustmentsForLibvisioWrite(
       bakeReflectionForLibvisioWrite(
         bakeGlowPlateForLibvisioWrite(
-          bakeSketchForLibvisioWrite(
-            bakeOverlineForLibvisioWrite(hopped),
+          bakeGlassForLibvisioWrite(
+            bakeSketchForLibvisioWrite(
+              bakeOverlineForLibvisioWrite(hopped),
+            ),
           ),
         ),
       ),
@@ -396,9 +401,7 @@ List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
 /// LibreOffice only sees Fill / Line / Geometry, so a filled 2-D leaf bakes a
 /// NoLine sibling (FillForegndTrans is a token) and the live cells go to 0.
 bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
-  if (isLibvisioReflectionPlate(shape) || isLibvisioSketchPlate(shape)) {
-    return false;
-  }
+  if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
@@ -593,11 +596,7 @@ int? libvisioGlowSourceId(VsdxShape plate) {
 /// (filled NoLine). A default rectangle has both, so Draw would lose the
 /// outline if we reused Line. A locked sibling can carry the halo stroke.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
-  if (isLibvisioGlowPlate(shape) ||
-      isLibvisioReflectionPlate(shape) ||
-      isLibvisioSketchPlate(shape)) {
-    return false;
-  }
+  if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
   final glow = shape.glow;
   if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
@@ -788,10 +787,24 @@ int? libvisioSketchSourceId(VsdxShape plate) {
   return int.tryParse(plate.name.split('.').last);
 }
 
+/// Name prefix of the top-light sibling `User.veGlass` becomes for Draw.
+const kLibvisioGlassShapeNamePrefix = 'LibvisioGlass.';
+
+bool isLibvisioGlassPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioGlassShapeNamePrefix);
+
+int? libvisioGlassSourceId(VsdxShape plate) {
+  if (!isLibvisioGlassPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioGlassShapeNamePrefix.length),
+  );
+}
+
 bool _isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioSketchPlate(shape) ||
     isLibvisioGlowPlate(shape) ||
     isLibvisioReflectionPlate(shape) ||
+    isLibvisioGlassPlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
@@ -1260,6 +1273,209 @@ VsdxDocument bakeSketchForLibvisioWrite(VsdxDocument document) {
   var changed = false;
   for (final page in document.pages) {
     final next = bakeSketchPageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
+}
+
+/// Canvas / SVG glass highlight uses `(1 - FillForegndTrans) * colour.alpha`.
+double _glassFillOpacity(VsdxShape shape) {
+  var alpha = 1 - shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final color = shape.fill.foreground;
+  if (color != null) alpha *= color.alpha / 255.0;
+  return alpha.clamp(0.0, 1.0);
+}
+
+/// `true` when `User.veGlass` must become a sibling Draw can actually fill.
+///
+/// libvisio never reads User rows. Fill is shape-level, so the white wave
+/// cannot share the source; a locked NoLine sibling carries a white
+/// FillForegndTrans sheen matching the canvas 0.9→0.1 top-light average,
+/// then `veGlass` is written 0. A classic FillPattern 25–40 would move
+/// those trans values onto gradient stops at parse, and a second save
+/// would write opaque white.
+bool shapeNeedsLibvisioGlassBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.glassEffect) return false;
+  if (!shape.supportsGlassEffect) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  return _glassFillOpacity(shape) > 1e-9;
+}
+
+List<VsdxPathCommand> _glassHighlightCommands(VsdxShape shape) {
+  final w = shape.width.abs() < 1e-12 ? 1.0 : shape.width;
+  final h = shape.height.abs() < 1e-12 ? 1.0 : shape.height;
+  final sw = math.max(0.0, shape.line.weightInches / 2);
+  final x0 = -sw / w;
+  final x1 = (w + sw) / w;
+  final yTop = (h + sw) / h;
+  return <VsdxPathCommand>[
+    RelMoveTo(x0, yTop),
+    RelLineTo(x0, 0.6),
+    RelQuadBezTo(fx: x1, fy: 0.6, fx1: 0.5, fy1: 0.3),
+    RelLineTo(x1, yTop),
+    RelLineTo(x0, yTop),
+  ];
+}
+
+VsdxFill _glassHighlightFill(VsdxShape source) {
+  final alpha = _glassFillOpacity(source);
+  return VsdxFill(
+    foreground: VsdxColor.white,
+    pattern: 1,
+    foregroundTransparency: (1 - 0.55 * alpha).clamp(0.0, 1.0),
+  );
+}
+
+VsdxShape _glassPlateForLibvisioWrite(VsdxShape source, {required int id}) {
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioGlassShapeNamePrefix${source.id}',
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width,
+    height: source.height,
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: <VsdxGeometry>[
+      VsdxGeometry(
+        noFill: false,
+        noLine: true,
+        commands: _glassHighlightCommands(source),
+      ),
+    ],
+    fill: _glassHighlightFill(source),
+    line: const VsdxLine(pattern: 0),
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+VsdxShape _sourceForLibvisioGlassWrite(VsdxShape shape) {
+  final others = <VsdxUserCell>[
+    for (final cell in shape.userCells)
+      if (cell.name != VsdxShape.userGlassEffect) cell,
+  ];
+  return shape.copyWith(
+    userCells: <VsdxUserCell>[
+      ...others,
+      const VsdxUserCell(name: VsdxShape.userGlassEffect, value: '0'),
+    ],
+  );
+}
+
+void _collectGlassPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioGlassSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectGlassPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioGlassBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioGlassPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioGlassBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeGlassTree(
+  List<VsdxShape> shapes, {
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioGlassPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeGlassTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioGlassBake(next)) {
+      out.add(_sourceForLibvisioGlassWrite(next));
+      final plate = _glassPlateForLibvisioWrite(
+        next,
+        id: plateIds[next.id] ?? nextId(),
+      );
+      out.add(plate);
+      changed = true;
+      continue;
+    }
+    out.add(next);
+    final existingId = plateIds[next.id];
+    if (existingId != null) {
+      VsdxShape? kept;
+      for (final candidate in shapes) {
+        if (candidate.id == existingId) {
+          kept = candidate;
+          break;
+        }
+      }
+      if (kept != null) {
+        out.add(kept);
+        changed = true;
+      }
+    }
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+VsdxPage bakeGlassPageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioGlassBake(page)) return page;
+  final plateIds = <int, int>{};
+  _collectGlassPlateIds(page.shapes, plateIds);
+  var nextId = _maxShapeId(page.shapes) + 1;
+  return page.copyWith(
+    shapes: _bakeGlassTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    ),
+  );
+}
+
+/// Insert (or keep) the white top-light siblings Draw uses for `veGlass`.
+VsdxDocument bakeGlassForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeGlassPageForLibvisioWrite(page);
     changed |= !identical(next, page);
     pages.add(next);
   }

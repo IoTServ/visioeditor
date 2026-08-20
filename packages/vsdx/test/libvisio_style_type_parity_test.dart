@@ -55,7 +55,9 @@
 /// a save prepends a locked full-page plate Draw can fill. draw.io Sketch
 /// is User rows libvisio never reads, so a save maps the hatch onto
 /// FillPattern 2–24 and bakes the two jiggle strokes as locked siblings,
-/// then writes `veSketch=0`.
+/// then writes `veSketch=0`. draw.io Glass is also a User row, so a save
+/// bakes a locked white top-light sibling (`FillForegndTrans`) and writes
+/// `veGlass=0`.
 library;
 
 import 'dart:io';
@@ -568,6 +570,82 @@ void main() {
     _expectVsd2rawCollected(saved, const <String>[
       'draw:fill: hatch',
       'draw:rotation: 315',
+    ]);
+  });
+
+  test('Glass bakes a top-light sibling LibreOffice can collect', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.6,
+      height: 0.8,
+      name: 'GlassBox',
+      fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.02,
+      ),
+    ).withGlassEffect(true);
+    expect(shapeNeedsLibvisioGlassBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioGlassPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlassPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Glass highlight',
+    );
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.glassEffect, isFalse);
+    expect(source.fill.foreground?.value, 0xFF1565C0);
+    final plate = baked.pages.first.shapes.firstWhere(isLibvisioGlassPlate);
+    expect(plate.name, '${kLibvisioGlassShapeNamePrefix}1');
+    expect(plate.locked, isTrue);
+    expect(plate.line.pattern, 0);
+    expect(plate.fill.pattern, 1);
+    expect(plate.fill.foreground?.value, VsdxColor.white.value);
+    expect(plate.fill.foregroundTransparency, closeTo(0.45, 1e-9));
+    expect(
+      plate.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.glassEffect, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlassPlate),
+      hasLength(1),
+    );
+    final savedPlate =
+        savedDoc.pages.first.shapes.firstWhere(isLibvisioGlassPlate);
+    expect(savedPlate.fill.pattern, 1);
+    expect(savedPlate.fill.foregroundTransparency, closeTo(0.45, 1e-9));
+    expect(
+      savedPlate.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
+    );
+    expect(savedPlate.geometries.single.commands.whereType<QuadBezTo>(),
+        isEmpty);
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    final after = oracle.svgPages(saved)?.join() ?? '';
+    expect(after, isNotEmpty);
+    _expectVsd2rawCollected(saved, const <String>[
+      'draw:fill-color: #ffffff',
     ]);
   });
 

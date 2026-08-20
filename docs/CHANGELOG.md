@@ -636,6 +636,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (`LibvisioSketch.{0,1}.{id}`), then writes `veSketch=0`. Canvas and SVG
   already painted the rough.js treatment. Arrowed strokes keep native
   Sketch so Draw does not hang extra markers.
+- draw.io Glass now survives a save into LibreOffice. `User.veGlass` is
+  not a token, so a save inserts a locked white top-light sibling
+  (`LibvisioGlass.{id}`) whose `FillForegndTrans` Draw collects, then
+  writes `veGlass=0`. Canvas and SVG already painted the glossy wave.
 - `BeginArrowSize` / `EndArrowSize` now survive a save into LibreOffice on
   plain strokes, not only on compound / gradient / transparent connectors.
   libvisio sizes markers from LineWeight (`_linePropertiesMarkerScale *

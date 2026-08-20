@@ -1040,6 +1040,23 @@ void main() {
                 .withSketchEffect(true)
                 .withSketchJiggle(3)
                 .withSketchFillStyle(VsdxSketchFillStyle.hachure),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 50,
+              pinX: 8.8,
+              pinY: 8.4,
+              width: 1.4,
+              height: 0.6,
+              name: 'GlassBox',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+              line: const VsdxLine(
+                color: VsdxColor.black,
+                pattern: 1,
+                weightInches: 0.02,
+              ),
+            ).withGlassEffect(true),
           ),
     );
     doc = doc.copyWith(
@@ -1218,6 +1235,21 @@ void main() {
     expect(
       reopenedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
       hasLength(2),
+    );
+    final glassBox =
+        reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlassBox');
+    expect(glassBox.glassEffect, isFalse);
+    final glassPlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlassShapeNamePrefix${glassBox.id}',
+    );
+    expect(glassPlate.locked, isTrue);
+    expect(glassPlate.fill.pattern, 1);
+    expect(glassPlate.fill.foreground?.value, VsdxColor.white.value);
+    expect(glassPlate.fill.foregroundTransparency, closeTo(0.45, 1e-9));
+    expect(glassPlate.line.pattern, 0);
+    expect(
+      glassPlate.geometries.single.commands.whereType<RelQuadBezTo>(),
+      isNotEmpty,
     );
     final overline =
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Overline');
@@ -1616,6 +1648,23 @@ void main() {
         shapes: <VsdxShape>[flipXText, flipYText, flipXGroup],
       ),
     );
+    var glassDocument = parser.parse(blank);
+    final glassPage = glassDocument.pages.first;
+    glassDocument = glassDocument.replacePage(
+      0,
+      glassPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: glassPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GlassBox',
+          fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).withGlassEffect(true),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -1637,6 +1686,10 @@ void main() {
       'text_flip': writer.write(
         originalBytes: blank,
         edited: textFlipDocument,
+      ),
+      'glass': writer.write(
+        originalBytes: blank,
+        edited: glassDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -1841,6 +1894,53 @@ void main() {
           expect(nestedLeft, greaterThan(nestedRight * 2),
               reason: 'LibreOffice cancels ancestor-group FlipX for text');
         }
+        if (entry.key == 'glass' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          final top = meanLuma(3.25, 6.05, 5.25, 6.4);
+          final bottom = meanLuma(3.25, 4.6, 5.25, 4.95);
+          expect(
+            top,
+            greaterThan(bottom + 12),
+            reason: 'LibreOffice must paint the Glass highlight above the fill; '
+                'top=$top bottom=$bottom',
+          );
+        }
         // Still parseable after our write (independent of LibreOffice).
         expect(parser.parse(entry.value).pages, isNotEmpty);
       }
@@ -1849,7 +1949,7 @@ void main() {
     }
   },
       // A headless soffice conversion alone takes most of the 30 second
-      // default on a cold profile, and this case converts eight packages.
+      // default on a cold profile, and this case converts nine packages.
       timeout: const Timeout(Duration(minutes: 5)),
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'

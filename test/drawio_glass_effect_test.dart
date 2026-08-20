@@ -45,12 +45,21 @@ void main() {
       ),
       isTrue,
     );
-    final reopened = const DocumentParser()
-        .parse(value.exportToBytes())
-        .pages
-        .single
-        .findShapeById(id)!;
-    expect(reopened.glassEffect, isTrue);
+    final reopenedDoc = const DocumentParser().parse(value.exportToBytes());
+    final reopened = reopenedDoc.pages.single.findShapeById(id)!;
+    expect(reopened.glassEffect, isFalse,
+        reason: 'User.veGlass is not a token; save bakes a sibling highlight');
+    expect(
+      reopenedDoc.pages.single.shapes.where(isLibvisioGlassPlate),
+      hasLength(1),
+    );
+    expect(
+      reopenedDoc.pages.single.shapes
+          .firstWhere(isLibvisioGlassPlate)
+          .fill
+          .foregroundTransparency,
+      closeTo(0.45, 1e-9),
+    );
 
     value.setSelectionLocked(true);
     value.setGlassEffect(false);
