@@ -85,7 +85,9 @@
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
 /// 2-D shape bakes a locked sibling plate whose FillForegndTrans Draw
-/// collects, then `ReflectionSize` is written 0. draw.io Sketch lives in
+/// collects, and a Foreign picture bakes a locked Gaussian PNG sibling of
+/// the same mirrored bitmap canvas / SVG already paint, then
+/// `ReflectionSize` is written 0. draw.io Sketch lives in
 /// `User.veSketch*` rows libvisio never reads, so a save maps hachure /
 /// cross-hatch / dots onto FillPattern 2–24 (`draw:fill=hatch`) and bakes
 /// the two jiggle strokes as locked siblings, then writes `veSketch=0`.
@@ -153,8 +155,8 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
         bakeLabelBorderForLibvisioWrite(
           bakeLabelPaddingForLibvisioWrite(
             bakeGeometrySoftEdgesForLibvisioWrite(
-              bakeImageAdjustmentsForLibvisioWrite(
-                bakeReflectionForLibvisioWrite(
+              bakeReflectionForLibvisioWrite(
+                bakeImageAdjustmentsForLibvisioWrite(
                   bakeGlowPlateForLibvisioWrite(
                     bakeGlassForLibvisioWrite(
                       bakeSketchForLibvisioWrite(
@@ -456,8 +458,9 @@ List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
 /// `true` when Reflection* must become a sibling plate Draw actually fills.
 ///
 /// `tokens.txt` has no ReflectionSize. Canvas / SVG already paint the mirror;
-/// LibreOffice only sees Fill / Line / Geometry, so a filled 2-D leaf bakes a
-/// NoLine sibling (FillForegndTrans is a token) and the live cells go to 0.
+/// LibreOffice only sees Fill / Line / Geometry / ForeignData, so a filled
+/// 2-D leaf bakes a NoLine sibling (FillForegndTrans is a token) and a
+/// Foreign picture bakes a Gaussian PNG sibling, then the live cells go to 0.
 bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
@@ -465,7 +468,24 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
   if (reflection.transparency >= 1 - 1e-9) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
-  return _shapePaintsFill(shape, shape.geometries);
+  if (_shapePaintsFill(shape, shape.geometries)) return true;
+  return _shapeCanLibvisioPictureReflectionPng(shape);
+}
+
+/// Foreign pictures: canvas `_drawReflection` mirrors the bitmap even when
+/// Fill and Line are off. Theme-bound pictures still bake — the pixels are
+/// already in ForeignData.
+bool _shapeCanLibvisioPictureReflectionPng(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.hasImage || shape.is1D) return false;
+  if (shape.children.isNotEmpty) return false;
+  if (shape.line.hasLine) return false;
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  final reflection = shape.reflection;
+  if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
+  if (reflection.transparency >= 1 - 1e-9) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  return true;
 }
 
 VsdxShape _reflectionPlateForLibvisioWrite(VsdxShape source,
@@ -497,6 +517,104 @@ VsdxShape _reflectionPlateForLibvisioWrite(VsdxShape source,
     line: const VsdxLine(pattern: 0),
     layerMemberIds: source.layerMemberIds,
     locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
+  if (part == null || part.isEmpty) return null;
+  return images.findByPart(part) ??
+      images.findByPart(part.startsWith('/') ? part.substring(1) : '/$part');
+}
+
+({double width, double height, double locPinX, double locPinY, double pad})
+    _pictureReflectionLocalBox(VsdxShape shape, [double? padInches]) {
+  final dist = math.max(shape.reflection.distanceInches, 0.0);
+  final frac = shape.reflection.sizeInches.clamp(0.01, 1.0);
+  final clipH = shape.height.abs() * frac;
+  final blur = math.max(shape.reflection.blurInches, 0.0);
+  final pad = padInches ?? (blur > 1e-6 ? blur * 3 : 0.0);
+  final ring = _reflectFillRing(
+    _aabbRing(shape),
+    shape,
+    dist: dist,
+    clipHeight: clipH,
+  );
+  var minX = 0.0;
+  var maxX = shape.width.abs();
+  var minY = -dist - clipH;
+  var maxY = -dist;
+  if (ring.length >= 2) {
+    minX = ring.first.x;
+    maxX = minX;
+    minY = ring.first.y;
+    maxY = minY;
+    for (final p in ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+  }
+  final width = math.max(maxX - minX, 1e-6) + 2 * pad;
+  final height = math.max(maxY - minY, 1e-6) + 2 * pad;
+  return (
+    width: width,
+    height: height,
+    locPinX: shape.effectiveLocPinX - (minX - pad),
+    locPinY: shape.effectiveLocPinY - (minY - pad),
+    pad: pad,
+  );
+}
+
+({Uint8List png, double padInches})? _pictureReflectionPngForLibvisioWrite(
+  VsdxShape shape,
+  VsdxImage image,
+) {
+  final box = _pictureReflectionLocalBox(shape);
+  final trans = _combinedTransparency(
+    shape.imageTransparency,
+    shape.reflection.transparency,
+  );
+  final png = bakePictureReflectionPng(
+    image: image,
+    sizeFraction: shape.reflection.sizeInches.clamp(0.01, 1.0),
+    transparency: trans,
+    blurSigmaPx: shape.reflection.blurInches * kLibvisioSoftEdgesPxPerInch,
+    padInches: box.pad,
+    displayWidthInches: shape.width.abs(),
+  );
+  if (png == null) return null;
+  return (png: png, padInches: box.pad);
+}
+
+VsdxShape _pictureReflectionPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required String imagePartName,
+  required double padInches,
+}) {
+  final box = _pictureReflectionLocalBox(source, padInches);
+  return VsdxShapeFactory.picture(
+    id: id,
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: box.width,
+    height: box.height,
+    imagePartName: imagePartName,
+    name: '$kLibvisioReflectionShapeNamePrefix${source.id}',
+  ).copyWith(
+    locPinXInches: box.locPinX,
+    locPinYInches: box.locPinY,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    locked: true,
+    layerMemberIds: source.layerMemberIds,
     richText: const VsdxRichText(
       runs: <VsdxTextRun>[],
       textBlock: VsdxTextBlock(hideText: true),
@@ -552,6 +670,9 @@ List<VsdxShape> _bakeReflectionTree(
   List<VsdxShape> shapes, {
   required Map<int, int> plateIds,
   required int Function() nextId,
+  required ImageRegistry images,
+  required String Function(int shapeId) allocatePart,
+  required void Function(VsdxImage image) addImage,
 }) {
   final out = <VsdxShape>[];
   var changed = false;
@@ -566,6 +687,9 @@ List<VsdxShape> _bakeReflectionTree(
         shape.children,
         plateIds: plateIds,
         nextId: nextId,
+        images: images,
+        allocatePart: allocatePart,
+        addImage: addImage,
       );
       if (!identical(children, shape.children)) {
         next = shape.copyWith(children: children);
@@ -573,11 +697,37 @@ List<VsdxShape> _bakeReflectionTree(
       }
     }
     if (shapeNeedsLibvisioReflectionBake(next)) {
-      final plate = _reflectionPlateForLibvisioWrite(
-        next,
-        id: plateIds[next.id] ?? nextId(),
-      );
-      if (plate.geometries.isNotEmpty) {
+      VsdxShape? plate;
+      if (_shapeCanLibvisioPictureReflectionPng(next)) {
+        final sourceImage = _imageForLibvisioWrite(images, next.imagePartName);
+        if (sourceImage != null) {
+          final payload =
+              _pictureReflectionPngForLibvisioWrite(next, sourceImage);
+          if (payload != null) {
+            final part = allocatePart(next.id);
+            addImage(
+              VsdxImage(
+                partName: part,
+                bytes: payload.png,
+                mimeType: 'image/png',
+              ),
+            );
+            plate = _pictureReflectionPlateForLibvisioWrite(
+              next,
+              id: plateIds[next.id] ?? nextId(),
+              imagePartName: part,
+              padInches: payload.padInches,
+            );
+          }
+        }
+      } else {
+        plate = _reflectionPlateForLibvisioWrite(
+          next,
+          id: plateIds[next.id] ?? nextId(),
+        );
+        if (plate.geometries.isEmpty) plate = null;
+      }
+      if (plate != null) {
         out.add(plate);
         changed = true;
       }
@@ -602,31 +752,54 @@ List<VsdxShape> _bakeReflectionTree(
   return changed ? out : shapes;
 }
 
-VsdxPage bakeReflectionPageForLibvisioWrite(VsdxPage page) {
-  if (!pageNeedsLibvisioReflectionBake(page)) return page;
-  final plateIds = <int, int>{};
-  _collectReflectionPlateIds(page.shapes, plateIds);
-  var nextId = _maxShapeId(page.shapes) + 1;
-  return page.copyWith(
-    shapes: _bakeReflectionTree(
-      page.shapes,
-      plateIds: plateIds,
-      nextId: () => nextId++,
-    ),
-  );
-}
-
 /// Insert (or strip) the sibling plates Draw uses in place of `Reflection*`.
 VsdxDocument bakeReflectionForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_reflection_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_reflection_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
   final pages = <VsdxPage>[];
   var changed = false;
   for (final page in document.pages) {
-    final next = bakeReflectionPageForLibvisioWrite(page);
-    changed |= !identical(next, page);
-    pages.add(next);
+    if (!pageNeedsLibvisioReflectionBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, int>{};
+    _collectReflectionPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeReflectionTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+      images: registry,
+      allocatePart: allocatePart,
+      addImage: (image) {
+        registry = registry.withImage(image);
+        changed = true;
+      },
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
   }
-  return changed ? document.copyWith(pages: pages) : document;
+  if (!changed) return document;
+  return document.copyWith(pages: pages, images: registry);
 }
 
 /// Cells Draw will collect. Size is 0 after a sibling-plate bake.

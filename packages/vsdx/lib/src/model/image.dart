@@ -775,3 +775,81 @@ Uint8List? bakeSilhouetteDropShadowPng({
     return null;
   }
 }
+
+/// Rasterize a Foreign picture's reflection for Draw.
+///
+/// `tokens.txt` has no Reflection*. Canvas / SVG mirror the bitmap about
+/// the visual bottom, clip by [sizeFraction], fade toward the far edge,
+/// and optionally blur. LibreOffice only collects ForeignData, so a save
+/// bakes that treatment into a PNG sibling.
+Uint8List? bakePictureReflectionPng({
+  required VsdxImage image,
+  required double sizeFraction,
+  required double transparency,
+  required double blurSigmaPx,
+  required double padInches,
+  required double displayWidthInches,
+}) {
+  if (padInches < 0) return null;
+  final payload = image.rasterForRendering();
+  if (payload == null) return null;
+  raster.Image? decoded;
+  try {
+    decoded = raster.decodeImage(payload.bytes);
+  } catch (_) {
+    return null;
+  }
+  if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+    return null;
+  }
+  final frac = sizeFraction.clamp(0.01, 1.0);
+  final cropH = math.max(1, (decoded.height * frac).round());
+  final trans = transparency.clamp(0.0, 1.0);
+  final alphaScale = (1.0 - trans).clamp(0.0, 1.0);
+  if (alphaScale <= 1e-9) return null;
+  final displayW = math.max(displayWidthInches.abs(), 1e-6);
+  final padPx = padInches > 1e-9
+      ? math.max(1, (padInches / displayW * decoded.width).round())
+      : 0;
+  try {
+    var src = decoded;
+    if (src.numChannels < 4) {
+      src = src.convert(numChannels: 4);
+    }
+    final innerW = src.width;
+    final innerH = cropH;
+    final widthPx = innerW + padPx * 2;
+    final heightPx = innerH + padPx * 2;
+    var work = raster.Image(
+      width: widthPx,
+      height: heightPx,
+      numChannels: 4,
+    );
+    final denom = math.max(innerH - 1, 1);
+    for (var y = 0; y < innerH; y++) {
+      // Flipped source: original bottom is row 0. Fade toward the far edge.
+      final fade = 1.0 - y / denom;
+      final srcY = src.height - 1 - y;
+      for (var x = 0; x < innerW; x++) {
+        final pixel = src.getPixel(x, srcY);
+        final a = (pixel.aNormalized * alphaScale * fade).clamp(0.0, 1.0);
+        work.setPixelRgba(
+          x + padPx,
+          y + padPx,
+          pixel.r.toInt(),
+          pixel.g.toInt(),
+          pixel.b.toInt(),
+          (a * 255).round().clamp(0, 255),
+        );
+      }
+    }
+    final blur = blurSigmaPx.clamp(0.0, 256.0);
+    if (blur > 1e-6) {
+      final radius = math.max(1, (blur * 1.5).round());
+      work = raster.gaussianBlur(work, radius: radius);
+    }
+    return raster.encodePng(work);
+  } catch (_) {
+    return null;
+  }
+}

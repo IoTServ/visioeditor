@@ -51,7 +51,9 @@
 /// bake LineTo chamfers; arcs joins bake the same fillets as round
 /// (canvas `canvasStrokeJoin`). `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
-/// Draw collects, then `ReflectionSize` is written 0. Glow on a filled
+/// Draw collects, then `ReflectionSize` is written 0. A Foreign picture
+/// bakes a locked Gaussian PNG sibling of the same mirrored bitmap canvas
+/// / SVG already paint. Glow on a filled
 /// shape that already paints a stroke, a filled NoLine 2-D, or an unfilled
 /// 2-D stroke, bakes a locked Gaussian PNG sibling when RGB is resolved,
 /// then `GlowSize` is written 0. A Foreign picture with resolved RGB
@@ -2417,6 +2419,101 @@ void main() {
       reason: 'libvisio must fill the Reflection plate',
     );
     _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #cc5533']);
+  });
+
+  test('picture Reflection bakes a Gaussian PNG sibling for LibreOffice', () {
+    const part = '/visio/media/reflection.png';
+    final rasterImage = raster.Image(width: 16, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 16; x++) {
+        if (y < 8) {
+          rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+        } else {
+          rasterImage.setPixelRgba(x, y, 0, 0, 255, 255);
+        }
+      }
+    }
+    final sourceImage = VsdxImage(
+      partName: part,
+      bytes: Uint8List.fromList(raster.encodePng(rasterImage)),
+      mimeType: 'image/png',
+    );
+    final shape = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+      name: 'MirrorPicture',
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.4,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+    expect(reflectionForLibvisioWrite(shape).enabled, isFalse);
+    expect(reflectionForLibvisioWrite(shape).sizeInches, 0);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.copyWith(images: doc.images.withImage(sourceImage));
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.hasImage, isTrue);
+    expect(source.imagePartName, part);
+    expect(source.reflection.enabled, isTrue,
+        reason: 'the in-memory source keeps the live effect; XML Size is 0');
+    final plates = baked.pages.first.shapes.where(isLibvisioReflectionPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.pinX, closeTo(shape.pinX, 1e-9));
+    expect(plate.pinY, closeTo(shape.pinY, 1e-9));
+    expect(
+      plate.pinY - plate.effectiveLocPinY,
+      lessThan(source.pinY - source.effectiveLocPinY),
+      reason: 'mirror plate sits below the source in page Y',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioReflectionPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Reflection plate',
+    );
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    final cx = decoded!.width ~/ 2;
+    final near = decoded.getPixel(cx, 1);
+    final far = decoded.getPixel(cx, decoded.height - 2);
+    expect(near.b, greaterThan(near.r + 8),
+        reason: 'picture Reflection PNG must show the original bottom (blue) '
+            'nearest the source');
+    expect(near.a, greaterThan(far.a),
+        reason: 'picture Reflection PNG must fade toward the far edge');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.reflection.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.hasImage, isTrue);
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
+    expect(savedPlate.hasImage, isTrue);
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('uniform Character Highlight bakes to TextBkgnd for LibreOffice', () {
