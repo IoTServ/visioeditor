@@ -43,6 +43,9 @@
 /// `User.veMiterLimit` is not a token and `_lineProperties` never emits
 /// `svg:stroke-miterlimit` (ODF defaults to 4), so a save chamfers corners
 /// whose miter ratio exceeds a tighter limit and drops the User row.
+/// Limits above 4 keep the canvas spike: a save expands the unfilled stroke
+/// into a filled ribbon whose outline uses that limit (Draw would otherwise
+/// bevel every ratio>4 elbow) and drops the User row.
 /// The Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
 /// filled-shape LineColorTrans, and ShdwForegndTrans are not tokens —
 /// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
@@ -5573,7 +5576,8 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   if (chamferForLibvisioWrite(sourceLine) && sourceLine.cap == LineCap.round) {
     line = line.copyWith(cap: LineCap.extended);
   }
-  if (miterLimitForLibvisioChamfer(sourceLine) != null) {
+  if (miterLimitForLibvisioChamfer(sourceLine) != null ||
+      shapeNeedsLibvisioMiterSpikeBake(shape)) {
     line = line.copyWith(miterLimit: 4.0);
   }
   if (line.transparency > 1e-9 &&
@@ -5955,6 +5959,7 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
           offset,
           halfWidth: rail.width / 2,
           closed: closed,
+          miterLimit: shape.line.miterLimit,
         );
         if (commands.length < 3) continue;
         out.add(
@@ -6013,6 +6018,43 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
   );
 }
 
+/// `true` when a miter spike longer than Draw's default 4 must become a ribbon.
+///
+/// `_lineProperties` never emits `svg:stroke-miterlimit`; ODF/Draw default
+/// to 4. Canvas / SVG honour `User.veMiterLimit` above that, so a sharp
+/// elbow (ratio>4) is a long spike here and a bevel in Draw. Unfilled
+/// solid polylines expand to a filled ribbon whose outline uses that
+/// limit. Filled 2-D keeps FillPattern for the body; dashed strokes keep
+/// LinePattern; round caps stay native so endpoints do not go butt.
+bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (_hasArrowheads(shape.line)) return false;
+  if (!shape.line.hasLine) return false;
+  if (shape.line.pattern != 1) return false;
+  final custom = shape.line.customDashPattern;
+  if (custom != null && custom.isNotEmpty) return false;
+  if (shape.line.cap == LineCap.round) return false;
+  if (shape.line.roundingInches > 1e-12) return false;
+  if (!_lineUsesMiterJoin(shape.line)) return false;
+  if (shape.line.miterLimit <= 4.0 + 1e-6) return false;
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 3) continue;
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    if (polylineHasDrawClippedMiter(points, closed: closed)) return true;
+  }
+  return false;
+}
+
+VsdxFill _opaqueFillFromLine(VsdxLine line) => VsdxFill(
+      foreground: line.color ?? const VsdxColor(0xFF000000),
+      background: line.color ?? const VsdxColor(0xFF000000),
+      pattern: 1,
+      themeForegroundIndex: line.color == null ? line.themeColorIndex : null,
+    );
+
 /// `true` when an unfilled LineGradient / LineColorTrans stroke vanishes in Draw.
 ///
 /// `tokens.txt` has no LineGradient or LineColorTrans cell, and
@@ -6023,11 +6065,14 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
 /// Geometry first. Arrow-less 1-D strokes bake the same ribbon as 2-D:
 /// XForm1D / glue cells are untouched, matching CompoundType. Filled
 /// shapes already occupy FillPattern, so they keep LineColor (Draw will
-/// show an opaque stroke).
+/// show an opaque stroke). A `veMiterLimit` above 4 on an unfilled solid
+/// polyline uses the same ribbon so Draw does not bevel ratio>4 elbows.
 bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
   if (_hasArrowheads(shape.line)) return false;
   if (!shape.line.hasLine) return false;
-  if (!shape.line.hasGradient && shape.line.transparency <= 1e-9) {
+  if (!shape.line.hasGradient &&
+      shape.line.transparency <= 1e-9 &&
+      !shapeNeedsLibvisioMiterSpikeBake(shape)) {
     return false;
   }
   if (_shapePaintsFill(shape, shape.geometries)) return false;
@@ -6660,11 +6705,12 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
   return out;
 }
 
-/// Expand an unfilled gradient or transparent stroke into a closed ribbon
-/// FillPattern 25–40 / FillForegndTrans can paint. Compound rails, when
-/// present, are expanded one by one. Dash gaps must already live in
-/// Geometry (custom arrays or LinePattern 2–23); a single ribbon of the
-/// whole polyline would be solid.
+/// Expand an unfilled gradient, transparent, or high-miter stroke into a
+/// closed ribbon FillPattern 25–40 / FillForegndTrans can paint. Compound
+/// rails, when present, are expanded one by one. Dash gaps must already live
+/// in Geometry (custom arrays or LinePattern 2–23); a single ribbon of the
+/// whole polyline would be solid. A `veMiterLimit` above Draw's default 4
+/// uses that limit on the outline so sharp elbows keep the canvas spike.
 ({List<VsdxGeometry> geometries, VsdxLine line, VsdxFill fill})?
     bakeStrokeRibbonForLibvisio({
   required VsdxShape shape,
@@ -6673,8 +6719,15 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
 }) {
   if (!shapeNeedsLibvisioStrokeRibbon(shape)) return null;
   if (!line.hasLine) return null;
-  final fill = _fillFromLineStroke(line);
-  if (fill == null) return null;
+  var fill = _fillFromLineStroke(line);
+  if (fill == null) {
+    if (!shapeNeedsLibvisioMiterSpikeBake(
+      shape.copyWith(geometries: geometries, line: line),
+    )) {
+      return null;
+    }
+    fill = _opaqueFillFromLine(line);
+  }
 
   final weight = line.weightInches > 1e-9 ? line.weightInches : 0.01;
   final half = weight / 2;
@@ -6695,6 +6748,7 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
       points,
       halfWidth: half,
       closed: closed,
+      miterLimit: line.miterLimit,
     );
     if (commands.length < 3) {
       out.add(geometry);
@@ -6757,9 +6811,20 @@ List<VsdxPathCommand> strokeRibbonCommands(
   List<Offset2D> points, {
   required double halfWidth,
   required bool closed,
+  double miterLimit = 4,
 }) {
-  final left = offsetPolyline(points, halfWidth, closed: closed);
-  final right = offsetPolyline(points, -halfWidth, closed: closed);
+  final left = offsetPolyline(
+    points,
+    halfWidth,
+    closed: closed,
+    miterLimit: miterLimit,
+  );
+  final right = offsetPolyline(
+    points,
+    -halfWidth,
+    closed: closed,
+    miterLimit: miterLimit,
+  );
   if (left.length < 2 || right.length < 2) {
     return const <VsdxPathCommand>[];
   }
@@ -6806,10 +6871,12 @@ bool _customDashCanBake(
 }
 
 /// Drop `User.veDashPattern` / `veFixedDash` once dashes live in Geometry,
-/// and `User.veMiterLimit` once a tighter clip is baked as chamfers.
+/// and `User.veMiterLimit` once a tighter clip is baked as chamfers or a
+/// longer spike is baked as a ribbon.
 List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
   final dropDash = shapeNeedsLibvisioCustomDashBake(shape);
-  final dropMiter = miterLimitForLibvisioChamfer(shape.line) != null;
+  final dropMiter = miterLimitForLibvisioChamfer(shape.line) != null ||
+      shapeNeedsLibvisioMiterSpikeBake(shape);
   if (!dropDash && !dropMiter) return shape.userCells;
   return <VsdxUserCell>[
     for (final cell in shape.userCells)

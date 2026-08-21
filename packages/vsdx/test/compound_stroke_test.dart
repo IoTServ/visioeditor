@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -39,6 +41,35 @@ void main() {
     expect(up.length, 2);
     expect(up.first.y, closeTo(0.5, 1e-9));
     expect(up.last.y, closeTo(0.5, 1e-9));
+  });
+
+  test('offsetPolyline honouring miterLimit keeps a long spike Draw would clip',
+      () {
+    const pts = <Offset2D>[
+      Offset2D(0.2, 1.0),
+      Offset2D(2.5, 1.0),
+      Offset2D(0.2, 1.45),
+    ];
+    const elbow = Offset2D(2.5, 1.0);
+    double dist(Offset2D p) {
+      final dx = p.x - elbow.x;
+      final dy = p.y - elbow.y;
+      return math.sqrt(dx * dx + dy * dy);
+    }
+
+    var longestAt4 = 0.0;
+    var longestAt12 = 0.0;
+    for (final side in <double>[0.12, -0.12]) {
+      longestAt4 = math.max(
+        longestAt4,
+        dist(offsetPolyline(pts, side, miterLimit: 4)[1]),
+      );
+      longestAt12 = math.max(
+        longestAt12,
+        dist(offsetPolyline(pts, side, miterLimit: 12)[1]),
+      );
+    }
+    expect(longestAt12, greaterThan(longestAt4 + 0.2));
   });
 
   test('samplePathD parses a simple line and closed rect', () {

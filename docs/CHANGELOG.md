@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- `User.veMiterLimit` above LibreOffice's default 4 now keeps the long
+  canvas spike after a save into Draw. `_lineProperties` never emits
+  `svg:stroke-miterlimit`, so Draw used to bevel every elbow whose ratio
+  exceeds 4. A save expands an unfilled solid polyline to a filled ribbon
+  whose outline uses that limit, then drops the User row. Limits below 4
+  still chamfer; straight edges and limits at 4 stay native.
 - `User.veMiterLimit` tighter than LibreOffice's default 4 now survives a
   save into Draw. `_lineProperties` never emits `svg:stroke-miterlimit`, so
   Draw used to keep a long miter while this editor already clipped the same

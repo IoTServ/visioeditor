@@ -2697,7 +2697,8 @@ class VsdxWriter {
               !shapeNeedsLibvisioFontBake(edited) &&
               !shapeNeedsLibvisioGlowBake(edited) &&
               !shapeNeedsLibvisioGlowPlateBake(edited) &&
-              !shapeNeedsLibvisioCustomDashBake(edited))) {
+              !shapeNeedsLibvisioCustomDashBake(edited) &&
+              !shapeNeedsLibvisioMiterSpikeBake(edited))) {
         return false;
       }
     }
@@ -3824,7 +3825,8 @@ class VsdxWriter {
         edited.userCells.any((cell) =>
             cell.name == VsdxShape.userDashPattern ||
             cell.name == VsdxShape.userFixedDash);
-    final droppingMiter = miterLimitForLibvisioChamfer(edited.line) != null &&
+    final droppingMiter = (miterLimitForLibvisioChamfer(edited.line) != null ||
+            shapeNeedsLibvisioMiterSpikeBake(edited)) &&
         edited.userCells.any((cell) => cell.name == VsdxShape.userMiterLimit);
     if (!droppingDash &&
         !droppingMiter &&
@@ -8840,10 +8842,13 @@ class VsdxWriter {
   /// for VSD/VDX. Explicit round / arcs / bevel joins on a non-round cap use
   /// the same path: `_lineProperties` would otherwise emit miter. A
   /// `veMiterLimit` tighter than Draw's default 4 chamfers the same way.
+  /// Limits above 4 expand an unfilled stroke to a ribbon so Draw keeps
+  /// the canvas spike (`_lineProperties` never emits stroke-miterlimit).
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioCustomDashBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
+    if (shapeNeedsLibvisioMiterSpikeBake(shape)) return true;
     if (shapeNeedsLibvisioArrowedStrokeBake(shape)) return true;
     if (shapeNeedsLibvisioGlowBake(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;

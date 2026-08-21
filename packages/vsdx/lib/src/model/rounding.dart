@@ -293,6 +293,32 @@ double strokeMiterRatio(Offset2D prev, Offset2D cur, Offset2D next) {
   return 1 / s.abs();
 }
 
+/// `true` when any corner's miter ratio exceeds Draw's ODF default of 4.
+///
+/// `_lineProperties` never emits `svg:stroke-miterlimit`, so those elbows
+/// bevel in LibreOffice while canvas / SVG still honour a higher
+/// `veMiterLimit`. Open polylines skip endpoints.
+bool polylineHasDrawClippedMiter(
+  List<Offset2D> points, {
+  required bool closed,
+}) {
+  final n = points.length;
+  if (n < 3) return false;
+  final first = closed ? 0 : 1;
+  final last = closed ? n : n - 1;
+  for (var i = first; i < last; i++) {
+    if (strokeMiterRatio(
+          points[(i - 1 + n) % n],
+          points[i],
+          points[(i + 1) % n],
+        ) >
+        4.0 + 1e-6) {
+      return true;
+    }
+  }
+  return false;
+}
+
 _FilletCorner? _filletCorner(
   Offset2D prev,
   Offset2D cur,

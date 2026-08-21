@@ -83,15 +83,19 @@ List<CompoundRail> compoundRails(int compoundType, double width) {
 
 /// Offset an open or closed polyline by [distance] along the left normal.
 ///
-/// Sharp corners use a simple miter (clamped). Returns an empty list when the
-/// input is too short.
+/// Sharp corners use a simple miter, clipped at [miterLimit] (SVG / canvas
+/// `stroke-miterlimit`, Draw's ODF default is 4). Returns an empty list when
+/// the input is too short.
 List<Offset2D> offsetPolyline(
   List<Offset2D> pts,
   double distance, {
   bool closed = false,
+  double miterLimit = 4,
 }) {
   if (pts.length < 2 || distance.abs() < 1e-12) {
-    return distance.abs() < 1e-12 ? List<Offset2D>.from(pts) : const <Offset2D>[];
+    return distance.abs() < 1e-12
+        ? List<Offset2D>.from(pts)
+        : const <Offset2D>[];
   }
 
   // Drop consecutive duplicates.
@@ -124,7 +128,8 @@ List<Offset2D> offsetPolyline(
 
   final n = clean.length;
   final out = <Offset2D>[];
-  final maxMiter = distance.abs() * 4;
+  final limit = math.max(miterLimit, 1.0);
+  final maxMiter = distance.abs() * limit;
 
   for (var i = 0; i < n; i++) {
     final prev = clean[(i - 1 + n) % n];
@@ -151,7 +156,7 @@ List<Offset2D> offsetPolyline(
         // Miter scale from cos(half-angle) ≈ dot of unit dirs.
         final dot = (d0.x * d1.x + d0.y * d1.y).clamp(-1.0, 1.0);
         final miter = 1.0 / math.max(1e-6, math.sqrt((1 + dot) / 2));
-        final scale = math.min(miter, 4.0);
+        final scale = math.min(miter, limit);
         nx = nx / len * scale;
         ny = ny / len * scale;
         normal = Offset2D(nx, ny);

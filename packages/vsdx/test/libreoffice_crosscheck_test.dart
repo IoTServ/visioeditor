@@ -2776,6 +2776,37 @@ void main() {
         ).withDrawioMiterLimit(1),
       ),
     );
+    var longMiterDocument = parser.parse(blank);
+    final longMiterPage = longMiterDocument.pages.first;
+    longMiterDocument = longMiterDocument.replacePage(
+      0,
+      longMiterPage.addShape(
+        VsdxShape(
+          id: longMiterPage.nextFreeShapeId(),
+          name: 'LongMiter',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.5,
+          height: 2,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0.2, 1.0),
+                LineTo(2.5, 1.0),
+                LineTo(0.2, 1.45),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.24,
+            cap: LineCap.square,
+            miterLimit: 12,
+          ),
+        ).withDrawioMiterLimit(12),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2909,6 +2940,10 @@ void main() {
       'tight_miter': writer.write(
         originalBytes: blank,
         edited: tightMiterDocument,
+      ),
+      'long_miter': writer.write(
+        originalBytes: blank,
+        edited: longMiterDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -5114,6 +5149,115 @@ void main() {
             greaterThan(body + 40),
             reason: 'LibreOffice must not keep the clipped miter spike; '
                 'spike=$spike body=$body',
+          );
+        }
+        if (entry.key == 'long_miter') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LongMiter');
+          expect(source.line.pattern, 0);
+          expect(source.fill.hasFill, isTrue);
+          expect(
+            source.userCells.any(
+              (cell) => cell.name == VsdxShape.userMiterLimit,
+            ),
+            isFalse,
+          );
+        }
+        if (entry.key == 'long_miter' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          final source = page.shapes.firstWhere((s) => s.name == 'LongMiter');
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          const pts = <Offset2D>[
+            Offset2D(0.2, 1.0),
+            Offset2D(2.5, 1.0),
+            Offset2D(0.2, 1.45),
+          ];
+          const elbow = Offset2D(2.5, 1.0);
+          double dist2(Offset2D p) {
+            final dx = p.x - elbow.x;
+            final dy = p.y - elbow.y;
+            return dx * dx + dy * dy;
+          }
+
+          Offset2D farther(List<Offset2D> a, List<Offset2D> b) =>
+              dist2(a[1]) >= dist2(b[1]) ? a[1] : b[1];
+          final longTip = farther(
+            offsetPolyline(pts, 0.12, miterLimit: 12),
+            offsetPolyline(pts, -0.12, miterLimit: 12),
+          );
+          final clippedTip = farther(
+            offsetPolyline(pts, 0.12, miterLimit: 4),
+            offsetPolyline(pts, -0.12, miterLimit: 4),
+          );
+          // The needle tip is one pixel; sample the extra triangle Draw
+          // would drop (between its miterlimit-4 face and the canvas spike).
+          final probe = Offset2D(
+            clippedTip.x + (longTip.x - clippedTip.x) * 0.4,
+            clippedTip.y + (longTip.y - clippedTip.y) * 0.4,
+          );
+          double pageX(double x) => source.pinX + (x - source.effectiveLocPinX);
+          double pageY(double y) => source.pinY + (y - source.effectiveLocPinY);
+          final probeX = pageX(probe.x);
+          final probeY = pageY(probe.y);
+          final body =
+              meanLuma(pageX(1.2), pageY(0.90), pageX(1.5), pageY(1.10));
+          final spike = meanLuma(
+            probeX - 0.05,
+            probeY - 0.05,
+            probeX + 0.05,
+            probeY + 0.05,
+          );
+          expect(
+            body,
+            lessThan(80),
+            reason: 'LibreOffice must still paint the stroke body; body=$body',
+          );
+          expect(
+            spike,
+            lessThan(80),
+            reason: 'LibreOffice must keep the canvas miter spike Draw would '
+                'bevel at miterlimit 4; spike=$spike at ($probeX,$probeY)',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

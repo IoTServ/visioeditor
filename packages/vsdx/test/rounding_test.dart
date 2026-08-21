@@ -212,6 +212,31 @@ void main() {
     );
   });
 
+  test('polylineHasDrawClippedMiter ignores 90° elbows and flags hairpins', () {
+    expect(
+      polylineHasDrawClippedMiter(
+        const <Offset2D>[
+          Offset2D(0, 0),
+          Offset2D(2, 0),
+          Offset2D(2, 2),
+        ],
+        closed: false,
+      ),
+      isFalse,
+    );
+    expect(
+      polylineHasDrawClippedMiter(
+        const <Offset2D>[
+          Offset2D(0.2, 1.0),
+          Offset2D(2.5, 1.0),
+          Offset2D(0.2, 1.45),
+        ],
+        closed: false,
+      ),
+      isTrue,
+    );
+  });
+
   test('bakePolylineRounding leaves already-curved geometry unchanged', () {
     const geometry = VsdxGeometry(commands: <VsdxPathCommand>[
       MoveTo(0, 0),

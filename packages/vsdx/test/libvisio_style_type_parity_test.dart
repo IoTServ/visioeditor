@@ -54,8 +54,10 @@
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
 /// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
 /// bake LineTo chamfers; a `User.veMiterLimit` tighter than Draw's default
-/// 4 bakes the same chamfers, then the User row is dropped. Arcs joins
-/// bake the same fillets as round (canvas `canvasStrokeJoin`).
+/// 4 bakes the same chamfers, then the User row is dropped. Limits above 4
+/// expand an unfilled solid polyline to a filled ribbon so Draw keeps the
+/// canvas spike (`_lineProperties` never emits `svg:stroke-miterlimit`).
+/// Arcs joins bake the same fillets as round (canvas `canvasStrokeJoin`).
 /// `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
 /// Draw collects, then `ReflectionSize` is written 0. An unfilled 2-D
@@ -3568,6 +3570,24 @@ void main() {
       isNull,
     );
     expect(
+      shapeNeedsLibvisioMiterSpikeBake(
+        VsdxShapeFactory.line(
+          id: 1,
+          ax: 1,
+          ay: 3,
+          bx: 5,
+          by: 3,
+          line: const VsdxLine(
+            cap: LineCap.square,
+            miterLimit: 9,
+            weightInches: 0.08,
+          ),
+        ).withDrawioMiterLimit(9),
+      ),
+      isFalse,
+      reason: 'a straight edge has no Draw-clipped elbow to ribbon',
+    );
+    expect(
       roundingForLibvisioWrite(const VsdxLine(
         cap: LineCap.round,
         join: VsdxLineJoin.bevel,
@@ -3791,6 +3811,74 @@ void main() {
           ),
       isFalse,
       reason: '90° elbow must be chamfered so Draw cannot grow a default miter',
+    );
+  });
+
+  test('high miterLimit bakes a filled ribbon spike for LibreOffice', () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'LongMiter',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4.5,
+      height: 2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0.2, 1.0),
+            LineTo(2.5, 1.0),
+            LineTo(0.2, 1.45),
+          ],
+        ),
+      ],
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.square,
+        miterLimit: 12,
+      ),
+    ).withDrawioMiterLimit(12);
+    expect(shapeNeedsLibvisioMiterSpikeBake(shape), isTrue);
+    expect(miterLimitForLibvisioChamfer(shape.line), isNull);
+
+    final write = libvisioShapeWrite(shape);
+    expect(write.line.pattern, 0);
+    expect(write.line.miterLimit, closeTo(4, 1e-12));
+    expect(write.fill.hasFill, isTrue);
+    expect(
+      userCellsForLibvisioWrite(shape).any(
+        (cell) => cell.name == VsdxShape.userMiterLimit,
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.pattern, 0);
+    expect(after.fill.hasFill, isTrue);
+    expect(after.line.miterLimit, closeTo(4, 1e-12));
+    expect(
+      after.userCells.any((cell) => cell.name == VsdxShape.userMiterLimit),
+      isFalse,
+    );
+    expect(after.geometries.single.noLine, isTrue);
+    expect(
+      after.geometries.single.commands.whereType<LineTo>().length,
+      greaterThan(3),
+    );
+    var maxX = 0.0;
+    for (final command in after.geometries.single.commands) {
+      if (command is MoveTo && command.x > maxX) maxX = command.x;
+      if (command is LineTo && command.x > maxX) maxX = command.x;
+    }
+    expect(
+      maxX,
+      greaterThan(3.2),
+      reason: 'ribbon outline must include the canvas miter spike past x=2.5',
     );
   });
 
