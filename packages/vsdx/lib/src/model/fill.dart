@@ -110,6 +110,114 @@ VsdxHatchSpec? libvisioHatchSpec(int pattern) {
   };
 }
 
+/// Hairline width libvisio / canvas / SVG use for FillPattern 2–24, in inches.
+const kVisioHatchHairlineInches = 0.01;
+
+/// Sample a classic hatch at a shape-local point (Y-up inches).
+///
+/// Tile phase matches canvas [PatternFillBuilder] and SVG `userSpaceOnUse`
+/// patterns: axis-aligned strokes sit at `distance/2` in each cell; 45° /
+/// 315° strokes run through the cell corners and are half-coverage so
+/// LibreOffice's anti-aliased sloped hairlines do not flicker.
+({int r, int g, int b, int a}) sampleVisioHatchRgba({
+  required VsdxHatchSpec spec,
+  required double x,
+  required double y,
+  required ({int r, int g, int b, int a}) foreground,
+  required ({int r, int g, int b, int a}) background,
+}) {
+  final period = spec.distanceInches;
+  final half = kVisioHatchHairlineInches / 2;
+  var horiz = false;
+  var vert = false;
+  var rising = false;
+  var falling = false;
+  switch (spec.style) {
+    case VsdxHatchStyle.triple:
+      horiz = true;
+      vert = true;
+      rising = true;
+      falling = true;
+    case VsdxHatchStyle.double:
+      if (spec.angleDegrees == 45) {
+        rising = true;
+        falling = true;
+      } else {
+        horiz = true;
+        vert = true;
+      }
+    case VsdxHatchStyle.single:
+      switch (spec.angleDegrees) {
+        case 45:
+          rising = true;
+        case 90:
+          vert = true;
+        case 315:
+          falling = true;
+        default:
+          horiz = true;
+      }
+  }
+  var color = background;
+  if (rising && _nearDiagonalRising(x, y, period)) {
+    color = _overHatch(color, foreground, 0.5);
+  }
+  if (falling && _nearDiagonalFalling(x, y, period)) {
+    color = _overHatch(color, foreground, 0.5);
+  }
+  if (horiz && _nearAxisHatch(y, period, half)) {
+    color = foreground;
+  }
+  if (vert && _nearAxisHatch(x, period, half)) {
+    color = foreground;
+  }
+  return color;
+}
+
+bool _nearAxisHatch(double coord, double period, double halfWidth) {
+  if (period <= 1e-12) return false;
+  final phase = (coord % period + period) % period;
+  final delta = (phase - period / 2).abs();
+  return delta <= halfWidth;
+}
+
+bool _nearDiagonalRising(double x, double y, double distance) {
+  final period = distance * math.sqrt2;
+  // Canvas scales a 0.01" hairline through a `distance * √2` tile, so the
+  // |x−y| corridor is `0.01"` either side of each corner-to-corner stroke.
+  return _nearWrapped(x - y, period, kVisioHatchHairlineInches);
+}
+
+bool _nearDiagonalFalling(double x, double y, double distance) {
+  final period = distance * math.sqrt2;
+  return _nearWrapped(x + y, period, kVisioHatchHairlineInches);
+}
+
+bool _nearWrapped(double coord, double period, double absTolerance) {
+  if (period <= 1e-12) return false;
+  final phase = (coord % period + period) % period;
+  return phase <= absTolerance || period - phase <= absTolerance;
+}
+
+({int r, int g, int b, int a}) _overHatch(
+  ({int r, int g, int b, int a}) dst,
+  ({int r, int g, int b, int a}) src,
+  double srcFactor,
+) {
+  final sa = (src.a / 255.0) * srcFactor.clamp(0.0, 1.0);
+  final da = dst.a / 255.0;
+  final outA = sa + da * (1 - sa);
+  if (outA <= 1e-9) return (r: 0, g: 0, b: 0, a: 0);
+  int ch(int s, int d) =>
+      ((s * sa + d * da * (1 - sa)) / outA).round().clamp(0, 255);
+  return (
+    r: ch(src.r, dst.r),
+    g: ch(src.g, dst.g),
+    b: ch(src.b, dst.b),
+    a: (outA * 255).round().clamp(0, 255),
+  );
+}
+
 /// Convert classic Visio gradient `FillPattern` ids 25–40 to gradient stops.
 /// This is shared by VSD and VSDX parsing so legacy fills render identically.
 VsdxFill withLibvisioClassicGradient(VsdxFill fill) {
@@ -123,9 +231,8 @@ VsdxFill withLibvisioClassicGradient(VsdxFill fill) {
       VsdxGradientStop(
         position: position,
         color: foreground ? fill.foreground : fill.background,
-        themeColorIndex: foreground
-            ? fill.themeForegroundIndex
-            : fill.themeBackgroundIndex,
+        themeColorIndex:
+            foreground ? fill.themeForegroundIndex : fill.themeBackgroundIndex,
         transparency: (foreground
                 ? fill.foregroundTransparency
                 : fill.backgroundTransparency)

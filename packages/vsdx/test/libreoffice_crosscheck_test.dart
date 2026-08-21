@@ -2161,6 +2161,27 @@ void main() {
         ),
       ),
     );
+    var hatchSoftDocument = parser.parse(blank);
+    final hatchSoftPage = hatchSoftDocument.pages.first;
+    hatchSoftDocument = hatchSoftDocument.replacePage(
+      0,
+      hatchSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: hatchSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'HatchSoft',
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFFFF0000),
+            background: VsdxColor(0xFF0000FF),
+            pattern: 6,
+          ),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
+        ),
+      ),
+    );
     var strokeSoftDocument = parser.parse(blank);
     final strokeSoftPage = strokeSoftDocument.pages.first;
     strokeSoftDocument = strokeSoftDocument.replacePage(
@@ -2752,6 +2773,10 @@ void main() {
       'gradient_soft': writer.write(
         originalBytes: blank,
         edited: gradientSoftDocument,
+      ),
+      'hatch_soft': writer.write(
+        originalBytes: blank,
+        edited: hatchSoftDocument,
       ),
       'stroke_soft': writer.write(
         originalBytes: blank,
@@ -3391,6 +3416,62 @@ void main() {
               greaterThan(left.b + 40),
               reason: 'LibreOffice must paint the baked red-to-blue wash; '
                   'left=$left right=$right',
+            );
+          }
+        }
+        if (entry.key == 'hatch_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'HatchSoft');
+          expect(source.fill.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+          if (pdftoppm != null) {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '96',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            )!;
+            final page = reopened.pages.first;
+            final x = (4.25 / page.widthInches * rendered.width).round();
+            final y0 = ((page.heightInches - 6.2) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final y1 = ((page.heightInches - 4.8) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var redInk = 0;
+            var blueInk = 0;
+            for (var y = y0; y < y1; y++) {
+              final p = rendered.getPixel(x, y);
+              if (p.r > p.b + 40) redInk++;
+              if (p.b > p.r + 40) blueInk++;
+            }
+            expect(
+              redInk,
+              greaterThan(2),
+              reason: 'LibreOffice must paint baked hatch strokes; '
+                  'redInk=$redInk blueInk=$blueInk',
+            );
+            expect(
+              blueInk,
+              greaterThan(redInk),
+              reason: 'LibreOffice must paint baked hatch background; '
+                  'redInk=$redInk blueInk=$blueInk',
             );
           }
         }

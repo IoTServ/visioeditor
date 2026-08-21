@@ -53,8 +53,8 @@
 /// frame and Draw does not crop the halo off. Geometry `SoftEdgesSize` is the
 /// same missing token: a filled 2-D shape bakes a locked Foreign sibling
 /// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use
-/// (resolved-RGB FillGradient / classic 25–40 washes are painted into
-/// that PNG so Draw does not fall back to a hard classic id),
+/// (resolved-RGB FillGradient / classic 25–40 washes and FillPattern 2–24
+/// hatches are painted into that PNG so Draw does not keep a hard fill),
 /// then SoftEdgesSize is written 0 and the source fill is dropped so the
 /// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
@@ -4124,8 +4124,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// stroke bakes the stroke ring the same way and drops the source line.
 /// A filled 2-D shape that also paints a solid stroke bakes both into
 /// one padded plate and drops fill and line, so Draw does not keep a
-/// hard outline. 1-D, pictures, hatches, dashes, compound
-/// rails, arrows, theme-only gradients and unresolved theme colours stay native.
+/// hard outline. 1-D, pictures, dashes, compound
+/// rails, arrows, theme-only fills and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -4147,6 +4147,12 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (paintGradient != null) {
     if (_gradientBakeStops(paintGradient, shape.fill.foregroundTransparency)
         .isEmpty) {
+      return false;
+    }
+  } else if (libvisioHatchSpec(shape.fill.pattern) != null) {
+    if (shape.fill.foreground == null) return false;
+    if (shape.fill.background == null &&
+        shape.fill.themeBackgroundIndex != null) {
       return false;
     }
   } else {
@@ -4178,7 +4184,8 @@ bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
 bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
     _shapeHasBakeableSoftEdgesStroke(shape) &&
-    shape.fill.paintGradient == null;
+    shape.fill.paintGradient == null &&
+    libvisioHatchSpec(shape.fill.pattern) == null;
 
 SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
   VsdxGeometry? geom;
@@ -4358,6 +4365,8 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
     }
   }
   ({int r, int g, int b, int a}) Function(double xPx, double yPx)? colorAt;
+  final hatch =
+      paintGradient == null ? libvisioHatchSpec(shape.fill.pattern) : null;
   if (stops.isNotEmpty) {
     final linear = paintGradient!.type == VsdxGradientType.linear;
     final angle = paintGradient.angleRad;
@@ -4378,6 +4387,26 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
         stops: stops,
       );
     };
+  } else if (hatch != null) {
+    final fg = _fillCellRgba(
+      shape.fill.foreground,
+      shape.fill.foregroundTransparency,
+    );
+    final bgColor = shape.fill.background;
+    final bg = bgColor == null
+        ? (r: 0, g: 0, b: 0, a: 0)
+        : _fillCellRgba(bgColor, shape.fill.backgroundTransparency);
+    colorAt = (xPx, yPx) {
+      final ix = widthPx <= 1 ? 0.0 : xPx / (widthPx - 1) * w;
+      final iy = heightPx <= 1 ? h : (1 - yPx / (heightPx - 1)) * h;
+      return sampleVisioHatchRgba(
+        spec: hatch,
+        x: ix,
+        y: iy,
+        foreground: fg,
+        background: bg,
+      );
+    };
   }
   return bakeSilhouetteSoftEdgesPng(
     widthPx: widthPx,
@@ -4385,7 +4414,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
     red: color.red,
     green: color.green,
     blue: color.blue,
-    alpha: stops.isNotEmpty ? 255 : alpha,
+    alpha: stops.isNotEmpty || hatch != null ? 255 : alpha,
     softSigmaPx: shape.line.softEdgesInches / w * widthPx,
     kind: kind,
     polygon: polygon,
@@ -4419,6 +4448,16 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
     return const [];
   }
   return out;
+}
+
+({int r, int g, int b, int a}) _fillCellRgba(
+  VsdxColor? color,
+  double transparency,
+) {
+  final c = color ?? const VsdxColor(0x00000000);
+  final a =
+      (c.alpha * (1 - transparency.clamp(0.0, 1.0))).round().clamp(0, 255);
+  return (r: c.red, g: c.green, b: c.blue, a: a);
 }
 
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(

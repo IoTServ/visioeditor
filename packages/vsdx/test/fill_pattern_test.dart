@@ -20,7 +20,30 @@ void main() {
     expect(libvisioHatchSpec(23)!.style, VsdxHatchStyle.double);
   });
 
-  test('VSDX classic gradient pattern is materialised without stop section', () {
+  test('sampleVisioHatchRgba matches horizontal FillPattern 6', () {
+    final spec = libvisioHatchSpec(6)!;
+    const fg = (r: 255, g: 0, b: 0, a: 255);
+    const bg = (r: 0, g: 0, b: 255, a: 255);
+    final onLine = sampleVisioHatchRgba(
+      spec: spec,
+      x: 0.2,
+      y: 0.05,
+      foreground: fg,
+      background: bg,
+    );
+    final inGap = sampleVisioHatchRgba(
+      spec: spec,
+      x: 0.2,
+      y: 0.0,
+      foreground: fg,
+      background: bg,
+    );
+    expect(onLine.r, greaterThan(onLine.b + 80));
+    expect(inGap.b, greaterThan(inGap.r + 80));
+  });
+
+  test('VSDX classic gradient pattern is materialised without stop section',
+      () {
     final shape = XmlDocument.parse(
       '<Shape>'
       '<Cell N="FillForegnd" V="#f4f9ff"/>'
@@ -38,7 +61,8 @@ void main() {
     expect(fill.gradient!.stops.last.color, const VsdxColor(0xFFDFF4D5));
   });
 
-  test('paintGradient materialises classic FillPattern 25–40 without parse', () {
+  test('paintGradient materialises classic FillPattern 25–40 without parse',
+      () {
     const fill = VsdxFill(
       foreground: VsdxColor(0xFFFF0000),
       background: VsdxColor(0xFF0000FF),
@@ -68,7 +92,8 @@ void main() {
     expect(svg, contains('radialGradient'));
   });
 
-  test('FillGradient with FillPattern=1 maps to a classic id libvisio paints', () {
+  test('FillGradient with FillPattern=1 maps to a classic id libvisio paints',
+      () {
     for (var pattern = 25; pattern <= 40; pattern++) {
       final classic = withLibvisioClassicGradient(
         VsdxFill(

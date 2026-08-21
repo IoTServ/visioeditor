@@ -79,9 +79,9 @@
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
-/// PNG sibling and drops the source fill. Resolved-RGB FillGradient and
-/// classic 25–40 washes go into that PNG so Draw does not keep a hard
-/// classic id. An unfilled 2-D stroke with
+/// PNG sibling and drops the source fill. Resolved-RGB FillGradient,
+/// classic 25–40 washes and FillPattern 2–24 hatches go into that PNG
+/// so Draw does not keep a hard fill. An unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
 /// line. A filled 2-D shape that also paints a solid stroke bakes both
 /// into one padded plate and drops fill and line. `ShadowBlur` is not a token,
@@ -1522,6 +1522,75 @@ void main() {
           .fill
           .pattern,
       0,
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 0);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('hatch fill SoftEdges bakes a feathered hatch PNG for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'HatchSoft',
+      fill: const VsdxFill(
+        foreground: VsdxColor(0xFFFF0000),
+        background: VsdxColor(0xFF0000FF),
+        pattern: 6,
+      ),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    var redInk = 0;
+    var blueInk = 0;
+    final x = decoded.width ~/ 2;
+    for (var y = decoded.height ~/ 4; y < decoded.height * 3 ~/ 4; y++) {
+      final p = decoded.getPixel(x, y);
+      if (p.a < 80) continue;
+      if (p.r > p.b + 40) redInk++;
+      if (p.b > p.r + 40) blueInk++;
+    }
+    expect(
+      redInk,
+      greaterThan(2),
+      reason: 'SoftEdges PNG must keep FillPattern 6 red strokes; '
+          'redInk=$redInk blueInk=$blueInk',
+    );
+    expect(
+      blueInk,
+      greaterThan(redInk),
+      reason: 'SoftEdges PNG must keep the blue hatch background; '
+          'redInk=$redInk blueInk=$blueInk',
+    );
+    expect(
+      decoded.getPixel(0, 0).a,
+      lessThan(decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).a),
+      reason: 'SourceAlpha feather must fade the silhouette edge',
     );
 
     final saved = writer.write(originalBytes: blank, edited: doc);
