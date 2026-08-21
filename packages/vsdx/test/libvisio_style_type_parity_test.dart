@@ -19,8 +19,10 @@
 /// the model has no stop section yet. Unknown LinePattern ids snap to the
 /// built-in 2–23 table `_lineProperties` actually dashes; draw.io
 /// `User.veDashPattern` arrays that are not those ids bake as MoveTo/LineTo
-/// dashes with LinePattern=1. `LineCap` 0/1/2 is a
-/// token libvisio *does* collect. Character Highlight is skipped by
+/// dashes with LinePattern=1. Built-in LinePattern 2–23 that also need a
+/// LineColorTrans / LineGradient ribbon flatten the same way first, so the
+/// filled silhouette keeps the gaps `_lineProperties` would have dashed.
+/// `LineCap` 0/1/2 is a token libvisio *does* collect. Character Highlight is skipped by
 /// `readCharIX` but a uniform marker with no authored TextBkgnd is written
 /// there — `VSDContentCollector` paints it as span `fo:background-color`
 /// and Draw shows the plate. `RVNGSVGDrawingGenerator` drops that property,
@@ -3649,6 +3651,47 @@ void main() {
       }
     }
     expect(savedMoves, greaterThan(1));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('built-in LinePattern keeps dash gaps in a LineColorTrans ribbon', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 3,
+      bx: 7,
+      by: 3,
+      name: 'PatternDashTrans',
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.15,
+        pattern: 2,
+        transparency: 0.5,
+      ),
+    );
+    expect(shapeNeedsLibvisioLinePatternDashBake(shape), isTrue);
+
+    final write = libvisioShapeWrite(shape);
+    expect(write.line.pattern, 0);
+    expect(write.line.transparency, closeTo(0, 1e-9));
+    expect(
+      write.geometries.where((geometry) => !geometry.noFill).length,
+      greaterThan(1),
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.pattern, 0);
+    expect(
+      after.geometries.where((geometry) => !geometry.noFill).length,
+      greaterThan(1),
+    );
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

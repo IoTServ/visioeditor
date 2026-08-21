@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Built-in `LinePattern` 2–23 now keep their gaps when a save bakes a
+  LineColorTrans / LineGradient ribbon for LibreOffice. The ribbon is a
+  filled silhouette, so Draw used to show a solid transparent band while
+  this editor already dashed the stroke. A save flattens those ids to
+  MoveTo/LineTo first — the same path custom `User.veDashPattern` already
+  uses — then ribbons each dash. Opaque dashed strokes stay native.
 - Geometry `SoftEdgesSize` with a classic `FillPattern` 2–24 hatch now
   survives a save into LibreOffice. SoftEdgesSize is not a token, so Draw
   used to show a hard hatch while this editor already feathered the same

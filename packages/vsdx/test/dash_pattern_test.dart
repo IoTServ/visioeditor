@@ -116,6 +116,47 @@ void main() {
         .length;
     expect(moves, greaterThan(1));
   });
+
+  test('built-in LinePattern flattens before a transparent ribbon', () {
+    final dashed = VsdxShapeFactory.line(
+      id: 1,
+      ax: 0,
+      ay: 0,
+      bx: 6,
+      by: 0,
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.15,
+        pattern: 2,
+        transparency: 0.5,
+      ),
+    );
+    expect(shapeNeedsLibvisioLinePatternDashBake(dashed), isTrue);
+    expect(shapeNeedsLibvisioCustomDashBake(dashed), isFalse);
+    final write = libvisioShapeWrite(dashed);
+    expect(write.line.pattern, 0);
+    expect(write.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(
+      write.geometries.where((geometry) => !geometry.noFill).length,
+      greaterThan(1),
+      reason: 'LinePattern 2 must ribbon each dash, not one solid band',
+    );
+
+    final opaque = VsdxShapeFactory.line(
+      id: 2,
+      ax: 0,
+      ay: 0,
+      bx: 6,
+      by: 0,
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.15,
+        pattern: 2,
+      ),
+    );
+    expect(shapeNeedsLibvisioLinePatternDashBake(opaque), isFalse);
+    expect(libvisioShapeWrite(opaque).line.pattern, 2);
+  });
 }
 
 Matcher closeToList(List<double> expected, [double eps = 1e-9]) =>

@@ -9,7 +9,10 @@
 /// pattern 2–23, or — when `User.veDashPattern` is not one of those ids —
 /// MoveTo/LineTo dashes with LinePattern=1, and — for an unfilled stroke with a line gradient or
 /// LineColorTrans — a filled ribbon whose FillPattern 25–40 / FillForegndTrans
-/// libvisio *does* collect. Unfilled CompoundType 2–4 keep thick/thin contrast
+/// libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
+/// 2–23 (which `_lineProperties` *does* collect on a stroke) are flattened
+/// to MoveTo/LineTo first, the same way custom `User.veDashPattern` already
+/// is, so Draw keeps the gaps. Unfilled CompoundType 2–4 keep thick/thin contrast
 /// the same way: each rail becomes a filled ribbon of that rail's width,
 /// because LineWeight is shape-level and stroked rails would share the
 /// thinnest width. Arrowed 1-D connectors that also need those
@@ -5510,6 +5513,21 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     );
   }
 
+  final patterned = bakeLinePatternDashForLibvisio(
+    working,
+    geometries: geometries,
+    line: line,
+  );
+  if (patterned != null) {
+    geometries = patterned.geometries;
+    line = patterned.line;
+    geometryRewritten = true;
+    working = working.copyWith(
+      geometries: geometries,
+      line: line,
+    );
+  }
+
   final pattern = linePatternForLibvisioWrite(line);
   if (pattern != line.pattern) {
     line = line.copyWith(pattern: pattern);
@@ -6638,7 +6656,9 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
 
 /// Expand an unfilled gradient or transparent stroke into a closed ribbon
 /// FillPattern 25–40 / FillForegndTrans can paint. Compound rails, when
-/// present, are expanded one by one.
+/// present, are expanded one by one. Dash gaps must already live in
+/// Geometry (custom arrays or LinePattern 2–23); a single ribbon of the
+/// whole polyline would be solid.
 ({List<VsdxGeometry> geometries, VsdxLine line, VsdxFill fill})?
     bakeStrokeRibbonForLibvisio({
   required VsdxShape shape,
@@ -6801,7 +6821,81 @@ List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
   if (!_customDashCanBake(shape, sourceLine, sourceGeoms)) return null;
   final inches = effectiveDashPatternForLine(sourceLine);
   if (inches == null || inches.isEmpty) return null;
+  final flattened = _flattenDashGeometries(shape, sourceGeoms, inches);
+  if (flattened == null) return null;
+  return (
+    geometries: flattened,
+    line: sourceLine.copyWith(
+      pattern: 1,
+      customDashPattern: null,
+      fixedDash: false,
+    ),
+  );
+}
 
+/// `true` when built-in LinePattern 2–23 must flatten before a stroke ribbon.
+///
+/// `_lineProperties` dashes those ids, but a FillForegndTrans / classic
+/// gradient ribbon is a filled silhouette and cannot. Opaque dashed
+/// strokes stay native.
+bool shapeNeedsLibvisioLinePatternDashBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shapeNeedsLibvisioStrokeRibbon(shape)) return false;
+  return _linePatternDashCanBake(shape, shape.line, shape.geometries);
+}
+
+bool _linePatternDashCanBake(
+  VsdxShape shape,
+  VsdxLine line,
+  List<VsdxGeometry> geometries,
+) {
+  if (!line.hasLine) return false;
+  final custom = line.customDashPattern;
+  if (custom != null && custom.isNotEmpty) return false;
+  if (line.pattern < 2 || line.pattern > 23) return false;
+  final inches = dashPatternFor(
+    line.pattern,
+    weightInches: line.weightInches,
+  );
+  if (inches == null || inches.isEmpty) return false;
+  for (final geometry in geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points != null && points.length >= 2) return true;
+  }
+  return false;
+}
+
+/// Flatten LinePattern 2–23 into MoveTo/LineTo so a later ribbon keeps gaps.
+({List<VsdxGeometry> geometries, VsdxLine line})?
+    bakeLinePatternDashForLibvisio(
+  VsdxShape shape, {
+  List<VsdxGeometry>? geometries,
+  VsdxLine? line,
+}) {
+  final sourceLine = line ?? shape.line;
+  final sourceGeoms = geometries ?? shape.geometries;
+  final probe = shape.copyWith(line: sourceLine, geometries: sourceGeoms);
+  if (!shapeNeedsLibvisioStrokeRibbon(probe)) return null;
+  if (!_linePatternDashCanBake(shape, sourceLine, sourceGeoms)) return null;
+  final inches = dashPatternFor(
+    sourceLine.pattern,
+    weightInches: sourceLine.weightInches,
+  );
+  if (inches == null || inches.isEmpty) return null;
+  final flattened = _flattenDashGeometries(shape, sourceGeoms, inches);
+  if (flattened == null) return null;
+  return (
+    geometries: flattened,
+    line: sourceLine.copyWith(pattern: 1),
+  );
+}
+
+List<VsdxGeometry>? _flattenDashGeometries(
+  VsdxShape shape,
+  List<VsdxGeometry> sourceGeoms,
+  List<double> inches,
+) {
   final out = <VsdxGeometry>[];
   var added = false;
   for (final geometry in sourceGeoms) {
@@ -6816,35 +6910,34 @@ List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
     }
     final closed = polylineLooksClosed(points, noFill: geometry.noFill);
     final segments = _dashPolyline(points, inches, closed: closed);
-    final commands = <VsdxPathCommand>[
-      for (final segment in segments)
-        ...polylineCommands(segment, closed: false),
-    ];
-    if (commands.length < 2) {
+    if (segments.isEmpty) {
+      out.add(geometry);
+      continue;
+    }
+    final dashGeoms = <VsdxGeometry>[];
+    for (final segment in segments) {
+      final commands = polylineCommands(segment, closed: false);
+      if (commands.length < 2) continue;
+      dashGeoms.add(
+        VsdxGeometry(
+          noFill: true,
+          noLine: false,
+          commands: commands,
+        ),
+      );
+    }
+    if (dashGeoms.isEmpty) {
       out.add(geometry);
       continue;
     }
     if (!geometry.noFill) {
       out.add(geometry.copyWith(noLine: true));
     }
-    out.add(
-      VsdxGeometry(
-        noFill: true,
-        noLine: false,
-        commands: commands,
-      ),
-    );
+    out.addAll(dashGeoms);
     added = true;
   }
   if (!added) return null;
-  return (
-    geometries: out,
-    line: sourceLine.copyWith(
-      pattern: 1,
-      customDashPattern: null,
-      fixedDash: false,
-    ),
-  );
+  return out;
 }
 
 /// Resample [points] into dash/gap strokes. Even [pattern] slots are ink.
