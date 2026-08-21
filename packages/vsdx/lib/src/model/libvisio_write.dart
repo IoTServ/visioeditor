@@ -45,10 +45,11 @@
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
 /// a save bakes them into a PNG and zeros the cells. Picture `SoftEdgesSize`
-/// is not a token either: an uncropped 2-D Foreign bitmap bakes the same
-/// SourceAlpha feather canvas / SVG use, then SoftEdgesSize is written 0.
-/// Cropped pictures keep the cell — feathering the PNG would miss the
-/// ImgOffset frame Draw still collects. Geometry `SoftEdgesSize` is the
+/// is not a token either: a 2-D Foreign bitmap bakes the same SourceAlpha
+/// feather canvas / SVG use, then SoftEdgesSize is written 0. A cropped
+/// picture is composited into the Foreign frame first so the halo sits on
+/// the visible window, then ImgOffset / ImgWidth / ImgHeight fill that
+/// frame and Draw does not crop the halo off. Geometry `SoftEdgesSize` is the
 /// same missing token: a filled 2-D shape bakes a locked Foreign sibling
 /// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use,
 /// then SoftEdgesSize is written 0 and the source fill is dropped so the
@@ -3926,22 +3927,27 @@ VsdxDocument bakeShapeOpacityForLibvisioWrite(VsdxDocument document) {
 
 /// SoftEdgesSize Draw will collect for this picture (0 = do not bake).
 ///
-/// Canvas / SVG feather the Foreign frame. Img* crop cells *are* tokens, so
-/// a cropped bitmap must keep its pixels; only an uncropped 2-D picture can
-/// bake the halo into PNG alpha.
+/// Canvas / SVG feather the visible Img* window, clipped to the Foreign
+/// frame. `tokens.txt` has no SoftEdgesSize, so a 2-D bitmap bakes that
+/// halo into PNG alpha. Cropped frames composite into the box first;
+/// uncropped frames feather the bitmap in place.
 double imageSoftEdgesInchesForLibvisioWrite(VsdxShape shape) {
   if (!shape.hasImage || shape.is1D) return 0;
-  if (shape.imgOffsetXInches.abs() > 1e-6) return 0;
-  if (shape.imgOffsetYInches.abs() > 1e-6) return 0;
-  if (shape.imgWidthInches != null &&
-      (shape.imgWidthInches! - shape.width).abs() > 1e-6) {
-    return 0;
-  }
-  if (shape.imgHeightInches != null &&
-      (shape.imgHeightInches! - shape.height).abs() > 1e-6) {
-    return 0;
-  }
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return 0;
   return shape.line.softEdgesInches;
+}
+
+/// `true` when SoftEdges must composite Img* crop into the Foreign frame.
+bool shapeNeedsLibvisioCroppedSoftEdgesBake(VsdxShape shape) {
+  if (imageSoftEdgesInchesForLibvisioWrite(shape) <= 1e-6) return false;
+  return visioPictureFrameIsCropped(
+    frameWidthInches: shape.width,
+    frameHeightInches: shape.height,
+    imgOffsetXInches: shape.imgOffsetXInches,
+    imgOffsetYInches: shape.imgOffsetYInches,
+    imgWidthInches: shape.imgWidthInches,
+    imgHeightInches: shape.imgHeightInches,
+  );
 }
 
 /// Bake Image Properties into PNG pixels and reset the cells Draw ignores.
@@ -3970,6 +3976,7 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
     ];
     var next = shape;
     final soft = imageSoftEdgesInchesForLibvisioWrite(shape);
+    final cropSoft = shapeNeedsLibvisioCroppedSoftEdgesBake(shape);
     if (shape.hasImage &&
         visioImageAdjustmentsNeedBake(
           transparency: shape.imageTransparency,
@@ -3988,7 +3995,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
       if (source != null) {
         final key = '$part|${shape.imageTransparency}|${shape.imageBlur}|'
             '${shape.imageBrightness}|${shape.imageContrast}|$soft|'
-            '${shape.effectiveImgWidth}';
+            '${shape.effectiveImgWidth}|${shape.effectiveImgHeight}|'
+            '${shape.imgOffsetXInches}|${shape.imgOffsetYInches}|'
+            '${shape.width}|${shape.height}|$cropSoft';
         var bakedPart = cache[key];
         if (bakedPart == null) {
           final png = bakeVisioImageAdjustmentsPng(
@@ -3997,8 +4006,15 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
             blur: shape.imageBlur,
             brightness: shape.imageBrightness,
             contrast: shape.imageContrast,
-            displayWidthInches: shape.effectiveImgWidth,
+            displayWidthInches:
+                cropSoft ? shape.width.abs() : shape.effectiveImgWidth,
             softEdgesInches: soft,
+            frameWidthInches: cropSoft ? shape.width : 0,
+            frameHeightInches: cropSoft ? shape.height : 0,
+            imgOffsetXInches: shape.imgOffsetXInches,
+            imgOffsetYInches: shape.imgOffsetYInches,
+            imgWidthInches: shape.imgWidthInches,
+            imgHeightInches: shape.imgHeightInches,
           );
           if (png != null) {
             bakedPart = allocatePart(shape.id);
@@ -4030,6 +4046,10 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
             line: soft > 1e-6
                 ? shape.line.copyWith(softEdgesInches: 0)
                 : shape.line,
+            imgOffsetXInches: cropSoft ? 0 : shape.imgOffsetXInches,
+            imgOffsetYInches: cropSoft ? 0 : shape.imgOffsetYInches,
+            imgWidthInches: cropSoft ? shape.width : shape.imgWidthInches,
+            imgHeightInches: cropSoft ? shape.height : shape.imgHeightInches,
           );
           changed = true;
         }

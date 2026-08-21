@@ -246,7 +246,8 @@ class ImageRegistry {
 ///
 /// `tokens.txt` has no Transparency / Brightness / Contrast / Blur, and no
 /// SoftEdgesSize. [softEdgesInches] is the size this picture should bake
-/// (0 when the frame is cropped or 1-D — those cannot feather the PNG).
+/// (0 for 1-D — those cannot feather the PNG). Cropped frames composite
+/// into the shape box first so ImgOffset still matches canvas / SVG.
 bool visioImageAdjustmentsNeedBake({
   required double transparency,
   required double blur,
@@ -261,10 +262,41 @@ bool visioImageAdjustmentsNeedBake({
       softEdgesInches > 1e-6;
 }
 
+/// `true` when ImgOffset / ImgWidth / ImgHeight do not fill the Foreign frame.
+///
+/// libvisio collects those cells, so an uncropped SoftEdges bake can feather
+/// the PNG in place. A cropped frame has to be composited first or Draw
+/// would crop a halo that lives on the wrong edges.
+bool visioPictureFrameIsCropped({
+  required double frameWidthInches,
+  required double frameHeightInches,
+  required double imgOffsetXInches,
+  required double imgOffsetYInches,
+  double? imgWidthInches,
+  double? imgHeightInches,
+}) {
+  if (imgOffsetXInches.abs() > 1e-6) return true;
+  if (imgOffsetYInches.abs() > 1e-6) return true;
+  if (imgWidthInches != null &&
+      (imgWidthInches - frameWidthInches).abs() > 1e-6) {
+    return true;
+  }
+  if (imgHeightInches != null &&
+      (imgHeightInches - frameHeightInches).abs() > 1e-6) {
+    return true;
+  }
+  return false;
+}
+
 /// Bake Visio Image Properties into PNG pixels so Draw paints the same
 /// picture. libvisio never collects those cells; it draws the raw Foreign
 /// bitmap. Returns `null` when the blob cannot be decoded or nothing
 /// changes.
+///
+/// Pass the Foreign frame size together with Img* crop cells when SoftEdges
+/// has to survive a crop: the PNG is then the clipped, feathered frame and
+/// the caller must reset ImgOffset / ImgWidth / ImgHeight so Draw does not
+/// crop it a second time.
 Uint8List? bakeVisioImageAdjustmentsPng({
   required VsdxImage image,
   required double transparency,
@@ -273,6 +305,12 @@ Uint8List? bakeVisioImageAdjustmentsPng({
   required double contrast,
   required double displayWidthInches,
   double softEdgesInches = 0,
+  double frameWidthInches = 0,
+  double frameHeightInches = 0,
+  double imgOffsetXInches = 0,
+  double imgOffsetYInches = 0,
+  double? imgWidthInches,
+  double? imgHeightInches,
 }) {
   if (!visioImageAdjustmentsNeedBake(
     transparency: transparency,
@@ -309,7 +347,39 @@ Uint8List? bakeVisioImageAdjustmentsPng({
   final contrastClamped = contrast.clamp(0.0, 1.0);
   final softClamped = softEdgesInches.clamp(0.0, 4.0);
   try {
-    final displayed = math.max(displayWidthInches.abs(), 1e-6);
+    var displayed = math.max(displayWidthInches.abs(), 1e-6);
+    var featherLeft = 0;
+    var featherTop = 0;
+    var featherRight = work.width - 1;
+    var featherBottom = work.height - 1;
+    final cropIntoFrame = frameWidthInches.abs() > 1e-6 &&
+        frameHeightInches.abs() > 1e-6 &&
+        visioPictureFrameIsCropped(
+          frameWidthInches: frameWidthInches,
+          frameHeightInches: frameHeightInches,
+          imgOffsetXInches: imgOffsetXInches,
+          imgOffsetYInches: imgOffsetYInches,
+          imgWidthInches: imgWidthInches,
+          imgHeightInches: imgHeightInches,
+        );
+    if (cropIntoFrame) {
+      final composited = _compositeVisioPictureIntoFrame(
+        source: work,
+        frameWidthInches: frameWidthInches.abs(),
+        frameHeightInches: frameHeightInches.abs(),
+        imgOffsetXInches: imgOffsetXInches,
+        imgOffsetYInches: imgOffsetYInches,
+        imgWidthInches: imgWidthInches ?? frameWidthInches.abs(),
+        imgHeightInches: imgHeightInches ?? frameHeightInches.abs(),
+      );
+      if (composited == null) return null;
+      work = composited.image;
+      featherLeft = composited.left;
+      featherTop = composited.top;
+      featherRight = composited.right;
+      featherBottom = composited.bottom;
+      displayed = math.max(frameWidthInches.abs(), 1e-6);
+    }
     if (blurClamped > 1e-6) {
       final sigmaPx = 0.08 * blurClamped / displayed * work.width;
       final radius = math.max(1, (sigmaPx * 1.5).round());
@@ -336,34 +406,142 @@ Uint8List? bakeVisioImageAdjustmentsPng({
       }
     }
     if (softClamped > 1e-6) {
-      // Canvas / SVG feather SourceAlpha against empty surroundings. A
-      // full-frame blur would clamp and leave the bitmap edge opaque.
-      final sigmaPx = softClamped / displayed * work.width;
-      final radius = math.max(1, (sigmaPx * 1.5).round());
-      final pad = radius * 2;
-      var mask = raster.Image(
-        width: work.width + pad * 2,
-        height: work.height + pad * 2,
-        numChannels: 4,
+      // Canvas / SVG feather an opaque Img* rect, clipped to the Foreign
+      // frame, against empty surroundings. A full-bitmap blur would clamp
+      // and leave the visible crop window hard-edged.
+      _featherOpaqueRect(
+        work,
+        softClamped / displayed * work.width,
+        left: featherLeft,
+        top: featherTop,
+        right: featherRight,
+        bottom: featherBottom,
       );
-      for (var y = 0; y < work.height; y++) {
-        for (var x = 0; x < work.width; x++) {
-          mask.setPixelRgba(x + pad, y + pad, 255, 255, 255, 255);
-        }
-      }
-      mask = raster.gaussianBlur(mask, radius: radius);
-      for (var y = 0; y < work.height; y++) {
-        for (var x = 0; x < work.width; x++) {
-          final pixel = work.getPixel(x, y);
-          final m = mask.getPixel(x + pad, y + pad);
-          pixel.aNormalized =
-              (pixel.aNormalized * m.aNormalized).clamp(0.0, 1.0);
-        }
-      }
     }
     return raster.encodePng(work);
   } catch (_) {
     return null;
+  }
+}
+
+/// Place a Visio Foreign bitmap into the shape-local frame (Y-up Img* cells,
+/// Y-down PNG). Returns the clipped dest rect used as the SoftEdges mask.
+({raster.Image image, int left, int top, int right, int bottom})?
+    _compositeVisioPictureIntoFrame({
+  required raster.Image source,
+  required double frameWidthInches,
+  required double frameHeightInches,
+  required double imgOffsetXInches,
+  required double imgOffsetYInches,
+  required double imgWidthInches,
+  required double imgHeightInches,
+}) {
+  if (frameWidthInches <= 1e-9 || frameHeightInches <= 1e-9) return null;
+  if (imgWidthInches.abs() <= 1e-9 || imgHeightInches.abs() <= 1e-9) {
+    return null;
+  }
+  var widthPx = math.max(8, (frameWidthInches * 96.0).round());
+  var heightPx = math.max(8, (frameHeightInches * 96.0).round());
+  final mappedW =
+      (source.width * frameWidthInches / imgWidthInches.abs()).round();
+  final mappedH =
+      (source.height * frameHeightInches / imgHeightInches.abs()).round();
+  widthPx = math.max(widthPx, math.max(8, mappedW));
+  heightPx = math.max(heightPx, math.max(8, mappedH));
+  const maxPx = 1024;
+  final longest = math.max(widthPx, heightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    widthPx = math.max(8, (widthPx * scale).round());
+    heightPx = math.max(8, (heightPx * scale).round());
+  }
+  final left = imgOffsetXInches / frameWidthInches * widthPx;
+  final right =
+      (imgOffsetXInches + imgWidthInches) / frameWidthInches * widthPx;
+  // Shape-local Y is up; PNG Y is down. ImgOffsetY is the visual bottom.
+  final top =
+      (1 - (imgOffsetYInches + imgHeightInches) / frameHeightInches) * heightPx;
+  final bottom = (1 - imgOffsetYInches / frameHeightInches) * heightPx;
+  final dstLeft = math.min(left, right);
+  final dstRight = math.max(left, right);
+  final dstTop = math.min(top, bottom);
+  final dstBottom = math.max(top, bottom);
+  final destW = dstRight - dstLeft;
+  final destH = dstBottom - dstTop;
+  if (destW < 1e-6 || destH < 1e-6) return null;
+  final clipLeft = math.max(0, dstLeft.floor());
+  final clipTop = math.max(0, dstTop.floor());
+  final clipRight = math.min(widthPx - 1, dstRight.ceil() - 1);
+  final clipBottom = math.min(heightPx - 1, dstBottom.ceil() - 1);
+  if (clipRight < clipLeft || clipBottom < clipTop) return null;
+  final work = raster.Image(
+    width: widthPx,
+    height: heightPx,
+    numChannels: 4,
+  );
+  final srcW = math.max(1, source.width);
+  final srcH = math.max(1, source.height);
+  for (var y = clipTop; y <= clipBottom; y++) {
+    for (var x = clipLeft; x <= clipRight; x++) {
+      final u = ((x + 0.5) - dstLeft) / destW;
+      final v = ((y + 0.5) - dstTop) / destH;
+      if (u < 0 || u > 1 || v < 0 || v > 1) continue;
+      final sx = (u * (srcW - 1)).round().clamp(0, srcW - 1);
+      final sy = (v * (srcH - 1)).round().clamp(0, srcH - 1);
+      final pixel = source.getPixel(sx, sy);
+      work.setPixelRgba(
+        x,
+        y,
+        pixel.r.toInt(),
+        pixel.g.toInt(),
+        pixel.b.toInt(),
+        pixel.a.toInt(),
+      );
+    }
+  }
+  return (
+    image: work,
+    left: clipLeft,
+    top: clipTop,
+    right: clipRight,
+    bottom: clipBottom,
+  );
+}
+
+void _featherOpaqueRect(
+  raster.Image work,
+  double softSigmaPx, {
+  required int left,
+  required int top,
+  required int right,
+  required int bottom,
+}) {
+  final sigma = softSigmaPx.clamp(0.0, 256.0);
+  if (sigma <= 1e-6) return;
+  if (right < left || bottom < top) return;
+  final radius = math.max(1, (sigma * 1.5).round());
+  final pad = radius * 2;
+  var mask = raster.Image(
+    width: work.width + pad * 2,
+    height: work.height + pad * 2,
+    numChannels: 4,
+  );
+  final x0 = left.clamp(0, work.width - 1);
+  final y0 = top.clamp(0, work.height - 1);
+  final x1 = right.clamp(0, work.width - 1);
+  final y1 = bottom.clamp(0, work.height - 1);
+  for (var y = y0; y <= y1; y++) {
+    for (var x = x0; x <= x1; x++) {
+      mask.setPixelRgba(x + pad, y + pad, 255, 255, 255, 255);
+    }
+  }
+  mask = raster.gaussianBlur(mask, radius: radius);
+  for (var y = 0; y < work.height; y++) {
+    for (var x = 0; x < work.width; x++) {
+      final pixel = work.getPixel(x, y);
+      final m = mask.getPixel(x + pad, y + pad);
+      pixel.aNormalized = (pixel.aNormalized * m.aNormalized).clamp(0.0, 1.0);
+    }
   }
 }
 

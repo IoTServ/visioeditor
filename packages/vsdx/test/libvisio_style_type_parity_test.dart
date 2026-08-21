@@ -40,9 +40,10 @@
 /// actually load. Mixed Latin+CJK runs keep `Font`. Character `Letterspace`
 /// is not a token; canvas / SVG already fold FontScale into tracking at
 /// 0.55×Size, so a save adds Letterspace into FontScale and writes
-/// Letterspace 0. Picture `SoftEdgesSize` is not a token; an uncropped
-/// 2-D Foreign bitmap bakes the same SourceAlpha feather canvas / SVG
-/// use into PNG alpha, then SoftEdgesSize is written 0. Marker ids whose
+/// Letterspace 0. Picture `SoftEdgesSize` is not a token; a 2-D Foreign
+/// bitmap bakes the same SourceAlpha feather canvas / SVG use into PNG
+/// alpha (cropped frames composite into the box first so ImgOffset still
+/// matches Draw), then SoftEdgesSize is written 0. Marker ids whose
 /// `_linePropertiesMarkerPath` is still a TODO stub bake as Geometry so
 /// Draw does not reuse a sibling silhouette. Unknown
 /// `FillPattern` ids above 40 snap to solid `1`.
@@ -2597,9 +2598,6 @@ void main() {
     expect(decoded!.getPixel(0, 0).a, lessThan(decoded.getPixel(16, 16).a));
     expect(decoded.getPixel(16, 16).a, greaterThan(200));
 
-    final cropped = pic.copyWith(imgOffsetXInches: 0.1);
-    expect(imageSoftEdgesInchesForLibvisioWrite(cropped), 0);
-
     var doc = parser.parse(writer.emptyDocument());
     doc = doc
         .copyWith(images: doc.images.withImage(source))
@@ -2611,6 +2609,89 @@ void main() {
     final after = parser.parse(saved).pages.first.findShapeById(1)!;
     expect(after.line.softEdgesInches, closeTo(0, 1e-9));
     expect(after.imagePartName, isNot(part));
+  });
+
+  test('cropped picture SoftEdges composites into the frame for LibreOffice',
+      () {
+    final rasterImage = raster.Image(width: 32, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 32; x++) {
+        if (x < 16) {
+          rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+        } else {
+          rasterImage.setPixelRgba(x, y, 0, 0, 255, 255);
+        }
+      }
+    }
+    final bytes = Uint8List.fromList(raster.encodePng(rasterImage));
+    const part = '/visio/media/crop_soft.png';
+    final source =
+        VsdxImage(partName: part, bytes: bytes, mimeType: 'image/png');
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+      name: 'CropSoft',
+    ).copyWith(
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.1),
+      imgOffsetXInches: -1.2,
+      imgOffsetYInches: 0,
+      imgWidthInches: 2.4,
+      imgHeightInches: 0.8,
+    );
+    expect(shapeNeedsLibvisioCroppedSoftEdgesBake(pic), isTrue);
+    expect(imageSoftEdgesInchesForLibvisioWrite(pic), closeTo(0.1, 1e-12));
+    final baked = bakeVisioImageAdjustmentsPng(
+      image: source,
+      transparency: 0,
+      blur: 0,
+      brightness: 0.5,
+      contrast: 0.5,
+      displayWidthInches: 1.2,
+      softEdgesInches: 0.1,
+      frameWidthInches: 1.2,
+      frameHeightInches: 0.8,
+      imgOffsetXInches: -1.2,
+      imgOffsetYInches: 0,
+      imgWidthInches: 2.4,
+      imgHeightInches: 0.8,
+    );
+    expect(baked, isNotNull);
+    final decoded = raster.decodePng(baked!)!;
+    final center = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    expect(center.b, greaterThan(center.r + 40),
+        reason: 'the visible window is the right (blue) half');
+    expect(center.a, greaterThan(200));
+    expect(
+      decoded.getPixel(0, decoded.height ~/ 2).a,
+      lessThan(center.a),
+      reason: 'SoftEdges must feather the cropped frame, not the bitmap edge',
+    );
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.line.softEdgesInches, closeTo(0, 1e-9));
+    expect(after.imgOffsetXInches, closeTo(0, 1e-9));
+    expect(after.imgOffsetYInches, closeTo(0, 1e-9));
+    expect(after.effectiveImgWidth, closeTo(after.width, 1e-6));
+    expect(after.effectiveImgHeight, closeTo(after.height, 1e-6));
+    expect(after.imagePartName, isNot(part));
+    final frame = raster.decodePng(
+      savedDoc.images.findByPart(after.imagePartName!)!.bytes,
+    )!;
+    final savedCenter = frame.getPixel(frame.width ~/ 2, frame.height ~/ 2);
+    expect(savedCenter.b, greaterThan(savedCenter.r + 40));
   });
 
   test('PageColor bakes a full-page plate LibreOffice can collect', () {

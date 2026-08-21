@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Cropped picture `SoftEdgesSize` now survives a save into LibreOffice.
+  `tokens.txt` has no SoftEdgesSize; ImgOffset / ImgWidth / ImgHeight *are*
+  collected, so feathering the raw bitmap used to put the halo on hidden
+  pixels. A save composites the visible window into the Foreign frame,
+  feathers that box the same way canvas and SVG already do, writes
+  SoftEdgesSize 0 and fills Img* so Draw does not crop the halo off.
 - Visio `CompoundType` 4 (triple) now has a translation in every shipped
   locale. The Format control was localised only in English and Chinese, so
   the other 35 locales fell back to the raw `compoundTriple` key.

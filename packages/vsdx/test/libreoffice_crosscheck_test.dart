@@ -2405,6 +2405,39 @@ void main() {
             ),
           ),
         );
+    var cropSoftDocument = parser.parse(blank);
+    final cropSoftPage = cropSoftDocument.pages.first;
+    const cropSoftPart = '/visio/media/crop_soft.png';
+    cropSoftDocument = cropSoftDocument
+        .copyWith(
+          images: cropSoftDocument.images.withImage(
+            VsdxImage(
+              partName: cropSoftPart,
+              bytes: _leftRightPng(),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          cropSoftPage.addShape(
+            VsdxShapeFactory.picture(
+              id: cropSoftPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              imagePartName: cropSoftPart,
+              name: 'CropSoftPicture',
+            ).copyWith(
+              line: const VsdxLine(pattern: 0, softEdgesInches: 0.18),
+              imgOffsetXInches: -3,
+              imgOffsetYInches: 0,
+              imgWidthInches: 6,
+              imgHeightInches: 2,
+            ),
+          ),
+        );
     var obliqueShadowDocument = parser.parse(blank);
     final obliqueShadowPage = obliqueShadowDocument.pages.first;
     obliqueShadowDocument = obliqueShadowDocument.replacePage(
@@ -2661,6 +2694,10 @@ void main() {
       'reflection_picture': writer.write(
         originalBytes: blank,
         edited: reflectionPictureDocument,
+      ),
+      'crop_soft': writer.write(
+        originalBytes: blank,
+        edited: cropSoftDocument,
       ),
       'reflection_stroke': writer.write(
         originalBytes: blank,
@@ -3900,6 +3937,80 @@ void main() {
                 'bodyR=${bodyTop.r} mirrorB=${mirror.b} mirrorR=${mirror.r}',
           );
         }
+        if (entry.key == 'crop_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'CropSoftPicture');
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(source.imgOffsetXInches, closeTo(0, 1e-9));
+          expect(source.effectiveImgWidth, closeTo(source.width, 1e-6));
+          expect(source.hasImage, isTrue);
+        }
+        if (entry.key == 'crop_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b, double luma}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var sumLuma = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0, luma: 0.0);
+            return (r: sumR / count, b: sumB / count, luma: sumLuma / count);
+          }
+
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final edge = mean(2.78, 5.4, 2.92, 5.6);
+          expect(
+            body.b,
+            greaterThan(body.r + 20),
+            reason: 'LibreOffice must paint the cropped right (blue) half; '
+                'bodyB=${body.b} bodyR=${body.r} edgeLuma=${edge.luma}',
+          );
+          expect(
+            edge.luma,
+            greaterThan(body.luma + 15),
+            reason: 'LibreOffice must feather the cropped SoftEdges window, '
+                'not keep a hard ImgOffset crop; bodyLuma=${body.luma} '
+                'edgeLuma=${edge.luma}',
+          );
+        }
         if (entry.key == 'reflection_stroke') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -4438,6 +4549,21 @@ Uint8List _splitPng() {
   for (var y = 0; y < 16; y++) {
     for (var x = 0; x < 16; x++) {
       if (y < 8) {
+        image.setPixelRgba(x, y, 255, 0, 0, 255);
+      } else {
+        image.setPixelRgba(x, y, 0, 0, 255, 255);
+      }
+    }
+  }
+  return raster.encodePng(image);
+}
+
+/// Left half red, right half blue — cropped SoftEdges must show blue.
+Uint8List _leftRightPng() {
+  final image = raster.Image(width: 32, height: 16);
+  for (var y = 0; y < 16; y++) {
+    for (var x = 0; x < 32; x++) {
+      if (x < 16) {
         image.setPixelRgba(x, y, 255, 0, 0, 255);
       } else {
         image.setPixelRgba(x, y, 0, 0, 255, 255);
