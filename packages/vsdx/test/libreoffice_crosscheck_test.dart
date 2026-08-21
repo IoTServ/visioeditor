@@ -2130,6 +2130,37 @@ void main() {
         ),
       ),
     );
+    var gradientSoftDocument = parser.parse(blank);
+    final gradientSoftPage = gradientSoftDocument.pages.first;
+    gradientSoftDocument = gradientSoftDocument.replacePage(
+      0,
+      gradientSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: gradientSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GradientSoft',
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                ),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
+        ),
+      ),
+    );
     var strokeSoftDocument = parser.parse(blank);
     final strokeSoftPage = strokeSoftDocument.pages.first;
     strokeSoftDocument = strokeSoftDocument.replacePage(
@@ -2718,6 +2749,10 @@ void main() {
         originalBytes: blank,
         edited: geometrySoftDocument,
       ),
+      'gradient_soft': writer.write(
+        originalBytes: blank,
+        edited: gradientSoftDocument,
+      ),
       'stroke_soft': writer.write(
         originalBytes: blank,
         edited: strokeSoftDocument,
@@ -3285,6 +3320,79 @@ void main() {
             reason: 'LibreOffice must paint the feathered PNG edge, not a '
                 'hard fill; centre=$centre edge=$edge',
           );
+        }
+        if (entry.key == 'gradient_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GradientSoft');
+          expect(source.fill.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+          if (pdftoppm != null) {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '96',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            )!;
+            final page = reopened.pages.first;
+            ({double r, double b}) meanRb(
+              double x0,
+              double y0,
+              double x1,
+              double y1,
+            ) {
+              final left = (x0 / page.widthInches * rendered.width).round();
+              final right = (x1 / page.widthInches * rendered.width).round();
+              final top = ((page.heightInches - y1) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              final bottom = ((page.heightInches - y0) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              var sumR = 0.0;
+              var sumB = 0.0;
+              var count = 0;
+              for (var y = top; y < bottom; y++) {
+                for (var x = left; x < right; x++) {
+                  final p = rendered.getPixel(x, y);
+                  sumR += p.r;
+                  sumB += p.b;
+                  count++;
+                }
+              }
+              if (count == 0) return (r: 0, b: 0);
+              return (r: sumR / count, b: sumB / count);
+            }
+
+            final left = meanRb(3.15, 5.3, 3.55, 5.7);
+            final right = meanRb(4.95, 5.3, 5.35, 5.7);
+            expect(
+              left.r,
+              greaterThan(right.r + 40),
+              reason: 'LibreOffice must paint the baked red-to-blue wash; '
+                  'left=$left right=$right',
+            );
+            expect(
+              right.b,
+              greaterThan(left.b + 40),
+              reason: 'LibreOffice must paint the baked red-to-blue wash; '
+                  'left=$left right=$right',
+            );
+          }
         }
         if (entry.key == 'stroke_soft') {
           final reopened = parser.parse(entry.value);

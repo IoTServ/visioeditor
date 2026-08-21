@@ -79,7 +79,9 @@
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
-/// PNG sibling and drops the source fill. An unfilled 2-D stroke with
+/// PNG sibling and drops the source fill. Resolved-RGB FillGradient and
+/// classic 25–40 washes go into that PNG so Draw does not keep a hard
+/// classic id. An unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
 /// line. A filled 2-D shape that also paints a solid stroke bakes both
 /// into one padded plate and drops fill and line. `ShadowBlur` is not a token,
@@ -1426,6 +1428,100 @@ void main() {
     expect(
       ovalDecoded.getPixel(ovalDecoded.width ~/ 2, ovalDecoded.height ~/ 2).a,
       greaterThan(200),
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.pattern, 0);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('gradient fill SoftEdges bakes a feathered wash PNG for LibreOffice',
+      () {
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'GradientSoft',
+      fill: const VsdxFill(pattern: 1, gradient: wash),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.fill.hasGradient, isFalse);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final left = decoded.getPixel(decoded.width ~/ 4, decoded.height ~/ 2);
+    final right = decoded.getPixel(decoded.width * 3 ~/ 4, decoded.height ~/ 2);
+    expect(
+      left.r,
+      greaterThan(right.r + 40),
+      reason: 'SoftEdges PNG must keep the left-red right-blue wash, '
+          'not a solid classic FillPattern; left=$left right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(left.b + 40),
+      reason: 'SoftEdges PNG must keep the left-red right-blue wash; '
+          'left=$left right=$right',
+    );
+    expect(
+      decoded.getPixel(0, 0).a,
+      lessThan(decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).a),
+      reason: 'SourceAlpha feather must fade the silhouette edge',
+    );
+
+    final classic = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(
+        foreground: VsdxColor(0xFFFF0000),
+        background: VsdxColor(0xFF0000FF),
+        pattern: 27,
+      ),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(classic.fill.paintGradient, isNotNull);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(classic), isTrue);
+    var classicDoc = parser.parse(blank);
+    classicDoc =
+        classicDoc.replacePage(0, classicDoc.pages.first.addShape(classic));
+    expect(
+      documentForLibvisioWrite(classicDoc)
+          .pages
+          .first
+          .findShapeById(2)!
+          .fill
+          .pattern,
+      0,
     );
 
     final saved = writer.write(originalBytes: blank, edited: doc);

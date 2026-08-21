@@ -573,21 +573,24 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> polygon = const <({double x, double y})>[],
   double roundingPx = 0,
+  ({int r, int g, int b, int a}) Function(double xPx, double yPx)? colorAt,
 }) {
   if (widthPx < 2 || heightPx < 2) return null;
-  if (alpha <= 0) return null;
+  if (alpha <= 0 && colorAt == null) return null;
   try {
     var work = raster.Image(
       width: widthPx,
       height: heightPx,
       numChannels: 4,
     );
-    final color = raster.ColorRgba8(
-      red.clamp(0, 255),
-      green.clamp(0, 255),
-      blue.clamp(0, 255),
-      alpha.clamp(0, 255),
-    );
+    final color = colorAt == null
+        ? raster.ColorRgba8(
+            red.clamp(0, 255),
+            green.clamp(0, 255),
+            blue.clamp(0, 255),
+            alpha.clamp(0, 255),
+          )
+        : raster.ColorRgba8(255, 255, 255, 255);
     switch (kind) {
       case SoftEdgesSilhouetteKind.rectangle:
         raster.fillRect(
@@ -624,6 +627,23 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
           ],
           color: color,
         );
+    }
+    if (colorAt != null) {
+      for (var y = 0; y < heightPx; y++) {
+        for (var x = 0; x < widthPx; x++) {
+          final pixel = work.getPixel(x, y);
+          if (pixel.a <= 0) continue;
+          final sampled = colorAt(x + 0.5, y + 0.5);
+          work.setPixelRgba(
+            x,
+            y,
+            sampled.r,
+            sampled.g,
+            sampled.b,
+            (sampled.a * pixel.aNormalized).round().clamp(0, 255),
+          );
+        }
+      }
     }
     final sigma = softSigmaPx.clamp(0.0, 256.0);
     if (sigma > 1e-6) {

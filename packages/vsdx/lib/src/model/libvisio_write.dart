@@ -52,7 +52,9 @@
 /// the visible window, then ImgOffset / ImgWidth / ImgHeight fill that
 /// frame and Draw does not crop the halo off. Geometry `SoftEdgesSize` is the
 /// same missing token: a filled 2-D shape bakes a locked Foreign sibling
-/// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use,
+/// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use
+/// (resolved-RGB FillGradient / classic 25–40 washes are painted into
+/// that PNG so Draw does not fall back to a hard classic id),
 /// then SoftEdgesSize is written 0 and the source fill is dropped so the
 /// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
@@ -133,6 +135,7 @@ import 'dart:typed_data';
 import '../export/compound_stroke.dart';
 import '../export/line_jumps.dart';
 import '../utils/color.dart';
+import '../utils/gradient_math.dart';
 import 'dash_pattern.dart';
 import 'document.dart';
 import 'effects.dart';
@@ -4121,8 +4124,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// stroke bakes the stroke ring the same way and drops the source line.
 /// A filled 2-D shape that also paints a solid stroke bakes both into
 /// one padded plate and drops fill and line, so Draw does not keep a
-/// hard outline. 1-D, pictures, hatches, gradients, dashes, compound
-/// rails, arrows and unresolved theme colours stay native.
+/// hard outline. 1-D, pictures, hatches, dashes, compound
+/// rails, arrows, theme-only gradients and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -4139,9 +4142,17 @@ bool _softEdgesCommonOk(VsdxShape shape) {
 
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!_softEdgesCommonOk(shape)) return false;
-  if (!shape.fill.hasFill || shape.fill.pattern != 1) return false;
-  if (shape.fill.hasGradient) return false;
-  if (shape.fill.foreground == null) return false;
+  if (!shape.fill.hasFill) return false;
+  final paintGradient = shape.fill.paintGradient;
+  if (paintGradient != null) {
+    if (_gradientBakeStops(paintGradient, shape.fill.foregroundTransparency)
+        .isEmpty) {
+      return false;
+    }
+  } else {
+    if (shape.fill.pattern != 1) return false;
+    if (shape.fill.foreground == null) return false;
+  }
   return _softEdgesSilhouetteKind(shape) != null;
 }
 
@@ -4166,7 +4177,8 @@ bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
 
 bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
-    _shapeHasBakeableSoftEdgesStroke(shape);
+    _shapeHasBakeableSoftEdgesStroke(shape) &&
+    shape.fill.paintGradient == null;
 
 SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
   VsdxGeometry? geom;
@@ -4306,7 +4318,15 @@ bool _softEdgesIsShapeBox(List<Offset2D> points, double w, double h) {
 Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
   final kind = _softEdgesSilhouetteKind(shape);
   if (kind == null) return null;
-  final color = shape.fill.foreground!;
+  final paintGradient = shape.fill.paintGradient;
+  final stops = paintGradient == null
+      ? const <({double position, int r, int g, int b, int a})>[]
+      : _gradientBakeStops(
+          paintGradient,
+          shape.fill.foregroundTransparency,
+        );
+  if (paintGradient != null && stops.isEmpty) return null;
+  final color = shape.fill.foreground ?? const VsdxColor(0xFFFFFFFF);
   final trans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
   final w = shape.width.abs();
@@ -4337,18 +4357,68 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
       ));
     }
   }
+  ({int r, int g, int b, int a}) Function(double xPx, double yPx)? colorAt;
+  if (stops.isNotEmpty) {
+    final linear = paintGradient!.type == VsdxGradientType.linear;
+    final angle = paintGradient.angleRad;
+    final dir = paintGradient.dir;
+    colorAt = (xPx, yPx) {
+      final ix = widthPx <= 1 ? 0.0 : xPx / (widthPx - 1) * w;
+      final iy = heightPx <= 1 ? h : (1 - yPx / (heightPx - 1)) * h;
+      return sampleVisioGradientRgba(
+        x: ix,
+        y: iy,
+        minX: 0,
+        minY: 0,
+        width: w,
+        height: h,
+        linear: linear,
+        angleRad: angle,
+        dir: dir,
+        stops: stops,
+      );
+    };
+  }
   return bakeSilhouetteSoftEdgesPng(
     widthPx: widthPx,
     heightPx: heightPx,
     red: color.red,
     green: color.green,
     blue: color.blue,
-    alpha: alpha,
+    alpha: stops.isNotEmpty ? 255 : alpha,
     softSigmaPx: shape.line.softEdgesInches / w * widthPx,
     kind: kind,
     polygon: polygon,
     roundingPx: 0,
+    colorAt: colorAt,
   );
+}
+
+List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
+  VsdxGradient gradient,
+  double fillTransparency,
+) {
+  final fillAlpha = 1 - fillTransparency.clamp(0.0, 1.0);
+  final out = <({double position, int r, int g, int b, int a})>[];
+  for (final stop in gradient.stops) {
+    final color = stop.color;
+    if (color == null) return const [];
+    final a =
+        (color.alpha * (1 - stop.transparency.clamp(0.0, 1.0)) * fillAlpha)
+            .round()
+            .clamp(0, 255);
+    out.add((
+      position: stop.position,
+      r: color.red,
+      g: color.green,
+      b: color.blue,
+      a: a,
+    ));
+  }
+  if (out.isEmpty || out.every((stop) => stop.a <= 0)) {
+    return const [];
+  }
+  return out;
 }
 
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(

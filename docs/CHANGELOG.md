@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Geometry `SoftEdgesSize` with a resolved-RGB fill gradient now survives a
+  save into LibreOffice. `tokens.txt` has no SoftEdgesSize and no
+  FillGradient, so Draw used to show a hard classic 25–40 wash (or a solid)
+  while this editor already feathered the true stops. A save paints that
+  wash into the locked PNG sibling canvas already uses, writes SoftEdgesSize
+  0 and drops the source fill so Draw shows the plate. Hatches and
+  theme-only stops stay native.
 - draw.io custom `User.veDashPattern` now survives a save into LibreOffice.
   `_lineProperties` only dashes ids 2–23, so arrays that are not those ids
   (and every `veFixedDash` CSS-px sequence) used to snap to a neighbour and

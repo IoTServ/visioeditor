@@ -34,6 +34,37 @@ void main() {
     expect(o7.y, 8);
   });
 
+  test('sampleVisioGradientRgba matches canvas linear left-to-right', () {
+    const stops = <({double position, int r, int g, int b, int a})>[
+      (position: 0, r: 255, g: 0, b: 0, a: 255),
+      (position: 1, r: 0, g: 0, b: 255, a: 255),
+    ];
+    final left = sampleVisioGradientRgba(
+      x: 0,
+      y: 4,
+      minX: 0,
+      minY: 0,
+      width: 10,
+      height: 8,
+      linear: true,
+      angleRad: 0,
+      stops: stops,
+    );
+    final right = sampleVisioGradientRgba(
+      x: 10,
+      y: 4,
+      minX: 0,
+      minY: 0,
+      width: 10,
+      height: 8,
+      linear: true,
+      angleRad: 0,
+      stops: stops,
+    );
+    expect(left.r, greaterThan(left.b + 80));
+    expect(right.b, greaterThan(right.r + 80));
+  });
+
   test('SVG rectangular fill gradient emits radialGradient', () {
     final blank = const VsdxWriter().emptyDocument();
     var doc = const DocumentParser().parse(blank);
