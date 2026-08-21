@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- LineGradient unfilled-stroke Reflections now keep the wash in LibreOffice.
+  Draw used to show a solid LineColor ring because neither cell is a
+  token. A save samples the resolved-RGB LineGradient into the same
+  mirrored PNG band dashes and CompoundType rails already use.
 - CompoundType unfilled-stroke Glow now keeps the halo in LibreOffice.
   Draw used to drop the effect because the bake skipped CompoundType
   (not a token). Canvas `_drawGlow` blurs the path, not the rails, so a

@@ -1225,6 +1225,8 @@ raster.Image _flipImageVertical(raster.Image source) {
 /// band starts [padPx] rows in, so rows above it hold the stroke that spills
 /// past the mirror axis. [ribbons] are per-dash / CompoundType strips so
 /// Draw keeps the gaps and thick/thin rails; a solid ring would hide them.
+/// [strokeColorAt] samples a resolved-RGB LineGradient into the ring
+/// (`tokens.txt` has no LineGradient; a solid LineColor would hide the wash).
 /// [flipVertical] is for a FlipY source: the plate
 /// sits above the shape in local Y (`_reflectFillRing`), and Visio maps
 /// PNG row 0 to local max Y, so the near-axis rows must land on min Y.
@@ -1245,10 +1247,12 @@ Uint8List? bakeStrokedReflectionPng({
   List<List<({double x, double y})>> ribbons =
       const <List<({double x, double y})>>[],
   bool flipVertical = false,
+  ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
+      strokeColorAt,
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
   if (bandHeightPx < 1 || padPx < 0) return null;
-  if (alpha <= 0) return null;
+  if (strokeColorAt == null && alpha <= 0) return null;
   if (strokeWidthPx <= 1e-6) return null;
   try {
     final ring = raster.Image(
@@ -1263,7 +1267,13 @@ Uint8List? bakeStrokedReflectionPng({
       alpha.clamp(0, 255),
     );
     final painted = ribbons.isNotEmpty
-        ? _paintFilledPolygons(ring, ribbons, color)
+        ? _paintFilledPolygons(
+            ring,
+            ribbons,
+            color,
+            padPx: padPx,
+            colorAt: strokeColorAt,
+          )
         : _paintStrokedRing(
             ring,
             innerWidthPx: innerWidthPx,
@@ -1274,6 +1284,7 @@ Uint8List? bakeStrokedReflectionPng({
             kind: kind,
             outer: outer,
             inner: inner,
+            strokeColorAt: strokeColorAt,
           );
     if (!painted) return null;
     var work = raster.Image(

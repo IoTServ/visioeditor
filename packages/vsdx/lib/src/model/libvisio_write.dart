@@ -137,7 +137,8 @@
 /// stroke (filling the mirror would paint an interior Draw leaves empty;
 /// built-in LinePattern 2–23, `veDashPattern`, and CompoundType 1–4 rails
 /// go into that band as ribbons so Draw does not keep a solid ring or
-/// drop the mirror),
+/// drop the mirror; a resolved-RGB LineGradient is sampled into the same
+/// band so Draw does not keep a solid LineColor ring),
 /// and a Foreign picture bakes a locked Gaussian PNG sibling of
 /// the same mirrored bitmap canvas / SVG already paint (cropped
 /// pictures composite the Img* window into the frame first; FlipY
@@ -542,8 +543,10 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
 /// LinePattern 2–23, custom `veDashPattern`, and CompoundType 1–4 rails
 /// are painted as ribbons so Draw keeps the gaps / thick-thin contrast
 /// (a solid ring would hide them; CompoundType is not a token, so skipping
-/// the bake would drop the mirror). Theme-only stroke colours stay native
-/// so THEMEVAL() survives. FlipY is applied when placing the plate
+/// the bake would drop the mirror). A resolved-RGB LineGradient is sampled
+/// into the same band (`tokens.txt` has no LineGradient; a solid LineColor
+/// ring would hide the wash). Theme-only stroke colours stay native so
+/// THEMEVAL() survives. FlipY is applied when placing the plate
 /// (`_reflectFillRing`) — copying FlipY onto the PNG would mirror the
 /// already-placed band twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
@@ -552,7 +555,9 @@ bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (shape.children.isNotEmpty) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
-  if (shape.line.color == null && shape.line.themeColorIndex != null) {
+  if (shape.line.hasGradient) {
+    if (_softEdgesLineColorAt(shape) == null) return false;
+  } else if (shape.line.color == null && shape.line.themeColorIndex != null) {
     return false;
   }
   final reflection = shape.reflection;
@@ -704,13 +709,24 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   final ribbons = _softEdgesStrokeRibbonPolygons(shape);
   final kind = _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
-  final color = shape.line.color ?? const VsdxColor(0xFF000000);
   final trans = _combinedTransparency(
     shape.line.transparency,
     shape.reflection.transparency,
   );
-  final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
-  if (alpha <= 0) return null;
+  final lineColorAt = shape.line.hasGradient
+      ? _softEdgesGradientSampler(
+          shape.line.gradient!,
+          trans,
+          shape.width.abs(),
+          shape.height.abs(),
+        )
+      : null;
+  if (shape.line.hasGradient && lineColorAt == null) return null;
+  final color = shape.line.color ?? const VsdxColor(0xFF000000);
+  final alpha = lineColorAt != null
+      ? 255
+      : (color.alpha * (1 - trans)).round().clamp(0, 255);
+  if (lineColorAt == null && alpha <= 0) return null;
   final w = shape.width.abs();
   final h = shape.height.abs();
   var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
@@ -757,6 +773,10 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     outer = <({double x, double y})>[for (final p in left) toPx(p)];
     inner = <({double x, double y})>[for (final p in right) toPx(p)];
   }
+  final strokeColorAt = lineColorAt == null
+      ? null
+      : (double innerX, double innerY) =>
+          lineColorAt(innerX, innerY, innerWidthPx, innerHeightPx);
   final png = bakeStrokedReflectionPng(
     innerWidthPx: innerWidthPx,
     innerHeightPx: innerHeightPx,
@@ -773,6 +793,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     inner: inner,
     ribbons: ribbonPx,
     flipVertical: shape.flipY,
+    strokeColorAt: strokeColorAt,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);

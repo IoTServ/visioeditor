@@ -4025,6 +4025,86 @@ void main() {
             'rails=$rails');
   });
 
+  test('LineGradient unfilled stroke Reflection bakes the wash for LibreOffice',
+      () {
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'LineGradMirror',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.16,
+        gradient: wash,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.2,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.hasGradient, isTrue,
+        reason: 'the source keeps LineGradient; the PNG carries the wash');
+    expect(source.fill.pattern, 0);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(plate.hasImage, isTrue);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'the LineGradient mirror interior must stay hollow',
+    );
+    ({int r, int g, int b}) sample(int x) {
+      final pixel = decoded.getPixel(x, 3);
+      return (r: pixel.r.toInt(), g: pixel.g.toInt(), b: pixel.b.toInt());
+    }
+
+    final left = sample((decoded.width * 0.12).round());
+    final right = sample((decoded.width * 0.88).round());
+    expect(
+      left.r,
+      greaterThan(right.r + 30),
+      reason: 'LineGradient reflection PNG must keep the red-to-blue wash; '
+          'left=$left right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(left.b + 30),
+      reason: 'LineGradient reflection PNG must keep the red-to-blue wash; '
+          'left=$left right=$right',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.reflection.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.line.hasGradient, isFalse);
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
+    expect(savedPlate.hasImage, isTrue);
+  });
+
   test('picture Reflection bakes a Gaussian PNG sibling for LibreOffice', () {
     const part = '/visio/media/reflection.png';
     final rasterImage = raster.Image(width: 16, height: 16);

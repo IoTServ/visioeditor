@@ -2701,6 +2701,48 @@ void main() {
         ),
       ),
     );
+    var reflectionStrokeLineGradDocument = parser.parse(blank);
+    final reflectionStrokeLineGradPage =
+        reflectionStrokeLineGradDocument.pages.first;
+    reflectionStrokeLineGradDocument =
+        reflectionStrokeLineGradDocument.replacePage(
+      0,
+      reflectionStrokeLineGradPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: reflectionStrokeLineGradPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ReflectionStrokeLineGrad',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.16,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                ),
+              ],
+            ),
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.6,
+            distanceInches: 0.06,
+            transparency: 0.15,
+            blurInches: 0,
+          ),
+        ),
+      ),
+    );
     var reflectionPictureDocument = parser.parse(blank);
     final reflectionPicturePage = reflectionPictureDocument.pages.first;
     const reflectionPicturePart = '/visio/media/reflection_picture.png';
@@ -3311,6 +3353,10 @@ void main() {
       'reflection_stroke_compound': writer.write(
         originalBytes: blank,
         edited: reflectionStrokeCompoundDocument,
+      ),
+      'reflection_stroke_linegrad': writer.write(
+        originalBytes: blank,
+        edited: reflectionStrokeLineGradDocument,
       ),
       'oblique_shadow': writer.write(
         originalBytes: blank,
@@ -5937,6 +5983,129 @@ void main() {
             greaterThan(200),
             reason: 'the compound mirror interior must stay hollow; '
                 'interiorR=${interior.r} interiorB=${interior.b}',
+          );
+        }
+        if (entry.key == 'reflection_stroke_linegrad') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ReflectionStrokeLineGrad');
+          expect(source.reflection.enabled, isFalse);
+          expect(source.line.hasGradient, isFalse,
+              reason: 'libvisioShapeWrite flattens LineGradient to a ribbon');
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioReflectionPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'reflection_stroke_linegrad' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) meanInk(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma > 230) continue;
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          ({double r, double b}) meanRb(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          final left = meanInk(2.82, 4.28, 3.12, 4.44);
+          final right = meanInk(5.38, 4.28, 5.68, 4.44);
+          final interior = meanRb(4.0, 4.0, 4.5, 4.2);
+          expect(
+            left.r,
+            greaterThan(right.r + 30),
+            reason: 'LibreOffice must keep the baked LineGradient mirror wash; '
+                'left=$left right=$right',
+          );
+          expect(
+            right.b,
+            greaterThan(left.b + 30),
+            reason: 'LibreOffice must keep the baked LineGradient mirror wash; '
+                'left=$left right=$right',
+          );
+          expect(
+            interior.r,
+            greaterThan(200),
+            reason: 'the LineGradient mirror interior must stay hollow; '
+                'interior=$interior',
           );
         }
         if (entry.key == 'oblique_shadow') {
