@@ -237,6 +237,31 @@ void main() {
     );
   });
 
+  test('polylineHasElbow flags a 90° turn and ignores a straight run', () {
+    expect(
+      polylineHasElbow(
+        const <Offset2D>[
+          Offset2D(0, 0),
+          Offset2D(2, 0),
+          Offset2D(2, 2),
+        ],
+        closed: false,
+      ),
+      isTrue,
+    );
+    expect(
+      polylineHasElbow(
+        const <Offset2D>[
+          Offset2D(0, 0),
+          Offset2D(1, 0),
+          Offset2D(2, 0),
+        ],
+        closed: false,
+      ),
+      isFalse,
+    );
+  });
+
   test('bakePolylineRounding leaves already-curved geometry unchanged', () {
     const geometry = VsdxGeometry(commands: <VsdxPathCommand>[
       MoveTo(0, 0),

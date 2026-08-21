@@ -2699,7 +2699,8 @@ class VsdxWriter {
               !shapeNeedsLibvisioGlowPlateBake(edited) &&
               !shapeNeedsLibvisioCustomDashBake(edited) &&
               !shapeNeedsLibvisioMiterSpikeBake(edited) &&
-              !shapeNeedsLibvisioFilledStrokeRibbonBake(edited))) {
+              !shapeNeedsLibvisioFilledStrokeRibbonBake(edited) &&
+              !shapeNeedsLibvisioRoundCapMiterFlatten(edited))) {
         return false;
       }
     }

@@ -319,6 +319,31 @@ bool polylineHasDrawClippedMiter(
   return false;
 }
 
+/// `true` when the polyline turns at an interior vertex.
+///
+/// Open paths skip endpoints. A collinear continuation has miter ratio 1;
+/// any real elbow (90°, hairpin, …) is greater.
+bool polylineHasElbow(
+  List<Offset2D> points, {
+  required bool closed,
+}) {
+  final n = points.length;
+  if (n < 3) return false;
+  final first = closed ? 0 : 1;
+  final last = closed ? n : n - 1;
+  for (var i = first; i < last; i++) {
+    if (strokeMiterRatio(
+          points[(i - 1 + n) % n],
+          points[i],
+          points[(i + 1) % n],
+        ) >
+        1.05) {
+      return true;
+    }
+  }
+  return false;
+}
+
 _FilletCorner? _filletCorner(
   Offset2D prev,
   Offset2D cur,

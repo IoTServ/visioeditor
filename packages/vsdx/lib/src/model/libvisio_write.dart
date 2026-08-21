@@ -40,6 +40,9 @@
 /// RelQuadBezTo fillets as shape-level Rounding, and a bevel join becomes a
 /// LineTo chamfer (including when the cap is round: Draw would otherwise
 /// round the elbow, so the written LineCap is flattened to extended).
+/// The same flatten applies to an explicit miter / miter-clip join on a
+/// round cap: Draw would round-join from LineCap, while canvas / SVG keep
+/// the sharp elbow. Straight edges have no join to fix and stay round-capped.
 /// `User.veMiterLimit` is not a token and `_lineProperties` never emits
 /// `svg:stroke-miterlimit` (ODF defaults to 4), so a save chamfers corners
 /// whose miter ratio exceeds a tighter limit and drops the User row.
@@ -5803,7 +5806,9 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   if (roundingForLibvisioWrite(sourceLine) > 1e-12) {
     line = line.copyWith(roundingInches: 0);
   }
-  if (chamferForLibvisioWrite(sourceLine) && sourceLine.cap == LineCap.round) {
+  if ((chamferForLibvisioWrite(sourceLine) ||
+          shapeNeedsLibvisioRoundCapMiterFlatten(shape)) &&
+      sourceLine.cap == LineCap.round) {
     line = line.copyWith(cap: LineCap.extended);
   }
   if (miterLimitForLibvisioChamfer(sourceLine) != null ||
@@ -6249,8 +6254,37 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
   );
 }
 
+/// `true` when a round cap would make Draw round-join an explicit miter elbow.
+///
+/// `_lineProperties` maps join from LineCap only. Canvas / SVG honour
+/// `User.veLineJoin` miter / miter-clip even on a round cap, so a 90°
+/// corner is sharp here and a round join in Draw. Flattening LineCap to
+/// extended makes Draw miter, matching the bevel-on-round-cap bake.
+/// Straight edges have no join and keep the round endpoints.
+bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.line.hasLine) return false;
+  if (shape.line.cap != LineCap.round) return false;
+  if (shape.line.join != VsdxLineJoin.miter &&
+      shape.line.join != VsdxLineJoin.miterClip) {
+    return false;
+  }
+  if (shape.line.roundingInches > 1e-12) return false;
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 3) continue;
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    if (polylineHasElbow(points, closed: closed)) return true;
+  }
+  return false;
+}
+
 bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
-  if (shape.line.cap == LineCap.round) return false;
+  if (shape.line.cap == LineCap.round &&
+      !shapeNeedsLibvisioRoundCapMiterFlatten(shape)) {
+    return false;
+  }
   if (shape.line.roundingInches > 1e-12) return false;
   if (!_lineUsesMiterJoin(shape.line)) return false;
   if (shape.line.miterLimit <= 4.0 + 1e-6) return false;
@@ -6272,7 +6306,8 @@ bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
 /// solid polylines expand to a filled ribbon whose outline uses that
 /// limit. Filled 2-D keeps FillPattern for the body and bakes a sibling
 /// instead ([shapeNeedsLibvisioFilledStrokeRibbonBake]). Dashed strokes keep
-/// LinePattern; round caps stay native so endpoints do not go butt.
+/// LinePattern. A round cap with an implicit join stays native; an explicit
+/// miter join flattens the cap first so Draw does not round the elbow.
 bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (_hasArrowheads(shape.line)) return false;

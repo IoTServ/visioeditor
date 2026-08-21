@@ -2836,6 +2836,28 @@ void main() {
         ),
       ),
     );
+    var roundCapMiterDocument = parser.parse(blank);
+    final roundCapMiterPage = roundCapMiterDocument.pages.first;
+    roundCapMiterDocument = roundCapMiterDocument.replacePage(
+      0,
+      roundCapMiterPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: roundCapMiterPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 1.2,
+          name: 'RoundCapMiter',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.24,
+            cap: LineCap.round,
+            join: VsdxLineJoin.miter,
+          ),
+        ).withDrawioLineJoin(VsdxLineJoin.miter),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2977,6 +2999,10 @@ void main() {
       'filled_line_trans': writer.write(
         originalBytes: blank,
         edited: filledLineTransDocument,
+      ),
+      'round_cap_miter': writer.write(
+        originalBytes: blank,
+        edited: roundCapMiterDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -5362,6 +5388,66 @@ void main() {
             lessThan(90),
             reason: 'LibreOffice must composite the stroke over the fill, not '
                 'premultiply toward white; inner=$innerStroke interior=$interior',
+          );
+        }
+        if (entry.key == 'round_cap_miter') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'RoundCapMiter');
+          expect(source.line.cap, LineCap.extended);
+          expect(source.line.pattern, 1);
+        }
+        if (entry.key == 'round_cap_miter' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // Bottom-left at (3.25, 4.90). A round join (r=0.12) misses the
+          // 45° sample at ~0.13"; a miter square covers it.
+          final corner = meanLuma(3.15, 4.80, 3.17, 4.82);
+          expect(
+            corner,
+            lessThan(80),
+            reason: 'LibreOffice must miter the elbow Draw would round-join '
+                'from LineCap.round; corner=$corner',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

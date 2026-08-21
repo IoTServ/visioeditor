@@ -60,6 +60,8 @@
 /// expand an unfilled solid polyline to a filled ribbon so Draw keeps the
 /// canvas spike (`_lineProperties` never emits `svg:stroke-miterlimit`).
 /// Filled 2-D uses a locked sibling ribbon so FillPattern stays the body.
+/// A round cap with an explicit miter join flattens LineCap to extended so
+/// Draw does not round-join from LineCap. Straight edges keep the round cap.
 /// Arcs joins bake the same fillets as round (canvas `canvasStrokeJoin`).
 /// `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
@@ -3591,6 +3593,45 @@ void main() {
       reason: 'a straight edge has no Draw-clipped elbow to ribbon',
     );
     expect(
+      shapeNeedsLibvisioRoundCapMiterFlatten(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            cap: LineCap.round,
+            join: VsdxLineJoin.miter,
+            weightInches: 0.08,
+          ),
+        ),
+      ),
+      isTrue,
+      reason: 'Draw would round-join from LineCap; canvas keeps the miter',
+    );
+    expect(
+      shapeNeedsLibvisioRoundCapMiterFlatten(
+        VsdxShapeFactory.line(
+          id: 1,
+          ax: 1,
+          ay: 3,
+          bx: 5,
+          by: 3,
+          line: const VsdxLine(
+            cap: LineCap.round,
+            join: VsdxLineJoin.miterClip,
+            miterLimit: 9,
+            weightInches: 0.08,
+          ),
+        ).withDrawioLineJoin(VsdxLineJoin.miterClip).withDrawioMiterLimit(9),
+      ),
+      isFalse,
+      reason: 'a straight edge has no join; keep the round cap',
+    );
+    expect(
       shapeNeedsLibvisioFilledStrokeRibbonBake(
         VsdxShapeFactory.rectangle(
           id: 1,
@@ -3901,6 +3942,34 @@ void main() {
       greaterThan(3.2),
       reason: 'ribbon outline must include the canvas miter spike past x=2.5',
     );
+  });
+
+  test('round cap plus explicit miter flattens LineCap for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'RoundCapMiter',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.round,
+        join: VsdxLineJoin.miter,
+      ),
+    ).withDrawioLineJoin(VsdxLineJoin.miter);
+    expect(shapeNeedsLibvisioRoundCapMiterFlatten(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.cap, LineCap.extended);
+    expect(after.line.join, VsdxLineJoin.miter);
+    expect(after.line.pattern, 1);
   });
 
   test('filled LineColorTrans bakes a sibling ribbon for LibreOffice', () {

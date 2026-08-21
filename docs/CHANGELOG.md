@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Round-capped strokes with an explicit miter join now keep sharp elbows
+  in LibreOffice. `_lineProperties` maps join from LineCap only, so Draw
+  used to round every corner while canvas / SVG honoured `User.veLineJoin`.
+  A save flattens LineCap to extended when the path actually turns;
+  straight edges keep the round endpoints.
 - Filled 2-D `LineColorTrans` now composites over the body fill in
   LibreOffice. Draw has no stroke alpha token, so a save used to
   premultiply toward white and paint an opaque gray outline on coloured
