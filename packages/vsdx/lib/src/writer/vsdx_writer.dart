@@ -2698,7 +2698,8 @@ class VsdxWriter {
               !shapeNeedsLibvisioGlowBake(edited) &&
               !shapeNeedsLibvisioGlowPlateBake(edited) &&
               !shapeNeedsLibvisioCustomDashBake(edited) &&
-              !shapeNeedsLibvisioMiterSpikeBake(edited))) {
+              !shapeNeedsLibvisioMiterSpikeBake(edited) &&
+              !shapeNeedsLibvisioFilledStrokeRibbonBake(edited))) {
         return false;
       }
     }
@@ -3826,7 +3827,8 @@ class VsdxWriter {
             cell.name == VsdxShape.userDashPattern ||
             cell.name == VsdxShape.userFixedDash);
     final droppingMiter = (miterLimitForLibvisioChamfer(edited.line) != null ||
-            shapeNeedsLibvisioMiterSpikeBake(edited)) &&
+            shapeNeedsLibvisioMiterSpikeBake(edited) ||
+            shapeNeedsLibvisioFilledStrokeRibbonBake(edited)) &&
         edited.userCells.any((cell) => cell.name == VsdxShape.userMiterLimit);
     if (!droppingDash &&
         !droppingMiter &&
@@ -8849,6 +8851,7 @@ class VsdxWriter {
     if (shapeNeedsLibvisioCustomDashBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
     if (shapeNeedsLibvisioMiterSpikeBake(shape)) return true;
+    if (shapeNeedsLibvisioFilledStrokeRibbonBake(shape)) return true;
     if (shapeNeedsLibvisioArrowedStrokeBake(shape)) return true;
     if (shapeNeedsLibvisioGlowBake(shape)) return true;
     if (_geometryNeedsLibvisioRewrite(shape.geometries)) return true;

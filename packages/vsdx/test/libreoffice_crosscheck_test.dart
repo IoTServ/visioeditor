@@ -1737,9 +1737,17 @@ void main() {
     );
     final filledLineTrans = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'FilledLineTrans');
+    expect(filledLineTrans.line.pattern, 0);
     expect(filledLineTrans.line.transparency, closeTo(0, 1e-12));
-    expect(filledLineTrans.line.color?.value, 0xFF666666);
     expect(filledLineTrans.fill.foreground?.value, 0xFFFFFFFF);
+    expect(
+      reopenedDoc.pages.first.shapes.any(
+        (s) =>
+            s.name ==
+            '$kLibvisioStrokeRibbonShapeNamePrefix${filledLineTrans.id}',
+      ),
+      isTrue,
+    );
     var tiffDocument = parser.parse(blank);
     final tiffPage = tiffDocument.pages.first;
     const tiffPart = '/visio/media/libreoffice-crosscheck.tiff';
@@ -2807,6 +2815,27 @@ void main() {
         ).withDrawioMiterLimit(12),
       ),
     );
+    var filledLineTransDocument = parser.parse(blank);
+    final filledLineTransPage = filledLineTransDocument.pages.first;
+    filledLineTransDocument = filledLineTransDocument.replacePage(
+      0,
+      filledLineTransPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: filledLineTransPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 1.2,
+          name: 'FilledLineTrans',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.2,
+            transparency: 0.5,
+          ),
+        ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2944,6 +2973,10 @@ void main() {
       'long_miter': writer.write(
         originalBytes: blank,
         edited: longMiterDocument,
+      ),
+      'filled_line_trans': writer.write(
+        originalBytes: blank,
+        edited: filledLineTransDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -5258,6 +5291,77 @@ void main() {
             lessThan(80),
             reason: 'LibreOffice must keep the canvas miter spike Draw would '
                 'bevel at miterlimit 4; spike=$spike at ($probeX,$probeY)',
+          );
+        }
+        if (entry.key == 'filled_line_trans') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FilledLineTrans');
+          expect(source.line.pattern, 0);
+          expect(source.fill.foreground?.value, 0xFFFF0000);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'filled_line_trans' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // Left edge at x=3.25. Inner half of the 0.2" stroke sits on the
+          // red fill. True alpha is dark red (~38 luma); a white-premultiplied
+          // opaque gray stroke would be ~128.
+          final interior = meanLuma(4.15, 5.40, 4.35, 5.60);
+          final innerStroke = meanLuma(3.28, 5.40, 3.34, 5.60);
+          expect(
+            interior,
+            lessThan(100),
+            reason: 'LibreOffice must keep the red fill; interior=$interior',
+          );
+          expect(
+            innerStroke,
+            lessThan(90),
+            reason: 'LibreOffice must composite the stroke over the fill, not '
+                'premultiply toward white; inner=$innerStroke interior=$interior',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

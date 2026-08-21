@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Filled 2-D `LineColorTrans` now composites over the body fill in
+  LibreOffice. Draw has no stroke alpha token, so a save used to
+  premultiply toward white and paint an opaque gray outline on coloured
+  fills. A locked sibling ribbon carries FillForegndTrans (and a long
+  `veMiterLimit` spike on sharp elbows) and the source line is dropped.
 - `User.veMiterLimit` above LibreOffice's default 4 now keeps the long
   canvas spike after a save into Draw. `_lineProperties` never emits
   `svg:stroke-miterlimit`, so Draw used to bevel every elbow whose ratio

@@ -2129,6 +2129,54 @@ void main() {
     );
   });
 
+  test('filled LineColorTrans bakes a sibling ribbon and clears on disable',
+      () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 0.8,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            transparency: 0.5,
+          ),
+        ),
+      ),
+    );
+    final mid = writer.write(originalBytes: blank, edited: doc);
+    final midDoc = parser.parse(mid);
+    expect(
+      midDoc.pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+      hasLength(1),
+    );
+    expect(midDoc.pages.first.findShapeById(id)!.line.pattern, 0);
+
+    doc = midDoc.replacePage(
+      0,
+      midDoc.pages.first.copyWith(
+        shapes: [
+          for (final s in midDoc.pages.first.shapes)
+            if (!isLibvisioStrokeRibbonPlate(s)) s,
+        ],
+      ),
+    );
+    final out = writer.write(originalBytes: mid, edited: doc);
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+      isEmpty,
+      reason: 'deleting the baked plate must drop it on save',
+    );
+  });
+
   test('Label Padding bakes into Margin cells and clears the User row', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);

@@ -34,10 +34,12 @@
 /// 1-D strokes bake a FillForegndTrans ribbon, unfilled 2-D with resolved
 /// RGB bakes a Gaussian PNG ring, and filled NoLine shapes bake a
 /// Gaussian PNG sibling when RGB is resolved (theme-only NoLine still
-/// uses a LineWeight halo). Character ColorTrans, filled-shape
-/// LineColorTrans, and ShdwForegndTrans cannot carry alpha through
-/// `xmlStringToColour`, so a save premultiplies those into RGB toward white
-/// and writes Trans=0 (theme-bound RGB-less cells keep THEMEVAL).
+/// uses a LineWeight halo). Character ColorTrans and ShdwForegndTrans
+/// cannot carry alpha through `xmlStringToColour`, so a save premultiplies
+/// those into RGB toward white and writes Trans=0 (theme-bound RGB-less
+/// cells keep THEMEVAL). Filled-shape LineColorTrans / LineGradient bake a
+/// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
+/// the source line.
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
 /// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
@@ -57,6 +59,7 @@
 /// 4 bakes the same chamfers, then the User row is dropped. Limits above 4
 /// expand an unfilled solid polyline to a filled ribbon so Draw keeps the
 /// canvas spike (`_lineProperties` never emits `svg:stroke-miterlimit`).
+/// Filled 2-D uses a locked sibling ribbon so FillPattern stays the body.
 /// Arcs joins bake the same fillets as round (canvas `canvasStrokeJoin`).
 /// `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
@@ -3588,6 +3591,24 @@ void main() {
       reason: 'a straight edge has no Draw-clipped elbow to ribbon',
     );
     expect(
+      shapeNeedsLibvisioFilledStrokeRibbonBake(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.08,
+            transparency: 0.5,
+          ),
+        ),
+      ),
+      isTrue,
+    );
+    expect(
       roundingForLibvisioWrite(const VsdxLine(
         cap: LineCap.round,
         join: VsdxLineJoin.bevel,
@@ -3880,6 +3901,92 @@ void main() {
       greaterThan(3.2),
       reason: 'ribbon outline must include the canvas miter spike past x=2.5',
     );
+  });
+
+  test('filled LineColorTrans bakes a sibling ribbon for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'FilledLineTrans',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.2,
+        transparency: 0.5,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final page = parser.parse(saved).pages.first;
+    final after = page.findShapeById(1)!;
+    expect(after.fill.foreground?.value, 0xFFFF0000);
+    expect(after.line.pattern, 0);
+    expect(after.line.transparency, closeTo(0, 1e-12));
+    final plate = page.shapes.firstWhere(isLibvisioStrokeRibbonPlate);
+    expect(plate.locked, isTrue);
+    expect(plate.line.pattern, 0);
+    expect(plate.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(plate.geometries.any((g) => !g.noFill), isTrue);
+  });
+
+  test('filled high miterLimit bakes a sibling ribbon spike for LibreOffice',
+      () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'FilledLongMiter',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4.5,
+      height: 2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(0.2, 1.0),
+            LineTo(2.5, 1.0),
+            LineTo(0.2, 1.45),
+            LineTo(0.2, 1.0),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.square,
+        miterLimit: 12,
+      ),
+    ).withDrawioMiterLimit(12);
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isTrue);
+    expect(shapeNeedsLibvisioMiterSpikeBake(shape), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final page = parser.parse(saved).pages.first;
+    final after = page.findShapeById(1)!;
+    expect(after.fill.foreground?.value, 0xFFFF0000);
+    expect(after.line.pattern, 0);
+    expect(
+      after.userCells.any((cell) => cell.name == VsdxShape.userMiterLimit),
+      isFalse,
+    );
+    final plate = page.shapes.firstWhere(isLibvisioStrokeRibbonPlate);
+    var maxX = 0.0;
+    for (final geometry in plate.geometries) {
+      for (final command in geometry.commands) {
+        if (command is MoveTo && command.x > maxX) maxX = command.x;
+        if (command is LineTo && command.x > maxX) maxX = command.x;
+      }
+    }
+    expect(maxX, greaterThan(3.2));
   });
 
   test('every FillPattern 2–40, LinePattern 2–23, and Bullet 1–7 paints', () {
@@ -4841,12 +4948,18 @@ void main() {
         .firstWhere((s) => s.name == 'FilledLineTrans');
     expect(filledLineTrans.fill.pattern, 1);
     expect(filledLineTrans.fill.foreground?.value, 0xFFFFFFFF);
+    expect(filledLineTrans.line.pattern, 0,
+        reason: 'filled 2-D LineColorTrans drops the source stroke');
     expect(filledLineTrans.line.transparency, closeTo(0, 1e-12));
-    expect(filledLineTrans.line.color?.value, 0xFF666666,
-        reason:
-            'filled 2-D LineColorTrans premultiplies; Draw has no stroke alpha');
-    expect(filledLineTrans.geometries.where((g) => !g.noFill).length, 1,
-        reason: 'body Fill is occupied so the stroke cannot become a ribbon');
+    final filledLineTransPlate = savedDoc.pages.first.shapes.firstWhere(
+      (s) =>
+          s.name ==
+          '$kLibvisioStrokeRibbonShapeNamePrefix${filledLineTrans.id}',
+    );
+    expect(
+        filledLineTransPlate.fill.foregroundTransparency, closeTo(0.4, 1e-9));
+    expect(filledLineTransPlate.line.pattern, 0);
+    expect(filledLineTransPlate.geometries.any((g) => !g.noFill), isTrue);
     final rounding =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Rounding');
     expect(rounding.line.roundingInches, closeTo(0, 1e-12),

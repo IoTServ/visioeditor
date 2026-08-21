@@ -47,9 +47,14 @@
 /// into a filled ribbon whose outline uses that limit (Draw would otherwise
 /// bevel every ratio>4 elbow) and drops the User row.
 /// The Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
-/// filled-shape LineColorTrans, and ShdwForegndTrans are not tokens —
+/// filled-shape LineColorTrans that cannot become a sibling ribbon, and
+/// ShdwForegndTrans are not tokens —
 /// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
-/// those into RGB toward white and writes Trans=0. Theme-bound colours
+/// those into RGB toward white and writes Trans=0. A filled 2-D shape that
+/// still paints a stroke bakes LineColorTrans / LineGradient / a long
+/// `veMiterLimit` spike as a locked sibling ribbon whose FillForegndTrans
+/// Draw collects, then drops the source line so Draw does not paint an
+/// opaque (or short-miter) stroke on top. Theme-bound colours
 /// with no resolved RGB are left alone so THEMEVAL() survives. Page
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
@@ -178,18 +183,20 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
       bakeWordWrapForLibvisioWrite(
         bakeLabelBorderForLibvisioWrite(
           bakeLabelPaddingForLibvisioWrite(
-            bakeGeometrySoftEdgesForLibvisioWrite(
-              bakeReflectionForLibvisioWrite(
-                bakeImageAdjustmentsForLibvisioWrite(
-                  bakeGlowPlateForLibvisioWrite(
-                    bakeGlassForLibvisioWrite(
-                      bakeSketchForLibvisioWrite(
-                        bakePageShadowForLibvisioWrite(
-                          bakeShadowForLibvisioWrite(
-                            bakeCurvedTextForLibvisioWrite(
-                              bakeShapeOpacityForLibvisioWrite(
-                                bakeOverlineForLibvisioWrite(
-                                  bakeAutoRotateLabelForLibvisioWrite(hopped),
+            bakeFilledStrokeRibbonForLibvisioWrite(
+              bakeGeometrySoftEdgesForLibvisioWrite(
+                bakeReflectionForLibvisioWrite(
+                  bakeImageAdjustmentsForLibvisioWrite(
+                    bakeGlowPlateForLibvisioWrite(
+                      bakeGlassForLibvisioWrite(
+                        bakeSketchForLibvisioWrite(
+                          bakePageShadowForLibvisioWrite(
+                            bakeShadowForLibvisioWrite(
+                              bakeCurvedTextForLibvisioWrite(
+                                bakeShapeOpacityForLibvisioWrite(
+                                  bakeOverlineForLibvisioWrite(
+                                    bakeAutoRotateLabelForLibvisioWrite(hopped),
+                                  ),
                                 ),
                               ),
                             ),
@@ -1417,6 +1424,9 @@ int? libvisioGlassSourceId(VsdxShape plate) {
 /// Name prefix of the text-frame stroke `User.veLabelBorderColor` becomes.
 const kLibvisioLabelBorderShapeNamePrefix = 'LibvisioLabelBorder.';
 
+/// Name prefix of the filled-shape stroke ribbon Draw uses for LineColorTrans.
+const kLibvisioStrokeRibbonShapeNamePrefix = 'LibvisioStrokeRibbon.';
+
 /// Pixel density canvas / SVG use for the 1px label-border hairline.
 const kLibvisioLabelBorderPxPerInch = 96.0;
 
@@ -1487,6 +1497,16 @@ int? libvisioLabelBorderSourceId(VsdxShape plate) {
   );
 }
 
+bool isLibvisioStrokeRibbonPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioStrokeRibbonShapeNamePrefix);
+
+int? libvisioStrokeRibbonSourceId(VsdxShape plate) {
+  if (!isLibvisioStrokeRibbonPlate(plate)) return null;
+  return int.tryParse(
+    plate.name.substring(kLibvisioStrokeRibbonShapeNamePrefix.length),
+  );
+}
+
 /// `true` when [shape] is a render-only sibling a save added for Draw.
 ///
 /// These plates carry an effect `tokens.txt` cannot express, so they appear
@@ -1499,6 +1519,7 @@ bool isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioReflectionPlate(shape) ||
     isLibvisioGlassPlate(shape) ||
     isLibvisioLabelBorderPlate(shape) ||
+    isLibvisioStrokeRibbonPlate(shape) ||
     isLibvisioSoftEdgesPlate(shape) ||
     isLibvisioShadowPlate(shape) ||
     isLibvisioPageShadowPlate(shape) ||
@@ -2177,6 +2198,215 @@ VsdxDocument bakeGlassForLibvisioWrite(VsdxDocument document) {
   var changed = false;
   for (final page in document.pages) {
     final next = bakeGlassPageForLibvisioWrite(page);
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
+}
+
+/// `true` when a filled 2-D stroke must become a sibling ribbon Draw paints.
+///
+/// FillPattern is already the body, so LineColorTrans / LineGradient cannot
+/// steal it the way an unfilled ribbon does. `_lineProperties` also never
+/// emits `svg:stroke-miterlimit`. A locked NoLine sibling carries the
+/// stroke silhouette (FillForegndTrans / FillGradient / the long miter
+/// outline), then the source line is dropped.
+bool shapeNeedsLibvisioFilledStrokeRibbonBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (_hasArrowheads(shape.line)) return false;
+  if (!shape.line.hasLine || shape.line.pattern != 1) return false;
+  final custom = shape.line.customDashPattern;
+  if (custom != null && custom.isNotEmpty) return false;
+  if (shape.line.compoundType != 0) return false;
+  if (shape.line.softEdgesInches > 1e-6) return false;
+  if (!_shapePaintsFill(shape, shape.geometries)) return false;
+  if (!shape.line.hasGradient &&
+      shape.line.transparency <= 1e-9 &&
+      !_shapeHasLibvisioMiterSpikeCorners(shape)) {
+    return false;
+  }
+  return _filledStrokeRibbonGeometries(shape).isNotEmpty;
+}
+
+List<VsdxGeometry> _filledStrokeRibbonGeometries(VsdxShape shape) {
+  final weight =
+      shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
+  final half = weight / 2;
+  final limit = _lineUsesMiterJoin(shape.line) ? shape.line.miterLimit : 4.0;
+  final out = <VsdxGeometry>[];
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) continue;
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final commands = strokeRibbonCommands(
+      points,
+      halfWidth: half,
+      closed: closed,
+      miterLimit: limit,
+    );
+    if (commands.length < 3) continue;
+    out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+  }
+  return out;
+}
+
+VsdxShape _strokeRibbonPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+}) {
+  final fill =
+      _fillFromLineStroke(source.line) ?? _opaqueFillFromLine(source.line);
+  return VsdxShape(
+    id: id,
+    name: '$kLibvisioStrokeRibbonShapeNamePrefix${source.id}',
+    pinX: source.pinX,
+    pinY: source.pinY,
+    width: source.width,
+    height: source.height,
+    locPinXInches: source.locPinXInches,
+    locPinYInches: source.locPinYInches,
+    angleRad: source.angleRad,
+    flipX: source.flipX,
+    flipY: source.flipY,
+    geometries: _filledStrokeRibbonGeometries(source),
+    fill: fill,
+    line: const VsdxLine(pattern: 0),
+    layerMemberIds: source.layerMemberIds,
+    locked: true,
+    richText: const VsdxRichText(
+      runs: <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(hideText: true),
+    ),
+    text: '',
+  );
+}
+
+VsdxShape _sourceForLibvisioFilledStrokeRibbonWrite(VsdxShape shape) {
+  var line = shape.line.copyWith(
+    pattern: 0,
+    gradient: null,
+    transparency: 0,
+  );
+  var cells = shape.userCells;
+  if (_shapeHasLibvisioMiterSpikeCorners(shape)) {
+    line = line.copyWith(miterLimit: 4.0);
+    cells = <VsdxUserCell>[
+      for (final cell in cells)
+        if (cell.name != VsdxShape.userMiterLimit) cell,
+    ];
+  }
+  return shape.copyWith(line: line, userCells: cells);
+}
+
+void _collectStrokeRibbonPlateIds(List<VsdxShape> shapes, Map<int, int> into) {
+  for (final shape in shapes) {
+    final sourceId = libvisioStrokeRibbonSourceId(shape);
+    if (sourceId != null) into[sourceId] = shape.id;
+    _collectStrokeRibbonPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioFilledStrokeRibbonBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioStrokeRibbonPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioFilledStrokeRibbonBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+List<VsdxShape> _bakeFilledStrokeRibbonTree(
+  List<VsdxShape> shapes, {
+  required Map<int, int> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioStrokeRibbonPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeFilledStrokeRibbonTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioFilledStrokeRibbonBake(next)) {
+      final plate = _strokeRibbonPlateForLibvisioWrite(
+        next,
+        id: plateIds[next.id] ?? nextId(),
+      );
+      if (plate.geometries.isEmpty) {
+        out.add(next);
+        continue;
+      }
+      out.add(_sourceForLibvisioFilledStrokeRibbonWrite(next));
+      out.add(plate);
+      changed = true;
+      continue;
+    }
+    out.add(next);
+    final existingId = plateIds[next.id];
+    if (existingId != null) {
+      VsdxShape? kept;
+      for (final candidate in shapes) {
+        if (candidate.id == existingId) {
+          kept = candidate;
+          break;
+        }
+      }
+      if (kept != null) {
+        out.add(kept);
+        changed = true;
+      }
+    }
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+VsdxPage bakeFilledStrokeRibbonPageForLibvisioWrite(VsdxPage page) {
+  if (!pageNeedsLibvisioFilledStrokeRibbonBake(page)) return page;
+  final plateIds = <int, int>{};
+  _collectStrokeRibbonPlateIds(page.shapes, plateIds);
+  var nextId = _maxShapeId(page.shapes) + 1;
+  return page.copyWith(
+    shapes: _bakeFilledStrokeRibbonTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    ),
+  );
+}
+
+/// Insert (or keep) the stroke-silhouette siblings Draw uses when Fill is
+/// already the body.
+VsdxDocument bakeFilledStrokeRibbonForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeFilledStrokeRibbonPageForLibvisioWrite(page);
     changed |= !identical(next, page);
     pages.add(next);
   }
@@ -5581,6 +5811,7 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     line = line.copyWith(miterLimit: 4.0);
   }
   if (line.transparency > 1e-9 &&
+      !shapeNeedsLibvisioFilledStrokeRibbonBake(shape) &&
       (line.color != null || line.themeColorIndex == null)) {
     line = line.copyWith(
       color: colourForLibvisioAlpha(
@@ -6018,26 +6249,11 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
   );
 }
 
-/// `true` when a miter spike longer than Draw's default 4 must become a ribbon.
-///
-/// `_lineProperties` never emits `svg:stroke-miterlimit`; ODF/Draw default
-/// to 4. Canvas / SVG honour `User.veMiterLimit` above that, so a sharp
-/// elbow (ratio>4) is a long spike here and a bevel in Draw. Unfilled
-/// solid polylines expand to a filled ribbon whose outline uses that
-/// limit. Filled 2-D keeps FillPattern for the body; dashed strokes keep
-/// LinePattern; round caps stay native so endpoints do not go butt.
-bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
-  if (_hasArrowheads(shape.line)) return false;
-  if (!shape.line.hasLine) return false;
-  if (shape.line.pattern != 1) return false;
-  final custom = shape.line.customDashPattern;
-  if (custom != null && custom.isNotEmpty) return false;
+bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
   if (shape.line.cap == LineCap.round) return false;
   if (shape.line.roundingInches > 1e-12) return false;
   if (!_lineUsesMiterJoin(shape.line)) return false;
   if (shape.line.miterLimit <= 4.0 + 1e-6) return false;
-  if (_shapePaintsFill(shape, shape.geometries)) return false;
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
     final points = _strokedVertices(geometry, shape);
@@ -6046,6 +6262,26 @@ bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
     if (polylineHasDrawClippedMiter(points, closed: closed)) return true;
   }
   return false;
+}
+
+/// `true` when a miter spike longer than Draw's default 4 must become a ribbon.
+///
+/// `_lineProperties` never emits `svg:stroke-miterlimit`; ODF/Draw default
+/// to 4. Canvas / SVG honour `User.veMiterLimit` above that, so a sharp
+/// elbow (ratio>4) is a long spike here and a bevel in Draw. Unfilled
+/// solid polylines expand to a filled ribbon whose outline uses that
+/// limit. Filled 2-D keeps FillPattern for the body and bakes a sibling
+/// instead ([shapeNeedsLibvisioFilledStrokeRibbonBake]). Dashed strokes keep
+/// LinePattern; round caps stay native so endpoints do not go butt.
+bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (_hasArrowheads(shape.line)) return false;
+  if (!shape.line.hasLine) return false;
+  if (shape.line.pattern != 1) return false;
+  final custom = shape.line.customDashPattern;
+  if (custom != null && custom.isNotEmpty) return false;
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  return _shapeHasLibvisioMiterSpikeCorners(shape);
 }
 
 VsdxFill _opaqueFillFromLine(VsdxLine line) => VsdxFill(
@@ -6876,7 +7112,9 @@ bool _customDashCanBake(
 List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
   final dropDash = shapeNeedsLibvisioCustomDashBake(shape);
   final dropMiter = miterLimitForLibvisioChamfer(shape.line) != null ||
-      shapeNeedsLibvisioMiterSpikeBake(shape);
+      shapeNeedsLibvisioMiterSpikeBake(shape) ||
+      (shapeNeedsLibvisioFilledStrokeRibbonBake(shape) &&
+          _shapeHasLibvisioMiterSpikeCorners(shape));
   if (!dropDash && !dropMiter) return shape.userCells;
   return <VsdxUserCell>[
     for (final cell in shape.userCells)
