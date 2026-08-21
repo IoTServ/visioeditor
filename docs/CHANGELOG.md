@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Cropped picture `Reflection*` now survives a save into LibreOffice. Those
+  cells are not tokens; ImgOffset / ImgWidth / ImgHeight *are* collected, so
+  mirroring the raw Foreign bitmap used to reflect pixels the crop hides.
+  A save composites the visible window into the frame the same way canvas
+  and SVG already do, then bakes that clipped bitmap into the locked PNG
+  sibling. Uncropped pictures keep the previous whole-bitmap path.
 - Cropped picture `SoftEdgesSize` now survives a save into LibreOffice.
   `tokens.txt` has no SoftEdgesSize; ImgOffset / ImgWidth / ImgHeight *are*
   collected, so feathering the raw bitmap used to put the halo on hidden

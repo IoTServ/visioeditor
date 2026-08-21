@@ -2405,6 +2405,45 @@ void main() {
             ),
           ),
         );
+    var cropReflectionDocument = parser.parse(blank);
+    final cropReflectionPage = cropReflectionDocument.pages.first;
+    const cropReflectionPart = '/visio/media/crop_reflection.png';
+    cropReflectionDocument = cropReflectionDocument
+        .copyWith(
+          images: cropReflectionDocument.images.withImage(
+            VsdxImage(
+              partName: cropReflectionPart,
+              bytes: _leftRightPng(),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          cropReflectionPage.addShape(
+            VsdxShapeFactory.picture(
+              id: cropReflectionPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              imagePartName: cropReflectionPart,
+              name: 'CropReflectionPicture',
+            ).copyWith(
+              reflection: const VsdxReflection(
+                enabled: true,
+                sizeInches: 0.5,
+                distanceInches: 0.08,
+                transparency: 0.25,
+                blurInches: 0,
+              ),
+              imgOffsetXInches: -3,
+              imgOffsetYInches: 0,
+              imgWidthInches: 6,
+              imgHeightInches: 2,
+            ),
+          ),
+        );
     var cropSoftDocument = parser.parse(blank);
     final cropSoftPage = cropSoftDocument.pages.first;
     const cropSoftPart = '/visio/media/crop_soft.png';
@@ -2694,6 +2733,10 @@ void main() {
       'reflection_picture': writer.write(
         originalBytes: blank,
         edited: reflectionPictureDocument,
+      ),
+      'crop_reflection': writer.write(
+        originalBytes: blank,
+        edited: cropReflectionDocument,
       ),
       'crop_soft': writer.write(
         originalBytes: blank,
@@ -3935,6 +3978,84 @@ void main() {
             reason: 'LibreOffice must paint the blue (original bottom) '
                 'picture reflection below the source; '
                 'bodyR=${bodyTop.r} mirrorB=${mirror.b} mirrorR=${mirror.r}',
+          );
+        }
+        if (entry.key == 'crop_reflection') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'CropReflectionPicture');
+          expect(source.reflection.enabled, isFalse);
+          expect(source.hasImage, isTrue);
+          expect(source.imgOffsetXInches, closeTo(-3, 1e-9));
+          final plate = reopened.pages.first.shapes
+              .where(isLibvisioReflectionPlate)
+              .single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.imgOffsetXInches, closeTo(0, 1e-9));
+        }
+        if (entry.key == 'crop_reflection' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          // Crop shows the right (blue) half. The left of the frame is still
+          // blue; a raw-bitmap sibling would put the hidden red half there.
+          final body = mean(3.0, 5.2, 3.5, 5.8);
+          final mirror = mean(3.0, 4.15, 3.5, 4.35);
+          expect(
+            body.b,
+            greaterThan(body.r + 20),
+            reason: 'LibreOffice must still paint the cropped source blue; '
+                'bodyB=${body.b} bodyR=${body.r} mirrorB=${mirror.b}',
+          );
+          expect(
+            mirror.b,
+            greaterThan(mirror.r + 10),
+            reason: 'LibreOffice must reflect the visible (blue) crop, not '
+                'the hidden left (red) half; '
+                'bodyB=${body.b} mirrorB=${mirror.b} mirrorR=${mirror.r}',
           );
         }
         if (entry.key == 'crop_soft') {

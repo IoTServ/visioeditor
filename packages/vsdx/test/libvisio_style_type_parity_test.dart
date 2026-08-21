@@ -55,7 +55,8 @@
 /// Draw collects, then `ReflectionSize` is written 0. An unfilled 2-D
 /// stroke bakes a locked PNG band of the mirrored stroke, and a Foreign
 /// picture bakes a locked Gaussian PNG sibling of the same mirrored bitmap
-/// canvas / SVG already paint. Glow on a filled
+/// canvas / SVG already paint (cropped pictures composite the Img*
+/// window into the frame first). Glow on a filled
 /// shape that already paints a stroke, a filled NoLine 2-D, or an unfilled
 /// 2-D stroke, bakes a locked Gaussian PNG sibling when RGB is resolved,
 /// then `GlowSize` is written 0. A Foreign picture with resolved RGB
@@ -3086,6 +3087,83 @@ void main() {
     final savedPlate = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
     expect(savedPlate.hasImage, isTrue);
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('cropped picture Reflection composites the Img window for LibreOffice',
+      () {
+    const part = '/visio/media/crop_reflection.png';
+    final rasterImage = raster.Image(width: 32, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 32; x++) {
+        if (x < 16) {
+          rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+        } else {
+          rasterImage.setPixelRgba(x, y, 0, 0, 255, 255);
+        }
+      }
+    }
+    final sourceImage = VsdxImage(
+      partName: part,
+      bytes: Uint8List.fromList(raster.encodePng(rasterImage)),
+      mimeType: 'image/png',
+    );
+    final shape = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+      name: 'CropMirrorPicture',
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.4,
+        blurInches: 0,
+      ),
+      imgOffsetXInches: -1.2,
+      imgOffsetYInches: 0,
+      imgWidthInches: 2.4,
+      imgHeightInches: 0.8,
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.copyWith(images: doc.images.withImage(sourceImage));
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates = baked.pages.first.shapes.where(isLibvisioReflectionPlate);
+    expect(plates, hasLength(1));
+    final png = baked.images.findByPart(plates.single.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    final leftX = (decoded!.width * 0.25).round().clamp(0, decoded.width - 1);
+    final near = decoded.getPixel(leftX, 1);
+    expect(near.a, greaterThan(8),
+        reason: 'cropped picture Reflection PNG must have pixels nearest '
+            'the source');
+    expect(near.b, greaterThan(near.r + 8),
+        reason: 'cropped picture Reflection must mirror the visible right '
+            '(blue) half, not the hidden left (red) half');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final source = savedDoc.pages.first.findShapeById(1)!;
+    expect(source.reflection.enabled, isFalse);
+    expect(source.imgOffsetXInches, closeTo(-1.2, 1e-9));
+    expect(source.effectiveImgWidth, closeTo(2.4, 1e-9));
+    final savedPlate = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
+    expect(savedPlate.hasImage, isTrue);
+    expect(savedPlate.imgOffsetXInches, closeTo(0, 1e-9));
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

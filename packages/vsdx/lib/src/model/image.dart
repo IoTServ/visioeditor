@@ -1085,7 +1085,9 @@ Uint8List? bakeSilhouetteDropShadowPng({
 /// `tokens.txt` has no Reflection*. Canvas / SVG mirror the bitmap about
 /// the visual bottom, clip by [sizeFraction], fade toward the far edge,
 /// and optionally blur. LibreOffice only collects ForeignData, so a save
-/// bakes that treatment into a PNG sibling.
+/// bakes that treatment into a PNG sibling. Pass the Foreign frame and
+/// Img* crop when the visible window is not the whole bitmap — otherwise
+/// the sibling would mirror pixels Draw (and canvas / SVG) already clip.
 Uint8List? bakePictureReflectionPng({
   required VsdxImage image,
   required double sizeFraction,
@@ -1093,6 +1095,12 @@ Uint8List? bakePictureReflectionPng({
   required double blurSigmaPx,
   required double padInches,
   required double displayWidthInches,
+  double frameWidthInches = 0,
+  double frameHeightInches = 0,
+  double imgOffsetXInches = 0,
+  double imgOffsetYInches = 0,
+  double? imgWidthInches,
+  double? imgHeightInches,
 }) {
   if (padInches < 0) return null;
   final payload = image.rasterForRendering();
@@ -1106,20 +1114,41 @@ Uint8List? bakePictureReflectionPng({
   if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
     return null;
   }
-  final frac = sizeFraction.clamp(0.01, 1.0);
-  final cropH = math.max(1, (decoded.height * frac).round());
   final trans = transparency.clamp(0.0, 1.0);
   final alphaScale = (1.0 - trans).clamp(0.0, 1.0);
   if (alphaScale <= 1e-9) return null;
-  final displayW = math.max(displayWidthInches.abs(), 1e-6);
-  final padPx = padInches > 1e-9
-      ? math.max(1, (padInches / displayW * decoded.width).round())
-      : 0;
   try {
     var src = decoded;
     if (src.numChannels < 4) {
       src = src.convert(numChannels: 4);
     }
+    if (frameWidthInches > 1e-9 &&
+        visioPictureFrameIsCropped(
+          frameWidthInches: frameWidthInches,
+          frameHeightInches: frameHeightInches,
+          imgOffsetXInches: imgOffsetXInches,
+          imgOffsetYInches: imgOffsetYInches,
+          imgWidthInches: imgWidthInches,
+          imgHeightInches: imgHeightInches,
+        )) {
+      final composited = _compositeVisioPictureIntoFrame(
+        source: src,
+        frameWidthInches: frameWidthInches,
+        frameHeightInches: frameHeightInches,
+        imgOffsetXInches: imgOffsetXInches,
+        imgOffsetYInches: imgOffsetYInches,
+        imgWidthInches: imgWidthInches ?? frameWidthInches,
+        imgHeightInches: imgHeightInches ?? frameHeightInches,
+      );
+      if (composited == null) return null;
+      src = composited.image;
+    }
+    final frac = sizeFraction.clamp(0.01, 1.0);
+    final cropH = math.max(1, (src.height * frac).round());
+    final displayW = math.max(displayWidthInches.abs(), 1e-6);
+    final padPx = padInches > 1e-9
+        ? math.max(1, (padInches / displayW * src.width).round())
+        : 0;
     final innerW = src.width;
     final innerH = cropH;
     final widthPx = innerW + padPx * 2;
