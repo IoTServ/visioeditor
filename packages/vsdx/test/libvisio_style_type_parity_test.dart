@@ -100,7 +100,8 @@
 /// and line. Gradient / hatch fills with a stroke join that plate.
 /// CompoundType 1–4 rails join that plate too. LineGradient strokes
 /// with resolved RGB join that plate so Draw does not keep a hard
-/// opaque outline.
+/// opaque outline. Rounding fillets join that plate so Draw does not
+/// keep square corners after the fill is dropped.
 /// `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
 /// picture with blur bakes the same filled image-frame silhouette. PageSheet
@@ -2010,6 +2011,120 @@ void main() {
     final saved = writer.write(originalBytes: blank, edited: doc);
     final writerBaked = parser.parse(saved);
     expect(writerBaked.pages.first.findShapeById(1)!.line.hasGradient, isFalse);
+    expect(
+      writerBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Rounding SoftEdges bakes filleted corners for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'RoundSoft',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        pattern: 0,
+        roundingInches: 0.45,
+        softEdgesInches: 0.04,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final corner = decoded.getPixel(0, 0);
+    final centre = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    expect(
+      corner.a,
+      lessThan(40),
+      reason: 'Rounding SoftEdges PNG must keep the filleted corner empty; '
+          'cornerA=${corner.a} centreA=${centre.a}',
+    );
+    expect(
+      centre.r,
+      greaterThan(180),
+      reason: 'Rounding SoftEdges PNG must keep the red body; '
+          'centre=$centre',
+    );
+    expect(
+      centre.a,
+      greaterThan(200),
+      reason: 'Rounding SoftEdges PNG must keep the interior opaque; '
+          'centreA=${centre.a}',
+    );
+    final midTop = decoded.getPixel(decoded.width ~/ 2, 1);
+    expect(
+      midTop.a,
+      greaterThan(corner.a + 40),
+      reason: 'mid-edge must still paint; midTopA=${midTop.a} '
+          'cornerA=${corner.a}',
+    );
+
+    final stroked = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.12,
+        roundingInches: 0.45,
+        softEdgesInches: 0.04,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(stroked), isTrue);
+    var strokedDoc = parser.parse(blank);
+    strokedDoc =
+        strokedDoc.replacePage(0, strokedDoc.pages.first.addShape(stroked));
+    final strokedBaked = documentForLibvisioWrite(strokedDoc);
+    expect(strokedBaked.pages.first.findShapeById(2)!.fill.pattern, 0);
+    expect(strokedBaked.pages.first.findShapeById(2)!.line.pattern, 0);
+    final strokedPlate =
+        strokedBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(strokedPlate.width, greaterThan(2.0));
+    final strokedPng =
+        strokedBaked.images.findByPart(strokedPlate.imagePartName!);
+    final strokedDecoded = raster.decodePng(strokedPng!.bytes)!;
+    final strokedCorner = strokedDecoded.getPixel(0, 0);
+    final strokedCentre = strokedDecoded.getPixel(
+      strokedDecoded.width ~/ 2,
+      strokedDecoded.height ~/ 2,
+    );
+    expect(
+      strokedCorner.r,
+      greaterThan(200),
+      reason: 'padded rounded SoftEdges must keep the bbox corner empty; '
+          'corner=$strokedCorner',
+    );
+    expect(
+      strokedCentre.r,
+      greaterThan(180),
+      reason: 'padded rounded SoftEdges must keep the red body; '
+          'centre=$strokedCentre',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final writerBaked = parser.parse(saved);
+    expect(writerBaked.pages.first.findShapeById(1)!.fill.pattern, 0);
     expect(
       writerBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
       hasLength(1),

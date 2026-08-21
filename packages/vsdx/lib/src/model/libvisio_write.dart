@@ -90,7 +90,12 @@
 /// likewise missing from `tokens.txt`, so a 2-D SoftEdges stroke with
 /// resolved-RGB stops samples that wash into the same padded PNG and
 /// drops the source line — Draw would otherwise keep a hard opaque
-/// outline (or a hard filled ribbon) on a feathered body. `ShadowBlur` is likewise missing —
+/// outline (or a hard filled ribbon) on a feathered body. Rounding is a
+/// token Draw *does* collect, but the PNG silhouette used to stay a
+/// sharp box, so a save dropped the fill and left square corners. The
+/// same `filletPolyline` canvas / SVG / libvisio use is sampled into
+/// that PNG (and into dash / compound ribbons) so Draw keeps the
+/// fillets. `ShadowBlur` is likewise missing —
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
@@ -4381,8 +4386,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// hard outline. Gradient / hatch fills with a stroke join that plate.
 /// CompoundType 1–4 rails join that plate too. LineGradient strokes
 /// with resolved RGB join that plate so Draw does not keep a hard
-/// opaque outline. 1-D, pictures, arrows, theme-only fills and
-/// unresolved theme colours stay native.
+/// opaque outline. Rounding fillets join that plate so Draw does not
+/// keep square corners after the fill is dropped. 1-D, pictures,
+/// arrows, theme-only fills and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -4467,6 +4473,9 @@ SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
   }
   final points = _softEdgesPolygonInches(shape, geom);
   if (points == null || points.length < 3) return null;
+  if (shape.line.roundingInches > 1e-12) {
+    return SoftEdgesSilhouetteKind.polygon;
+  }
   if (_softEdgesIsShapeBox(points, shape.width, shape.height)) {
     return SoftEdgesSilhouetteKind.rectangle;
   }
@@ -4486,6 +4495,9 @@ SoftEdgesSilhouetteKind? _softEdgesStrokeSilhouetteKind(VsdxShape shape) {
   }
   final points = _softEdgesPolygonInches(shape, geom);
   if (points == null || points.length < 3) return null;
+  if (shape.line.roundingInches > 1e-12) {
+    return SoftEdgesSilhouetteKind.polygon;
+  }
   if (_softEdgesIsShapeBox(points, shape.width, shape.height)) {
     return SoftEdgesSilhouetteKind.rectangle;
   }
@@ -4520,6 +4532,9 @@ SoftEdgesSilhouetteKind? _foreignFrameSilhouetteKind(VsdxShape shape) {
   final points = _softEdgesPolygonInches(shape, geom);
   if (points == null || points.length < 3) {
     return SoftEdgesSilhouetteKind.rectangle;
+  }
+  if (shape.line.roundingInches > 1e-12) {
+    return SoftEdgesSilhouetteKind.polygon;
   }
   if (_softEdgesIsShapeBox(points, shape.width, shape.height)) {
     return SoftEdgesSilhouetteKind.rectangle;
@@ -4568,7 +4583,14 @@ List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
       points.removeLast();
     }
   }
-  return points;
+  if (points.length < 3) return points;
+  final radius = shape.line.roundingInches;
+  if (radius <= 1e-12) return points;
+  return filletPolyline(
+    points,
+    radius,
+    closed: polylineLooksClosed(points, noFill: geom.noFill),
+  );
 }
 
 bool _softEdgesIsShapeBox(List<Offset2D> points, double w, double h) {
@@ -4761,6 +4783,16 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
   return (r: c.red, g: c.green, b: c.blue, a: a);
 }
 
+List<Offset2D> _filletSoftEdgesStrokePoints(
+  List<Offset2D> points,
+  VsdxShape shape, {
+  required bool closed,
+}) {
+  final radius = shape.line.roundingInches;
+  if (radius <= 1e-12 || points.length < 3) return points;
+  return filletPolyline(points, radius, closed: closed);
+}
+
 List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
   final inches = effectiveDashPatternForLine(shape.line);
   if (inches == null || inches.isEmpty) {
@@ -4775,7 +4807,8 @@ List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 2) continue;
     final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    for (final segment in _dashPolyline(points, inches, closed: closed)) {
+    final body = _filletSoftEdgesStrokePoints(points, shape, closed: closed);
+    for (final segment in _dashPolyline(body, inches, closed: closed)) {
       if (segment.length < 2) continue;
       final left = offsetPolyline(segment, half, closed: false);
       final right = offsetPolyline(segment, -half, closed: false);
@@ -4802,9 +4835,10 @@ List<List<Offset2D>> _softEdgesCompoundRibbonPolygons(VsdxShape shape) {
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 2) continue;
     final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final body = _filletSoftEdgesStrokePoints(points, shape, closed: closed);
     final polylines = dashes != null && dashes.isNotEmpty
-        ? _dashPolyline(points, dashes, closed: closed)
-        : <List<Offset2D>>[points];
+        ? _dashPolyline(body, dashes, closed: closed)
+        : <List<Offset2D>>[body];
     for (final poly in polylines) {
       if (poly.length < 2) continue;
       // Closed rails become an open loop (repeat the start) so the ribbon

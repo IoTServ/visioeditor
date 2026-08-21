@@ -7237,6 +7237,37 @@ void main() {
     );
   });
 
+  test('SoftEdgesSize + Rounding round-trip', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+    ).copyWith(
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        pattern: 0,
+        roundingInches: 0.2,
+        softEdgesInches: 0.05,
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final afterDoc = parser.parse(saved);
+    final after = afterDoc.pages.first.findShapeById(id)!;
+    expect(after.line.softEdgesInches, closeTo(0, 1e-6),
+        reason: 'SoftEdgesSize is not a token; the halo is a PNG sibling');
+    expect(after.fill.pattern, 0);
+    expect(
+      afterDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+  });
+
   test('expanded Lock* cells written when locked', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);

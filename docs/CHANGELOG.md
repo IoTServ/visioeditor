@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Rounding SoftEdges now keep filleted corners in LibreOffice. Draw
+  collects `Rounding` on native geometry, but a save used to drop the
+  fill onto a sharp PNG box. The same fillet canvas / SVG / libvisio
+  use is sampled into the padded PNG sibling.
 - LineGradient SoftEdges now keep both the feather and the stroke wash
   in LibreOffice. Neither cell is a token, so Draw used to show a
   feathered fill (or a hard filled ribbon) with an opaque outline. A

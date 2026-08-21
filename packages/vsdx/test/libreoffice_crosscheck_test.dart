@@ -2366,6 +2366,27 @@ void main() {
         ),
       ),
     );
+    var roundSoftDocument = parser.parse(blank);
+    final roundSoftPage = roundSoftDocument.pages.first;
+    roundSoftDocument = roundSoftDocument.replacePage(
+      0,
+      roundSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: roundSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'RoundSoft',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            pattern: 0,
+            roundingInches: 0.85,
+            softEdgesInches: 0.08,
+          ),
+        ),
+      ),
+    );
     var shadowBlurDocument = parser.parse(blank);
     final shadowBlurPage = shadowBlurDocument.pages.first;
     shadowBlurDocument = shadowBlurDocument.replacePage(
@@ -3073,6 +3094,10 @@ void main() {
       'line_grad_soft': writer.write(
         originalBytes: blank,
         edited: lineGradSoftDocument,
+      ),
+      'round_soft': writer.write(
+        originalBytes: blank,
+        edited: roundSoftDocument,
       ),
       'shadow_blur': writer.write(
         originalBytes: blank,
@@ -4467,6 +4492,90 @@ void main() {
             greaterThan(200),
             reason: 'LibreOffice must keep the hollow interior empty; '
                 'centre=$centre left=$left',
+          );
+        }
+        if (entry.key == 'round_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'RoundSoft');
+          expect(source.fill.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'round_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g, double luma}) mean(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumLuma = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 255.0, luma: 255.0);
+            return (r: sumR / count, g: sumG / count, luma: sumLuma / count);
+          }
+
+          final centre = mean(3.9, 5.2, 4.6, 5.8);
+          final corner = mean(2.78, 6.42, 2.88, 6.50);
+          expect(
+            centre.r,
+            greaterThan(180),
+            reason: 'LibreOffice must keep the red body; '
+                'centreR=${centre.r} corner=$corner',
+          );
+          expect(
+            centre.g,
+            lessThan(80),
+            reason: 'LibreOffice fill must stay red; centreG=${centre.g}',
+          );
+          expect(
+            corner.r,
+            lessThan(160),
+            reason: 'LibreOffice must keep the filleted corner empty; '
+                'corner=$corner centreR=${centre.r}',
           );
         }
         if (entry.key == 'shadow_blur' && pdftoppm != null) {
