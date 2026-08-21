@@ -97,7 +97,8 @@
 /// line. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
 /// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
 /// solid or dashed stroke bakes both into one padded plate and drops fill
-/// and line. Gradient / hatch fills still keep native dashes. `ShadowBlur` is not a token,
+/// and line. Gradient / hatch fills with a stroke join that plate.
+/// `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
 /// picture with blur bakes the same filled image-frame silhouette. PageSheet
 /// `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not tokens, so a
@@ -1614,6 +1615,144 @@ void main() {
       hasLength(1),
     );
 
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('gradient and hatch SoftEdges strokes join the feathered plate', () {
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final gradient = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'GradStrokeSoft',
+      fill: const VsdxFill(pattern: 1, gradient: wash),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.16,
+        softEdgesInches: 0.12,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(gradient), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(gradient));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.fill.hasGradient, isFalse);
+    expect(source.line.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.width, greaterThan(2.0));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    const padInches = 0.16 / 2 + 0.12 * 3;
+    const plateW = 2 + 2 * padInches;
+    const plateH = 1.2 + 2 * padInches;
+    ({int r, int g, int b}) sample(double visioX, double visioY) {
+      final x = ((padInches + visioX) / plateW * decoded.width)
+          .round()
+          .clamp(1, decoded.width - 2);
+      final y = ((padInches + (1.2 - visioY)) / plateH * decoded.height)
+          .round()
+          .clamp(1, decoded.height - 2);
+      final pixel = decoded.getPixel(x, y);
+      return (r: pixel.r.toInt(), g: pixel.g.toInt(), b: pixel.b.toInt());
+    }
+
+    final left = sample(0.35, 0.6);
+    final right = sample(1.65, 0.6);
+    expect(
+      left.r,
+      greaterThan(right.r + 40),
+      reason: 'gradient+stroke SoftEdges PNG must keep the wash; '
+          'left=$left right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(left.b + 40),
+      reason: 'gradient+stroke SoftEdges PNG must keep the wash; '
+          'left=$left right=$right',
+    );
+    var ringLuma = 255.0;
+    final midY = ((padInches + 0.6) / plateH * decoded.height)
+        .round()
+        .clamp(1, decoded.height - 2);
+    final x0 = ((padInches - 0.04) / plateW * decoded.width).round();
+    final x1 = ((padInches + 0.12) / plateW * decoded.width).round();
+    for (var x = x0; x < x1; x++) {
+      final pixel = decoded.getPixel(x.clamp(0, decoded.width - 1), midY);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < ringLuma) ringLuma = luma;
+    }
+    expect(
+      ringLuma,
+      lessThan(80),
+      reason: 'gradient SoftEdges PNG must paint the black stroke; '
+          'ring=$ringLuma',
+    );
+
+    final hatch = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      fill: const VsdxFill(
+        foreground: VsdxColor(0xFFFF0000),
+        background: VsdxColor(0xFF0000FF),
+        pattern: 6,
+      ),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.16,
+        pattern: 2,
+        softEdgesInches: 0.12,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(hatch), isTrue);
+    var hatchDoc = parser.parse(blank);
+    hatchDoc = hatchDoc.replacePage(0, hatchDoc.pages.first.addShape(hatch));
+    final hatchBaked = documentForLibvisioWrite(hatchDoc);
+    expect(hatchBaked.pages.first.findShapeById(2)!.fill.pattern, 0);
+    expect(hatchBaked.pages.first.findShapeById(2)!.line.pattern, 0,
+        reason: 'hatch dashed SoftEdges bakes dashes into the fill plate');
+    final hatchPlate =
+        hatchBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final hatchPng = hatchBaked.images.findByPart(hatchPlate.imagePartName!);
+    expect(hatchPng, isNotNull);
+    final hatchDecoded = raster.decodePng(hatchPng!.bytes)!;
+    var dashInk = 0;
+    var dashGap = 0;
+    final row = ((padInches + 1.15) / plateH * hatchDecoded.height)
+        .round()
+        .clamp(1, hatchDecoded.height - 2);
+    final hx0 = (padInches / plateW * hatchDecoded.width).round();
+    final hx1 = ((padInches + 2) / plateW * hatchDecoded.width).round();
+    for (var x = hx0; x < hx1; x++) {
+      final pixel = hatchDecoded.getPixel(x, row);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < 80) dashInk++;
+      if (luma > 80 && (pixel.r > 120 || pixel.b > 120)) dashGap++;
+    }
+    expect(dashInk, greaterThan(4),
+        reason: 'must paint black dashes over the hatch; ink=$dashInk');
+    expect(dashGap, greaterThan(4),
+        reason: 'gaps must show the hatch, not a solid ring; gap=$dashGap');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);

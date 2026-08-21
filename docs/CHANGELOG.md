@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Gradient and hatch SoftEdges with a stroke now keep both the wash and
+  the feathered outline in LibreOffice. Draw used to show a feathered
+  fill PNG with a hard native stroke on top. A save paints the wash and
+  the solid or dashed stroke into one padded PNG sibling and drops both.
 - Filled shapes with dashed SoftEdges now keep both the feather and the
   dash gaps in LibreOffice. Draw used to show a feathered fill with hard
   LinePattern dashes on top. A save paints the fill and per-dash ribbons

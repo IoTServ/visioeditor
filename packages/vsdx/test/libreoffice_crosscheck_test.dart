@@ -2276,6 +2276,41 @@ void main() {
         ),
       ),
     );
+    var gradStrokeSoftDocument = parser.parse(blank);
+    final gradStrokeSoftPage = gradStrokeSoftDocument.pages.first;
+    gradStrokeSoftDocument = gradStrokeSoftDocument.replacePage(
+      0,
+      gradStrokeSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: gradStrokeSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GradStrokeSoft',
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                ),
+              ],
+            ),
+          ),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.22,
+            softEdgesInches: 0.1,
+          ),
+        ),
+      ),
+    );
     var shadowBlurDocument = parser.parse(blank);
     final shadowBlurPage = shadowBlurDocument.pages.first;
     shadowBlurDocument = shadowBlurDocument.replacePage(
@@ -2971,6 +3006,10 @@ void main() {
       'fill_dash_soft': writer.write(
         originalBytes: blank,
         edited: fillDashSoftDocument,
+      ),
+      'grad_stroke_soft': writer.write(
+        originalBytes: blank,
+        edited: gradStrokeSoftDocument,
       ),
       'shadow_blur': writer.write(
         originalBytes: blank,
@@ -4024,6 +4063,119 @@ void main() {
             gap.g,
             lessThan(110),
             reason: 'dash gaps must stay red, not paper; gapG=${gap.g}',
+          );
+        }
+        if (entry.key == 'grad_stroke_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GradStrokeSoft');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(source.line.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'grad_stroke_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) meanRb(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          double minLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var darkest = 255.0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < darkest) darkest = luma;
+              }
+            }
+            return darkest;
+          }
+
+          final left = meanRb(3.15, 5.3, 3.55, 5.7);
+          final right = meanRb(4.95, 5.3, 5.35, 5.7);
+          final ring = minLuma(2.52, 5.2, 2.78, 5.8);
+          expect(
+            left.r,
+            greaterThan(right.r + 40),
+            reason: 'LibreOffice must keep the baked red-to-blue wash; '
+                'left=$left right=$right ring=$ring',
+          );
+          expect(
+            right.b,
+            greaterThan(left.b + 40),
+            reason: 'LibreOffice must keep the baked red-to-blue wash; '
+                'left=$left right=$right',
+          );
+          expect(
+            ring,
+            lessThan(50),
+            reason: 'LibreOffice must paint the feathered black stroke; '
+                'leftR=${left.r} ring=$ring',
           );
         }
         if (entry.key == 'shadow_blur' && pdftoppm != null) {

@@ -730,8 +730,9 @@ void _featherSourceAlpha(raster.Image work, double softSigmaPx) {
 /// Geometry SoftEdges on an unfilled 2-D stroke has no fill plate to steal.
 /// The PNG is padded so the outer half of [strokeWidthPx] and the blur halo
 /// are not clipped; Draw then shows the plate because `SoftEdgesSize` is
-/// not a token. A filled body ([holeRed] etc.) paints the interior before
-/// the same SourceAlpha feather. Draw / PDF flatten Foreign alpha against
+/// not a token. A filled body ([holeRed] etc., or [holeColorAt] for a
+/// gradient / hatch wash) paints the interior before the same SourceAlpha
+/// feather. Draw / PDF flatten Foreign alpha against
 /// black, so the result composites onto opaque white — the interior colour
 /// stays, and a hollow ring does not become a filled black plate.
 /// [gaussianBlur] uses the same Gaussian as canvas `_drawGlow` instead of
@@ -755,6 +756,8 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   int? holeGreen,
   int? holeBlue,
   int? holeAlpha,
+  ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
+      holeColorAt,
   bool gaussianBlur = false,
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
@@ -778,8 +781,9 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
             holeAlpha.clamp(0, 255),
           )
         : null;
+    final hasHole = hole != null || holeColorAt != null;
     if (ribbons.isNotEmpty) {
-      if (hole != null) {
+      if (hasHole) {
         painted = _paintInnerFill(
           work,
           innerWidthPx: innerWidthPx,
@@ -787,7 +791,8 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
           padPx: padPx,
           kind: kind,
           fill: inner,
-          color: hole,
+          color: hole ?? raster.ColorRgba8(0, 0, 0, 0),
+          colorAt: holeColorAt,
         );
       }
       painted = _paintFilledPolygons(
@@ -818,6 +823,7 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
         outer: outer,
         inner: inner,
         holeColor: hole,
+        holeColorAt: holeColorAt,
       );
     }
     if (!painted) return null;
@@ -837,6 +843,31 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   }
 }
 
+void _putSoftEdgesHolePixel(
+  raster.Image work,
+  int x,
+  int y, {
+  raster.ColorRgba8? hole,
+  ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
+      holeColorAt,
+  required int padPx,
+}) {
+  if (holeColorAt != null) {
+    final sampled = holeColorAt(x + 0.5 - padPx, y + 0.5 - padPx);
+    work.setPixelRgba(x, y, sampled.r, sampled.g, sampled.b, sampled.a);
+    return;
+  }
+  if (hole == null) return;
+  work.setPixelRgba(
+    x,
+    y,
+    hole.r.toInt(),
+    hole.g.toInt(),
+    hole.b.toInt(),
+    hole.a.toInt(),
+  );
+}
+
 /// Paint a stroke ring of [strokeWidthPx] around the box inset by [padPx].
 ///
 /// Shared by the SoftEdges / Glow ring and the Reflection band so all three
@@ -852,10 +883,12 @@ bool _paintStrokedRing(
   required List<({double x, double y})> outer,
   required List<({double x, double y})> inner,
   raster.ColorRgba8? holeColor,
+  ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
+      holeColorAt,
 }) {
   final widthPx = work.width;
   final heightPx = work.height;
-  final hasHoleFill = holeColor != null;
+  final hasHoleFill = holeColor != null || holeColorAt != null;
   final hole = holeColor ?? raster.ColorRgba8(0, 0, 0, 0);
   final half = math.max(strokeWidthPx / 2, 0.5);
   switch (kind) {
@@ -878,15 +911,30 @@ bool _paintStrokedRing(
       final ix2 = (x2 - half).floor();
       final iy2 = (y2 - half).floor();
       if (ix1 < ix2 && iy1 < iy2) {
-        raster.fillRect(
-          work,
-          x1: ix1.clamp(0, widthPx - 1),
-          y1: iy1.clamp(0, heightPx - 1),
-          x2: ix2.clamp(0, widthPx - 1),
-          y2: iy2.clamp(0, heightPx - 1),
-          color: hole,
-          alphaBlend: false,
-        );
+        if (holeColorAt != null) {
+          for (var y = iy1; y <= iy2; y++) {
+            for (var x = ix1; x <= ix2; x++) {
+              if (x < 0 || y < 0 || x >= widthPx || y >= heightPx) continue;
+              _putSoftEdgesHolePixel(
+                work,
+                x,
+                y,
+                holeColorAt: holeColorAt,
+                padPx: padPx,
+              );
+            }
+          }
+        } else {
+          raster.fillRect(
+            work,
+            x1: ix1.clamp(0, widthPx - 1),
+            y1: iy1.clamp(0, heightPx - 1),
+            x2: ix2.clamp(0, widthPx - 1),
+            y2: iy2.clamp(0, heightPx - 1),
+            color: hole,
+            alphaBlend: false,
+          );
+        }
       }
     case SoftEdgesSilhouetteKind.ellipse:
       final cx = padPx + (innerWidthPx - 1) / 2;
@@ -907,8 +955,14 @@ bool _paintStrokedRing(
             final iy = (y + 0.5 - cy) / ryIn;
             if (ix * ix + iy * iy <= 1) {
               if (hasHoleFill) {
-                work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
-                    hole.b.toInt(), hole.a.toInt());
+                _putSoftEdgesHolePixel(
+                  work,
+                  x,
+                  y,
+                  hole: holeColor,
+                  holeColorAt: holeColorAt,
+                  padPx: padPx,
+                );
               }
               continue;
             }
@@ -925,8 +979,14 @@ bool _paintStrokedRing(
           final py = y + 0.5;
           if (inner.length >= 3 && _softEdgesPointInPolygon(inner, px, py)) {
             if (hasHoleFill) {
-              work.setPixelRgba(x, y, hole.r.toInt(), hole.g.toInt(),
-                  hole.b.toInt(), hole.a.toInt());
+              _putSoftEdgesHolePixel(
+                work,
+                x,
+                y,
+                hole: holeColor,
+                holeColorAt: holeColorAt,
+                padPx: padPx,
+              );
             }
             continue;
           }
@@ -947,43 +1007,60 @@ bool _paintInnerFill(
   required SoftEdgesSilhouetteKind kind,
   required List<({double x, double y})> fill,
   required raster.ColorRgba8 color,
+  ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
+      colorAt,
 }) {
   final widthPx = work.width;
   final heightPx = work.height;
-  switch (kind) {
-    case SoftEdgesSilhouetteKind.rectangle:
-      raster.fillRect(
-        work,
-        x1: padPx.clamp(0, widthPx - 1),
-        y1: padPx.clamp(0, heightPx - 1),
-        x2: (padPx + innerWidthPx - 1).clamp(0, widthPx - 1),
-        y2: (padPx + innerHeightPx - 1).clamp(0, heightPx - 1),
-        color: color,
-        alphaBlend: false,
-      );
-      return true;
-    case SoftEdgesSilhouetteKind.ellipse:
-      final cx = padPx + (innerWidthPx - 1) / 2;
-      final cy = padPx + (innerHeightPx - 1) / 2;
-      final rx = math.max((innerWidthPx - 1) / 2, 0.5);
-      final ry = math.max((innerHeightPx - 1) / 2, 0.5);
-      var painted = false;
-      for (var y = 0; y < heightPx; y++) {
-        for (var x = 0; x < widthPx; x++) {
-          final nx = (x + 0.5 - cx) / rx;
-          final ny = (y + 0.5 - cy) / ry;
-          if (nx * nx + ny * ny > 1) continue;
-          work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
-              color.b.toInt(), color.a.toInt());
-          painted = true;
-        }
-      }
-      return painted;
-    case SoftEdgesSilhouetteKind.polygon:
-      if (fill.length < 3) return false;
-      return _paintFilledPolygons(
-          work, <List<({double x, double y})>>[fill], color);
+  if (colorAt == null && kind == SoftEdgesSilhouetteKind.rectangle) {
+    raster.fillRect(
+      work,
+      x1: padPx.clamp(0, widthPx - 1),
+      y1: padPx.clamp(0, heightPx - 1),
+      x2: (padPx + innerWidthPx - 1).clamp(0, widthPx - 1),
+      y2: (padPx + innerHeightPx - 1).clamp(0, heightPx - 1),
+      color: color,
+      alphaBlend: false,
+    );
+    return true;
   }
+  if (kind == SoftEdgesSilhouetteKind.polygon && fill.length < 3) {
+    return false;
+  }
+  var painted = false;
+  for (var y = 0; y < heightPx; y++) {
+    for (var x = 0; x < widthPx; x++) {
+      final px = x + 0.5;
+      final py = y + 0.5;
+      final inside = switch (kind) {
+        SoftEdgesSilhouetteKind.rectangle => px >= padPx &&
+            py >= padPx &&
+            px < padPx + innerWidthPx &&
+            py < padPx + innerHeightPx,
+        SoftEdgesSilhouetteKind.ellipse => () {
+            final cx = padPx + (innerWidthPx - 1) / 2;
+            final cy = padPx + (innerHeightPx - 1) / 2;
+            final rx = math.max((innerWidthPx - 1) / 2, 0.5);
+            final ry = math.max((innerHeightPx - 1) / 2, 0.5);
+            final nx = (px - cx) / rx;
+            final ny = (py - cy) / ry;
+            return nx * nx + ny * ny <= 1;
+          }(),
+        SoftEdgesSilhouetteKind.polygon =>
+          _softEdgesPointInPolygon(fill, px, py),
+      };
+      if (!inside) continue;
+      if (colorAt != null) {
+        final sampled = colorAt(px - padPx, py - padPx);
+        work.setPixelRgba(x, y, sampled.r, sampled.g, sampled.b, sampled.a);
+      } else {
+        work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+            color.b.toInt(), color.a.toInt());
+      }
+      painted = true;
+    }
+  }
+  return painted;
 }
 
 bool _paintFilledPolygons(
