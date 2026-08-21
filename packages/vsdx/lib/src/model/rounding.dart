@@ -81,11 +81,17 @@ List<Offset2D> filletPolyline(
 
 /// Exact libvisio-style path: lines between trimmed corners and one quadratic
 /// Bézier per corner, with the original sharp vertex as its control point.
+///
+/// When [chamfer] is set, each filleted corner is a LineTo cut. [miterLimit]
+/// (SVG / canvas `stroke-miterlimit`) further restricts that to corners whose
+/// miter ratio exceeds the limit, so a low draw.io `veMiterLimit` can bake
+/// only the spikes LibreOffice would keep (it never emits the attribute).
 FilletPath? filletPolylinePath(
   List<Offset2D> points,
   double radius, {
   bool closed = false,
   bool chamfer = false,
+  double? miterLimit,
 }) {
   if (radius <= 1e-12 || points.length < 3) return null;
   final n = points.length;
@@ -100,6 +106,19 @@ FilletPath? filletPolylinePath(
               radius,
             ),
   ];
+  if (chamfer && miterLimit != null) {
+    for (var i = 0; i < n; i++) {
+      if (corners[i] == null) continue;
+      if (strokeMiterRatio(
+            points[(i - 1 + n) % n],
+            points[i],
+            points[(i + 1) % n],
+          ) <=
+          miterLimit) {
+        corners[i] = null;
+      }
+    }
+  }
   FilletPathSegment cornerEdge(_FilletCorner corner) => (
         end: corner.end,
         control: chamfer ? null : corner.control,
@@ -149,6 +168,7 @@ VsdxGeometry bakePolylineRounding(
   required double height,
   required double radius,
   bool chamfer = false,
+  double? miterLimit,
 }) {
   if (radius <= 1e-12 || width.abs() <= 1e-12 || height.abs() <= 1e-12) {
     return geometry;
@@ -225,6 +245,7 @@ VsdxGeometry bakePolylineRounding(
     radius,
     closed: closed,
     chamfer: chamfer,
+    miterLimit: miterLimit,
   );
   if (fillet == null) return geometry;
 
@@ -246,6 +267,30 @@ VsdxGeometry bakePolylineRounding(
     rowIndices: const <int>[],
     deletedRowIndices: const <int>{},
   );
+}
+
+/// SVG / canvas miter length ÷ stroke width at [cur].
+///
+/// `1 / sin(θ/2)` where θ is the interior angle. A 90° elbow is √2; a
+/// hairpin approaches infinity. Values at or below 1 mean a bevel for
+/// `stroke-miterlimit="1"`.
+double strokeMiterRatio(Offset2D prev, Offset2D cur, Offset2D next) {
+  final inDx = cur.x - prev.x;
+  final inDy = cur.y - prev.y;
+  final outDx = next.x - cur.x;
+  final outDy = next.y - cur.y;
+  final inLen = math.sqrt(inDx * inDx + inDy * inDy);
+  final outLen = math.sqrt(outDx * outDx + outDy * outDy);
+  if (inLen < 1e-12 || outLen < 1e-12) return 1;
+  final inUx = inDx / inLen;
+  final inUy = inDy / inLen;
+  final outUx = outDx / outLen;
+  final outUy = outDy / outLen;
+  final dot = (inUx * outUx + inUy * outUy).clamp(-1.0, 1.0);
+  final theta = math.pi - math.acos(dot);
+  final s = math.sin(theta / 2);
+  if (s.abs() < 1e-12) return 1e6;
+  return 1 / s.abs();
 }
 
 _FilletCorner? _filletCorner(

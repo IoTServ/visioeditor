@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:test/test.dart';
 import 'package:vsdx/vsdx.dart';
 
@@ -149,6 +151,65 @@ void main() {
     expect((baked.commands[1] as LineTo).x, closeTo(1.75, 1e-9));
     expect((baked.commands[2] as LineTo).x, closeTo(2, 1e-9));
     expect((baked.commands[2] as LineTo).y, closeTo(0.25, 1e-9));
+  });
+
+  test('strokeMiterRatio is √2 at a 90° elbow', () {
+    expect(
+      strokeMiterRatio(
+        const Offset2D(0, 0),
+        const Offset2D(2, 0),
+        const Offset2D(2, 2),
+      ),
+      closeTo(math.sqrt(2), 1e-9),
+    );
+  });
+
+  test('bakePolylineRounding chamfers only corners above miterLimit', () {
+    const geometry = VsdxGeometry(
+      noFill: true,
+      commands: <VsdxPathCommand>[
+        MoveTo(0, 0),
+        LineTo(2, 0),
+        LineTo(2, 2),
+      ],
+    );
+    final clipped = bakePolylineRounding(
+      geometry,
+      width: 2,
+      height: 2,
+      radius: 0.25,
+      chamfer: true,
+      miterLimit: 1,
+    );
+    expect(clipped.commands.whereType<RelQuadBezTo>(), isEmpty);
+    expect(
+      clipped.commands.whereType<LineTo>().any(
+            (command) =>
+                (command.x - 2).abs() < 1e-9 && (command.y - 0).abs() < 1e-9,
+          ),
+      isFalse,
+      reason: '90° elbow ratio √2 exceeds miterLimit 1',
+    );
+    expect((clipped.commands[1] as LineTo).x, closeTo(1.75, 1e-9));
+    expect((clipped.commands[2] as LineTo).x, closeTo(2, 1e-9));
+    expect((clipped.commands[2] as LineTo).y, closeTo(0.25, 1e-9));
+
+    final kept = bakePolylineRounding(
+      geometry,
+      width: 2,
+      height: 2,
+      radius: 0.25,
+      chamfer: true,
+      miterLimit: 2,
+    );
+    expect(
+      kept.commands.whereType<LineTo>().any(
+            (command) =>
+                (command.x - 2).abs() < 1e-9 && (command.y - 0).abs() < 1e-9,
+          ),
+      isTrue,
+      reason: '90° elbow ratio √2 is under miterLimit 2',
+    );
   });
 
   test('bakePolylineRounding leaves already-curved geometry unchanged', () {

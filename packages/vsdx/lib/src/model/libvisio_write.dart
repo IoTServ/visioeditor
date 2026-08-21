@@ -39,8 +39,11 @@
 /// explicit round / arcs join on a square/flat cap is baked with the same
 /// RelQuadBezTo fillets as shape-level Rounding, and a bevel join becomes a
 /// LineTo chamfer (including when the cap is round: Draw would otherwise
-/// round the elbow, so the written LineCap is flattened to extended). The
-/// Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
+/// round the elbow, so the written LineCap is flattened to extended).
+/// `User.veMiterLimit` is not a token and `_lineProperties` never emits
+/// `svg:stroke-miterlimit` (ODF defaults to 4), so a save chamfers corners
+/// whose miter ratio exceeds a tighter limit and drops the User row.
+/// The Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
 /// filled-shape LineColorTrans, and ShdwForegndTrans are not tokens —
 /// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
 /// those into RGB toward white and writes Trans=0. Theme-bound colours
@@ -5570,6 +5573,9 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   if (chamferForLibvisioWrite(sourceLine) && sourceLine.cap == LineCap.round) {
     line = line.copyWith(cap: LineCap.extended);
   }
+  if (miterLimitForLibvisioChamfer(sourceLine) != null) {
+    line = line.copyWith(miterLimit: 4.0);
+  }
   if (line.transparency > 1e-9 &&
       (line.color != null || line.themeColorIndex == null)) {
     line = line.copyWith(
@@ -6799,13 +6805,18 @@ bool _customDashCanBake(
   return false;
 }
 
-/// Drop `User.veDashPattern` / `veFixedDash` once dashes live in Geometry.
+/// Drop `User.veDashPattern` / `veFixedDash` once dashes live in Geometry,
+/// and `User.veMiterLimit` once a tighter clip is baked as chamfers.
 List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
-  if (!shapeNeedsLibvisioCustomDashBake(shape)) return shape.userCells;
+  final dropDash = shapeNeedsLibvisioCustomDashBake(shape);
+  final dropMiter = miterLimitForLibvisioChamfer(shape.line) != null;
+  if (!dropDash && !dropMiter) return shape.userCells;
   return <VsdxUserCell>[
     for (final cell in shape.userCells)
-      if (cell.name != VsdxShape.userDashPattern &&
-          cell.name != VsdxShape.userFixedDash)
+      if (!(dropDash &&
+              (cell.name == VsdxShape.userDashPattern ||
+                  cell.name == VsdxShape.userFixedDash)) &&
+          !(dropMiter && cell.name == VsdxShape.userMiterLimit))
         cell,
   ];
 }
@@ -7043,6 +7054,9 @@ double roundingForLibvisioWrite(VsdxLine line) {
     // Draw already round-joins a round cap. Bevel still has to be baked
     // (and the cap flattened) or Draw paints a round elbow.
     if (line.join == VsdxLineJoin.bevel && radius <= 1e-12) return joinRadius;
+    if (miterLimitForLibvisioChamfer(line) != null && radius <= 1e-12) {
+      return joinRadius;
+    }
     return radius;
   }
   switch (line.join) {
@@ -7054,19 +7068,48 @@ double roundingForLibvisioWrite(VsdxLine line) {
     case VsdxLineJoin.miter:
     case VsdxLineJoin.miterClip:
     case null:
-      break;
+      if (miterLimitForLibvisioChamfer(line) != null && radius <= 1e-12) {
+        radius = joinRadius;
+      }
   }
   return radius;
 }
 
 /// `true` when the baked corner must be a LineTo chamfer, not RelQuadBezTo.
 ///
-/// Only bevel, and only when there is no shape-level Rounding (that cell
-/// still means a Visio fillet). Round / arcs keep the quadratic. A round
-/// cap is flattened to LineCap.extended on write so Draw does not round
-/// the chamfer (`_lineProperties` join comes from LineCap only).
+/// Bevel joins, and miter joins whose `veMiterLimit` is tighter than Draw's
+/// default 4, when there is no shape-level Rounding (that cell still means
+/// a Visio fillet). Round / arcs keep the quadratic. A round cap is
+/// flattened to LineCap.extended on write so Draw does not round the
+/// chamfer (`_lineProperties` join comes from LineCap only).
 bool chamferForLibvisioWrite(VsdxLine line) =>
-    line.roundingInches <= 1e-12 && line.join == VsdxLineJoin.bevel;
+    line.roundingInches <= 1e-12 &&
+    (line.join == VsdxLineJoin.bevel ||
+        miterLimitForLibvisioChamfer(line) != null);
+
+bool _lineUsesMiterJoin(VsdxLine line) {
+  if (line.join == VsdxLineJoin.round ||
+      line.join == VsdxLineJoin.arcs ||
+      line.join == VsdxLineJoin.bevel) {
+    return false;
+  }
+  if (line.cap == LineCap.round && line.join == null) return false;
+  final join = line.effectiveJoin;
+  return join == VsdxLineJoin.miter || join == VsdxLineJoin.miterClip;
+}
+
+/// Tighter-than-Draw miter clip that must become LineTo chamfers.
+///
+/// `_lineProperties` never emits `svg:stroke-miterlimit`; ODF/Draw default
+/// to 4. Limits at or above 4 match that default and stay native. `null`
+/// means leave the polyline's corners alone.
+double? miterLimitForLibvisioChamfer(VsdxLine line) {
+  if (!line.hasLine) return null;
+  if (line.roundingInches > 1e-12) return null;
+  if (!_lineUsesMiterJoin(line)) return null;
+  if (line.miterLimit >= 4.0 - 1e-6) return null;
+  return line.miterLimit.clamp(1.0, 4.0);
+}
 
 /// Closest of libvisio's dash ids 2–23 for a draw.io / custom array.
 int nearestLibvisioLinePattern(List<double> custom) {

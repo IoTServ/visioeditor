@@ -3824,7 +3824,11 @@ class VsdxWriter {
         edited.userCells.any((cell) =>
             cell.name == VsdxShape.userDashPattern ||
             cell.name == VsdxShape.userFixedDash);
-    if (!droppingDash && _userCellsEqual(base.userCells, edited.userCells)) {
+    final droppingMiter = miterLimitForLibvisioChamfer(edited.line) != null &&
+        edited.userCells.any((cell) => cell.name == VsdxShape.userMiterLimit);
+    if (!droppingDash &&
+        !droppingMiter &&
+        _userCellsEqual(base.userCells, edited.userCells)) {
       return _scrubUserCellInh(el, edited);
     }
     XmlElement? section;
@@ -5136,6 +5140,7 @@ class VsdxWriter {
           height: edited.height,
           roundingInches: roundingForLibvisioWrite(edited.line),
           chamfer: chamferForLibvisioWrite(edited.line),
+          miterLimit: miterLimitForLibvisioChamfer(edited.line),
         )
             case final s?)
           s,
@@ -7770,6 +7775,7 @@ class VsdxWriter {
         height: s.height,
         roundingInches: roundingForLibvisioWrite(s.line),
         chamfer: chamferForLibvisioWrite(s.line),
+        miterLimit: miterLimitForLibvisioChamfer(s.line),
       );
       if (section != null) children.add(section);
     }
@@ -8451,6 +8457,7 @@ class VsdxWriter {
         height: s.height,
         roundingInches: roundingForLibvisioWrite(s.line),
         chamfer: chamferForLibvisioWrite(s.line),
+        miterLimit: miterLimitForLibvisioChamfer(s.line),
       );
       if (section != null) {
         children.add(section);
@@ -8831,7 +8838,8 @@ class VsdxWriter {
   /// `readLine` path collects it). Leaving a polyline + Rounding cell makes
   /// Draw paint sharp corners. Bake the fillet, matching `_bakeLegacyRounding`
   /// for VSD/VDX. Explicit round / arcs / bevel joins on a non-round cap use
-  /// the same path: `_lineProperties` would otherwise emit miter.
+  /// the same path: `_lineProperties` would otherwise emit miter. A
+  /// `veMiterLimit` tighter than Draw's default 4 chamfers the same way.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioCustomDashBake(shape)) return true;
@@ -8848,6 +8856,7 @@ class VsdxWriter {
         height: shape.height,
         radius: radius,
         chamfer: chamferForLibvisioWrite(shape.line),
+        miterLimit: miterLimitForLibvisioChamfer(shape.line),
       );
       if (!identical(baked, geometry)) return true;
     }
@@ -8861,6 +8870,7 @@ class VsdxWriter {
     double height = 1,
     double roundingInches = 0,
     bool chamfer = false,
+    double? miterLimit,
   }) {
     final geometry = bakePolylineRounding(
       g,
@@ -8868,6 +8878,7 @@ class VsdxWriter {
       height: height,
       radius: roundingInches,
       chamfer: chamfer,
+      miterLimit: miterLimit,
     );
     final baked = !identical(geometry, g);
     final rows = <XmlNode>[];

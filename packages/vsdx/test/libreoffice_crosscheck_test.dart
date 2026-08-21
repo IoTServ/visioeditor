@@ -2745,6 +2745,37 @@ void main() {
         ),
       ),
     );
+    var tightMiterDocument = parser.parse(blank);
+    final tightMiterPage = tightMiterDocument.pages.first;
+    tightMiterDocument = tightMiterDocument.replacePage(
+      0,
+      tightMiterPage.addShape(
+        VsdxShape(
+          id: tightMiterPage.nextFreeShapeId(),
+          name: 'TightMiter',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 2,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(2, 0),
+                LineTo(2, 2),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.2,
+            cap: LineCap.square,
+            miterLimit: 1,
+          ),
+        ).withDrawioMiterLimit(1),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2874,6 +2905,10 @@ void main() {
       'pattern_dash_trans': writer.write(
         originalBytes: blank,
         edited: patternDashTransDocument,
+      ),
+      'tight_miter': writer.write(
+        originalBytes: blank,
+        edited: tightMiterDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -4999,6 +5034,86 @@ void main() {
             lessThan(gap - 15),
             reason: 'LibreOffice must keep LinePattern 2 gaps in the '
                 'LineColorTrans ribbon; ink=$ink gap=$gap',
+          );
+        }
+        if (entry.key == 'tight_miter') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'TightMiter');
+          expect(source.line.roundingInches, closeTo(0, 1e-12));
+          expect(source.line.miterLimit, closeTo(4, 1e-12));
+          expect(
+            source.userCells.any(
+              (cell) => cell.name == VsdxShape.userMiterLimit,
+            ),
+            isFalse,
+          );
+          expect(
+            source.geometries.single.commands.whereType<RelQuadBezTo>(),
+            isEmpty,
+          );
+          expect(
+            source.geometries.single.commands.whereType<LineTo>().length,
+            greaterThan(2),
+          );
+        }
+        if (entry.key == 'tight_miter' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // Elbow at page (5.25, 4.5). Outer miter tip of a 0.2" 90° join
+          // is (5.35, 4.4); Draw's default miterlimit 4 would still ink it.
+          final spike = meanLuma(5.32, 4.37, 5.38, 4.43);
+          final body = meanLuma(4.15, 4.42, 4.35, 4.58);
+          expect(
+            body,
+            lessThan(80),
+            reason: 'LibreOffice must still stroke the L; body=$body',
+          );
+          expect(
+            spike,
+            greaterThan(body + 40),
+            reason: 'LibreOffice must not keep the clipped miter spike; '
+                'spike=$spike body=$body',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

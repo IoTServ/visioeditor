@@ -53,8 +53,10 @@
 /// `FillPattern` ids above 40 snap to solid `1`.
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
 /// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
-/// bake LineTo chamfers; arcs joins bake the same fillets as round
-/// (canvas `canvasStrokeJoin`). `Reflection*` cells are not tokens, so a
+/// bake LineTo chamfers; a `User.veMiterLimit` tighter than Draw's default
+/// 4 bakes the same chamfers, then the User row is dropped. Arcs joins
+/// bake the same fillets as round (canvas `canvasStrokeJoin`).
+/// `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
 /// Draw collects, then `ReflectionSize` is written 0. An unfilled 2-D
 /// stroke bakes a locked PNG band of the mirrored stroke, and a Foreign
@@ -3534,6 +3536,38 @@ void main() {
       isTrue,
     );
     expect(
+      miterLimitForLibvisioChamfer(const VsdxLine(
+        cap: LineCap.square,
+        miterLimit: 1,
+        weightInches: 0.08,
+      )),
+      1,
+    );
+    expect(
+      chamferForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        miterLimit: 1,
+        weightInches: 0.08,
+      )),
+      isTrue,
+    );
+    expect(
+      roundingForLibvisioWrite(const VsdxLine(
+        cap: LineCap.square,
+        miterLimit: 1,
+        weightInches: 0.08,
+      )),
+      closeTo(0.04, 1e-12),
+    );
+    expect(
+      miterLimitForLibvisioChamfer(const VsdxLine(
+        cap: LineCap.square,
+        miterLimit: 8,
+        weightInches: 0.08,
+      )),
+      isNull,
+    );
+    expect(
       roundingForLibvisioWrite(const VsdxLine(
         cap: LineCap.round,
         join: VsdxLineJoin.bevel,
@@ -3696,6 +3730,68 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('tight miterLimit bakes LineTo chamfers for LibreOffice', () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'TightMiter',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(2, 0),
+            LineTo(2, 2),
+          ],
+        ),
+      ],
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.2,
+        cap: LineCap.square,
+        miterLimit: 1,
+      ),
+    ).withDrawioMiterLimit(1);
+    expect(miterLimitForLibvisioChamfer(shape.line), 1);
+
+    final write = libvisioShapeWrite(shape);
+    expect(write.line.miterLimit, closeTo(4, 1e-12));
+    expect(
+      userCellsForLibvisioWrite(shape).any(
+        (cell) => cell.name == VsdxShape.userMiterLimit,
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.roundingInches, closeTo(0, 1e-12));
+    expect(after.line.miterLimit, closeTo(4, 1e-12));
+    expect(
+      after.userCells.any((cell) => cell.name == VsdxShape.userMiterLimit),
+      isFalse,
+    );
+    expect(after.geometries.single.commands.whereType<RelQuadBezTo>(), isEmpty);
+    expect(
+      after.geometries.single.commands.whereType<LineTo>().length,
+      greaterThan(2),
+    );
+    expect(
+      after.geometries.single.commands.whereType<LineTo>().any(
+            (command) =>
+                (command.x - 2).abs() < 1e-9 && (command.y - 0).abs() < 1e-9,
+          ),
+      isFalse,
+      reason: '90° elbow must be chamfered so Draw cannot grow a default miter',
+    );
   });
 
   test('every FillPattern 2–40, LinePattern 2–23, and Bullet 1–7 paints', () {

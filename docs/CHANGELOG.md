@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- `User.veMiterLimit` tighter than LibreOffice's default 4 now survives a
+  save into Draw. `_lineProperties` never emits `svg:stroke-miterlimit`, so
+  Draw used to keep a long miter while this editor already clipped the same
+  elbow. A save chamfers those corners as LineTo (the same cut bevel join
+  already uses) and drops the User row. Limits at or above 4 stay native.
 - Built-in `LinePattern` 2–23 now keep their gaps when a save bakes a
   LineColorTrans / LineGradient ribbon for LibreOffice. The ribbon is a
   filled silhouette, so Draw used to show a solid transparent band while
