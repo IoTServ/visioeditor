@@ -6,7 +6,8 @@
 /// `xmlStringToColour` forces Colour.a = 0, and unknown `LinePattern` ids
 /// (custom draw.io arrays, 0xFE, …) fall through `_lineProperties` to a solid
 /// stroke. A save therefore has to emit parallel Geometry rails, a built-in
-/// pattern 2–23, and — for an unfilled stroke with a line gradient or
+/// pattern 2–23, or — when `User.veDashPattern` is not one of those ids —
+/// MoveTo/LineTo dashes with LinePattern=1, and — for an unfilled stroke with a line gradient or
 /// LineColorTrans — a filled ribbon whose FillPattern 25–40 / FillForegndTrans
 /// libvisio *does* collect. Unfilled CompoundType 2–4 keep thick/thin contrast
 /// the same way: each rail becomes a filled ribbon of that rail's width,
@@ -5385,6 +5386,21 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     );
   }
 
+  final dashed = bakeCustomDashForLibvisio(
+    working,
+    geometries: geometries,
+    line: line,
+  );
+  if (dashed != null) {
+    geometries = dashed.geometries;
+    line = dashed.line;
+    geometryRewritten = true;
+    working = working.copyWith(
+      geometries: geometries,
+      line: line,
+    );
+  }
+
   final pattern = linePatternForLibvisioWrite(line);
   if (pattern != line.pattern) {
     line = line.copyWith(pattern: pattern);
@@ -6624,9 +6640,181 @@ List<VsdxPathCommand> strokeRibbonCommands(
   );
 }
 
+/// `true` when `User.veDashPattern` must become Geometry Draw can stroke.
+///
+/// `_lineProperties` only dashes ids 2–23. Custom draw.io arrays snap onto
+/// that table as a fallback, but a sequence that is not one of those ids
+/// (and every `veFixedDash` array, which is CSS-px rather than weight-
+/// scaled) has to be MoveTo/LineTo dashes with LinePattern=1. Filled 2-D
+/// keeps the original ring as NoLine so FillPattern is untouched.
+bool shapeNeedsLibvisioCustomDashBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  return _customDashCanBake(shape, shape.line, shape.geometries);
+}
+
+bool _customDashCanBake(
+  VsdxShape shape,
+  VsdxLine line,
+  List<VsdxGeometry> geometries,
+) {
+  if (!line.hasLine) return false;
+  final custom = line.customDashPattern;
+  if (custom == null || custom.isEmpty) return false;
+  final inches = effectiveDashPatternForLine(line);
+  if (inches == null || inches.isEmpty) return false;
+  for (final geometry in geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points != null && points.length >= 2) return true;
+  }
+  return false;
+}
+
+/// Drop `User.veDashPattern` / `veFixedDash` once dashes live in Geometry.
+List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
+  if (!shapeNeedsLibvisioCustomDashBake(shape)) return shape.userCells;
+  return <VsdxUserCell>[
+    for (final cell in shape.userCells)
+      if (cell.name != VsdxShape.userDashPattern &&
+          cell.name != VsdxShape.userFixedDash)
+        cell,
+  ];
+}
+
+/// Flatten [line]'s custom dash array into MoveTo/LineTo subpaths.
+({List<VsdxGeometry> geometries, VsdxLine line})? bakeCustomDashForLibvisio(
+  VsdxShape shape, {
+  List<VsdxGeometry>? geometries,
+  VsdxLine? line,
+}) {
+  final sourceLine = line ?? shape.line;
+  final sourceGeoms = geometries ?? shape.geometries;
+  if (!_customDashCanBake(shape, sourceLine, sourceGeoms)) return null;
+  final inches = effectiveDashPatternForLine(sourceLine);
+  if (inches == null || inches.isEmpty) return null;
+
+  final out = <VsdxGeometry>[];
+  var added = false;
+  for (final geometry in sourceGeoms) {
+    if (geometry.noShow || geometry.noLine) {
+      out.add(geometry);
+      continue;
+    }
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) {
+      out.add(geometry);
+      continue;
+    }
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final segments = _dashPolyline(points, inches, closed: closed);
+    final commands = <VsdxPathCommand>[
+      for (final segment in segments)
+        ...polylineCommands(segment, closed: false),
+    ];
+    if (commands.length < 2) {
+      out.add(geometry);
+      continue;
+    }
+    if (!geometry.noFill) {
+      out.add(geometry.copyWith(noLine: true));
+    }
+    out.add(
+      VsdxGeometry(
+        noFill: true,
+        noLine: false,
+        commands: commands,
+      ),
+    );
+    added = true;
+  }
+  if (!added) return null;
+  return (
+    geometries: out,
+    line: sourceLine.copyWith(
+      pattern: 1,
+      customDashPattern: null,
+      fixedDash: false,
+    ),
+  );
+}
+
+/// Resample [points] into dash/gap strokes. Even [pattern] slots are ink.
+List<List<Offset2D>> _dashPolyline(
+  List<Offset2D> points,
+  List<double> pattern, {
+  required bool closed,
+}) {
+  if (points.length < 2) return const <List<Offset2D>>[];
+  var dashes = pattern;
+  if (dashes.isEmpty) return <List<Offset2D>>[points];
+  if (dashes.length.isOdd) {
+    dashes = <double>[...dashes, ...dashes];
+  }
+  final cycle = dashes.fold<double>(0, (sum, value) => sum + value);
+  if (cycle <= 1e-12) return <List<Offset2D>>[List<Offset2D>.of(points)];
+
+  final ring = List<Offset2D>.of(points);
+  if (closed && ring.length >= 2) {
+    final a = ring.first;
+    final b = ring.last;
+    if ((a.x - b.x).abs() > 1e-9 || (a.y - b.y).abs() > 1e-9) {
+      ring.add(a);
+    }
+  }
+
+  final out = <List<Offset2D>>[];
+  var patternIdx = 0;
+  var draw = true;
+  var remaining = dashes[0];
+  List<Offset2D>? current;
+
+  void emit() {
+    if (current != null && current!.length >= 2) {
+      out.add(current!);
+    }
+    current = null;
+  }
+
+  for (var i = 0; i < ring.length - 1; i++) {
+    var ax = ring[i].x;
+    var ay = ring[i].y;
+    final bx = ring[i + 1].x;
+    final by = ring[i + 1].y;
+    final dx = bx - ax;
+    final dy = by - ay;
+    final len = math.sqrt(dx * dx + dy * dy);
+    if (len <= 1e-12) continue;
+    final ux = dx / len;
+    final uy = dy / len;
+    var pos = 0.0;
+    while (pos < len - 1e-12) {
+      if (remaining <= 1e-12) {
+        if (draw) emit();
+        patternIdx = (patternIdx + 1) % dashes.length;
+        draw = patternIdx.isEven;
+        remaining = dashes[patternIdx];
+        continue;
+      }
+      final take = math.min(remaining, len - pos);
+      final nx = ax + ux * take;
+      final ny = ay + uy * take;
+      if (draw) {
+        current ??= <Offset2D>[Offset2D(ax, ay)];
+        current!.add(Offset2D(nx, ny));
+      }
+      ax = nx;
+      ay = ny;
+      pos += take;
+      remaining -= take;
+    }
+  }
+  if (draw) emit();
+  return out;
+}
+
 /// Built-in `LinePattern` 0–23 that libvisio's `_lineProperties` switch
-/// actually dashes. Custom draw.io arrays and unknown ids become solid in
-/// Draw unless they snap to this table.
+/// actually dashes. Custom draw.io arrays that [bakeCustomDashForLibvisio]
+/// could not flatten still snap onto this table; unknown ids become solid.
 int linePatternForLibvisioWrite(VsdxLine line) {
   if (line.pattern == 0) return 0;
   final custom = line.customDashPattern;

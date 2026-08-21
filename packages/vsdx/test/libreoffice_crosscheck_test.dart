@@ -2652,6 +2652,26 @@ void main() {
             ),
       ),
     );
+    var customDashDocument = parser.parse(blank);
+    final customDashPage = customDashDocument.pages.first;
+    customDashDocument = customDashDocument.replacePage(
+      0,
+      customDashPage.addShape(
+        VsdxShapeFactory.line(
+          id: customDashPage.nextFreeShapeId(),
+          ax: 1,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          name: 'CustomDash',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.15,
+            pattern: 2,
+          ),
+        ).withDrawioDashPattern(const <double>[8, 4]),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -2765,6 +2785,10 @@ void main() {
       'auto_rotate': writer.write(
         originalBytes: blank,
         edited: autoRotateDocument,
+      ),
+      'custom_dash': writer.write(
+        originalBytes: blank,
+        edited: customDashDocument,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -4626,6 +4650,78 @@ void main() {
             lessThan(tangentInk),
             reason: 'LibreOffice must not leave the label axis-aligned; '
                 'tangent=$tangentInk horizontal=$horizontalInk',
+          );
+        }
+        if (entry.key == 'custom_dash') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'CustomDash');
+          expect(source.line.pattern, 1);
+          expect(source.line.customDashPattern, isNull);
+          expect(
+            source.userCells.any(
+              (cell) => cell.name == VsdxShape.userDashPattern,
+            ),
+            isFalse,
+          );
+          final moves = source.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          expect(moves, greaterThan(1));
+        }
+        if (entry.key == 'custom_dash' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // [8,4] × 0.15" → 1.2" dash / 0.6" gap. A LinePattern-2 snap
+          // ([6,3] × 0.15") would still be inking at x=2.5.
+          final ink = meanLuma(1.50, 5.42, 1.70, 5.58);
+          final gap = meanLuma(2.40, 5.42, 2.60, 5.58);
+          expect(
+            ink,
+            lessThan(gap - 15),
+            reason: 'LibreOffice must paint the custom dash, not the nearest '
+                'built-in LinePattern; ink=$ink gap=$gap',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

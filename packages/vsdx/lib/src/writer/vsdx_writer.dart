@@ -2696,7 +2696,8 @@ class VsdxWriter {
               !shapeNeedsLibvisioTextBlockBake(edited) &&
               !shapeNeedsLibvisioFontBake(edited) &&
               !shapeNeedsLibvisioGlowBake(edited) &&
-              !shapeNeedsLibvisioGlowPlateBake(edited))) {
+              !shapeNeedsLibvisioGlowPlateBake(edited) &&
+              !shapeNeedsLibvisioCustomDashBake(edited))) {
         return false;
       }
     }
@@ -3815,10 +3816,15 @@ class VsdxWriter {
     return true;
   }
 
-  /// Patch `<Section N="User">` to match [edited.userCells] (symmetric to
-  /// Property). Empty edited list drops the section.
+  /// Patch `<Section N="User">` to match [edited] after libvisio User-row
+  /// drops (custom dashes become Geometry). Empty list drops the section.
   bool _patchUserCells(XmlElement el, VsdxShape base, VsdxShape edited) {
-    if (_userCellsEqual(base.userCells, edited.userCells)) {
+    final editedCells = userCellsForLibvisioWrite(edited);
+    final droppingDash = shapeNeedsLibvisioCustomDashBake(edited) &&
+        edited.userCells.any((cell) =>
+            cell.name == VsdxShape.userDashPattern ||
+            cell.name == VsdxShape.userFixedDash);
+    if (!droppingDash && _userCellsEqual(base.userCells, edited.userCells)) {
       return _scrubUserCellInh(el, edited);
     }
     XmlElement? section;
@@ -3828,7 +3834,7 @@ class VsdxWriter {
         break;
       }
     }
-    if (edited.userCells.isEmpty) {
+    if (editedCells.isEmpty) {
       if (section == null) return false;
       section.parent?.children.remove(section);
       return true;
@@ -3839,14 +3845,14 @@ class VsdxWriter {
       final n = row.getAttribute('N');
       if (n != null) rowByName[n] = row;
     }
-    final editedNames = <String>{for (final c in edited.userCells) c.name};
+    final editedNames = <String>{for (final c in editedCells) c.name};
     for (final entry in rowByName.entries) {
       if (!editedNames.contains(entry.key)) {
         entry.value.parent?.children.remove(entry.value);
       }
     }
     var nextIx = _maxRowIx(section) + 1;
-    for (final c in edited.userCells) {
+    for (final c in editedCells) {
       var row = rowByName[c.name];
       if (row == null) {
         row = XmlElement(XmlName('Row'), <XmlAttribute>[
@@ -7770,8 +7776,9 @@ class VsdxWriter {
     if (s.userProperties.isNotEmpty) {
       children.add(_buildPropertySection(s.userProperties));
     }
-    if (s.userCells.isNotEmpty) {
-      children.add(_buildUserSection(s.userCells));
+    final userCells = userCellsForLibvisioWrite(s);
+    if (userCells.isNotEmpty) {
+      children.add(_buildUserSection(userCells));
     }
     if (s.controls.isNotEmpty) {
       children.add(_buildControlSection(s.controls));
@@ -8479,8 +8486,9 @@ class VsdxWriter {
     if (s.userProperties.isNotEmpty) {
       children.add(_buildPropertySection(s.userProperties));
     }
-    if (s.userCells.isNotEmpty) {
-      children.add(_buildUserSection(s.userCells));
+    final pictureUserCells = userCellsForLibvisioWrite(s);
+    if (pictureUserCells.isNotEmpty) {
+      children.add(_buildUserSection(pictureUserCells));
     }
     if (s.controls.isNotEmpty) {
       children.add(_buildControlSection(s.controls));
@@ -8826,6 +8834,7 @@ class VsdxWriter {
   /// the same path: `_lineProperties` would otherwise emit miter.
   static bool _shapeNeedsLibvisioGeometryRewrite(VsdxShape shape) {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
+    if (shapeNeedsLibvisioCustomDashBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
     if (shapeNeedsLibvisioArrowedStrokeBake(shape)) return true;
     if (shapeNeedsLibvisioGlowBake(shape)) return true;

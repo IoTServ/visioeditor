@@ -92,6 +92,30 @@ void main() {
     expect(linePatternForLibvisioWrite(const VsdxLine(pattern: 254)), 1);
     expect(linePatternForLibvisioWrite(const VsdxLine(pattern: 0)), 0);
   });
+
+  test('custom dash arrays that are not 2–23 bake as Geometry', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 0,
+      ay: 0,
+      bx: 6,
+      by: 0,
+      line: const VsdxLine(
+        weightInches: 0.15,
+        pattern: 2,
+        customDashPattern: <double>[8, 4],
+      ),
+    );
+    expect(shapeNeedsLibvisioCustomDashBake(shape), isTrue);
+    final write = libvisioShapeWrite(shape);
+    expect(write.line.pattern, 1);
+    expect(write.line.customDashPattern, isNull);
+    final moves = write.geometries
+        .expand((geometry) => geometry.commands)
+        .whereType<MoveTo>()
+        .length;
+    expect(moves, greaterThan(1));
+  });
 }
 
 Matcher closeToList(List<double> expected, [double eps = 1e-9]) =>

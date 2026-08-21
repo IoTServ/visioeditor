@@ -174,8 +174,20 @@ void main() {
         .pages
         .single
         .findShapeById(id)!;
-    expect(reopened.line.customDashPattern, <double>[8, 4, 2, 4]);
-    expect(reopened.line.fixedDash, isTrue);
+    expect(
+      reopened.line.customDashPattern,
+      isNull,
+      reason: 'User.veDashPattern is not a token; dashes bake as Geometry',
+    );
+    expect(reopened.line.pattern, 1);
+    expect(reopened.line.fixedDash, isFalse);
+    expect(
+      reopened.geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<MoveTo>()
+          .length,
+      greaterThan(1),
+    );
 
     const scalable = VsdxLine(
       weightInches: 0.02,

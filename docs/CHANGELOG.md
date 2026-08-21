@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io custom `User.veDashPattern` now survives a save into LibreOffice.
+  `_lineProperties` only dashes ids 2–23, so arrays that are not those ids
+  (and every `veFixedDash` CSS-px sequence) used to snap to a neighbour and
+  look wrong in Draw. A save bakes the effective dash/gap lengths as
+  MoveTo/LineTo subpaths, writes LinePattern 1, and drops the User rows so
+  this editor does not dash the geometry a second time. Canvas and SVG
+  already painted the custom array.
 - Cropped picture `Reflection*` now survives a save into LibreOffice. Those
   cells are not tokens; ImgOffset / ImgWidth / ImgHeight *are* collected, so
   mirroring the raw Foreign bitmap used to reflect pixels the crop hides.

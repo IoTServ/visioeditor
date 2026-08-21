@@ -17,7 +17,9 @@
 /// formula bakes the same way. Open arrow ids become filled ribbons of
 /// the original weight. Classic FillPattern 25–40 also paint here even when
 /// the model has no stop section yet. Unknown LinePattern ids snap to the
-/// built-in 2–23 table `_lineProperties` actually dashes. `LineCap` 0/1/2 is a
+/// built-in 2–23 table `_lineProperties` actually dashes; draw.io
+/// `User.veDashPattern` arrays that are not those ids bake as MoveTo/LineTo
+/// dashes with LinePattern=1. `LineCap` 0/1/2 is a
 /// token libvisio *does* collect. Character Highlight is skipped by
 /// `readCharIX` but a uniform marker with no authored TextBkgnd is written
 /// there — `VSDContentCollector` paints it as span `fo:background-color`
@@ -3430,6 +3432,62 @@ void main() {
       )),
       isFalse,
     );
+  });
+
+  test('custom Dash Pattern bakes MoveTo dashes for LibreOffice', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 3,
+      bx: 7,
+      by: 3,
+      name: 'CustomDash',
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.15,
+        pattern: 2,
+      ),
+    ).withDrawioDashPattern(const <double>[8, 4]);
+    expect(shapeNeedsLibvisioCustomDashBake(shape), isTrue);
+    expect(shape.line.customDashPattern, <double>[8, 4]);
+
+    final write = libvisioShapeWrite(shape);
+    expect(write.line.pattern, 1);
+    expect(write.line.customDashPattern, isNull);
+    expect(write.geometryRewritten, isTrue);
+    var moves = 0;
+    for (final geometry in write.geometries) {
+      for (final command in geometry.commands) {
+        if (command is MoveTo) moves++;
+      }
+    }
+    expect(moves, greaterThan(1),
+        reason: 'custom [8, 4] must become multiple dash subpaths, not a '
+            'single LinePattern-2 stroke');
+    expect(userCellsForLibvisioWrite(shape), isEmpty);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.pattern, 1);
+    expect(after.line.customDashPattern, isNull);
+    expect(
+      after.userCells.any((cell) => cell.name == VsdxShape.userDashPattern),
+      isFalse,
+    );
+    var savedMoves = 0;
+    for (final geometry in after.geometries) {
+      for (final command in geometry.commands) {
+        if (command is MoveTo) savedMoves++;
+      }
+    }
+    expect(savedMoves, greaterThan(1));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('every FillPattern 2–40, LinePattern 2–23, and Bullet 1–7 paints', () {
