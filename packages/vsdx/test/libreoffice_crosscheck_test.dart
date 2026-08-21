@@ -3496,6 +3496,7 @@ void main() {
     for (final entry in const <(String, String)>[
       ('connectors', 'test/fixtures/test4_connectors.vsdx'),
       ('zh_data', 'test/fixtures/数据治理.vsdx'),
+      ('zh_iceberg', 'test/fixtures/人才招聘冰山模型.vsdx'),
     ]) {
       final raw = await File(entry.$2).readAsBytes();
       inputs[entry.$1] =
@@ -7401,6 +7402,90 @@ void main() {
             greaterThan(70),
             reason: 'LibreOffice must keep the chevron wash; '
                 'b=${shaft.b} luma=${shaft.luma}',
+          );
+        }
+        if (entry.key == 'zh_iceberg') {
+          final reopened = parser.parse(entry.value);
+          final header = reopened.pages.first.findShapeById(925)!;
+          final title = reopened.pages.first.findShapeById(926)!;
+          expect(header.fill.hasFill, isTrue);
+          expect(header.fill.pattern, inInclusiveRange(25, 40));
+          expect(header.fill.paintGradient, isNotNull);
+          expect(title.fill.pattern, 0);
+          expect(title.geometries, isEmpty);
+          expect(title.richText.runs.first.charStyle.color?.value, 0xFFFFFFFF);
+        }
+        if (entry.key == 'zh_iceberg' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double luma, double b, int white}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumLuma = 0.0;
+            var sumB = 0.0;
+            var white = 0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                sumB += pixel.b;
+                if (pixel.r > 240 && pixel.g > 240 && pixel.b > 240) {
+                  white++;
+                }
+                count++;
+              }
+            }
+            if (count == 0) return (luma: 255.0, b: 0.0, white: 0);
+            return (luma: sumLuma / count, b: sumB / count, white: white);
+          }
+
+          // Sheet.925 header bar around pin (8.27, 6.07).
+          final bar = mean(7.2, 5.95, 9.2, 6.20);
+          expect(
+            bar.luma,
+            lessThan(200),
+            reason: 'LibreOffice must fill the 专业知识 header wash, not leave '
+                'a white card; luma=${bar.luma}',
+          );
+          expect(
+            bar.b,
+            greaterThan(150),
+            reason: 'LibreOffice must keep the purple header; '
+                'b=${bar.b} luma=${bar.luma}',
+          );
+          final glyphs = mean(8.0, 5.98, 8.55, 6.18);
+          expect(
+            glyphs.white,
+            greaterThan(40),
+            reason: 'LibreOffice must keep white 「专业知识」 glyphs on the '
+                'header; white=${glyphs.white} luma=${glyphs.luma}',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

@@ -63,6 +63,52 @@ void main() {
     expect(svg.contains('fill="#71717A"'), isFalse);
   });
 
+  test('专业知识 keeps white glyphs on the FillGradient header', () {
+    final doc = parser.parse(_fixture('人才招聘冰山模型.vsdx'));
+    final page = doc.pages.first;
+    final title = _findByText(page, '专业知识')!;
+    expect(title.geometries, isEmpty);
+    expect(title.fill.pattern, 1);
+    expect(title.richText.runs.first.charStyle.color?.value, 0xFFFFFFFF);
+
+    final header = page.findShapeById(925)!;
+    expect(header.fill.hasGradient, isTrue);
+    expect(header.fill.hasFill, isTrue);
+    expect(header.geometries, isNotEmpty);
+    expect(fillPatternForLibvisioWrite(header.fill), inInclusiveRange(25, 40));
+    expect(shapeNeedsLibvisioStrokeRibbon(header), isFalse);
+
+    expect(libvisioShapeWrite(title).fill.pattern, 0,
+        reason: 'stale FillPattern=1 must not become an Edraw text-box fill');
+    final headerWrite = libvisioShapeWrite(header);
+    expect(headerWrite.fill.pattern, inInclusiveRange(25, 40));
+    expect(headerWrite.fill.foreground, isNotNull);
+
+    final svg = VsdxToSvgSerializer().serializePage(
+      page,
+      theme: doc.theme,
+      images: doc.images,
+    );
+    expect(svg, contains('专业知识'));
+    expect(svg.toLowerCase(), contains('#ffffff'));
+    expect(svg.toLowerCase(), contains('a78bfa'));
+    expect(svg.toLowerCase(), contains('8b5cf6'));
+
+    final saved = const VsdxWriter().write(
+      originalBytes: _fixture('人才招聘冰山模型.vsdx'),
+      edited: doc,
+    );
+    final after = parser.parse(saved);
+    expect(after.pages.first.findShapeById(926)!.fill.pattern, 0);
+    expect(after.pages.first.findShapeById(925)!.fill.pattern, isNot(0));
+    expect(after.pages.first.findShapeById(925)!.fill.paintGradient, isNotNull);
+    expect(
+      after.pages.first.findShapeById(926)!.richText.runs.first.charStyle.color
+          ?.value,
+      0xFFFFFFFF,
+    );
+  });
+
   test('Edraw annotation Groups are structural but not foldable', () {
     // Groups 1004/1005/1009/1013 wrap (arrow + title + body). They must stay
     // `group` (containment) but must NOT be foldable — otherwise the painter

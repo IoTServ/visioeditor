@@ -52,6 +52,14 @@ const _recoversFieldText = <String>{
   'vdx_all_types.vdx',
 };
 
+/// Sources whose original Draw view is hollow because libvisio has no
+/// FillGradient token (FillPattern omitted / 0). A save writes classic
+/// FillPattern 25–40, so the saved PDF is *supposed* to look different.
+const _recoversOmittedFillGradient = <String>{
+  '人才招聘冰山模型.vsdx',
+  '数据治理.vsdx',
+};
+
 void main() {
   final enabled = Platform.environment[_runEnvironment] == '1';
   final soffice = _resolveExecutable(const <String>['soffice', 'libreoffice'],
@@ -134,6 +142,9 @@ void main() {
             continue;
           }
           if (_recoversFieldText.contains(file.uri.pathSegments.last)) continue;
+          if (_recoversOmittedFillGradient.contains(file.uri.pathSegments.last)) {
+            continue;
+          }
           final error = _meanAbsoluteError(a, b);
           if (error > _maxMeanAbsoluteError) {
             failures.add(

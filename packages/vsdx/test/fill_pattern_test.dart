@@ -176,4 +176,21 @@ void main() {
     expect(svg, contains('linearGradient'));
     expect(svg, contains('url(#grad-'));
   });
+
+  test('geometry-less FillPattern=1 writes 0 so Edraw cannot fill the text box',
+      () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 0.3,
+      fill: const VsdxFill(
+        pattern: 1,
+        foreground: VsdxColor(0xFFFFFFFF),
+      ),
+    ).copyWith(geometries: const <VsdxGeometry>[]);
+    expect(shape.fill.pattern, 1);
+    expect(libvisioShapeWrite(shape).fill.pattern, 0);
+  });
 }

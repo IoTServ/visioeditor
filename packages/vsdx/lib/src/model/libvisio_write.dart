@@ -16,7 +16,9 @@
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
 /// 2–23 (which `_lineProperties` *does* collect on a stroke) are flattened
 /// to MoveTo/LineTo first, the same way custom `User.veDashPattern` already
-/// is, so Draw keeps the gaps. Unfilled CompoundType 2–4 keep thick/thin contrast
+/// is, so Draw keeps the gaps. Geometry-less Edraw labels that still carry
+/// FillPattern=1 (no path for `m_currentFillGeometry`) write FillPattern=0
+/// so Edraw does not fill the text box and hide white glyphs. Unfilled CompoundType 2–4 keep thick/thin contrast
 /// the same way: each rail becomes a filled ribbon of that rail's width,
 /// because LineWeight is shape-level and stroked rails would share the
 /// thinnest width. Arrowed 1-D connectors that also need those
@@ -6146,6 +6148,8 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     geometryRewritten = true;
   }
 
+  fill = _fillWithoutStaleLibvisioPattern(fill, geometries);
+
   return LibvisioShapeWrite(
     geometries: geometries,
     line: line,
@@ -6180,6 +6184,21 @@ bool _geometriesPaintFill(VsdxFill fill, List<VsdxGeometry> geometries) {
     if (!geometry.noShow && !geometry.noFill) return true;
   }
   return false;
+}
+
+/// Drop a leftover FillPattern when libvisio will never collect a path.
+///
+/// Edraw text labels (「专业知识」, 「70% 隐性」, …) store FillPattern=1 and
+/// FillForegnd but omit Geometry. Visio / libvisio then paint text only.
+/// A save that keeps FillPattern=1 lets Edraw fill the Width×Height box —
+/// a white plate that hides white glyphs on the header wash.
+VsdxFill _fillWithoutStaleLibvisioPattern(
+  VsdxFill fill,
+  List<VsdxGeometry> geometries,
+) {
+  if (fill.pattern == 0 || fill.hasGradient) return fill;
+  if (_geometriesPaintFill(fill, geometries)) return fill;
+  return fill.copyWith(pattern: 0);
 }
 
 bool _geometriesPaintLine(VsdxLine line, List<VsdxGeometry> geometries) {

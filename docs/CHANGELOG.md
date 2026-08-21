@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Geometry-less Edraw labels no longer keep a stale `FillPattern=1` box.
+  「专业知识」 on `人才招聘冰山模型.vsdx` is white text on a purple
+  FillGradient header; omitting Geometry means Visio paints text only, but
+  a save that kept FillPattern=1 let Edraw fill the text box and hide the
+  glyphs. The header wash still bakes classic FillPattern 25–40 (libvisio
+  has no FillGradient token). A save now writes FillPattern=0 on those
+  text-only leaves.
 - Omitted `FillPattern` with `FillGradientEnabled` now keeps the wash in
   the editor and in LibreOffice. Edraw chevrons (for example the large
   arrow under「数据治理组织每个模块都有责任人」) default to libvisio's
