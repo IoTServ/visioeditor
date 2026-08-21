@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FlipY unfilled-stroke Reflections now keep the mirrored band in
+  LibreOffice. Draw used to drop the effect because copying FlipY onto
+  the PNG would mirror the band twice. A save places the plate with the
+  same FlipY-aware LocPin the filled mirror uses and flips the PNG so
+  the fade still points away from the shape.
 - Rounding SoftEdges now keep filleted corners in LibreOffice. Draw
   collects `Rounding` on native geometry, but a save used to drop the
   fill onto a sharp PNG box. The same fillet canvas / SVG / libvisio

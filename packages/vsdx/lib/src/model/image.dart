@@ -1209,7 +1209,9 @@ void _compositeOntoWhite(raster.Image work) {
 /// clipped to [bandHeightPx] below the shape and faded toward the far edge.
 /// [padPx] keeps the outer stroke half and the blur halo from clipping; the
 /// band starts [padPx] rows in, so rows above it hold the stroke that spills
-/// past the mirror axis.
+/// past the mirror axis. [flipVertical] is for a FlipY source: the plate
+/// sits above the shape in local Y (`_reflectFillRing`), and Visio maps
+/// PNG row 0 to local max Y, so the near-axis rows must land on min Y.
 Uint8List? bakeStrokedReflectionPng({
   required int innerWidthPx,
   required int innerHeightPx,
@@ -1224,6 +1226,7 @@ Uint8List? bakeStrokedReflectionPng({
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> outer = const <({double x, double y})>[],
   List<({double x, double y})> inner = const <({double x, double y})>[],
+  bool flipVertical = false,
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
   if (bandHeightPx < 1 || padPx < 0) return null;
@@ -1284,6 +1287,19 @@ Uint8List? bakeStrokedReflectionPng({
       work = raster.gaussianBlur(work, radius: radius);
     }
     _compositeOntoWhite(work);
+    if (flipVertical) {
+      final flipped = raster.Image(
+        width: work.width,
+        height: work.height,
+        numChannels: 4,
+      );
+      for (var y = 0; y < work.height; y++) {
+        for (var x = 0; x < work.width; x++) {
+          flipped.setPixel(x, work.height - 1 - y, work.getPixel(x, y));
+        }
+      }
+      work = flipped;
+    }
     return raster.encodePng(work);
   } catch (_) {
     return null;

@@ -3697,8 +3697,9 @@ void main() {
     );
     expect(
       shapeNeedsLibvisioReflectionBake(shape.copyWith(flipY: true)),
-      isFalse,
-      reason: 'FlipY would mirror the band twice; keep it native',
+      isTrue,
+      reason: 'FlipY places the plate via `_reflectFillRing`; the PNG is '
+          'not FlipY-copied',
     );
 
     final blank = writer.emptyDocument();
@@ -3753,6 +3754,37 @@ void main() {
       near.b - near.r,
       greaterThan(far.b - far.r),
       reason: 'the band must fade toward the far edge',
+    );
+
+    final flipped = shape.copyWith(
+      id: 3,
+      name: 'StrokeMirrorFlipY',
+      flipY: true,
+    );
+    expect(shapeNeedsLibvisioReflectionBake(flipped), isTrue);
+    var flipDoc = parser.parse(blank);
+    flipDoc = flipDoc.replacePage(0, flipDoc.pages.first.addShape(flipped));
+    final flippedBaked = documentForLibvisioWrite(flipDoc);
+    final flippedPlate =
+        flippedBaked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(flippedPlate.flipY, isFalse,
+        reason: 'copying FlipY onto the PNG would mirror the band twice');
+    expect(flippedPlate.hasImage, isTrue);
+    expect(
+      flippedPlate.pinY - flippedPlate.effectiveLocPinY,
+      greaterThan(flipped.pinY - flipped.effectiveLocPinY),
+      reason: 'FlipY band sits past local max Y so Draw keeps it on the '
+          'visual-bottom side after the source FlipY',
+    );
+    final flippedPng = raster.decodePng(
+      flippedBaked.images.findByPart(flippedPlate.imagePartName!)!.bytes,
+    )!;
+    final nearFlip = flippedPng.getPixel(2, flippedPng.height - 3);
+    final farFlip = flippedPng.getPixel(2, 3);
+    expect(
+      nearFlip.b - nearFlip.r,
+      greaterThan(farFlip.b - farFlip.r),
+      reason: 'FlipY PNG near-axis rows must land on min Y (image bottom)',
     );
 
     final saved = writer.write(originalBytes: blank, edited: doc);

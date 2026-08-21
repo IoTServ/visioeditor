@@ -530,11 +530,12 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
 /// Unfilled 2-D strokes: canvas `_drawReflection` strokes the flipped path,
 /// so filling the mirror geometry would paint an interior Draw leaves empty.
 /// A locked PNG band carries the mirrored stroke instead. Theme-only stroke
-/// colours and FlipY stay native — the first keeps THEMEVAL(), the second
-/// would need the band mirrored twice.
+/// colours stay native so THEMEVAL() survives. FlipY is applied when placing
+/// the plate (`_reflectFillRing`) — copying FlipY onto the PNG would mirror
+/// the already-placed band twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.flipY) return false;
+  if (shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
@@ -740,6 +741,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     kind: kind,
     outer: outer,
     inner: inner,
+    flipVertical: shape.flipY,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
@@ -750,6 +752,7 @@ VsdxShape _reflectionPngPlateForLibvisioWrite(
   required int id,
   required String imagePartName,
   required double padInches,
+  bool flipY = false,
 }) {
   final box = _reflectionPlateLocalBox(source, padInches);
   return VsdxShapeFactory.picture(
@@ -765,7 +768,7 @@ VsdxShape _reflectionPngPlateForLibvisioWrite(
     locPinYInches: box.locPinY,
     angleRad: source.angleRad,
     flipX: source.flipX,
-    flipY: source.flipY,
+    flipY: flipY,
     locked: true,
     layerMemberIds: source.layerMemberIds,
     richText: const VsdxRichText(
@@ -852,12 +855,17 @@ List<VsdxShape> _bakeReflectionTree(
     if (shapeNeedsLibvisioReflectionBake(next)) {
       VsdxShape? plate;
       ({Uint8List png, double padInches})? payload;
+      var pngPlateFlipY = false;
       if (_shapeCanLibvisioStrokeReflectionPng(next)) {
         payload = _strokeReflectionPngForLibvisioWrite(next);
+        // LocPin already follows FlipY via `_reflectFillRing`. Copying
+        // FlipY onto the bitmap would mirror the band twice.
+        pngPlateFlipY = false;
       } else if (_shapeCanLibvisioPictureReflectionPng(next)) {
         final sourceImage = _imageForLibvisioWrite(images, next.imagePartName);
         if (sourceImage != null) {
           payload = _pictureReflectionPngForLibvisioWrite(next, sourceImage);
+          pngPlateFlipY = next.flipY;
         }
       } else {
         plate = _reflectionPlateForLibvisioWrite(
@@ -880,6 +888,7 @@ List<VsdxShape> _bakeReflectionTree(
           id: plateIds[next.id] ?? nextId(),
           imagePartName: part,
           padInches: payload.padInches,
+          flipY: pngPlateFlipY,
         );
       }
       if (plate != null) {
@@ -4844,9 +4853,7 @@ List<List<Offset2D>> _softEdgesCompoundRibbonPolygons(VsdxShape shape) {
       // Closed rails become an open loop (repeat the start) so the ribbon
       // is one `[...left, ...right.reversed]` strip `_paintFilledPolygons`
       // can fill. `closed: true` offsets would need even-odd hole pairs.
-      final loop = dashed || !closed
-          ? poly
-          : <Offset2D>[...poly, poly.first];
+      final loop = dashed || !closed ? poly : <Offset2D>[...poly, poly.first];
       for (final rail in rails) {
         final centre = offsetPolyline(loop, rail.offset, closed: false);
         if (centre.length < 2) continue;
