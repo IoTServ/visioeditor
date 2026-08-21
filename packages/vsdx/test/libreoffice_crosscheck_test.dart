@@ -2635,6 +2635,33 @@ void main() {
         ),
       ),
     );
+    var reflectionStroke1dDocument = parser.parse(blank);
+    final reflectionStroke1dPage = reflectionStroke1dDocument.pages.first;
+    reflectionStroke1dDocument = reflectionStroke1dDocument.replacePage(
+      0,
+      reflectionStroke1dPage.addShape(
+        VsdxShapeFactory.line(
+          id: reflectionStroke1dPage.nextFreeShapeId(),
+          ax: 2,
+          ay: 5.5,
+          bx: 6.5,
+          by: 5.5,
+          name: 'ReflectionStroke1d',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF1565C0),
+            weightInches: 0.14,
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 1,
+            distanceInches: 0.1,
+            transparency: 0.15,
+            blurInches: 0,
+          ),
+        ),
+      ),
+    );
     var reflectionStrokeFlipDocument = parser.parse(blank);
     final reflectionStrokeFlipPage = reflectionStrokeFlipDocument.pages.first;
     reflectionStrokeFlipDocument = reflectionStrokeFlipDocument.replacePage(
@@ -3300,6 +3327,63 @@ void main() {
         ),
       ),
     );
+    var filledLineTransDashDocument = parser.parse(blank);
+    final filledLineTransDashPage = filledLineTransDashDocument.pages.first;
+    filledLineTransDashDocument = filledLineTransDashDocument.replacePage(
+      0,
+      filledLineTransDashPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: filledLineTransDashPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'FilledDashTrans',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.22,
+            transparency: 0.5,
+            pattern: 2,
+          ),
+        ),
+      ),
+    );
+    var filledLineTransArrowsDocument = parser.parse(blank);
+    final filledLineTransArrowsPage =
+        filledLineTransArrowsDocument.pages.first;
+    filledLineTransArrowsDocument = filledLineTransArrowsDocument.replacePage(
+      0,
+      filledLineTransArrowsPage.addShape(
+        VsdxShape(
+          id: filledLineTransArrowsPage.nextFreeShapeId(),
+          name: 'FilledOpenArrows',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 1.5,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0.15, 0.3),
+                LineTo(2.85, 0.3),
+                LineTo(2.85, 1.2),
+              ],
+            ),
+          ],
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.16,
+            transparency: 0.5,
+            beginArrow: 4,
+            endArrow: 13,
+            beginArrowSizeInches: 0.28,
+            endArrowSizeInches: 0.28,
+          ),
+        ),
+      ),
+    );
     var roundCapMiterDocument = parser.parse(blank);
     final roundCapMiterPage = roundCapMiterDocument.pages.first;
     roundCapMiterDocument = roundCapMiterDocument.replacePage(
@@ -3491,6 +3575,10 @@ void main() {
         originalBytes: blank,
         edited: reflectionStrokeDocument,
       ),
+      'reflection_stroke_1d': writer.write(
+        originalBytes: blank,
+        edited: reflectionStroke1dDocument,
+      ),
       'reflection_stroke_flipy': writer.write(
         originalBytes: blank,
         edited: reflectionStrokeFlipDocument,
@@ -3558,6 +3646,14 @@ void main() {
       'filled_line_trans_compound': writer.write(
         originalBytes: blank,
         edited: filledLineTransCompoundDocument,
+      ),
+      'filled_line_trans_dash': writer.write(
+        originalBytes: blank,
+        edited: filledLineTransDashDocument,
+      ),
+      'filled_line_trans_arrows': writer.write(
+        originalBytes: blank,
+        edited: filledLineTransArrowsDocument,
       ),
       'round_cap_miter': writer.write(
         originalBytes: blank,
@@ -5991,6 +6087,81 @@ void main() {
                 'interiorR=${bandInterior.r} interiorB=${bandInterior.b}',
           );
         }
+        if (entry.key == 'reflection_stroke_1d') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ReflectionStroke1d');
+          expect(source.reflection.enabled, isFalse);
+          expect(source.is1D, isTrue);
+          expect(source.line.pattern, 1);
+          final plate = reopened.pages.first.shapes
+              .where(isLibvisioReflectionPlate)
+              .single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.is1D, isFalse);
+        }
+        if (entry.key == 'reflection_stroke_1d' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          final sourceRail = mean(3.5, 5.42, 5.0, 5.58);
+          final bandRail = mean(3.5, 5.18, 5.0, 5.34);
+          expect(
+            sourceRail.b,
+            greaterThan(sourceRail.r + 20),
+            reason: 'LibreOffice must still stroke the 1-D source; '
+                'sourceB=${sourceRail.b} sourceR=${sourceRail.r}',
+          );
+          expect(
+            bandRail.b,
+            greaterThan(bandRail.r + 8),
+            reason: 'LibreOffice must paint the 1-D mirrored stroke, not '
+                'drop it; bandB=${bandRail.b} bandR=${bandRail.r}',
+          );
+        }
         if (entry.key == 'reflection_stroke_flipy') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -7283,6 +7454,98 @@ void main() {
             lessThan(220),
             reason: 'LibreOffice must paint the outer rail on the page; '
                 'outer=$outerRail gap=$gap',
+          );
+        }
+        if (entry.key == 'filled_line_trans_dash') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FilledDashTrans');
+          expect(source.fill.foreground?.value, 0xFFFF0000);
+          expect(source.line.pattern, 0);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+            hasLength(1),
+          );
+          expect(
+            reopened.pages.first.shapes
+                .where(isLibvisioStrokeRibbonPlate)
+                .single
+                .geometries
+                .where((g) => !g.noFill)
+                .length,
+            greaterThan(1),
+          );
+        }
+        if (entry.key == 'filled_line_trans_dash' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          final interior = meanLuma(4.1, 5.4, 4.4, 5.6);
+          expect(
+            interior,
+            lessThan(100),
+            reason: 'LibreOffice must keep the red fill; interior=$interior',
+          );
+        }
+        if (entry.key == 'filled_line_trans_arrows') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FilledOpenArrows');
+          expect(source.fill.foreground?.value, 0xFFFF0000);
+          expect(source.line.pattern, 0);
+          expect(source.line.beginArrow, 0);
+          expect(source.line.endArrow, 0);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+            hasLength(1),
+          );
+          expect(
+            reopened.pages.first.shapes
+                .where(isLibvisioStrokeRibbonPlate)
+                .single
+                .geometries
+                .where((g) => !g.noFill)
+                .length,
+            greaterThan(1),
           );
         }
         if (entry.key == 'round_cap_miter') {

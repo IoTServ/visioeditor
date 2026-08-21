@@ -39,8 +39,9 @@
 /// those into RGB toward white and writes Trans=0 (theme-bound RGB-less
 /// cells keep THEMEVAL). Filled-shape LineColorTrans / LineGradient bake a
 /// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
-/// the source line. CompoundType 1–4 rails join that sibling so Draw does
-/// not keep opaque parallel strokes on top of the wash.
+/// the source line. CompoundType 1–4 rails, LinePattern 2–23 dashes, and
+/// open-path Begin/EndArrow join that sibling so Draw does not keep an
+/// opaque stroke (or hang markers on a dropped line) on top of the wash.
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
 /// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
@@ -67,7 +68,8 @@
 /// `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
 /// Draw collects, then `ReflectionSize` is written 0. An unfilled 2-D
-/// stroke bakes a locked PNG band of the mirrored stroke, and a Foreign
+/// stroke bakes a locked PNG band of the mirrored stroke, an unfilled
+/// 1-D stroke bakes the same PNG from its stroke ribbon, and a Foreign
 /// picture bakes a locked Gaussian PNG sibling of the same mirrored bitmap
 /// canvas / SVG already paint (cropped pictures composite the Img*
 /// window into the frame first). Glow on a filled
@@ -5317,6 +5319,164 @@ void main() {
       }
     }
     expect(maxX, greaterThan(3.2));
+  });
+
+  test('filled dashed LineColorTrans bakes dash ribbons for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'FilledDashTrans',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.2,
+        transparency: 0.5,
+        pattern: 2,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final page = parser.parse(saved).pages.first;
+    final after = page.findShapeById(1)!;
+    expect(after.fill.foreground?.value, 0xFFFF0000);
+    expect(after.line.pattern, 0);
+    final plate = page.shapes.firstWhere(isLibvisioStrokeRibbonPlate);
+    expect(plate.locked, isTrue);
+    expect(plate.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(
+      plate.geometries.where((g) => !g.noFill).length,
+      greaterThan(1),
+      reason: 'each dash must be its own filled ribbon, not a solid ring',
+    );
+  });
+
+  test('filled open-path LineColorTrans bakes arrow Geometry on the ribbon',
+      () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'FilledOpenArrows',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1.2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(0.1, 0.2),
+            LineTo(2.9, 0.2),
+            LineTo(2.9, 1.0),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.16,
+        transparency: 0.5,
+        beginArrow: 4,
+        endArrow: 13,
+        beginArrowSizeInches: 0.25,
+        endArrowSizeInches: 0.25,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.foreground?.value, 0xFFFF0000);
+    expect(source.line.pattern, 0);
+    expect(source.line.beginArrow, 0);
+    expect(source.line.endArrow, 0);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioStrokeRibbonPlate).single;
+    expect(plate.line.beginArrow, 0);
+    expect(plate.line.endArrow, 0);
+    expect(
+      plate.geometries.where((g) => !g.noFill).length,
+      greaterThan(1),
+      reason: 'arrow polygons ride the sibling whose fill is the stroke',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedPage = parser.parse(saved).pages.first;
+    expect(savedPage.findShapeById(1)!.line.endArrow, 0);
+    expect(
+      savedPage.shapes.where(isLibvisioStrokeRibbonPlate).single.geometries
+          .where((g) => !g.noFill)
+          .length,
+      greaterThan(1),
+    );
+  });
+
+  test('1-D stroke Reflection bakes a PNG band for LibreOffice', () {
+    const colour = VsdxColor(0xFF1565C0);
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 2,
+      ay: 5.5,
+      bx: 6.5,
+      by: 5.5,
+      name: 'ReflectionStroke1d',
+      line: const VsdxLine(
+        color: colour,
+        weightInches: 0.12,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 1,
+        distanceInches: 0.08,
+        transparency: 0.2,
+        blurInches: 0,
+      ),
+    );
+    expect(shape.is1D, isTrue);
+    expect(shape.height.abs(), closeTo(0, 1e-12));
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.is1D, isTrue);
+    expect(source.line.pattern, 1);
+    expect(source.fill.pattern, 0);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.is1D, isFalse);
+    expect(plate.height, greaterThan(0.05));
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    var ink = 0;
+    for (var y = 0; y < decoded.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.b > pixel.r + 15 && pixel.a > 20) ink++;
+      }
+    }
+    expect(ink, greaterThan(8),
+        reason: 'the 1-D mirror PNG must carry stroke ink, not an empty plate');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.reflection.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(1),
+    );
   });
 
   test('every FillPattern 2–40, LinePattern 2–23, and Bullet 1–7 paints', () {

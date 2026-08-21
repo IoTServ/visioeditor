@@ -583,6 +583,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Filled LineColorTrans / LineGradient with LinePattern 2–23 now keep dash
+  gaps in LibreOffice. Draw used to skip the sibling ribbon (opaque dashes
+  on the body). A save puts per-dash filled ribbons on the locked sibling
+  whose FillForegndTrans Draw collects.
+- Filled open-path LineColorTrans now keeps arrowheads in LibreOffice. A
+  save used to skip the ribbon so Draw painted an opaque stroke. Arrow
+  Geometry now rides the sibling (stroke colour), and the source drops
+  Begin/EndArrow.
+- Unfilled 1-D stroke Reflection now keeps the mirror in LibreOffice.
+  Canvas inflates zero-area 1-D bounds by half LineWeight; a save used to
+  skip `is1D` so Draw dropped the band (`Reflection*` is not a token). A
+  2-D PNG plate is sized to the stroke ribbon.
 - FlipX / FlipY Curved Text and Shape Inside now keep the upright arc /
   outline bands in LibreOffice. Canvas extra-mirrors text about TxtPin
   (`_textFlip*`) after the shape XForm; a save used to skip those leaves

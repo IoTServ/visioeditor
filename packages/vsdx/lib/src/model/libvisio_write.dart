@@ -61,10 +61,11 @@
 /// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
 /// those into RGB toward white and writes Trans=0. A filled 2-D shape that
 /// still paints a stroke bakes LineColorTrans / LineGradient / CompoundType
-/// 1–4 rails / a long `veMiterLimit` spike as a locked sibling ribbon whose
-/// FillForegndTrans Draw collects, then drops the source line so Draw does
-/// not paint an opaque (or short-miter) stroke on top. Theme-bound colours
-/// with no resolved RGB are left alone so THEMEVAL() survives. Page
+/// 1–4 rails / LinePattern 2–23 and `veDashPattern` dash ribbons / open-path
+/// arrow Geometry / a long `veMiterLimit` spike as a locked sibling ribbon
+/// whose FillForegndTrans Draw collects, then drops the source line so Draw
+/// does not paint an opaque (or short-miter) stroke on top. Theme-bound
+/// colours with no resolved RGB are left alone so THEMEVAL() survives. Page
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
@@ -144,7 +145,10 @@
 /// built-in LinePattern 2–23, `veDashPattern`, and CompoundType 1–4 rails
 /// go into that band as ribbons so Draw does not keep a solid ring or
 /// drop the mirror; a resolved-RGB LineGradient is sampled into the same
-/// band so Draw does not keep a solid LineColor ring),
+/// band so Draw does not keep a solid LineColor ring), an unfilled 1-D
+/// stroke bakes the same PNG band from its stroke ribbon (a Foreign plate
+/// cannot use a zero-height 1-D XForm, and canvas `_drawReflection`
+/// already inflates that degenerate bounds by half LineWeight),
 /// and a Foreign picture bakes a locked Gaussian PNG sibling of
 /// the same mirrored bitmap canvas / SVG already paint (cropped
 /// pictures composite the Img* window into the frame first; FlipY
@@ -448,6 +452,20 @@ List<Offset2D> _aabbRing(VsdxShape shape) => <Offset2D>[
       const Offset2D(0, 0),
     ];
 
+/// Stroke-inflated AABB for 1-D reflection plates; 2-D keeps the XForm box.
+List<Offset2D> _reflectionSourceAabbRing(VsdxShape shape) {
+  if (!shape.is1D) return _aabbRing(shape);
+  final aabb = _polygonsAabb(_libvisioStrokeSilhouettePolygons(shape));
+  if (aabb == null) return _aabbRing(shape);
+  return <Offset2D>[
+    Offset2D(aabb.minX, aabb.minY),
+    Offset2D(aabb.maxX, aabb.minY),
+    Offset2D(aabb.maxX, aabb.maxY),
+    Offset2D(aabb.minX, aabb.maxY),
+    Offset2D(aabb.minX, aabb.minY),
+  ];
+}
+
 List<Offset2D> _reflectFillRing(
   List<Offset2D> local,
   VsdxShape shape, {
@@ -534,35 +552,44 @@ List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
 /// `tokens.txt` has no ReflectionSize. Canvas / SVG already paint the mirror;
 /// LibreOffice only sees Fill / Line / Geometry / ForeignData, so a filled
 /// 2-D leaf bakes a NoLine sibling (FillForegndTrans is a token), an
-/// unfilled 2-D stroke bakes a mirrored PNG band, and a Foreign picture
-/// bakes a Gaussian PNG sibling, then the live cells go to 0.
+/// unfilled 2-D or 1-D stroke bakes a mirrored PNG band, and a Foreign
+/// picture bakes a Gaussian PNG sibling, then the live cells go to 0.
+/// Filled 1-D stays native — its FillPattern is already the body and a
+/// zero-height plate cannot carry a fill mirror.
 bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D) return false;
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
   if (reflection.transparency >= 1 - 1e-9) return false;
-  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
-  if (_shapePaintsFill(shape, shape.geometries)) return true;
+  if (shape.is1D) {
+    if (shape.width.abs() <= 1e-9 && shape.height.abs() <= 1e-9) {
+      return false;
+    }
+  } else if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) {
+    return false;
+  }
+  if (!shape.is1D && _shapePaintsFill(shape, shape.geometries)) return true;
   if (_shapeCanLibvisioStrokeReflectionPng(shape)) return true;
   return _shapeCanLibvisioPictureReflectionPng(shape);
 }
 
-/// Unfilled 2-D strokes: canvas `_drawReflection` strokes the flipped path,
-/// so filling the mirror geometry would paint an interior Draw leaves empty.
-/// A locked PNG band carries the mirrored stroke instead. Built-in
-/// LinePattern 2–23, custom `veDashPattern`, and CompoundType 1–4 rails
-/// are painted as ribbons so Draw keeps the gaps / thick-thin contrast
-/// (a solid ring would hide them; CompoundType is not a token, so skipping
-/// the bake would drop the mirror). A resolved-RGB LineGradient is sampled
-/// into the same band (`tokens.txt` has no LineGradient; a solid LineColor
-/// ring would hide the wash). Theme-only stroke colours stay native so
-/// THEMEVAL() survives. FlipY is applied when placing the plate
-/// (`_reflectFillRing`) — copying FlipY onto the PNG would mirror the
-/// already-placed band twice.
+/// Unfilled 2-D and 1-D strokes: canvas `_drawReflection` strokes the
+/// flipped path, so filling the mirror geometry would paint an interior
+/// Draw leaves empty. A locked PNG band carries the mirrored stroke
+/// instead. 1-D uses a 2-D plate sized to the stroke ribbon (canvas
+/// inflates zero-area bounds by half LineWeight; a Foreign picture cannot
+/// hang on a zero-height 1-D XForm). Built-in LinePattern 2–23, custom
+/// `veDashPattern`, and CompoundType 1–4 rails are painted as ribbons so
+/// Draw keeps the gaps / thick-thin contrast (a solid ring would hide
+/// them; CompoundType is not a token, so skipping the bake would drop the
+/// mirror). A resolved-RGB LineGradient is sampled into the same band
+/// (`tokens.txt` has no LineGradient; a solid LineColor ring would hide
+/// the wash). Theme-only stroke colours stay native so THEMEVAL()
+/// survives. FlipY is applied when placing the plate (`_reflectFillRing`)
+/// — copying FlipY onto the PNG would mirror the already-placed band
+/// twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
@@ -574,13 +601,20 @@ bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
   if (reflection.transparency >= 1 - 1e-9) return false;
-  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (shape.is1D) {
+    if (shape.width.abs() <= 1e-9 && shape.height.abs() <= 1e-9) {
+      return false;
+    }
+  } else if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) {
+    return false;
+  }
   if (shape.line.compoundType != 0) {
     return _softEdgesCompoundRibbonPolygons(shape).isNotEmpty;
   }
   if (_shapeHasSoftEdgesDashes(shape)) {
     return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
   }
+  if (shape.is1D) return _solidStrokeRibbonPolygons(shape).isNotEmpty;
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
 
@@ -650,11 +684,19 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     _reflectionPlateLocalBox(VsdxShape shape, [double? padInches]) {
   final dist = math.max(shape.reflection.distanceInches, 0.0);
   final frac = shape.reflection.sizeInches.clamp(0.01, 1.0);
-  final clipH = shape.height.abs() * frac;
   final blur = math.max(shape.reflection.blurInches, 0.0);
   final pad = padInches ?? (blur > 1e-6 ? blur * 3 : 0.0);
+  final sourceRing = _reflectionSourceAabbRing(shape);
+  var bottom = _paintY(shape, sourceRing.first.y);
+  var top = bottom;
+  for (final p in sourceRing) {
+    final y = _paintY(shape, p.y);
+    if (y < bottom) bottom = y;
+    if (y > top) top = y;
+  }
+  final clipH = math.max(top - bottom, 1e-6) * frac;
   final ring = _reflectFillRing(
-    _aabbRing(shape),
+    sourceRing,
     shape,
     dist: dist,
     clipHeight: clipH,
@@ -717,8 +759,12 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
 ({Uint8List png, double padInches})? _strokeReflectionPngForLibvisioWrite(
   VsdxShape shape,
 ) {
-  final ribbons = _softEdgesStrokeRibbonPolygons(shape);
-  final kind = _softEdgesStrokeSilhouetteKind(shape);
+  var ribbons = _softEdgesStrokeRibbonPolygons(shape);
+  if (ribbons.isEmpty && shape.is1D) {
+    ribbons = _solidStrokeRibbonPolygons(shape);
+  }
+  final kind =
+      shape.is1D ? null : _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
   final trans = _combinedTransparency(
     shape.line.transparency,
@@ -729,7 +775,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
           shape.line.gradient!,
           trans,
           shape.width.abs(),
-          shape.height.abs(),
+          math.max(shape.height.abs(), 1e-6),
         )
       : null;
   if (shape.line.hasGradient && lineColorAt == null) return null;
@@ -738,16 +784,30 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
       ? 255
       : (color.alpha * (1 - trans)).round().clamp(0, 255);
   if (lineColorAt == null && alpha <= 0) return null;
-  final w = shape.width.abs();
-  final h = shape.height.abs();
-  var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
-  var innerHeightPx = math.max(8, (h * kLibvisioSoftEdgesPxPerInch).round());
+  var originX = 0.0;
+  var originY = 0.0;
+  var w = shape.width.abs();
+  var h = shape.height.abs();
+  if (shape.is1D) {
+    final aabb = _polygonsAabb(ribbons);
+    if (aabb == null) return null;
+    originX = aabb.minX;
+    originY = aabb.minY;
+    w = math.max(aabb.maxX - aabb.minX, 1e-6);
+    h = math.max(aabb.maxY - aabb.minY, 1e-6);
+  }
+  if (w <= 1e-9 || h <= 1e-9) return null;
+  final minPx = shape.is1D ? 16 : 8;
+  var innerWidthPx =
+      math.max(minPx, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx =
+      math.max(minPx, (h * kLibvisioSoftEdgesPxPerInch).round());
   const maxPx = 1024;
   final longest = math.max(innerWidthPx, innerHeightPx);
   if (longest > maxPx) {
     final scale = maxPx / longest;
-    innerWidthPx = math.max(8, (innerWidthPx * scale).round());
-    innerHeightPx = math.max(8, (innerHeightPx * scale).round());
+    innerWidthPx = math.max(minPx, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(minPx, (innerHeightPx * scale).round());
   }
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
@@ -761,8 +821,8 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   var inner = const <({double x, double y})>[];
   var ribbonPx = const <List<({double x, double y})>>[];
   ({double x, double y}) toPx(Offset2D p) => (
-        x: padPx + p.x / w * (innerWidthPx - 1),
-        y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
+        x: padPx + (p.x - originX) / w * (innerWidthPx - 1),
+        y: padPx + (1 - (p.y - originY) / h) * (innerHeightPx - 1),
       );
   if (ribbons.isNotEmpty) {
     ribbonPx = <List<({double x, double y})>>[
@@ -2321,16 +2381,18 @@ VsdxDocument bakeGlassForLibvisioWrite(VsdxDocument document) {
 /// FillPattern is already the body, so LineColorTrans / LineGradient cannot
 /// steal it the way an unfilled ribbon does. `_lineProperties` also never
 /// emits `svg:stroke-miterlimit`. CompoundType is not a token either, so
-/// skipping the bake would drop the wash onto hard parallel rails. A locked
+/// skipping the bake would drop the wash onto hard parallel rails. Built-in
+/// LinePattern 2–23 and custom `veDashPattern` become per-dash filled
+/// ribbons so Draw keeps the gaps — a native dashed stroke would be
+/// opaque. Open-path Begin/EndArrow become filled Geometry on that sibling
+/// so Draw does not hang markers on a dropped line; the plate fill is the
+/// stroke colour, so heads stay LineColor not FillPattern. A locked
 /// NoLine sibling carries the stroke silhouette (FillForegndTrans /
 /// FillGradient / CompoundType 1–4 rails / the long miter outline), then
 /// the source line is dropped.
 bool shapeNeedsLibvisioFilledStrokeRibbonBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (_openArrowheadsBlockStrokeBake(shape)) return false;
-  if (!shape.line.hasLine || shape.line.pattern != 1) return false;
-  final custom = shape.line.customDashPattern;
-  if (custom != null && custom.isNotEmpty) return false;
+  if (!shape.line.hasLine) return false;
   if (shape.line.softEdgesInches > 1e-6) return false;
   if (!_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasGradient &&
@@ -2341,37 +2403,114 @@ bool shapeNeedsLibvisioFilledStrokeRibbonBake(VsdxShape shape) {
   return _filledStrokeRibbonGeometries(shape).isNotEmpty;
 }
 
+List<VsdxGeometry> _geometriesFromRibbonPolygons(
+  List<List<Offset2D>> polygons,
+) {
+  final out = <VsdxGeometry>[];
+  for (final poly in polygons) {
+    if (poly.length < 3) continue;
+    final commands = polylineCommands(poly, closed: true);
+    if (commands.length < 3) continue;
+    out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+  }
+  return out;
+}
+
 List<VsdxGeometry> _filledStrokeRibbonGeometries(VsdxShape shape) {
+  late final List<VsdxGeometry> out;
   if (shape.line.compoundType != 0) {
-    final out = <VsdxGeometry>[];
-    for (final poly in _softEdgesCompoundRibbonPolygons(shape)) {
-      if (poly.length < 3) continue;
-      final commands = polylineCommands(poly, closed: true);
+    out = _geometriesFromRibbonPolygons(
+      _softEdgesCompoundRibbonPolygons(shape),
+    );
+  } else if (_shapeHasSoftEdgesDashes(shape)) {
+    out = _geometriesFromRibbonPolygons(_softEdgesDashRibbonPolygons(shape));
+  } else {
+    out = <VsdxGeometry>[];
+    final weight =
+        shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
+    final half = weight / 2;
+    final limit = _lineUsesMiterJoin(shape.line) ? shape.line.miterLimit : 4.0;
+    for (final geometry in shape.geometries) {
+      if (geometry.noShow || geometry.noLine) continue;
+      final points = _strokedVertices(geometry, shape);
+      if (points == null || points.length < 2) continue;
+      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      final commands = strokeRibbonCommands(
+        points,
+        halfWidth: half,
+        closed: closed,
+        miterLimit: limit,
+      );
       if (commands.length < 3) continue;
       out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
     }
-    return out;
   }
+  if (_openArrowheadsBlockStrokeBake(shape)) {
+    out.addAll(bakeArrowGeometriesForLibvisio(shape));
+  }
+  return out;
+}
+
+({double minX, double minY, double maxX, double maxY})? _polygonsAabb(
+  List<List<Offset2D>> polygons,
+) {
+  double? minX;
+  double? minY;
+  double? maxX;
+  double? maxY;
+  for (final poly in polygons) {
+    for (final p in poly) {
+      minX = minX == null ? p.x : math.min(minX, p.x);
+      minY = minY == null ? p.y : math.min(minY, p.y);
+      maxX = maxX == null ? p.x : math.max(maxX, p.x);
+      maxY = maxY == null ? p.y : math.max(maxY, p.y);
+    }
+  }
+  if (minX == null || minY == null || maxX == null || maxY == null) {
+    return null;
+  }
+  return (minX: minX, minY: minY, maxX: maxX, maxY: maxY);
+}
+
+/// Closed outline of a solid stroke, used when dash/compound ribbons are empty.
+List<List<Offset2D>> _solidStrokeRibbonPolygons(VsdxShape shape) {
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
   final half = weight / 2;
   final limit = _lineUsesMiterJoin(shape.line) ? shape.line.miterLimit : 4.0;
-  final out = <VsdxGeometry>[];
+  final out = <List<Offset2D>>[];
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 2) continue;
     final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    final commands = strokeRibbonCommands(
-      points,
-      halfWidth: half,
+    final body = _filletSoftEdgesStrokePoints(points, shape, closed: closed);
+    final left = offsetPolyline(
+      body,
+      half,
       closed: closed,
       miterLimit: limit,
     );
-    if (commands.length < 3) continue;
-    out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+    final right = offsetPolyline(
+      body,
+      -half,
+      closed: closed,
+      miterLimit: limit,
+    );
+    if (left.length < 2 || right.length < 2) continue;
+    out.add(<Offset2D>[...left, ...right.reversed]);
   }
   return out;
+}
+
+List<List<Offset2D>> _libvisioStrokeSilhouettePolygons(VsdxShape shape) {
+  if (shape.line.compoundType > 0) {
+    return _softEdgesCompoundRibbonPolygons(shape);
+  }
+  if (_shapeHasSoftEdgesDashes(shape)) {
+    return _softEdgesDashRibbonPolygons(shape);
+  }
+  return _solidStrokeRibbonPolygons(shape);
 }
 
 VsdxShape _strokeRibbonPlateForLibvisioWrite(
@@ -2411,8 +2550,15 @@ VsdxShape _sourceForLibvisioFilledStrokeRibbonWrite(VsdxShape shape) {
     gradient: null,
     transparency: 0,
     compoundType: 0,
+    beginArrow: 0,
+    endArrow: 0,
   );
-  var cells = shape.userCells;
+  var cells = <VsdxUserCell>[
+    for (final cell in shape.userCells)
+      if (cell.name != VsdxShape.userDashPattern &&
+          cell.name != VsdxShape.userFixedDash)
+        cell,
+  ];
   if (_shapeHasLibvisioMiterSpikeCorners(shape)) {
     line = line.copyWith(miterLimit: 4.0);
     cells = <VsdxUserCell>[
