@@ -2333,6 +2333,39 @@ void main() {
         ),
       ),
     );
+    var lineGradSoftDocument = parser.parse(blank);
+    final lineGradSoftPage = lineGradSoftDocument.pages.first;
+    lineGradSoftDocument = lineGradSoftDocument.replacePage(
+      0,
+      lineGradSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: lineGradSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'LineGradSoft',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.22,
+            softEdgesInches: 0.1,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     var shadowBlurDocument = parser.parse(blank);
     final shadowBlurPage = shadowBlurDocument.pages.first;
     shadowBlurDocument = shadowBlurDocument.replacePage(
@@ -3036,6 +3069,10 @@ void main() {
       'compound_soft': writer.write(
         originalBytes: blank,
         edited: compoundSoftDocument,
+      ),
+      'line_grad_soft': writer.write(
+        originalBytes: blank,
+        edited: lineGradSoftDocument,
       ),
       'shadow_blur': writer.write(
         originalBytes: blank,
@@ -4317,6 +4354,119 @@ void main() {
             lessThan(50),
             reason: 'LibreOffice must paint the feathered compound rails; '
                 'centreR=${centre.r} ring=$ring',
+          );
+        }
+        if (entry.key == 'line_grad_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGradSoft');
+          expect(source.fill.pattern, 0);
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'line_grad_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) meanRb(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          final left = meanRb(2.62, 5.35, 2.88, 5.65);
+          final right = meanRb(5.62, 5.35, 5.88, 5.65);
+          final centre = meanLuma(4.1, 5.35, 4.4, 5.65);
+          expect(
+            left.r,
+            greaterThan(right.r + 30),
+            reason: 'LibreOffice must keep the baked LineGradient wash; '
+                'left=$left right=$right centre=$centre',
+          );
+          expect(
+            right.b,
+            greaterThan(left.b + 30),
+            reason: 'LibreOffice must keep the baked LineGradient wash; '
+                'left=$left right=$right',
+          );
+          expect(
+            centre,
+            greaterThan(200),
+            reason: 'LibreOffice must keep the hollow interior empty; '
+                'centre=$centre left=$left',
           );
         }
         if (entry.key == 'shadow_blur' && pdftoppm != null) {

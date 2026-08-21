@@ -86,7 +86,11 @@
 /// dashed stroke join that plate so Draw does not keep a hard outline on
 /// a feathered wash. CompoundType 1–4 rails join the same plate — they
 /// are not a token either, so Draw would otherwise keep a single hard
-/// stroke (or hard parallel rails) on a feathered fill. `ShadowBlur` is likewise missing —
+/// stroke (or hard parallel rails) on a feathered fill. LineGradient is
+/// likewise missing from `tokens.txt`, so a 2-D SoftEdges stroke with
+/// resolved-RGB stops samples that wash into the same padded PNG and
+/// drops the source line — Draw would otherwise keep a hard opaque
+/// outline (or a hard filled ribbon) on a feathered body. `ShadowBlur` is likewise missing —
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
@@ -4375,8 +4379,10 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// A filled 2-D shape that also paints a solid or dashed stroke bakes both into
 /// one padded plate and drops fill and line, so Draw does not keep a
 /// hard outline. Gradient / hatch fills with a stroke join that plate.
-/// CompoundType 1–4 rails join that plate too. 1-D, pictures,
-/// arrows, theme-only fills and unresolved theme colours stay native.
+/// CompoundType 1–4 rails join that plate too. LineGradient strokes
+/// with resolved RGB join that plate so Draw does not keep a hard
+/// opaque outline. 1-D, pictures, arrows, theme-only fills and
+/// unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -4422,7 +4428,9 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (!shape.line.hasLine) return false;
   final dashed = _shapeHasSoftEdgesDashes(shape);
   if (shape.line.pattern != 1 && !dashed) return false;
-  if (shape.line.hasGradient) return false;
+  if (shape.line.hasGradient && _softEdgesLineColorAt(shape) == null) {
+    return false;
+  }
   if (shape.line.beginArrow != 0 || shape.line.endArrow != 0) return false;
   if (shape.line.color == null && shape.line.themeColorIndex != null) {
     return false;
@@ -4642,30 +4650,12 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
   final h = shape.height.abs();
   final paintGradient = shape.fill.paintGradient;
   if (paintGradient != null) {
-    final stops = _gradientBakeStops(
+    return _softEdgesGradientSampler(
       paintGradient,
       shape.fill.foregroundTransparency,
+      w,
+      h,
     );
-    if (stops.isEmpty) return null;
-    final linear = paintGradient.type == VsdxGradientType.linear;
-    final angle = paintGradient.angleRad;
-    final dir = paintGradient.dir;
-    return (xPx, yPx, widthPx, heightPx) {
-      final ix = widthPx <= 1 ? 0.0 : xPx / (widthPx - 1) * w;
-      final iy = heightPx <= 1 ? h : (1 - yPx / (heightPx - 1)) * h;
-      return sampleVisioGradientRgba(
-        x: ix,
-        y: iy,
-        minX: 0,
-        minY: 0,
-        width: w,
-        height: h,
-        linear: linear,
-        angleRad: angle,
-        dir: dir,
-        stops: stops,
-      );
-    };
   }
   final hatch = libvisioHatchSpec(shape.fill.pattern);
   if (hatch == null) return null;
@@ -4686,6 +4676,50 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
       y: iy,
       foreground: fg,
       background: bg,
+    );
+  };
+}
+
+({int r, int g, int b, int a}) Function(
+        double xPx, double yPx, int widthPx, int heightPx)?
+    _softEdgesLineColorAt(VsdxShape shape) {
+  final gradient = shape.line.gradient;
+  if (gradient == null || gradient.stops.isEmpty) return null;
+  return _softEdgesGradientSampler(
+    gradient,
+    shape.line.transparency,
+    shape.width.abs(),
+    shape.height.abs(),
+  );
+}
+
+({int r, int g, int b, int a}) Function(
+        double xPx, double yPx, int widthPx, int heightPx)?
+    _softEdgesGradientSampler(
+  VsdxGradient gradient,
+  double transparency,
+  double w,
+  double h,
+) {
+  final stops = _gradientBakeStops(gradient, transparency);
+  if (stops.isEmpty) return null;
+  final linear = gradient.type == VsdxGradientType.linear;
+  final angle = gradient.angleRad;
+  final dir = gradient.dir;
+  return (xPx, yPx, widthPx, heightPx) {
+    final ix = widthPx <= 1 ? 0.0 : xPx / (widthPx - 1) * w;
+    final iy = heightPx <= 1 ? h : (1 - yPx / (heightPx - 1)) * h;
+    return sampleVisioGradientRgba(
+      x: ix,
+      y: iy,
+      minX: 0,
+      minY: 0,
+      width: w,
+      height: h,
+      linear: linear,
+      angleRad: angle,
+      dir: dir,
+      stops: stops,
     );
   };
 }
@@ -4850,6 +4884,11 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
       ? null
       : (double innerX, double innerY) =>
           fillColorAt(innerX, innerY, innerWidthPx, innerHeightPx);
+  final lineColorAt = _softEdgesLineColorAt(shape);
+  final strokeColorAt = lineColorAt == null
+      ? null
+      : (double innerX, double innerY) =>
+          lineColorAt(innerX, innerY, innerWidthPx, innerHeightPx);
   var outer = const <({double x, double y})>[];
   var inner = const <({double x, double y})>[];
   var ribbonPx = const <List<({double x, double y})>>[];
@@ -4910,6 +4949,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     holeBlue: holeBlue,
     holeAlpha: holeAlpha,
     holeColorAt: holeColorAt,
+    strokeColorAt: strokeColorAt,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
@@ -4955,7 +4995,7 @@ VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
   }
   if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape) ||
       _shapeNeedsLibvisioStrokeSoftEdgesBake(shape)) {
-    line = line.copyWith(pattern: 0, compoundType: 0);
+    line = line.copyWith(pattern: 0, compoundType: 0, gradient: null);
   }
   return shape.copyWith(fill: fill, line: line);
 }

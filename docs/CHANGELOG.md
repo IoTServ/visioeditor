@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- LineGradient SoftEdges now keep both the feather and the stroke wash
+  in LibreOffice. Neither cell is a token, so Draw used to show a
+  feathered fill (or a hard filled ribbon) with an opaque outline. A
+  save samples the resolved-RGB LineGradient into the padded PNG
+  sibling and drops fill and line.
 - CompoundType 1–4 SoftEdges now keep both the feather and the thick/thin
   rails in LibreOffice. Neither cell is a token, so Draw used to show a
   feathered fill with a hard single stroke or hard parallel rails on top.

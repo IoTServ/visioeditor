@@ -98,7 +98,9 @@
 /// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
 /// solid or dashed stroke bakes both into one padded plate and drops fill
 /// and line. Gradient / hatch fills with a stroke join that plate.
-/// CompoundType 1–4 rails join that plate too.
+/// CompoundType 1–4 rails join that plate too. LineGradient strokes
+/// with resolved RGB join that plate so Draw does not keep a hard
+/// opaque outline.
 /// `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
 /// picture with blur bakes the same filled image-frame silhouette. PageSheet
@@ -1872,6 +1874,145 @@ void main() {
       writerBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
       hasLength(1),
       reason: 'compound SoftEdges must not also emit Geometry rails',
+    );
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('LineGradient SoftEdges bakes the wash into the feathered plate', () {
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'LineGradSoft',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.16,
+        softEdgesInches: 0.12,
+        gradient: wash,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+    expect(shapeNeedsLibvisioStrokeRibbon(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.line.hasGradient, isFalse);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.width, greaterThan(2.0));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    const padInches = 0.16 / 2 + 0.12 * 3;
+    const plateW = 2 + 2 * padInches;
+    const plateH = 1.2 + 2 * padInches;
+    ({int r, int g, int b}) sample(double visioX, double visioY) {
+      final x = ((padInches + visioX) / plateW * decoded.width)
+          .round()
+          .clamp(1, decoded.width - 2);
+      final y = ((padInches + (1.2 - visioY)) / plateH * decoded.height)
+          .round()
+          .clamp(1, decoded.height - 2);
+      final pixel = decoded.getPixel(x, y);
+      return (r: pixel.r.toInt(), g: pixel.g.toInt(), b: pixel.b.toInt());
+    }
+
+    final left = sample(0, 0.6);
+    final right = sample(2, 0.6);
+    final centre = sample(1, 0.6);
+    expect(
+      left.r,
+      greaterThan(right.r + 30),
+      reason: 'LineGradient SoftEdges PNG must keep the red-to-blue wash; '
+          'left=$left right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(left.b + 30),
+      reason: 'LineGradient SoftEdges PNG must keep the red-to-blue wash; '
+          'left=$left right=$right',
+    );
+    expect(
+      centre.r,
+      greaterThan(200),
+      reason: 'unfilled LineGradient SoftEdges must keep the hollow interior; '
+          'centre=$centre',
+    );
+
+    final filled = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.16,
+        softEdgesInches: 0.12,
+        gradient: wash,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(filled), isTrue);
+    var filledDoc = parser.parse(blank);
+    filledDoc =
+        filledDoc.replacePage(0, filledDoc.pages.first.addShape(filled));
+    final filledBaked = documentForLibvisioWrite(filledDoc);
+    expect(filledBaked.pages.first.findShapeById(2)!.fill.pattern, 0);
+    expect(filledBaked.pages.first.findShapeById(2)!.line.pattern, 0);
+    expect(filledBaked.pages.first.findShapeById(2)!.line.hasGradient, isFalse);
+    final filledPlate =
+        filledBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final filledPng = filledBaked.images.findByPart(filledPlate.imagePartName!);
+    final filledDecoded = raster.decodePng(filledPng!.bytes)!;
+    ({int r, int g, int b}) filledSample(double visioX, double visioY) {
+      final x = ((padInches + visioX) / plateW * filledDecoded.width)
+          .round()
+          .clamp(1, filledDecoded.width - 2);
+      final y = ((padInches + (1.2 - visioY)) / plateH * filledDecoded.height)
+          .round()
+          .clamp(1, filledDecoded.height - 2);
+      final pixel = filledDecoded.getPixel(x, y);
+      return (r: pixel.r.toInt(), g: pixel.g.toInt(), b: pixel.b.toInt());
+    }
+
+    final filledCentre = filledSample(1, 0.6);
+    final filledRight = filledSample(2, 0.6);
+    expect(filledCentre.r, greaterThan(180),
+        reason: 'filled LineGradient SoftEdges must keep the red body; '
+            'centre=$filledCentre');
+    expect(filledCentre.b, lessThan(80),
+        reason: 'filled interior must stay red, not the stroke wash; '
+            'centre=$filledCentre');
+    expect(
+      filledRight.b,
+      greaterThan(filledCentre.b + 30),
+      reason: 'filled LineGradient SoftEdges must paint the blue end of the '
+          'stroke wash; centre=$filledCentre right=$filledRight',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final writerBaked = parser.parse(saved);
+    expect(writerBaked.pages.first.findShapeById(1)!.line.hasGradient, isFalse);
+    expect(
+      writerBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
     );
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

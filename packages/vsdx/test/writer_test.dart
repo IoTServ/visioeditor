@@ -7186,6 +7186,57 @@ void main() {
     expect(after.line.pattern, 0);
   });
 
+  test('SoftEdgesSize + LineGradient round-trip', () {
+    final blank = writer.emptyDocument();
+    var outDoc = parser.parse(blank);
+    final id = outDoc.pages.first.nextFreeShapeId();
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: id,
+      pinX: 1,
+      pinY: 1,
+      width: 2,
+      height: 1,
+      fill: const VsdxFill(pattern: 0),
+    ).copyWith(
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.08,
+        softEdgesInches: 0.05,
+        gradient: wash,
+      ),
+    );
+    outDoc = outDoc.replacePage(0, outDoc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: outDoc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    expect(pageXml.contains('N="SoftEdgesSize"'), isTrue);
+    expect(
+      '<Section N="Geometry"'.allMatches(pageXml).length,
+      2,
+      reason: 'source box + SoftEdges plate; LineGradient lives in the PNG',
+    );
+    final afterDoc = parser.parse(saved);
+    final after = afterDoc.pages.first.findShapeById(id)!;
+    expect(after.line.softEdgesInches, closeTo(0, 1e-6),
+        reason: 'SoftEdgesSize is not a token; the halo is a PNG sibling');
+    expect(after.line.pattern, 0);
+    expect(after.line.hasGradient, isFalse);
+    expect(
+      afterDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+  });
+
   test('expanded Lock* cells written when locked', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);
