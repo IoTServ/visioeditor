@@ -96,7 +96,8 @@
 /// SoftEdges bakes the stroke ring the same way and drops the source
 /// line. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
 /// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
-/// solid stroke bakes both into one padded plate and drops fill and line. `ShadowBlur` is not a token,
+/// solid or dashed stroke bakes both into one padded plate and drops fill
+/// and line. Gradient / hatch fills still keep native dashes. `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
 /// picture with blur bakes the same filled image-frame silhouette. PageSheet
 /// `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not tokens, so a
@@ -1653,7 +1654,7 @@ void main() {
         ),
       ),
       isTrue,
-      reason: 'filled SoftEdges still bakes; a dashed stroke stays native',
+      reason: 'filled SoftEdges still bakes; dashed stroke joins the plate',
     );
 
     final blank = writer.emptyDocument();
@@ -1831,14 +1832,14 @@ void main() {
       id: 9,
       pinX: 2,
       pinY: 2,
-      width: 1.2,
-      height: 0.8,
+      width: 2,
+      height: 1.2,
       fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
       line: const VsdxLine(
         color: VsdxColor(0xFF000000),
-        weightInches: 0.08,
+        weightInches: 0.16,
         pattern: 2,
-        softEdgesInches: 0.08,
+        softEdgesInches: 0.12,
       ),
     );
     final blank = writer.emptyDocument();
@@ -1847,8 +1848,52 @@ void main() {
         dashedDoc.replacePage(0, dashedDoc.pages.first.addShape(dashed));
     final dashedBaked = documentForLibvisioWrite(dashedDoc);
     expect(dashedBaked.pages.first.findShapeById(9)!.fill.pattern, 0);
-    expect(dashedBaked.pages.first.findShapeById(9)!.line.pattern, 2,
-        reason: 'dashes Draw collects stay native on a filled SoftEdges body');
+    expect(dashedBaked.pages.first.findShapeById(9)!.line.pattern, 0,
+        reason: 'filled dashed SoftEdges bakes dashes into the fill plate');
+    expect(
+      dashedBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(
+      dashedBaked.pages.first.shapes.firstWhere(isLibvisioSoftEdgesPlate).width,
+      greaterThan(2.0),
+    );
+    final dashedPng = dashedBaked.images.findByPart(
+      dashedBaked.pages.first.shapes
+          .firstWhere(isLibvisioSoftEdgesPlate)
+          .imagePartName!,
+    );
+    expect(dashedPng, isNotNull);
+    final dashedDecoded = raster.decodePng(dashedPng!.bytes)!;
+    final dashedCentre = dashedDecoded.getPixel(
+      dashedDecoded.width ~/ 2,
+      dashedDecoded.height ~/ 2,
+    );
+    expect(dashedCentre.r, greaterThan(180),
+        reason: 'filled dashed SoftEdges PNG must keep the red interior');
+    expect(dashedCentre.g, lessThan(80));
+    var dashInk = 0;
+    var dashGap = 0;
+    const padInches = 0.16 / 2 + 0.12 * 3;
+    const plateW = 2 + 2 * padInches;
+    const plateH = 1.2 + 2 * padInches;
+    // Inner half of the 0.16" stroke, 0.05" above visio y=0, so dash
+    // gaps show the red fill instead of the feathered outer halo.
+    final row = ((padInches + 1.15) / plateH * dashedDecoded.height)
+        .round()
+        .clamp(1, dashedDecoded.height - 2);
+    final x0 = (padInches / plateW * dashedDecoded.width).round();
+    final x1 = ((padInches + 2) / plateW * dashedDecoded.width).round();
+    for (var x = x0; x < x1; x++) {
+      final pixel = dashedDecoded.getPixel(x, row);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < 80) dashInk++;
+      if (pixel.r > 150 && pixel.g < 100) dashGap++;
+    }
+    expect(dashInk, greaterThan(4),
+        reason: 'must paint black dashes over the fill; ink=$dashInk');
+    expect(dashGap, greaterThan(4),
+        reason: 'gaps must show the red fill, not a solid ring; gap=$dashGap');
 
     var doc = parser.parse(blank);
     doc = doc.replacePage(0, doc.pages.first.addShape(shape));

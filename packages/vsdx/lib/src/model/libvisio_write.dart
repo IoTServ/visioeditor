@@ -81,7 +81,8 @@
 /// (a solid ring would hide them). A filled 2-D shape that also paints a
 /// solid stroke bakes fill and stroke into one padded plate and drops both,
 /// so Draw does not keep a hard outline. Dashed strokes on a filled body
-/// stay native — Draw still dashes LinePattern 2–23. `ShadowBlur` is likewise missing —
+/// go into the same padded plate so Draw does not keep hard LinePattern
+/// dashes on a feathered fill. `ShadowBlur` is likewise missing —
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
@@ -4367,9 +4368,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// same SourceAlpha treatment into a locked Foreign sibling, then the
 /// source fill is dropped so the plate is the body. An unfilled 2-D
 /// stroke bakes the stroke ring the same way and drops the source line.
-/// A filled 2-D shape that also paints a solid stroke bakes both into
+/// A filled 2-D shape that also paints a solid or dashed stroke bakes both into
 /// one padded plate and drops fill and line, so Draw does not keep a
-/// hard outline. 1-D, pictures, filled-body dashes, compound
+/// hard outline. Gradient / hatch fills keep native dashes. 1-D, pictures, compound
 /// rails, arrows, theme-only fills and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
@@ -4437,7 +4438,6 @@ bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
 bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
     _shapeHasBakeableSoftEdgesStroke(shape) &&
-    !_shapeHasSoftEdgesDashes(shape) &&
     shape.fill.paintGradient == null &&
     libvisioHatchSpec(shape.fill.pattern) == null;
 
@@ -4786,6 +4786,20 @@ List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
           ],
     ];
     if (ribbonPx.isEmpty) return null;
+    if (holeAlpha != null &&
+        holeAlpha > 0 &&
+        _softEdgesSilhouetteKind(shape) == SoftEdgesSilhouetteKind.polygon) {
+      VsdxGeometry? geom;
+      for (final candidate in shape.geometries) {
+        if (candidate.noShow || candidate.noFill) continue;
+        geom = candidate;
+        break;
+      }
+      final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
+      if (inches != null && inches.length >= 3) {
+        inner = <({double x, double y})>[for (final p in inches) toPx(p)];
+      }
+    }
   } else if (kind == SoftEdgesSilhouetteKind.polygon) {
     final geom = _softEdgesStrokeGeometry(shape);
     final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);

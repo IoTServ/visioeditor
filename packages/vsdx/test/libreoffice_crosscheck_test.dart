@@ -2254,6 +2254,28 @@ void main() {
         ),
       ),
     );
+    var fillDashSoftDocument = parser.parse(blank);
+    final fillDashSoftPage = fillDashSoftDocument.pages.first;
+    fillDashSoftDocument = fillDashSoftDocument.replacePage(
+      0,
+      fillDashSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: fillDashSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 1.2,
+          name: 'FillDashSoft',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.16,
+            pattern: 2,
+            softEdgesInches: 0.12,
+          ),
+        ),
+      ),
+    );
     var shadowBlurDocument = parser.parse(blank);
     final shadowBlurPage = shadowBlurDocument.pages.first;
     shadowBlurDocument = shadowBlurDocument.replacePage(
@@ -2945,6 +2967,10 @@ void main() {
       'fill_stroke_soft': writer.write(
         originalBytes: blank,
         edited: fillStrokeSoftDocument,
+      ),
+      'fill_dash_soft': writer.write(
+        originalBytes: blank,
+        edited: fillDashSoftDocument,
       ),
       'shadow_blur': writer.write(
         originalBytes: blank,
@@ -3908,6 +3934,96 @@ void main() {
             lessThan(50),
             reason: 'LibreOffice must paint the feathered black stroke; '
                 'centre=${centre.r} ring=$ring',
+          );
+        }
+        if (entry.key == 'fill_dash_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FillDashSoft');
+          expect(source.fill.pattern, 0);
+          expect(source.line.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'fill_dash_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g, double luma}) mean(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumLuma = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) {
+              return (r: 0.0, g: 255.0, luma: 255.0);
+            }
+            return (r: sumR / count, g: sumG / count, luma: sumLuma / count);
+          }
+
+          final centre = mean(4.15, 5.40, 4.35, 5.60);
+          // Bottom-edge local 1.20 is in a Pattern 2 gap; 0.05" inside the
+          // box is still in the inner half of the 0.16" stroke.
+          final gap = mean(4.43, 4.93, 4.47, 4.97);
+          expect(
+            centre.r,
+            greaterThan(180),
+            reason: 'LibreOffice must keep the red fill; '
+                'centreR=${centre.r} gapLuma=${gap.luma}',
+          );
+          expect(
+            gap.r,
+            greaterThan(120),
+            reason: 'LibreOffice must show the red fill in dash gaps, not a '
+                'solid black ring; centreR=${centre.r} gapR=${gap.r} '
+                'gapLuma=${gap.luma}',
+          );
+          expect(
+            gap.g,
+            lessThan(110),
+            reason: 'dash gaps must stay red, not paper; gapG=${gap.g}',
           );
         }
         if (entry.key == 'shadow_blur' && pdftoppm != null) {

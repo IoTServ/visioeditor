@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Filled shapes with dashed SoftEdges now keep both the feather and the
+  dash gaps in LibreOffice. Draw used to show a feathered fill with hard
+  LinePattern dashes on top. A save paints the fill and per-dash ribbons
+  into one padded PNG sibling and drops fill and line.
 - Unfilled dashed SoftEdges now keep both the feather and the gaps in
   LibreOffice. `SoftEdgesSize` is not a token, so Draw used to paint hard
   LinePattern dashes (or a solid ring if the stroke were baked whole). A
