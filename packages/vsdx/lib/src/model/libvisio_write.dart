@@ -168,10 +168,14 @@
 /// drops the User row. draw.io Curved Text is `User.veCurvedText`
 /// (not a token), so a save inserts locked per-glyph siblings along the
 /// same quadratic arc canvas / SVG already paint, hides the source
-/// (`HideText` is a token) and drops the User row. draw.io Shape Inside is
+/// (`HideText` is a token) and drops the User row. FlipX / FlipY extra
+/// text mirrors (canvas `_textFlip*`) are applied about TxtPin before
+/// the shape XForm so Draw keeps the upright arc. draw.io Shape Inside is
 /// `User.veShapeInside` (not a token), so a save inserts locked per-line
 /// siblings in the same outline bands canvas / SVG already paint, hides
-/// the source and drops the User row. draw.io Rotate with Edge is
+/// the source and drops the User row. FlipX / FlipY use the same TxtPin
+/// extra-mirror. Open arrowheads no longer block Sketch jiggle: plates
+/// drop Begin/EndArrow and the source keeps filled arrow Geometry. draw.io Rotate with Edge is
 /// `User.veAutoRotateLabel` (not a token), so a save writes the route
 /// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
 /// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
@@ -1624,7 +1628,6 @@ bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (!shape.sketchEffect) return false;
   if (!shape.line.hasLine) return false;
-  if (_openArrowheadsBlockStrokeBake(shape)) return false;
   return shape.width.abs() > 1e-12 || shape.height.abs() > 1e-12;
 }
 
@@ -1926,7 +1929,7 @@ VsdxShape _sketchPlateForLibvisioWrite(
     flipY: source.flipY,
     geometries: _sketchStrokeGeometriesForLibvisioWrite(source, offset),
     fill: const VsdxFill(pattern: 0),
-    line: source.line,
+    line: source.line.copyWith(beginArrow: 0, endArrow: 0),
     layerMemberIds: source.layerMemberIds,
     locked: true,
     richText: const VsdxRichText(
@@ -1940,17 +1943,35 @@ VsdxShape _sketchPlateForLibvisioWrite(
 VsdxShape _sourceForLibvisioSketchWrite(VsdxShape shape) {
   var next = shape;
   if (shapeNeedsLibvisioSketchStrokeBake(shape)) {
-    next = next.copyWith(
-      geometries: <VsdxGeometry>[
-        for (final geometry in shape.geometries)
-          geometry.noLine ? geometry : geometry.copyWith(noLine: true),
-      ],
-    );
+    var geoms = <VsdxGeometry>[
+      for (final geometry in shape.geometries)
+        geometry.noLine ? geometry : geometry.copyWith(noLine: true),
+    ];
+    var line = shape.line;
+    if (_hasArrowheads(shape.line) && _shapeHasOpenLineEndings(shape)) {
+      final arrows = bakeArrowGeometriesForLibvisio(shape);
+      if (arrows.isNotEmpty) {
+        geoms = <VsdxGeometry>[...geoms, ...arrows];
+        line = line.copyWith(beginArrow: 0, endArrow: 0);
+        if (!next.fill.hasFill) {
+          next = next.copyWith(
+            fill: VsdxFill(
+              foreground: line.color ?? const VsdxColor(0xFF000000),
+              pattern: 1,
+              themeForegroundIndex:
+                  line.color == null ? line.themeColorIndex : null,
+              foregroundTransparency: line.transparency.clamp(0.0, 1.0),
+            ),
+          );
+        }
+      }
+    }
+    next = next.copyWith(geometries: geoms, line: line);
   }
   final pattern = sketchFillPatternForLibvisioWrite(shape);
   if (pattern != null) {
     next = next.copyWith(
-      fill: shape.fill.copyWith(
+      fill: next.fill.copyWith(
         pattern: pattern,
         backgroundTransparency: 1,
         gradient: null,
@@ -2551,6 +2572,24 @@ Offset2D _parentFromLocal(VsdxShape shape, Offset2D local) {
   return Offset2D(shape.pinX + dx, shape.pinY + dy);
 }
 
+/// Extra text FlipX / FlipY about TxtPin (canvas `_textFlip*`).
+///
+/// Shape XForm already Flip's geometry about LocPin. Canvas then mirrors
+/// the text block again about TxtPin so labels stay upright. Apply this
+/// before [_parentFromLocal] so glyph / band plates land on that upright
+/// arc. When TxtPin coincides with LocPin the two mirrors cancel.
+Offset2D _textFlipAboutPin(VsdxShape shape, Offset2D local) {
+  if (!shape.flipX && !shape.flipY) return local;
+  final block = shape.richText.textBlock;
+  final pinX = block.pinXInches ?? shape.width / 2;
+  final pinY = block.pinYInches ?? shape.height / 2;
+  var dx = local.x - pinX;
+  var dy = local.y - pinY;
+  if (shape.flipX) dx = -dx;
+  if (shape.flipY) dy = -dy;
+  return Offset2D(pinX + dx, pinY + dy);
+}
+
 VsdxShape _labelBorderPlateForLibvisioWrite(
   VsdxShape source, {
   required int id,
@@ -3133,12 +3172,12 @@ const _kLibvisioCurvedTextMaxGlyphs = 64;
 /// HideText *are* collected, so a save places one locked character shape
 /// per glyph on the same quadratic arc canvas / SVG already paint, then
 /// hides the source and drops the User row. Glueable 1-D labels, vertical
-/// text, flipped shapes and tabbed labels stay native.
+/// text, tabbed labels and TxtAngle stay native. FlipX / FlipY extra
+/// text mirrors about TxtPin are baked so Draw keeps the upright arc.
 bool shapeNeedsLibvisioCurvedTextBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
   if (!shape.curvedText) return false;
-  if (shape.flipX || shape.flipY) return false;
   if (shape.richText.textBlock.hideText) return false;
   if (shape.richText.textBlock.textDirection == 1) return false;
   if (shape.richText.textBlock.angleRad.abs() > 1e-12) return false;
@@ -3283,7 +3322,10 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
       final pos = _quadBezPoint(p0, p1, p2, t);
       final tan = _quadBezTangent(p0, p1, p2, t);
       final localAngle = -math.atan2(tan.y, tan.x);
-      final local = Offset2D(originX + pos.x, originY + th - pos.y);
+      final local = _textFlipAboutPin(
+        source,
+        Offset2D(originX + pos.x, originY + th - pos.y),
+      );
       final page = _parentFromLocal(source, local);
       final fs = math.max(style.effectiveFontSizeInchesForText(ch), 0.04);
       // Wider / taller than the advance so Draw's wrap-at-svg:width and
@@ -3494,14 +3536,14 @@ bool _shapeInsideDefaultTextBlock(VsdxShape shape) {
 /// HorzAlign *are* collected, so a save places one locked line shape per
 /// wrapped band canvas / SVG already paint, then hides the source and
 /// drops the User row. Glueable 1-D labels, vertical text, curved text,
-/// flipped shapes and tabbed labels stay native.
+/// tabbed labels and TxtAngle stay native. FlipX / FlipY extra text
+/// mirrors about TxtPin are baked so Draw keeps the upright bands.
 bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
   if (!shape.shapeInside || !shape.supportsShapeInside) return false;
   if (!shape.wordWrap) return false;
   if (shape.curvedText) return false;
-  if (shape.flipX || shape.flipY) return false;
   if (shape.richText.textBlock.hideText) return false;
   if (shape.richText.textBlock.textDirection == 1) return false;
   if (shape.richText.textBlock.angleRad.abs() > 1e-12) return false;
@@ -3740,7 +3782,10 @@ List<VsdxShape> _shapeInsidePlatesForLibvisioWrite(
     final bw = band.right - band.left;
     final midX = (band.left + band.right) / 2;
     final midYDown = y0 + lineHeight / 2;
-    final local = Offset2D(originX + midX, originY + th - midYDown);
+    final local = _textFlipAboutPin(
+      source,
+      Offset2D(originX + midX, originY + th - midYDown),
+    );
     final page = _parentFromLocal(source, local);
     final id = glyph < plateIds.length ? plateIds[glyph] : nextId();
     out.add(

@@ -111,9 +111,12 @@
 /// bakes a sheared Gaussian PNG.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
-/// and drops `veCurvedText`. draw.io Shape Inside is also a User row, so
-/// a save bakes locked per-line siblings in the outline bands, hides the
-/// source and drops `veShapeInside`. draw.io Rotate with Edge is also a
+/// and drops `veCurvedText`. FlipX / FlipY extra text mirrors about TxtPin
+/// are baked so Draw keeps the upright arc. draw.io Shape Inside is also a
+/// User row, so a save bakes locked per-line siblings in the outline bands,
+/// hides the source and drops `veShapeInside`. FlipX / FlipY use the same
+/// TxtPin extra-mirror. Sketch jiggle with open arrows bakes arrow Geometry
+/// on the source and drops markers from the jiggle plates. draw.io Rotate with Edge is also a
 /// User row, so a save writes `TxtAngle` and drops `veAutoRotateLabel`.
 library;
 
@@ -996,6 +999,52 @@ void main() {
       'draw:fill: hatch',
       'draw:rotation: 315',
     ]);
+  });
+
+  test('Sketch jiggle with open arrows bakes arrow Geometry', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 2,
+      bx: 4,
+      by: 2,
+      name: 'SketchArrow',
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        pattern: 1,
+        weightInches: 0.04,
+        beginArrow: 0,
+        endArrow: 4,
+        endArrowSizeInches: 0.2,
+      ),
+    ).withSketchEffect(true).withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shape.line.endArrow, 4);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioSketchPlate).toList();
+    expect(plates, hasLength(2));
+    expect(plates.every((p) => p.line.endArrow == 0), isTrue);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.endArrow, 0);
+    expect(source.fill.hasFill, isTrue);
+    expect(
+      source.geometries.where((g) => !g.noFill).length,
+      greaterThanOrEqualTo(1),
+      reason: 'open arrowheads become filled Geometry on the source',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(savedDoc.pages.first.findShapeById(1)!.line.endArrow, 0);
   });
 
   test('Glass bakes a top-light sibling LibreOffice can collect', () {
@@ -3186,7 +3235,11 @@ void main() {
     expect(shapeNeedsLibvisioCurvedTextBake(shape), isTrue);
     expect(
       shapeNeedsLibvisioCurvedTextBake(arcBox(id: 8, flipX: true)),
-      isFalse,
+      isTrue,
+    );
+    expect(
+      shapeNeedsLibvisioCurvedTextBake(arcBox(id: 8).copyWith(flipY: true)),
+      isTrue,
     );
     expect(
       shapeNeedsLibvisioCurvedTextBake(
@@ -3226,6 +3279,30 @@ void main() {
     expect(libvisioCurvedTextSourceId(plates[0]), 1);
     expect(plates[1].pinY, greaterThan(plates[0].pinY + 0.08));
     expect(plates[1].pinY, greaterThan(plates[2].pinY + 0.08));
+
+    var flipDoc = parser.parse(blank);
+    flipDoc = flipDoc.replacePage(
+      0,
+      flipDoc.pages.first.addShape(arcBox(id: 1).copyWith(flipY: true)),
+    );
+    final flipPlates = documentForLibvisioWrite(flipDoc)
+        .pages
+        .first
+        .shapes
+        .where(isLibvisioCurvedTextPlate)
+        .toList()
+      ..sort(
+        (a, b) => int.parse(a.name.split('.')[1])
+            .compareTo(int.parse(b.name.split('.')[1])),
+      );
+    expect(flipPlates, hasLength(3));
+    for (var i = 0; i < 3; i++) {
+      expect(flipPlates[i].pinX, closeTo(plates[i].pinX, 1e-6),
+          reason: 'FlipY extra text mirror about TxtPin cancels LocPin FlipY');
+      expect(flipPlates[i].pinY, closeTo(plates[i].pinY, 1e-6),
+          reason: 'FlipY extra text mirror about TxtPin cancels LocPin FlipY');
+    }
+
     expect(
       documentForLibvisioWrite(baked)
           .pages
@@ -3290,7 +3367,7 @@ void main() {
     expect(shapeNeedsLibvisioShapeInsideBake(shape), isTrue);
     expect(
       shapeNeedsLibvisioShapeInsideBake(oval(id: 8, flipX: true)),
-      isFalse,
+      isTrue,
     );
     expect(
       shapeNeedsLibvisioShapeInsideBake(
@@ -3326,6 +3403,29 @@ void main() {
     expect(plates.every((p) => p.locked), isTrue);
     expect(plates.first.width, lessThan(plates.last.width - 0.2));
     expect(libvisioShapeInsideSourceId(plates.first), 1);
+
+    var flipInsideDoc = parser.parse(blank);
+    flipInsideDoc = flipInsideDoc.replacePage(
+      0,
+      flipInsideDoc.pages.first.addShape(oval(id: 1).copyWith(flipY: true)),
+    );
+    final flipInsidePlates = documentForLibvisioWrite(flipInsideDoc)
+        .pages
+        .first
+        .shapes
+        .where(isLibvisioShapeInsidePlate)
+        .toList()
+      ..sort(
+        (a, b) => int.parse(a.name.split('.')[1])
+            .compareTo(int.parse(b.name.split('.')[1])),
+      );
+    expect(flipInsidePlates, hasLength(plates.length));
+    for (var i = 0; i < plates.length; i++) {
+      expect(flipInsidePlates[i].pinX, closeTo(plates[i].pinX, 1e-6));
+      expect(flipInsidePlates[i].pinY, closeTo(plates[i].pinY, 1e-6));
+      expect(flipInsidePlates[i].width, closeTo(plates[i].width, 1e-6));
+    }
+
     expect(
       documentForLibvisioWrite(baked)
           .pages

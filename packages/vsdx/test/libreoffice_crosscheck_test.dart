@@ -3017,6 +3017,38 @@ void main() {
             ),
       ),
     );
+    var curvedTextFlipDocument = parser.parse(blank);
+    curvedTextFlipDocument = curvedTextFlipDocument.replacePage(
+      0,
+      curvedTextFlipDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: curvedTextFlipDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.0,
+          height: 3.0,
+          name: 'CurvedTextFlipY',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(flipY: true).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ARC',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     var shapeInsideDocument = parser.parse(blank);
     final shapeInsidePage = shapeInsideDocument.pages.first;
     shapeInsideDocument = shapeInsideDocument.replacePage(
@@ -3032,6 +3064,41 @@ void main() {
           fill: const VsdxFill(pattern: 0),
           line: const VsdxLine(pattern: 0),
         ).withShapeInside(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            ),
+      ),
+    );
+    var shapeInsideFlipDocument = parser.parse(blank);
+    shapeInsideFlipDocument = shapeInsideFlipDocument.replacePage(
+      0,
+      shapeInsideFlipDocument.pages.first.addShape(
+        VsdxShapeFactory.ellipse(
+          id: shapeInsideFlipDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 4,
+          name: 'ShapeInsideFlipY',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(flipY: true).withShapeInside(true).copyWith(
               richText: const VsdxRichText(
                 runs: <VsdxTextRun>[
                   VsdxTextRun(
@@ -3452,9 +3519,17 @@ void main() {
         originalBytes: blank,
         edited: curvedTextDocument,
       ),
+      'curved_text_flipy': writer.write(
+        originalBytes: blank,
+        edited: curvedTextFlipDocument,
+      ),
       'shape_inside': writer.write(
         originalBytes: blank,
         edited: shapeInsideDocument,
+      ),
+      'shape_inside_flipy': writer.write(
+        originalBytes: blank,
+        edited: shapeInsideFlipDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -6472,7 +6547,8 @@ void main() {
                 'leanRight=$leanRight bodyUpperLeft=$bodyUpperLeft',
           );
         }
-        if (entry.key == 'curved_text' && pdftoppm != null) {
+        if ((entry.key == 'curved_text' || entry.key == 'curved_text_flipy') &&
+            pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
             '-png',
@@ -6571,7 +6647,8 @@ void main() {
                 'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
           );
         }
-        if (entry.key == 'shape_inside' && pdftoppm != null) {
+        if ((entry.key == 'shape_inside' || entry.key == 'shape_inside_flipy') &&
+            pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
             '-png',

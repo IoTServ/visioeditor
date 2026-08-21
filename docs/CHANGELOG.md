@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FlipX / FlipY Curved Text and Shape Inside now keep the upright arc /
+  outline bands in LibreOffice. Canvas extra-mirrors text about TxtPin
+  (`_textFlip*`) after the shape XForm; a save used to skip those leaves
+  so Draw showed a rectangular label. Glyph / band plates now apply the
+  same TxtPin mirror before the shape Flip.
+- Sketch jiggle with open arrowheads now keeps both the two-pass stroke
+  and the heads in LibreOffice. A save used to skip Sketch when
+  Begin/EndArrow sat on an open path (two jiggle plates would duplicate
+  markers). Jiggle plates drop the arrow cells; the source bakes filled
+  arrow Geometry.
 - Geometry-less Edraw labels no longer keep a stale `FillPattern=1` box.
   「专业知识」 on `人才招聘冰山模型.vsdx` is white text on a purple
   FillGradient header; omitting Geometry means Visio paints text only, but
