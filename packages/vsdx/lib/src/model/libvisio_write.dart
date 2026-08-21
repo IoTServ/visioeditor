@@ -131,7 +131,10 @@
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
 /// 2-D shape bakes a locked sibling plate whose FillForegndTrans Draw
 /// collects, an unfilled 2-D stroke bakes a locked PNG band of the mirrored
-/// stroke (filling the mirror would paint an interior Draw leaves empty),
+/// stroke (filling the mirror would paint an interior Draw leaves empty;
+/// built-in LinePattern 2–23, `veDashPattern`, and CompoundType 1–4 rails
+/// go into that band as ribbons so Draw does not keep a solid ring or
+/// drop the mirror),
 /// and a Foreign picture bakes a locked Gaussian PNG sibling of
 /// the same mirrored bitmap canvas / SVG already paint (cropped
 /// pictures composite the Img* window into the frame first), then
@@ -529,17 +532,20 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
 
 /// Unfilled 2-D strokes: canvas `_drawReflection` strokes the flipped path,
 /// so filling the mirror geometry would paint an interior Draw leaves empty.
-/// A locked PNG band carries the mirrored stroke instead. Theme-only stroke
-/// colours stay native so THEMEVAL() survives. FlipY is applied when placing
-/// the plate (`_reflectFillRing`) — copying FlipY onto the PNG would mirror
-/// the already-placed band twice.
+/// A locked PNG band carries the mirrored stroke instead. Built-in
+/// LinePattern 2–23, custom `veDashPattern`, and CompoundType 1–4 rails
+/// are painted as ribbons so Draw keeps the gaps / thick-thin contrast
+/// (a solid ring would hide them; CompoundType is not a token, so skipping
+/// the bake would drop the mirror). Theme-only stroke colours stay native
+/// so THEMEVAL() survives. FlipY is applied when placing the plate
+/// (`_reflectFillRing`) — copying FlipY onto the PNG would mirror the
+/// already-placed band twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
-  if (shape.line.compoundType != 0) return false;
   if (shape.line.color == null && shape.line.themeColorIndex != null) {
     return false;
   }
@@ -547,6 +553,12 @@ bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
   if (reflection.transparency >= 1 - 1e-9) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (shape.line.compoundType != 0) {
+    return _softEdgesCompoundRibbonPolygons(shape).isNotEmpty;
+  }
+  if (_shapeHasSoftEdgesDashes(shape)) {
+    return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
+  }
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
 
@@ -682,8 +694,9 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
 ({Uint8List png, double padInches})? _strokeReflectionPngForLibvisioWrite(
   VsdxShape shape,
 ) {
+  final ribbons = _softEdgesStrokeRibbonPolygons(shape);
   final kind = _softEdgesStrokeSilhouetteKind(shape);
-  if (kind == null) return null;
+  if (kind == null && ribbons.isEmpty) return null;
   final color = shape.line.color ?? const VsdxColor(0xFF000000);
   final trans = _combinedTransparency(
     shape.line.transparency,
@@ -705,14 +718,28 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
   final blurInches = math.max(shape.reflection.blurInches, 0.0);
-  final padInches = weight / 2 + blurInches * 3;
+  final padInches = _softEdgesStrokeExtentInches(shape) + blurInches * 3;
   final padPx = math.max(1, (padInches / w * innerWidthPx).ceil());
   final strokeWidthPx = weight / w * innerWidthPx;
   final frac = shape.reflection.sizeInches.clamp(0.01, 1.0);
   final bandHeightPx = math.max(1, (innerHeightPx * frac).round());
   var outer = const <({double x, double y})>[];
   var inner = const <({double x, double y})>[];
-  if (kind == SoftEdgesSilhouetteKind.polygon) {
+  var ribbonPx = const <List<({double x, double y})>>[];
+  ({double x, double y}) toPx(Offset2D p) => (
+        x: padPx + p.x / w * (innerWidthPx - 1),
+        y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
+      );
+  if (ribbons.isNotEmpty) {
+    ribbonPx = <List<({double x, double y})>>[
+      for (final ribbon in ribbons)
+        if (ribbon.length >= 3)
+          <({double x, double y})>[
+            for (final p in ribbon) toPx(p),
+          ],
+    ];
+    if (ribbonPx.isEmpty) return null;
+  } else if (kind == SoftEdgesSilhouetteKind.polygon) {
     final geom = _softEdgesStrokeGeometry(shape);
     final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
     if (inches == null || inches.length < 3) return null;
@@ -720,10 +747,6 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     final left = offsetPolyline(inches, half, closed: true);
     final right = offsetPolyline(inches, -half, closed: true);
     if (left.length < 3 || right.length < 3) return null;
-    ({double x, double y}) toPx(Offset2D p) => (
-          x: padPx + p.x / w * (innerWidthPx - 1),
-          y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
-        );
     outer = <({double x, double y})>[for (final p in left) toPx(p)];
     inner = <({double x, double y})>[for (final p in right) toPx(p)];
   }
@@ -738,9 +761,10 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     alpha: alpha,
     strokeWidthPx: strokeWidthPx,
     blurSigmaPx: blurInches / w * innerWidthPx,
-    kind: kind,
+    kind: kind ?? SoftEdgesSilhouetteKind.rectangle,
     outer: outer,
     inner: inner,
+    ribbons: ribbonPx,
     flipVertical: shape.flipY,
   );
   if (png == null) return null;

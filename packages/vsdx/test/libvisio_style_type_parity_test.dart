@@ -3834,6 +3834,130 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('dashed unfilled stroke Reflection bakes dash gaps for LibreOffice', () {
+    const colour = VsdxColor(0xFF1565C0);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'DashMirror',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: colour,
+        weightInches: 0.08,
+        pattern: 2,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.2,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 2,
+        reason: 'the source keeps LinePattern so Draw still dashes the body');
+    expect(source.fill.pattern, 0);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(plate.hasImage, isTrue);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'the dashed mirror must stay hollow, not a filled band',
+    );
+    var ink = 0;
+    var gap = 0;
+    final row = 3;
+    for (var x = 4; x < decoded.width - 4; x++) {
+      final pixel = decoded.getPixel(x, row);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (pixel.b > pixel.r + 15 && luma < 200) ink++;
+      if (luma > 220) gap++;
+    }
+    expect(ink, greaterThan(4),
+        reason: 'the mirrored band must keep dash ink; ink=$ink gap=$gap');
+    expect(gap, greaterThan(4),
+        reason: 'the mirrored band must keep dash gaps, not a solid ring; '
+            'ink=$ink gap=$gap');
+  });
+
+  test('compound unfilled stroke Reflection bakes rails for LibreOffice', () {
+    const colour = VsdxColor(0xFF1565C0);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'CompoundMirror',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: colour,
+        weightInches: 0.12,
+        compoundType: 1,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.2,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.compoundType, 1,
+        reason: 'the source keeps CompoundType; the PNG carries the rails');
+    expect(source.fill.pattern, 0);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(plate.hasImage, isTrue);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'compound mirror interior must stay hollow',
+    );
+    final cx = decoded.width ~/ 2;
+    var rails = 0;
+    var inRail = false;
+    for (var y = 0; y < decoded.height ~/ 2; y++) {
+      final pixel = decoded.getPixel(cx, y);
+      final on = pixel.b > pixel.r + 15;
+      if (on && !inRail) {
+        rails++;
+        inRail = true;
+      } else if (!on) {
+        inRail = false;
+      }
+    }
+    expect(rails, greaterThanOrEqualTo(2),
+        reason: 'CompoundType 1 must paint two mirrored rails, not one ring; '
+            'rails=$rails');
+  });
+
   test('picture Reflection bakes a Gaussian PNG sibling for LibreOffice', () {
     const part = '/visio/media/reflection.png';
     final rasterImage = raster.Image(width: 16, height: 16);

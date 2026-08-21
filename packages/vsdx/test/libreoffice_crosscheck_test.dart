@@ -2614,6 +2614,66 @@ void main() {
         ),
       ),
     );
+    var reflectionStrokeDashDocument = parser.parse(blank);
+    final reflectionStrokeDashPage = reflectionStrokeDashDocument.pages.first;
+    reflectionStrokeDashDocument = reflectionStrokeDashDocument.replacePage(
+      0,
+      reflectionStrokeDashPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: reflectionStrokeDashPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ReflectionStrokeDash',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF1565C0),
+            weightInches: 0.08,
+            pattern: 2,
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.6,
+            distanceInches: 0.06,
+            transparency: 0.15,
+            blurInches: 0,
+          ),
+        ),
+      ),
+    );
+    var reflectionStrokeCompoundDocument = parser.parse(blank);
+    final reflectionStrokeCompoundPage =
+        reflectionStrokeCompoundDocument.pages.first;
+    reflectionStrokeCompoundDocument =
+        reflectionStrokeCompoundDocument.replacePage(
+      0,
+      reflectionStrokeCompoundPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: reflectionStrokeCompoundPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ReflectionStrokeCompound',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF1565C0),
+            weightInches: 0.14,
+            compoundType: 1,
+          ),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.6,
+            distanceInches: 0.06,
+            transparency: 0.15,
+            blurInches: 0,
+          ),
+        ),
+      ),
+    );
     var reflectionPictureDocument = parser.parse(blank);
     final reflectionPicturePage = reflectionPictureDocument.pages.first;
     const reflectionPicturePart = '/visio/media/reflection_picture.png';
@@ -3171,6 +3231,14 @@ void main() {
       'reflection_stroke_flipy': writer.write(
         originalBytes: blank,
         edited: reflectionStrokeFlipDocument,
+      ),
+      'reflection_stroke_dash': writer.write(
+        originalBytes: blank,
+        edited: reflectionStrokeDashDocument,
+      ),
+      'reflection_stroke_compound': writer.write(
+        originalBytes: blank,
+        edited: reflectionStrokeCompoundDocument,
       ),
       'oblique_shadow': writer.write(
         originalBytes: blank,
@@ -5469,6 +5537,177 @@ void main() {
             greaterThan(200),
             reason: 'FlipY must not leave the unflipped band below the shape; '
                 'belowR=${below.r} belowB=${below.b}',
+          );
+        }
+        if (entry.key == 'reflection_stroke_dash') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ReflectionStrokeDash');
+          expect(source.reflection.enabled, isFalse);
+          expect(source.fill.pattern, 0);
+          expect(source.line.pattern, 2);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioReflectionPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'reflection_stroke_dash' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // Pattern 2 is 6×weight ink / 3×weight gap (0.48" / 0.24"). The
+          // bottom edge starts at x=2.75; the first gap is 0.48" along.
+          final ink = meanLuma(2.90, 4.40, 3.05, 4.48);
+          final gap = meanLuma(3.30, 4.40, 3.42, 4.48);
+          expect(
+            ink,
+            lessThan(180),
+            reason: 'LibreOffice must paint mirrored dash ink; '
+                'ink=$ink gap=$gap',
+          );
+          expect(
+            gap,
+            greaterThan(200),
+            reason: 'LibreOffice must keep mirrored dash gaps, not a solid '
+                'ring; ink=$ink gap=$gap',
+          );
+        }
+        if (entry.key == 'reflection_stroke_compound') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ReflectionStrokeCompound');
+          expect(source.reflection.enabled, isFalse);
+          expect(source.fill.pattern, 0);
+          expect(source.line.compoundType, 0,
+              reason: 'libvisioShapeWrite flattens CompoundType to rails');
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioReflectionPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'reflection_stroke_compound' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          final cx = (4.25 / page.widthInches * rendered.width).round();
+          final y0 =
+              ((page.heightInches - 4.50) / page.heightInches * rendered.height)
+                  .round();
+          final y1 =
+              ((page.heightInches - 4.28) / page.heightInches * rendered.height)
+                  .round();
+          var rails = 0;
+          var inRail = false;
+          for (var y = y0; y < y1; y++) {
+            if (cx < 0 ||
+                y < 0 ||
+                cx >= rendered.width ||
+                y >= rendered.height) {
+              continue;
+            }
+            final pixel = rendered.getPixel(cx, y);
+            final on = pixel.b > pixel.r + 10;
+            if (on && !inRail) {
+              rails++;
+              inRail = true;
+            } else if (!on) {
+              inRail = false;
+            }
+          }
+          final interior = mean(4.0, 4.55, 4.5, 4.75);
+          expect(
+            rails,
+            greaterThanOrEqualTo(2),
+            reason: 'LibreOffice must paint two mirrored CompoundType rails; '
+                'rails=$rails',
+          );
+          expect(
+            interior.r,
+            greaterThan(200),
+            reason: 'the compound mirror interior must stay hollow; '
+                'interiorR=${interior.r} interiorB=${interior.b}',
           );
         }
         if (entry.key == 'oblique_shadow') {

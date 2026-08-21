@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Dashed and CompoundType unfilled-stroke Reflections now keep gaps and
+  rails in LibreOffice. Draw used to show a solid mirrored ring (or drop
+  the mirror for CompoundType, which is not a token). A save paints the
+  same per-dash / per-rail ribbons SoftEdges already uses into the PNG
+  band.
 - FlipY unfilled-stroke Reflections now keep the mirrored band in
   LibreOffice. Draw used to drop the effect because copying FlipY onto
   the PNG would mirror the band twice. A save places the plate with the

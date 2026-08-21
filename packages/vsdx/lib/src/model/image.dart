@@ -1209,7 +1209,9 @@ void _compositeOntoWhite(raster.Image work) {
 /// clipped to [bandHeightPx] below the shape and faded toward the far edge.
 /// [padPx] keeps the outer stroke half and the blur halo from clipping; the
 /// band starts [padPx] rows in, so rows above it hold the stroke that spills
-/// past the mirror axis. [flipVertical] is for a FlipY source: the plate
+/// past the mirror axis. [ribbons] are per-dash / CompoundType strips so
+/// Draw keeps the gaps and thick/thin rails; a solid ring would hide them.
+/// [flipVertical] is for a FlipY source: the plate
 /// sits above the shape in local Y (`_reflectFillRing`), and Visio maps
 /// PNG row 0 to local max Y, so the near-axis rows must land on min Y.
 Uint8List? bakeStrokedReflectionPng({
@@ -1226,6 +1228,8 @@ Uint8List? bakeStrokedReflectionPng({
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> outer = const <({double x, double y})>[],
   List<({double x, double y})> inner = const <({double x, double y})>[],
+  List<List<({double x, double y})>> ribbons =
+      const <List<({double x, double y})>>[],
   bool flipVertical = false,
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
@@ -1238,22 +1242,25 @@ Uint8List? bakeStrokedReflectionPng({
       height: innerHeightPx + padPx * 2,
       numChannels: 4,
     );
-    final painted = _paintStrokedRing(
-      ring,
-      innerWidthPx: innerWidthPx,
-      innerHeightPx: innerHeightPx,
-      padPx: padPx,
-      color: raster.ColorRgba8(
-        red.clamp(0, 255),
-        green.clamp(0, 255),
-        blue.clamp(0, 255),
-        alpha.clamp(0, 255),
-      ),
-      strokeWidthPx: strokeWidthPx,
-      kind: kind,
-      outer: outer,
-      inner: inner,
+    final color = raster.ColorRgba8(
+      red.clamp(0, 255),
+      green.clamp(0, 255),
+      blue.clamp(0, 255),
+      alpha.clamp(0, 255),
     );
+    final painted = ribbons.isNotEmpty
+        ? _paintFilledPolygons(ring, ribbons, color)
+        : _paintStrokedRing(
+            ring,
+            innerWidthPx: innerWidthPx,
+            innerHeightPx: innerHeightPx,
+            padPx: padPx,
+            color: color,
+            strokeWidthPx: strokeWidthPx,
+            kind: kind,
+            outer: outer,
+            inner: inner,
+          );
     if (!painted) return null;
     var work = raster.Image(
       width: ring.width,
