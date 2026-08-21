@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- CompoundType 1–4 SoftEdges now keep both the feather and the thick/thin
+  rails in LibreOffice. Neither cell is a token, so Draw used to show a
+  feathered fill with a hard single stroke or hard parallel rails on top.
+  A save paints the rails into the padded PNG sibling and drops fill and
+  line.
 - Gradient and hatch SoftEdges with a stroke now keep both the wash and
   the feathered outline in LibreOffice. Draw used to show a feathered
   fill PNG with a hard native stroke on top. A save paints the wash and

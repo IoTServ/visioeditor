@@ -98,6 +98,7 @@
 /// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
 /// solid or dashed stroke bakes both into one padded plate and drops fill
 /// and line. Gradient / hatch fills with a stroke join that plate.
+/// CompoundType 1–4 rails join that plate too.
 /// `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
 /// picture with blur bakes the same filled image-frame silhouette. PageSheet
@@ -1753,6 +1754,125 @@ void main() {
         reason: 'gaps must show the hatch, not a solid ring; gap=$dashGap');
 
     final saved = writer.write(originalBytes: blank, edited: doc);
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('compound SoftEdges bakes feathered rails for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'CompoundSoft',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.24,
+        compoundType: 1,
+        softEdgesInches: 0.1,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+    expect(shapeNeedsLibvisioCompoundBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.line.compoundType, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.width, greaterThan(2.0));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'compound SoftEdges PNG must keep the hollow interior empty',
+    );
+    const weight = 0.24;
+    const soft = 0.1;
+    const padInches = weight / 2 + soft * 3;
+    const plateW = 2 + 2 * padInches;
+    const plateH = 1.2 + 2 * padInches;
+    final midY = ((padInches + 0.6) / plateH * decoded.height)
+        .round()
+        .clamp(1, decoded.height - 2);
+    var darkBands = 0;
+    var inDark = false;
+    final x0 = ((padInches - weight) / plateW * decoded.width)
+        .round()
+        .clamp(0, decoded.width - 1);
+    final x1 = ((padInches + weight) / plateW * decoded.width)
+        .round()
+        .clamp(0, decoded.width - 1);
+    for (var x = x0; x <= x1; x++) {
+      final pixel = decoded.getPixel(x, midY);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      final dark = luma < 180;
+      if (dark && !inDark) {
+        darkBands++;
+        inDark = true;
+      } else if (!dark) {
+        inDark = false;
+      }
+    }
+    expect(
+      darkBands,
+      greaterThanOrEqualTo(2),
+      reason: 'compound type 1 must paint two feathered rails, not a solid '
+          'ring; bands=$darkBands',
+    );
+
+    final filled = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.24,
+        compoundType: 1,
+        softEdgesInches: 0.1,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(filled), isTrue);
+    var filledDoc = parser.parse(blank);
+    filledDoc =
+        filledDoc.replacePage(0, filledDoc.pages.first.addShape(filled));
+    final filledBaked = documentForLibvisioWrite(filledDoc);
+    expect(filledBaked.pages.first.findShapeById(2)!.fill.pattern, 0);
+    expect(filledBaked.pages.first.findShapeById(2)!.line.pattern, 0);
+    expect(filledBaked.pages.first.findShapeById(2)!.line.compoundType, 0);
+    final filledPlate =
+        filledBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final filledPng = filledBaked.images.findByPart(filledPlate.imagePartName!);
+    final filledDecoded = raster.decodePng(filledPng!.bytes)!;
+    final centre = filledDecoded.getPixel(
+      filledDecoded.width ~/ 2,
+      filledDecoded.height ~/ 2,
+    );
+    expect(centre.r, greaterThan(180),
+        reason: 'filled compound SoftEdges PNG must keep the red interior');
+    expect(centre.g, lessThan(80));
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final writerBaked = parser.parse(saved);
+    expect(writerBaked.pages.first.findShapeById(1)!.line.compoundType, 0);
+    expect(
+      writerBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'compound SoftEdges must not also emit Geometry rails',
+    );
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);

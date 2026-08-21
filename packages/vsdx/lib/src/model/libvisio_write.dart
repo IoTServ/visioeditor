@@ -84,7 +84,9 @@
 /// go into the same padded plate so Draw does not keep hard LinePattern
 /// dashes on a feathered fill. Gradient / hatch fills with a solid or
 /// dashed stroke join that plate so Draw does not keep a hard outline on
-/// a feathered wash. `ShadowBlur` is likewise missing —
+/// a feathered wash. CompoundType 1–4 rails join the same plate — they
+/// are not a token either, so Draw would otherwise keep a single hard
+/// stroke (or hard parallel rails) on a feathered fill. `ShadowBlur` is likewise missing —
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
@@ -4373,8 +4375,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// A filled 2-D shape that also paints a solid or dashed stroke bakes both into
 /// one padded plate and drops fill and line, so Draw does not keep a
 /// hard outline. Gradient / hatch fills with a stroke join that plate.
-/// 1-D, pictures, compound
-/// rails, arrows, theme-only fills and unresolved theme colours stay native.
+/// CompoundType 1–4 rails join that plate too. 1-D, pictures,
+/// arrows, theme-only fills and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -4420,11 +4422,13 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (!shape.line.hasLine) return false;
   final dashed = _shapeHasSoftEdgesDashes(shape);
   if (shape.line.pattern != 1 && !dashed) return false;
-  if (shape.line.compoundType != 0) return false;
   if (shape.line.hasGradient) return false;
   if (shape.line.beginArrow != 0 || shape.line.endArrow != 0) return false;
   if (shape.line.color == null && shape.line.themeColorIndex != null) {
     return false;
+  }
+  if (shape.line.compoundType != 0) {
+    return _softEdgesCompoundRibbonPolygons(shape).isNotEmpty;
   }
   if (dashed) {
     return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
@@ -4748,6 +4752,66 @@ List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
   return out;
 }
 
+List<List<Offset2D>> _softEdgesCompoundRibbonPolygons(VsdxShape shape) {
+  if (shape.line.compoundType <= 0) {
+    return const <List<Offset2D>>[];
+  }
+  final weight =
+      shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
+  final rails = compoundRails(shape.line.compoundType, weight);
+  if (rails.isEmpty) return const <List<Offset2D>>[];
+  final dashes = effectiveDashPatternForLine(shape.line);
+  final dashed = dashes != null && dashes.isNotEmpty;
+  final out = <List<Offset2D>>[];
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) continue;
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final polylines = dashes != null && dashes.isNotEmpty
+        ? _dashPolyline(points, dashes, closed: closed)
+        : <List<Offset2D>>[points];
+    for (final poly in polylines) {
+      if (poly.length < 2) continue;
+      // Closed rails become an open loop (repeat the start) so the ribbon
+      // is one `[...left, ...right.reversed]` strip `_paintFilledPolygons`
+      // can fill. `closed: true` offsets would need even-odd hole pairs.
+      final loop = dashed || !closed
+          ? poly
+          : <Offset2D>[...poly, poly.first];
+      for (final rail in rails) {
+        final centre = offsetPolyline(loop, rail.offset, closed: false);
+        if (centre.length < 2) continue;
+        final half = rail.width / 2;
+        if (half <= 1e-9) continue;
+        final left = offsetPolyline(centre, half, closed: false);
+        final right = offsetPolyline(centre, -half, closed: false);
+        if (left.length < 2 || right.length < 2) continue;
+        out.add(<Offset2D>[...left, ...right.reversed]);
+      }
+    }
+  }
+  return out;
+}
+
+double _softEdgesStrokeExtentInches(VsdxShape shape) {
+  final weight =
+      shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
+  var extent = weight / 2;
+  if (shape.line.compoundType <= 0) return extent;
+  for (final rail in compoundRails(shape.line.compoundType, weight)) {
+    extent = math.max(extent, rail.offset.abs() + rail.width / 2);
+  }
+  return extent;
+}
+
+List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
+  if (shape.line.compoundType > 0) {
+    return _softEdgesCompoundRibbonPolygons(shape);
+  }
+  return _softEdgesDashRibbonPolygons(shape);
+}
+
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(
   VsdxShape shape, {
   int? holeRed,
@@ -4756,7 +4820,7 @@ List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
   int? holeAlpha,
   bool holeFromFill = false,
 }) {
-  final ribbons = _softEdgesDashRibbonPolygons(shape);
+  final ribbons = _softEdgesStrokeRibbonPolygons(shape);
   final kind = _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
   final color = shape.line.color ?? const VsdxColor(0xFF000000);
@@ -4776,7 +4840,7 @@ List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
   final soft = shape.line.softEdgesInches;
-  final padInches = weight / 2 + soft * 3;
+  final padInches = _softEdgesStrokeExtentInches(shape) + soft * 3;
   final padPx = math.max(1, (padInches / w * innerWidthPx).ceil());
   final sigmaPx = soft / w * innerWidthPx;
   final strokeWidthPx = weight / w * innerWidthPx;
@@ -4891,7 +4955,7 @@ VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
   }
   if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape) ||
       _shapeNeedsLibvisioStrokeSoftEdgesBake(shape)) {
-    line = line.copyWith(pattern: 0);
+    line = line.copyWith(pattern: 0, compoundType: 0);
   }
   return shape.copyWith(fill: fill, line: line);
 }

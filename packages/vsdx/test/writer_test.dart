@@ -7170,8 +7170,8 @@ void main() {
     expect(pageXml.contains('N="CompoundType" V="0"'), isTrue);
     expect(
       '<Section N="Geometry"'.allMatches(pageXml).length,
-      greaterThan(1),
-      reason: 'CompoundType 1 must bake into parallel Geometry rails for LO',
+      2,
+      reason: 'source box + SoftEdges plate; compound rails live in the PNG',
     );
     final afterDoc = parser.parse(saved);
     final after = afterDoc.pages.first.findShapeById(id)!;
@@ -7183,7 +7183,7 @@ void main() {
       hasLength(1),
     );
     expect(after.line.compoundType, 0);
-    expect(after.geometries.where((g) => !g.noLine).length, greaterThan(1));
+    expect(after.line.pattern, 0);
   });
 
   test('expanded Lock* cells written when locked', () {
