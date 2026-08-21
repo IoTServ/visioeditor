@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- CompoundType unfilled-stroke Glow now keeps the halo in LibreOffice.
+  Draw used to drop the effect because the bake skipped CompoundType
+  (not a token). Canvas `_drawGlow` blurs the path, not the rails, so a
+  save paints the same Gaussian PNG ring a solid stroke already uses.
 - FlipY picture Reflections now keep the mirrored band in LibreOffice.
   Draw used to FlipY the PNG sibling twice (and show the original
   bottom nearest). A save FlipY's the bitmap before the mirror so the

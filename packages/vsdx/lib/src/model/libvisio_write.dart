@@ -118,7 +118,10 @@
 /// outline — stealing Line would drop CompoundType / dashes that Draw
 /// *does* collect. That case bakes a locked Gaussian PNG sibling (canvas
 /// `_drawGlow`) when the glow colour is resolved RGB; theme-only glow
-/// still uses a LineWeight halo so THEMEVAL() survives. A Foreign
+/// still uses a LineWeight halo so THEMEVAL() survives. An unfilled 2-D
+/// CompoundType stroke uses the same PNG ring — canvas `_drawGlow`
+/// blurs the path, not the rails, so skipping the bake would drop the
+/// halo (CompoundType is not a token). A Foreign
 /// picture with resolved RGB bakes the same Gaussian PNG ring canvas
 /// `_drawGlow` paints around the image frame. Then `GlowSize` is
 /// written 0.
@@ -1058,8 +1061,10 @@ bool _shapeCanLibvisioGlowPng(VsdxShape shape) {
 }
 
 /// Unfilled 2-D with a stroke: canvas `_drawGlow` blurs a path stroke, not
-/// a filled silhouette (that would paint the interior). 1-D stays a ribbon
-/// because a Foreign plate cannot use a zero-height 1-D XForm.
+/// a filled silhouette (that would paint the interior). CompoundType rails
+/// are not a token, but the halo is still the path — skipping the bake
+/// would drop the glow. 1-D stays a ribbon because a Foreign plate cannot
+/// use a zero-height 1-D XForm.
 bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.is1D || shape.hasImage) return false;
@@ -1068,7 +1073,6 @@ bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
   }
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
-  if (shape.line.compoundType != 0) return false;
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
 

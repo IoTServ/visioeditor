@@ -762,6 +762,73 @@ void main() {
     expect(after, isNotEmpty);
   });
 
+  test('Glow on an unfilled CompoundType stroke bakes a Gaussian PNG ring', () {
+    const colour = VsdxColor(0xFF00CC66);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'GlowCompound',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.12,
+        compoundType: 1,
+      ),
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: colour,
+        sizeInches: 0.08,
+        transparency: 0.4,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowPlateBake(shape), isTrue,
+        reason: 'CompoundType must not drop the unfilled Glow PNG');
+    expect(shapeNeedsLibvisioGlowBake(shape), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
+    final plate = baked.pages.first.shapes.where(isLibvisioGlowPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(baked.pages.first.findShapeById(1)!.line.compoundType, 1,
+        reason: 'the source keeps CompoundType; the PNG carries the halo');
+    expect(baked.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'compound Glow PNG must keep a hollow interior',
+    );
+    var bestDelta = -1.0;
+    for (var x = 0; x < decoded.width ~/ 2; x++) {
+      final pixel = decoded.getPixel(x, decoded.height ~/ 2);
+      final delta = (pixel.g - pixel.r).toDouble();
+      if (delta > bestDelta) bestDelta = delta;
+    }
+    expect(bestDelta, greaterThan(8),
+        reason: 'compound Glow PNG must paint the green ring outside the body');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
+    expect(savedDoc.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
+  });
+
   test(
       'Glow on a Foreign picture bakes a Gaussian PNG ring LibreOffice can collect',
       () {
