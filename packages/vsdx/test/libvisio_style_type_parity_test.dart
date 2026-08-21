@@ -39,7 +39,8 @@
 /// those into RGB toward white and writes Trans=0 (theme-bound RGB-less
 /// cells keep THEMEVAL). Filled-shape LineColorTrans / LineGradient bake a
 /// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
-/// the source line.
+/// the source line. CompoundType 1–4 rails join that sibling so Draw does
+/// not keep opaque parallel strokes on top of the wash.
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
 /// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
@@ -4970,6 +4971,98 @@ void main() {
     expect(plate.line.pattern, 0);
     expect(plate.fill.foregroundTransparency, closeTo(0.5, 1e-9));
     expect(plate.geometries.any((g) => !g.noFill), isTrue);
+  });
+
+  test('filled CompoundType LineColorTrans bakes rails on the sibling ribbon',
+      () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'FilledCompoundTrans',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        transparency: 0.5,
+        compoundType: 1,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.foreground?.value, 0xFFFF0000);
+    expect(source.line.pattern, 0);
+    expect(source.line.compoundType, 0);
+    expect(source.line.transparency, closeTo(0, 1e-12));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioStrokeRibbonPlate).single;
+    expect(plate.locked, isTrue);
+    expect(plate.line.pattern, 0);
+    expect(plate.fill.foregroundTransparency, closeTo(0.5, 1e-9));
+    expect(
+      plate.geometries.where((g) => !g.noFill).length,
+      greaterThanOrEqualTo(2),
+      reason: 'CompoundType 1 must become two filled rails on the sibling',
+    );
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedPage = parser.parse(saved).pages.first;
+    expect(savedPage.findShapeById(1)!.line.compoundType, 0);
+    expect(savedPage.findShapeById(1)!.fill.foreground?.value, 0xFFFF0000);
+    expect(
+      savedPage.shapes.where(isLibvisioStrokeRibbonPlate).single.geometries
+          .where((g) => !g.noFill)
+          .length,
+      greaterThanOrEqualTo(2),
+    );
+
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final gradient = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'FilledCompoundGrad',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFFF00), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        compoundType: 1,
+        gradient: wash,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(gradient), isTrue);
+    var gradDoc = parser.parse(blank);
+    gradDoc = gradDoc.replacePage(0, gradDoc.pages.first.addShape(gradient));
+    final gradSaved = writer.write(originalBytes: blank, edited: gradDoc);
+    final gradPage = parser.parse(gradSaved).pages.first;
+    final gradSource = gradPage.findShapeById(2)!;
+    expect(gradSource.fill.foreground?.value, 0xFFFFFF00);
+    expect(gradSource.line.hasGradient, isFalse);
+    expect(gradSource.line.compoundType, 0);
+    final gradPlate = gradPage.shapes.where(isLibvisioStrokeRibbonPlate).single;
+    expect(
+      gradPlate.fill.hasGradient ||
+          (gradPlate.fill.pattern >= 25 && gradPlate.fill.pattern <= 40),
+      isTrue,
+      reason: 'filled CompoundType LineGradient must ride the sibling fill',
+    );
+    expect(
+      gradPlate.geometries.where((g) => !g.noFill).length,
+      greaterThanOrEqualTo(2),
+    );
   });
 
   test('filled high miterLimit bakes a sibling ribbon spike for LibreOffice',

@@ -54,10 +54,10 @@
 /// ShdwForegndTrans are not tokens —
 /// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
 /// those into RGB toward white and writes Trans=0. A filled 2-D shape that
-/// still paints a stroke bakes LineColorTrans / LineGradient / a long
-/// `veMiterLimit` spike as a locked sibling ribbon whose FillForegndTrans
-/// Draw collects, then drops the source line so Draw does not paint an
-/// opaque (or short-miter) stroke on top. Theme-bound colours
+/// still paints a stroke bakes LineColorTrans / LineGradient / CompoundType
+/// 1–4 rails / a long `veMiterLimit` spike as a locked sibling ribbon whose
+/// FillForegndTrans Draw collects, then drops the source line so Draw does
+/// not paint an opaque (or short-miter) stroke on top. Theme-bound colours
 /// with no resolved RGB are left alone so THEMEVAL() survives. Page
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
@@ -2292,16 +2292,17 @@ VsdxDocument bakeGlassForLibvisioWrite(VsdxDocument document) {
 ///
 /// FillPattern is already the body, so LineColorTrans / LineGradient cannot
 /// steal it the way an unfilled ribbon does. `_lineProperties` also never
-/// emits `svg:stroke-miterlimit`. A locked NoLine sibling carries the
-/// stroke silhouette (FillForegndTrans / FillGradient / the long miter
-/// outline), then the source line is dropped.
+/// emits `svg:stroke-miterlimit`. CompoundType is not a token either, so
+/// skipping the bake would drop the wash onto hard parallel rails. A locked
+/// NoLine sibling carries the stroke silhouette (FillForegndTrans /
+/// FillGradient / CompoundType 1–4 rails / the long miter outline), then
+/// the source line is dropped.
 bool shapeNeedsLibvisioFilledStrokeRibbonBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (_hasArrowheads(shape.line)) return false;
   if (!shape.line.hasLine || shape.line.pattern != 1) return false;
   final custom = shape.line.customDashPattern;
   if (custom != null && custom.isNotEmpty) return false;
-  if (shape.line.compoundType != 0) return false;
   if (shape.line.softEdgesInches > 1e-6) return false;
   if (!_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasGradient &&
@@ -2313,6 +2314,16 @@ bool shapeNeedsLibvisioFilledStrokeRibbonBake(VsdxShape shape) {
 }
 
 List<VsdxGeometry> _filledStrokeRibbonGeometries(VsdxShape shape) {
+  if (shape.line.compoundType != 0) {
+    final out = <VsdxGeometry>[];
+    for (final poly in _softEdgesCompoundRibbonPolygons(shape)) {
+      if (poly.length < 3) continue;
+      final commands = polylineCommands(poly, closed: true);
+      if (commands.length < 3) continue;
+      out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+    }
+    return out;
+  }
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
   final half = weight / 2;
@@ -2371,6 +2382,7 @@ VsdxShape _sourceForLibvisioFilledStrokeRibbonWrite(VsdxShape shape) {
     pattern: 0,
     gradient: null,
     transparency: 0,
+    compoundType: 0,
   );
   var cells = shape.userCells;
   if (_shapeHasLibvisioMiterSpikeCorners(shape)) {

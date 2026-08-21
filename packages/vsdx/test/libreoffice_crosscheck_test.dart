@@ -3186,6 +3186,30 @@ void main() {
         ),
       ),
     );
+    var filledLineTransCompoundDocument = parser.parse(blank);
+    final filledLineTransCompoundPage =
+        filledLineTransCompoundDocument.pages.first;
+    filledLineTransCompoundDocument =
+        filledLineTransCompoundDocument.replacePage(
+      0,
+      filledLineTransCompoundPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: filledLineTransCompoundPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'FilledCompoundTrans',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.28,
+            transparency: 0.5,
+            compoundType: 1,
+          ),
+        ),
+      ),
+    );
     var roundCapMiterDocument = parser.parse(blank);
     final roundCapMiterPage = roundCapMiterDocument.pages.first;
     roundCapMiterDocument = roundCapMiterDocument.replacePage(
@@ -3397,6 +3421,10 @@ void main() {
       'filled_line_trans': writer.write(
         originalBytes: blank,
         edited: filledLineTransDocument,
+      ),
+      'filled_line_trans_compound': writer.write(
+        originalBytes: blank,
+        edited: filledLineTransCompoundDocument,
       ),
       'round_cap_miter': writer.write(
         originalBytes: blank,
@@ -6915,6 +6943,104 @@ void main() {
             lessThan(90),
             reason: 'LibreOffice must composite the stroke over the fill, not '
                 'premultiply toward white; inner=$innerStroke interior=$interior',
+          );
+        }
+        if (entry.key == 'filled_line_trans_compound') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FilledCompoundTrans');
+          expect(source.fill.foreground?.value, 0xFFFF0000);
+          expect(source.line.pattern, 0);
+          expect(source.line.compoundType, 0);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+            hasLength(1),
+          );
+          expect(
+            reopened.pages.first.shapes
+                .where(isLibvisioStrokeRibbonPlate)
+                .single
+                .geometries
+                .where((g) => !g.noFill)
+                .length,
+            greaterThanOrEqualTo(2),
+          );
+        }
+        if (entry.key == 'filled_line_trans_compound' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          final interior = meanLuma(4.1, 5.4, 4.4, 5.6);
+          final innerRail = meanLuma(2.80, 5.4, 2.88, 5.6);
+          final gap = meanLuma(2.72, 5.45, 2.78, 5.55);
+          final outerRail = meanLuma(2.61, 5.45, 2.68, 5.55);
+          expect(
+            interior,
+            lessThan(100),
+            reason: 'LibreOffice must keep the red fill; interior=$interior',
+          );
+          expect(
+            innerRail,
+            lessThan(90),
+            reason: 'LibreOffice must composite the inner rail over the fill; '
+                'inner=$innerRail interior=$interior gap=$gap outer=$outerRail',
+          );
+          expect(
+            innerRail,
+            greaterThan(20),
+            reason: 'CompoundType LineColorTrans must stay translucent, not '
+                'an opaque black rail; inner=$innerRail',
+          );
+          expect(
+            gap,
+            greaterThan(innerRail + 15),
+            reason: 'LibreOffice must keep the CompoundType gap, not one fat '
+                'stroke; gap=$gap inner=$innerRail outer=$outerRail',
+          );
+          expect(
+            outerRail,
+            lessThan(220),
+            reason: 'LibreOffice must paint the outer rail on the page; '
+                'outer=$outerRail gap=$gap',
           );
         }
         if (entry.key == 'round_cap_miter') {

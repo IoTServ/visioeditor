@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Filled CompoundType LineColorTrans / LineGradient now keep rails and
+  wash in LibreOffice. Draw used to skip the sibling ribbon because
+  CompoundType is not a token, then paint opaque parallel strokes.
+  A save puts the same per-rail ribbons SoftEdges already uses onto
+  the locked sibling whose FillForegndTrans Draw collects.
 - LineGradient unfilled-stroke Reflections now keep the wash in LibreOffice.
   Draw used to show a solid LineColor ring because neither cell is a
   token. A save samples the resolved-RGB LineGradient into the same
