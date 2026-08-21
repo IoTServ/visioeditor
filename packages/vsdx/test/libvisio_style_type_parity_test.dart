@@ -94,8 +94,9 @@
 /// classic 25–40 washes and FillPattern 2–24 hatches go into that PNG
 /// so Draw does not keep a hard fill. An unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
-/// line. A filled 2-D shape that also paints a solid stroke bakes both
-/// into one padded plate and drops fill and line. `ShadowBlur` is not a token,
+/// line. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
+/// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
+/// solid stroke bakes both into one padded plate and drops fill and line. `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
 /// picture with blur bakes the same filled image-frame silhouette. PageSheet
 /// `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not tokens, so a
@@ -1742,6 +1743,71 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('unfilled dashed SoftEdges bakes per-dash ribbons for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'DashSoft',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.16,
+        pattern: 2,
+        softEdgesInches: 0.12,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plates = baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate);
+    expect(plates, hasLength(1));
+    final png = baked.images.findByPart(plates.single.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    expect(
+      decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).r,
+      greaterThan(200),
+      reason: 'dashed SoftEdges PNG must keep the hollow interior empty',
+    );
+    var dark = 0;
+    var light = 0;
+    const padInches = 0.16 / 2 + 0.12 * 3;
+    const plateW = 2 + 2 * padInches;
+    const plateH = 1.2 + 2 * padInches;
+    final row = ((padInches + 1.2) / plateH * decoded.height)
+        .round()
+        .clamp(1, decoded.height - 2);
+    final x0 = (padInches / plateW * decoded.width).round();
+    final x1 = ((padInches + 2) / plateW * decoded.width).round();
+    for (var x = x0; x < x1; x++) {
+      final pixel = decoded.getPixel(x, row);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < 180) dark++;
+      if (luma > 220) light++;
+    }
+    expect(dark, greaterThan(4), reason: 'must paint dash ink; dark=$dark');
+    expect(light, greaterThan(4),
+        reason: 'must keep dash gaps empty; light=$light dark=$dark');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
   });
 
   test('filled+stroked SoftEdges bakes one feathered PNG for LibreOffice', () {

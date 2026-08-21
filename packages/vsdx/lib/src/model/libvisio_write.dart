@@ -76,9 +76,12 @@
 /// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
-/// line. A filled 2-D shape that also paints a solid stroke bakes fill
-/// and stroke into one padded plate and drops both, so Draw does not
-/// keep a hard outline. `ShadowBlur` is likewise missing —
+/// line. Built-in LinePattern 2–23 and custom `veDashPattern` dashes are
+/// painted into that PNG as per-dash ribbons so Draw keeps the gaps
+/// (a solid ring would hide them). A filled 2-D shape that also paints a
+/// solid stroke bakes fill and stroke into one padded plate and drops both,
+/// so Draw does not keep a hard outline. Dashed strokes on a filled body
+/// stay native — Draw still dashes LinePattern 2–23. `ShadowBlur` is likewise missing —
 /// libvisio only emits a hard `draw:shadow` — so a filled 2-D shape with
 /// blur bakes a locked Foreign sibling whose PNG is the Gaussian silhouette
 /// canvas / SVG already paint, then ShdwPattern and ShadowBlur go to 0 so
@@ -4366,7 +4369,7 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// stroke bakes the stroke ring the same way and drops the source line.
 /// A filled 2-D shape that also paints a solid stroke bakes both into
 /// one padded plate and drops fill and line, so Draw does not keep a
-/// hard outline. 1-D, pictures, dashes, compound
+/// hard outline. 1-D, pictures, filled-body dashes, compound
 /// rails, arrows, theme-only fills and unresolved theme colours stay native.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
@@ -4404,15 +4407,23 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   return _softEdgesSilhouetteKind(shape) != null;
 }
 
+bool _shapeHasSoftEdgesDashes(VsdxShape shape) {
+  final dashes = effectiveDashPatternForLine(shape.line);
+  return dashes != null && dashes.isNotEmpty;
+}
+
 bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
-  if (!shape.line.hasLine || shape.line.pattern != 1) return false;
+  if (!shape.line.hasLine) return false;
+  final dashed = _shapeHasSoftEdgesDashes(shape);
+  if (shape.line.pattern != 1 && !dashed) return false;
   if (shape.line.compoundType != 0) return false;
   if (shape.line.hasGradient) return false;
   if (shape.line.beginArrow != 0 || shape.line.endArrow != 0) return false;
-  final custom = shape.line.customDashPattern;
-  if (custom != null && custom.isNotEmpty) return false;
   if (shape.line.color == null && shape.line.themeColorIndex != null) {
     return false;
+  }
+  if (dashed) {
+    return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
   }
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
@@ -4426,6 +4437,7 @@ bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
 bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
     _shapeHasBakeableSoftEdgesStroke(shape) &&
+    !_shapeHasSoftEdgesDashes(shape) &&
     shape.fill.paintGradient == null &&
     libvisioHatchSpec(shape.fill.pattern) == null;
 
@@ -4702,6 +4714,31 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
   return (r: c.red, g: c.green, b: c.blue, a: a);
 }
 
+List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
+  final inches = effectiveDashPatternForLine(shape.line);
+  if (inches == null || inches.isEmpty) {
+    return const <List<Offset2D>>[];
+  }
+  final weight =
+      shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
+  final half = weight / 2;
+  final out = <List<Offset2D>>[];
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) continue;
+    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    for (final segment in _dashPolyline(points, inches, closed: closed)) {
+      if (segment.length < 2) continue;
+      final left = offsetPolyline(segment, half, closed: false);
+      final right = offsetPolyline(segment, -half, closed: false);
+      if (left.length < 2 || right.length < 2) continue;
+      out.add(<Offset2D>[...left, ...right.reversed]);
+    }
+  }
+  return out;
+}
+
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(
   VsdxShape shape, {
   int? holeRed,
@@ -4709,8 +4746,9 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
   int? holeBlue,
   int? holeAlpha,
 }) {
+  final ribbons = _softEdgesDashRibbonPolygons(shape);
   final kind = _softEdgesStrokeSilhouetteKind(shape);
-  if (kind == null) return null;
+  if (kind == null && ribbons.isEmpty) return null;
   final color = shape.line.color ?? const VsdxColor(0xFF000000);
   final trans = shape.line.transparency.clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
@@ -4734,7 +4772,21 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
   final strokeWidthPx = weight / w * innerWidthPx;
   var outer = const <({double x, double y})>[];
   var inner = const <({double x, double y})>[];
-  if (kind == SoftEdgesSilhouetteKind.polygon) {
+  var ribbonPx = const <List<({double x, double y})>>[];
+  ({double x, double y}) toPx(Offset2D p) => (
+        x: padPx + p.x / w * (innerWidthPx - 1),
+        y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
+      );
+  if (ribbons.isNotEmpty) {
+    ribbonPx = <List<({double x, double y})>>[
+      for (final ribbon in ribbons)
+        if (ribbon.length >= 3)
+          <({double x, double y})>[
+            for (final p in ribbon) toPx(p),
+          ],
+    ];
+    if (ribbonPx.isEmpty) return null;
+  } else if (kind == SoftEdgesSilhouetteKind.polygon) {
     final geom = _softEdgesStrokeGeometry(shape);
     final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
     if (inches == null || inches.length < 3) return null;
@@ -4742,10 +4794,6 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
     final left = offsetPolyline(inches, half, closed: true);
     final right = offsetPolyline(inches, -half, closed: true);
     if (left.length < 3 || right.length < 3) return null;
-    ({double x, double y}) toPx(Offset2D p) => (
-          x: padPx + p.x / w * (innerWidthPx - 1),
-          y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
-        );
     outer = <({double x, double y})>[for (final p in left) toPx(p)];
     inner = <({double x, double y})>[for (final p in right) toPx(p)];
   }
@@ -4759,9 +4807,10 @@ List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
     alpha: alpha,
     softSigmaPx: sigmaPx,
     strokeWidthPx: strokeWidthPx,
-    kind: kind,
+    kind: kind ?? SoftEdgesSilhouetteKind.rectangle,
     outer: outer,
     inner: inner,
+    ribbons: ribbonPx,
     holeRed: holeRed,
     holeGreen: holeGreen,
     holeBlue: holeBlue,
@@ -4804,7 +4853,8 @@ VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) {
     fill = const VsdxFill(pattern: 0);
   }
-  if (_shapeHasBakeableSoftEdgesStroke(shape)) {
+  if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape) ||
+      _shapeNeedsLibvisioStrokeSoftEdgesBake(shape)) {
     line = line.copyWith(pattern: 0);
   }
   return shape.copyWith(fill: fill, line: line);

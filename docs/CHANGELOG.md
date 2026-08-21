@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Unfilled dashed SoftEdges now keep both the feather and the gaps in
+  LibreOffice. `SoftEdgesSize` is not a token, so Draw used to paint hard
+  LinePattern dashes (or a solid ring if the stroke were baked whole). A
+  save paints per-dash ribbons into the locked PNG sibling and drops the
+  source line.
 - Round-capped strokes with an explicit miter join now keep sharp elbows
   in LibreOffice. `_lineProperties` maps join from LineCap only, so Draw
   used to round every corner while canvas / SVG honoured `User.veLineJoin`.

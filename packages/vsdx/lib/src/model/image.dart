@@ -749,6 +749,8 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> outer = const <({double x, double y})>[],
   List<({double x, double y})> inner = const <({double x, double y})>[],
+  List<List<({double x, double y})>> ribbons =
+      const <List<({double x, double y})>>[],
   int? holeRed,
   int? holeGreen,
   int? holeBlue,
@@ -767,30 +769,44 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
       height: heightPx,
       numChannels: 4,
     );
-    final painted = _paintStrokedRing(
-      work,
-      innerWidthPx: innerWidthPx,
-      innerHeightPx: innerHeightPx,
-      padPx: padPx,
-      color: raster.ColorRgba8(
-        red.clamp(0, 255),
-        green.clamp(0, 255),
-        blue.clamp(0, 255),
-        alpha.clamp(0, 255),
-      ),
-      strokeWidthPx: strokeWidthPx,
-      kind: kind,
-      outer: outer,
-      inner: inner,
-      holeColor: holeAlpha != null && holeAlpha > 0
-          ? raster.ColorRgba8(
-              (holeRed ?? 0).clamp(0, 255),
-              (holeGreen ?? 0).clamp(0, 255),
-              (holeBlue ?? 0).clamp(0, 255),
-              holeAlpha.clamp(0, 255),
-            )
-          : null,
-    );
+    var painted = false;
+    if (ribbons.isNotEmpty) {
+      painted = _paintFilledPolygons(
+        work,
+        ribbons,
+        raster.ColorRgba8(
+          red.clamp(0, 255),
+          green.clamp(0, 255),
+          blue.clamp(0, 255),
+          alpha.clamp(0, 255),
+        ),
+      );
+    } else {
+      painted = _paintStrokedRing(
+        work,
+        innerWidthPx: innerWidthPx,
+        innerHeightPx: innerHeightPx,
+        padPx: padPx,
+        color: raster.ColorRgba8(
+          red.clamp(0, 255),
+          green.clamp(0, 255),
+          blue.clamp(0, 255),
+          alpha.clamp(0, 255),
+        ),
+        strokeWidthPx: strokeWidthPx,
+        kind: kind,
+        outer: outer,
+        inner: inner,
+        holeColor: holeAlpha != null && holeAlpha > 0
+            ? raster.ColorRgba8(
+                (holeRed ?? 0).clamp(0, 255),
+                (holeGreen ?? 0).clamp(0, 255),
+                (holeBlue ?? 0).clamp(0, 255),
+                holeAlpha.clamp(0, 255),
+              )
+            : null,
+      );
+    }
     if (!painted) return null;
     if (gaussianBlur) {
       final blur = softSigmaPx.clamp(0.0, 256.0);
@@ -908,6 +924,35 @@ bool _paintStrokedRing(
       }
   }
   return true;
+}
+
+bool _paintFilledPolygons(
+  raster.Image work,
+  List<List<({double x, double y})>> polygons,
+  raster.ColorRgba8 color,
+) {
+  var painted = false;
+  for (var y = 0; y < work.height; y++) {
+    for (var x = 0; x < work.width; x++) {
+      final px = x + 0.5;
+      final py = y + 0.5;
+      for (final polygon in polygons) {
+        if (polygon.length < 3) continue;
+        if (!_softEdgesPointInPolygon(polygon, px, py)) continue;
+        work.setPixelRgba(
+          x,
+          y,
+          color.r.toInt(),
+          color.g.toInt(),
+          color.b.toInt(),
+          color.a.toInt(),
+        );
+        painted = true;
+        break;
+      }
+    }
+  }
+  return painted;
 }
 
 /// Draw / PDF flatten transparent Foreign bitmaps against black, so a hollow

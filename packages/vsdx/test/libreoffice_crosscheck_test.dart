@@ -2211,6 +2211,28 @@ void main() {
         ),
       ),
     );
+    var dashSoftDocument = parser.parse(blank);
+    final dashSoftPage = dashSoftDocument.pages.first;
+    dashSoftDocument = dashSoftDocument.replacePage(
+      0,
+      dashSoftPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: dashSoftPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 1.2,
+          name: 'DashSoft',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.16,
+            pattern: 2,
+            softEdgesInches: 0.12,
+          ),
+        ),
+      ),
+    );
     var fillStrokeSoftDocument = parser.parse(blank);
     final fillStrokeSoftPage = fillStrokeSoftDocument.pages.first;
     fillStrokeSoftDocument = fillStrokeSoftDocument.replacePage(
@@ -2915,6 +2937,10 @@ void main() {
       'stroke_soft': writer.write(
         originalBytes: blank,
         edited: strokeSoftDocument,
+      ),
+      'dash_soft': writer.write(
+        originalBytes: blank,
+        edited: dashSoftDocument,
       ),
       'fill_stroke_soft': writer.write(
         originalBytes: blank,
@@ -3696,6 +3722,78 @@ void main() {
             lessThan(200),
             reason: 'LibreOffice must paint the soft stroke ring; '
                 'interior=$interior onStroke=$onStroke',
+          );
+        }
+        if (entry.key == 'dash_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'DashSoft');
+          expect(source.line.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'dash_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // Left edge at x=3.25. Pattern 2 is 0.96" ink / 0.48" gap. The
+          // vertical midpoint sits on a dash *end*; 0.48" lower is mid-dash.
+          // Bottom-edge local 1.20 sits in the first gap (a solid ring would
+          // be ink there).
+          final ink = meanLuma(3.22, 4.98, 3.28, 5.06);
+          final gap = meanLuma(4.43, 4.88, 4.47, 4.92);
+          expect(
+            ink,
+            lessThan(180),
+            reason: 'LibreOffice must paint dash ink; ink=$ink gap=$gap',
+          );
+          expect(
+            gap,
+            greaterThan(200),
+            reason: 'LibreOffice must keep dash gaps empty, not a solid ring; '
+                'ink=$ink gap=$gap',
           );
         }
         if (entry.key == 'fill_stroke_soft') {
