@@ -189,6 +189,7 @@ import 'image.dart';
 import 'layer.dart';
 import 'line.dart';
 import 'page.dart';
+import 'path_tangent.dart';
 import 'perimeter.dart';
 import 'rich_text.dart';
 import 'rounding.dart';
@@ -1617,7 +1618,7 @@ bool shapeNeedsLibvisioSketchStrokeBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (!shape.sketchEffect) return false;
   if (!shape.line.hasLine) return false;
-  if (shape.line.beginArrow != 0 || shape.line.endArrow != 0) return false;
+  if (_openArrowheadsBlockStrokeBake(shape)) return false;
   return shape.width.abs() > 1e-12 || shape.height.abs() > 1e-12;
 }
 
@@ -2299,7 +2300,7 @@ VsdxDocument bakeGlassForLibvisioWrite(VsdxDocument document) {
 /// the source line is dropped.
 bool shapeNeedsLibvisioFilledStrokeRibbonBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (_hasArrowheads(shape.line)) return false;
+  if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine || shape.line.pattern != 1) return false;
   final custom = shape.line.customDashPattern;
   if (custom != null && custom.isNotEmpty) return false;
@@ -4464,7 +4465,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// with resolved RGB join that plate so Draw does not keep a hard
 /// opaque outline. Rounding fillets join that plate so Draw does not
 /// keep square corners after the fill is dropped. 1-D, pictures,
-/// arrows, theme-only fills and unresolved theme colours stay native.
+/// open-path arrows, theme-only fills and unresolved theme colours stay
+/// native. Closed 2-D arrow cells do not block the bake — libvisio
+/// suppresses markers on Z-closed subpaths, same as canvas.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -4513,7 +4516,7 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (shape.line.hasGradient && _softEdgesLineColorAt(shape) == null) {
     return false;
   }
-  if (shape.line.beginArrow != 0 || shape.line.endArrow != 0) return false;
+  if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (shape.line.color == null && shape.line.themeColorIndex != null) {
     return false;
   }
@@ -6319,6 +6322,30 @@ VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
 bool _hasArrowheads(VsdxLine line) =>
     line.beginArrow != 0 || line.endArrow != 0;
 
+/// libvisio / LibreOffice suppress `draw:marker-*` on Z-closed subpaths
+/// (`VSD_EPSILON` 1E-6), matching canvas `_paintLineEndings`. Arrow cells
+/// on a closed 2-D box therefore must not block a stroke bake.
+bool _shapeHasOpenLineEndings(VsdxShape shape) {
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine || geometry.commands.isEmpty) {
+      continue;
+    }
+    if (geometrySubpathEndpointTangents(
+      geometry,
+      widthInches: w,
+      heightInches: h,
+    ).isNotEmpty) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _openArrowheadsBlockStrokeBake(VsdxShape shape) =>
+    _hasArrowheads(shape.line) && _shapeHasOpenLineEndings(shape);
+
 VsdxShape _withoutArrowheads(VsdxShape shape) => shape.copyWith(
       line: shape.line.copyWith(beginArrow: 0, endArrow: 0),
     );
@@ -6382,6 +6409,7 @@ bool _arrowSizeMismatchesLibvisio({
 /// polygon at [VsdxLine.beginArrowSizeInches] is the size Draw will paint.
 bool shapeNeedsLibvisioArrowedStrokeBake(VsdxShape shape) {
   if (!_hasArrowheads(shape.line)) return false;
+  if (!_shapeHasOpenLineEndings(shape)) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (_strokeTips(shape) == null) return false;
   if (!_hasVsdImportedArrowSize(shape) &&
@@ -6608,7 +6636,7 @@ bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
 /// miter join flattens the cap first so Draw does not round the elbow.
 bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (_hasArrowheads(shape.line)) return false;
+  if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
   if (shape.line.pattern != 1) return false;
   final custom = shape.line.customDashPattern;
@@ -6637,7 +6665,7 @@ VsdxFill _opaqueFillFromLine(VsdxLine line) => VsdxFill(
 /// show an opaque stroke). A `veMiterLimit` above 4 on an unfilled solid
 /// polyline uses the same ribbon so Draw does not bevel ratio>4 elbows.
 bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
-  if (_hasArrowheads(shape.line)) return false;
+  if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
   if (!shape.line.hasGradient &&
       shape.line.transparency <= 1e-9 &&

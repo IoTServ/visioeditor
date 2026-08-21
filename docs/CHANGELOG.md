@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Closed 2-D arrow cells no longer block SoftEdges (or LineColorTrans
+  ribbons) in LibreOffice. Draw / libvisio suppress markers on
+  Z-closed subpaths, so a save used to keep a hard native stroke on a
+  feathered fill. Open-path arrows still stay native so the crisp heads
+  canvas paints after the feather are not lost inside the PNG.
 - Filled CompoundType LineColorTrans / LineGradient now keep rails and
   wash in LibreOffice. Draw used to skip the sibling ribbon because
   CompoundType is not a token, then paint opaque parallel strokes.

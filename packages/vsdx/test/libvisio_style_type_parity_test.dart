@@ -2534,6 +2534,88 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('closed 2-D arrow cells do not block SoftEdges stroke bake', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'ArrowedFillStrokeSoft',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.08,
+        softEdgesInches: 0.08,
+        beginArrow: 4,
+        endArrow: 13,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+    expect(shapeNeedsLibvisioArrowedStrokeBake(shape), isFalse,
+        reason: 'libvisio suppresses markers on a Z-closed rectangle');
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.pattern, 0,
+        reason: 'closed arrow cells must not leave a hard native stroke');
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.width, greaterThan(source.width + 0.05));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final centre = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    expect(centre.r, greaterThan(180),
+        reason: 'arrowed closed SoftEdges PNG must keep the red interior');
+    expect(centre.g, lessThan(80));
+    var ringLuma = 255.0;
+    final midY = decoded.height ~/ 2;
+    for (var x = 0; x < decoded.width ~/ 3; x++) {
+      final pixel = decoded.getPixel(x, midY);
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma < ringLuma) ringLuma = luma;
+    }
+    expect(
+      ringLuma,
+      lessThan(180),
+      reason: 'arrowed closed SoftEdges PNG must paint the feathered ring',
+    );
+
+    final open = VsdxShape(
+      id: 2,
+      name: 'OpenSoftArrows',
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.08,
+        softEdgesInches: 0.08,
+        beginArrow: 4,
+        endArrow: 13,
+      ),
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0.2),
+            LineTo(0.6, 0.6),
+            LineTo(1.2, 0.2),
+          ],
+        ),
+      ],
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(open), isFalse,
+        reason: 'open-path arrows stay native so crisp heads are not in the PNG');
+  });
+
   test('ShadowBlur bakes a Gaussian PNG sibling for LibreOffice', () {
     final shape = VsdxShapeFactory.rectangle(
       id: 1,
@@ -4971,6 +5053,25 @@ void main() {
     expect(plate.line.pattern, 0);
     expect(plate.fill.foregroundTransparency, closeTo(0.5, 1e-9));
     expect(plate.geometries.any((g) => !g.noFill), isTrue);
+
+    final arrowed = VsdxShapeFactory.rectangle(
+      id: 3,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'FilledLineTransArrows',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.2,
+        transparency: 0.5,
+        beginArrow: 4,
+        endArrow: 13,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(arrowed), isTrue,
+        reason: 'closed 2-D arrow cells must not skip the LineColorTrans ribbon');
   });
 
   test('filled CompoundType LineColorTrans bakes rails on the sibling ribbon',
