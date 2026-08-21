@@ -2881,7 +2881,7 @@ class VsdxWriter {
     final inheritsFill = el.getAttribute('Master') != null ||
         el.getAttribute('MasterShape') != null ||
         el.getAttribute('FillStyle') != null;
-    if (editedWrite.fill.pattern != 0 &&
+    if (editedWrite.fill.hasFill &&
         edited.children.isEmpty &&
         editedWrite.fill.themeForegroundIndex == null &&
         !inheritsFill &&
@@ -7493,7 +7493,7 @@ class VsdxWriter {
     } else if (formulaOf('FillForegnd') != null) {
       children
           .add(_cell('FillForegnd', '0', formula: formulaOf('FillForegnd')));
-    } else if (fill.pattern != 0 && s.children.isEmpty) {
+    } else if (fill.hasFill && s.children.isEmpty) {
       // VSD import / defaultFill often leave foreground null while pattern=1.
       // Visio resolves via StyleSheets; 万兴图示 treats missing FillForegnd as
       // hollow — emit opaque white (Visio "No Style" default). Skip groups:

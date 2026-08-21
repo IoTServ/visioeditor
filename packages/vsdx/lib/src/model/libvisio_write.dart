@@ -2,14 +2,18 @@
 ///
 /// LibreOffice Draw never reads Visio XML itself — `VisioImportFilter.cxx`
 /// only calls `VisioDocument::isSupported` + `parse`. The VSDX token map has
-/// no `CompoundType` and no `LineGradient`, `LineColorTrans` is absent and
+/// no `CompoundType` and no `LineGradient`, no `FillGradient` /
+/// `FillGradientEnabled`, `LineColorTrans` is absent and
 /// `xmlStringToColour` forces Colour.a = 0, and unknown `LinePattern` ids
 /// (custom draw.io arrays, 0xFE, …) fall through `_lineProperties` to a solid
 /// stroke. A save therefore has to emit parallel Geometry rails, a built-in
 /// pattern 2–23, or — when `User.veDashPattern` is not one of those ids —
-/// MoveTo/LineTo dashes with LinePattern=1, and — for an unfilled stroke with a line gradient or
-/// LineColorTrans — a filled ribbon whose FillPattern 25–40 / FillForegndTrans
-/// libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
+/// MoveTo/LineTo dashes with LinePattern=1. A modern FillGradient whose
+/// FillPattern was omitted (libvisio default 0) becomes classic FillPattern
+/// 25–40 plus FillForegnd/FillBkgnd from the stops — otherwise Draw stays
+/// hollow and an unfilled LineGradient ribbon would steal the body. For an
+/// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
+/// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
 /// 2–23 (which `_lineProperties` *does* collect on a stroke) are flattened
 /// to MoveTo/LineTo first, the same way custom `User.veDashPattern` already
 /// is, so Draw keeps the gaps. Unfilled CompoundType 2–4 keep thick/thin contrast
@@ -6010,7 +6014,7 @@ class LibvisioShapeWrite {
 LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
   var geometries = shape.geometries;
   var line = shape.line;
-  var fill = shape.fill;
+  var fill = fillForLibvisioWrite(shape.fill);
   var geometryRewritten = false;
 
   var working = shape;

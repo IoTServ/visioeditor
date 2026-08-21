@@ -4,7 +4,7 @@
 /// `VSDXParser` has no FillGradient token, no shape-level Rounding, no
 /// CompoundType token, no LineGradient token, and no LineColorTrans token
 /// (`xmlStringToColour` also forces Colour.a = 0). A modern gradient with
-/// FillPattern=1, a polyline with only a Rounding cell, a CompoundType>0
+/// FillPattern=1 (or omitted FillPattern / 0, libvisio's shape default), a polyline with only a Rounding cell, a CompoundType>0
 /// stroke, an unfilled LineGradient, or a semi-transparent stroke
 /// disappears or goes fully opaque in Draw. The writer rewrites those to
 /// classic FillPattern 25–40, baked RelQuadBezTo corners, parallel Geometry
@@ -5390,6 +5390,26 @@ void main() {
     );
     built = built.addShape(
       box(
+        'FillGradientNoPattern',
+        const VsdxFill(
+          pattern: 0,
+          gradient: VsdxGradient(
+            angleRad: 3.92699,
+            stops: [
+              VsdxGradientStop(
+                position: 0,
+                color: VsdxColor(0xFF8DC0FF),
+                transparency: 1,
+              ),
+              VsdxGradientStop(position: 0.2, color: VsdxColor(0xFFACCFFF)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF467DFE)),
+            ],
+          ),
+        ),
+      ),
+    );
+    built = built.addShape(
+      box(
         'Rounding',
         const VsdxFill(foreground: VsdxColor(0xFFFFFF00), pattern: 1),
         line: const VsdxLine(
@@ -6412,6 +6432,13 @@ void main() {
       1,
       reason: 'FillPattern 41 is not a hatch/gradient id Draw paints',
     );
+    final gradientNoPattern = savedDoc.pages.first.shapes
+        .firstWhere((s) => s.name == 'FillGradientNoPattern');
+    expect(gradientNoPattern.fill.hasFill, isTrue);
+    expect(gradientNoPattern.fill.pattern, inInclusiveRange(25, 40),
+        reason: 'omitted FillPattern must bake classic 25–40 for Draw');
+    expect(gradientNoPattern.fill.paintGradient, isNotNull);
+    expect(gradientNoPattern.fill.foreground, isNotNull);
     final roundJoin =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
     expect(roundJoin.line.roundingInches, closeTo(0, 1e-12),
@@ -6530,6 +6557,34 @@ void main() {
       isTrue,
       reason: 'libvisio must paint LineColorTrans via baked FillForegndTrans',
     );
+  });
+
+  test('数据治理 chevron FillGradient paints despite omitted FillPattern', () {
+    final bytes = File('test/fixtures/数据治理.vsdx').readAsBytesSync();
+    final doc = parser.parse(bytes);
+    final arrow = doc.pages.first.findShapeById(147)!;
+    expect(arrow.fill.pattern, 0);
+    expect(arrow.fill.hasGradient, isTrue);
+    expect(arrow.fill.hasFill, isTrue);
+    expect(
+      shapeNeedsLibvisioStrokeRibbon(arrow),
+      isFalse,
+      reason: 'must not steal the chevron body as an unfilled LineGradient ribbon',
+    );
+    expect(fillPatternForLibvisioWrite(arrow.fill), inInclusiveRange(25, 40));
+    final write = libvisioShapeWrite(arrow);
+    expect(write.fill.pattern, inInclusiveRange(25, 40));
+    expect(write.fill.foreground, isNotNull);
+    expect(write.fill.background, isNotNull);
+
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('linearGradient'));
+
+    final saved = writer.write(originalBytes: bytes, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(147)!;
+    expect(after.fill.hasFill, isTrue);
+    expect(after.fill.paintGradient, isNotNull);
+    expect(after.fill.pattern, isNot(0));
   });
 }
 

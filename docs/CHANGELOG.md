@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Omitted `FillPattern` with `FillGradientEnabled` now keeps the wash in
+  the editor and in LibreOffice. Edraw chevrons (for example the large
+  arrow under「数据治理组织每个模块都有责任人」) default to libvisio's
+  `FillPattern=0`, so Draw stayed hollow and a companion LineGradient
+  ribbon stole the body. A save writes classic FillPattern 25–40 plus
+  FillForegnd/FillBkgnd from the stops.
 - Closed 2-D arrow cells no longer block SoftEdges (or LineColorTrans
   ribbons) in LibreOffice. Draw / libvisio suppress markers on
   Z-closed subpaths, so a save used to keep a hard native stroke on a

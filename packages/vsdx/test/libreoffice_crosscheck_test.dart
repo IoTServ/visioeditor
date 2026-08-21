@@ -3255,6 +3255,37 @@ void main() {
         ).withDrawioLineJoin(VsdxLineJoin.miter),
       ),
     );
+    var fillGradientPattern0Document = parser.parse(blank);
+    final fillGradientPattern0Page = fillGradientPattern0Document.pages.first;
+    fillGradientPattern0Document = fillGradientPattern0Document.replacePage(
+      0,
+      fillGradientPattern0Page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: fillGradientPattern0Page.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 1.2,
+          name: 'GradientNoPattern',
+          fill: const VsdxFill(
+            pattern: 0,
+            gradient: VsdxGradient(
+              angleRad: 3.92699,
+              stops: [
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFF8DC0FF),
+                  transparency: 1,
+                ),
+                VsdxGradientStop(position: 0.2, color: VsdxColor(0xFFACCFFF)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF467DFE)),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
     final inputs = <String, Uint8List>{
       'generated': generated,
       'tiff_foreign_data': writer.write(
@@ -3456,6 +3487,10 @@ void main() {
       'round_cap_miter': writer.write(
         originalBytes: blank,
         edited: roundCapMiterDocument,
+      ),
+      'fill_gradient_pattern0': writer.write(
+        originalBytes: blank,
+        edited: fillGradientPattern0Document,
       ),
     };
     for (final entry in const <(String, String)>[
@@ -7230,6 +7265,142 @@ void main() {
             lessThan(80),
             reason: 'LibreOffice must miter the elbow Draw would round-join '
                 'from LineCap.round; corner=$corner',
+          );
+        }
+        if (entry.key == 'fill_gradient_pattern0') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GradientNoPattern');
+          expect(source.fill.hasFill, isTrue);
+          expect(source.fill.pattern, inInclusiveRange(25, 40));
+          expect(source.fill.paintGradient, isNotNull);
+        }
+        if (entry.key == 'fill_gradient_pattern0' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double luma, double b}) mean(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumLuma = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (luma: 255.0, b: 0.0);
+            return (luma: sumLuma / count, b: sumB / count);
+          }
+
+          final centre = mean(3.9, 5.2, 4.6, 5.8);
+          expect(
+            centre.luma,
+            lessThan(200),
+            reason: 'LibreOffice must fill omitted-FillPattern gradients; '
+                'luma=${centre.luma}',
+          );
+          expect(
+            centre.b,
+            greaterThan(80),
+            reason: 'LibreOffice must keep the blue wash, not a hollow box; '
+                'b=${centre.b} luma=${centre.luma}',
+          );
+        }
+        if (entry.key == 'zh_data') {
+          final reopened = parser.parse(entry.value);
+          final arrow = reopened.pages.first.findShapeById(147)!;
+          expect(arrow.fill.hasFill, isTrue);
+          expect(arrow.fill.pattern, isNot(0));
+          expect(arrow.fill.paintGradient, isNotNull);
+        }
+        if (entry.key == 'zh_data' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double luma, double b}) mean(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumLuma = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (luma: 255.0, b: 0.0);
+            return (luma: sumLuma / count, b: sumB / count);
+          }
+
+          // Sheet.147 pin (0.63, 3.39), rotated -90°: shaft through the pin.
+          final shaft = mean(0.50, 3.20, 0.76, 3.58);
+          expect(
+            shaft.luma,
+            lessThan(210),
+            reason: 'LibreOffice must fill the 数据治理 chevron, not leave it '
+                'hollow; luma=${shaft.luma}',
+          );
+          expect(
+            shaft.b,
+            greaterThan(70),
+            reason: 'LibreOffice must keep the chevron wash; '
+                'b=${shaft.b} luma=${shaft.luma}',
           );
         }
         // Still parseable after our write (independent of LibreOffice).

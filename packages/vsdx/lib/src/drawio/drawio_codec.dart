@@ -536,7 +536,7 @@ class DrawioCodec {
     final parts = <String>[];
     if (_isEllipse(shape)) parts.add('ellipse');
     if (_isDiamond(shape)) parts.add('rhombus');
-    if (shape.fill.pattern == 0) {
+    if (!shape.fill.hasFill) {
       parts.add('fillColor=none');
     } else {
       parts.add('fillColor=${_color(shape.fill.foreground, VsdxColor.white)}');

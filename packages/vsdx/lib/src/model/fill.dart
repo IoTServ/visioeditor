@@ -361,14 +361,69 @@ int? libvisioClassicPatternFor(VsdxGradient gradient) {
 /// *background* colour. This package paints those as solid foreground, so a
 /// save snaps them to `1` (or the nearest classic gradient id when stops
 /// are present).
+///
+/// `FillPattern=0` is libvisio's shape default when the cell is omitted.
+/// Visio 2013+ / Edraw still paint `FillGradientEnabled`; that wash must
+/// become a classic 25–40 id or Draw stays hollow (and an unfilled
+/// LineGradient ribbon would steal the body).
 int fillPatternForLibvisioWrite(VsdxFill fill) {
   final pattern = fill.pattern;
-  if (pattern == 0) return 0;
+  if (pattern == 0 && !fill.hasGradient) return 0;
   if (pattern >= 2 && pattern <= 40) return pattern;
   if (fill.hasGradient) {
     return libvisioClassicPatternFor(fill.gradient!) ?? 1;
   }
   return 1;
+}
+
+/// Classic `FillPattern` plus `FillForegnd` / `FillBkgnd` libvisio
+/// interpolates for a modern `FillGradient` that may have omitted those
+/// cells (Edraw chevrons often ship stops only).
+VsdxFill fillForLibvisioWrite(VsdxFill fill) {
+  final pattern = fillPatternForLibvisioWrite(fill);
+  var foreground = fill.foreground;
+  var background = fill.background;
+  var foregroundTheme = fill.themeForegroundIndex;
+  var backgroundTheme = fill.themeBackgroundIndex;
+  if (fill.hasGradient) {
+    final stops = fill.gradient!.stops;
+    if (foreground == null && foregroundTheme == null) {
+      final stop = _libvisioWriteFillStop(stops, last: false);
+      foreground = stop?.color;
+      foregroundTheme = stop?.themeColorIndex;
+    }
+    if (background == null && backgroundTheme == null) {
+      final stop = _libvisioWriteFillStop(stops, last: true);
+      background = stop?.color;
+      backgroundTheme = stop?.themeColorIndex;
+    }
+  }
+  if (pattern == fill.pattern &&
+      identical(foreground, fill.foreground) &&
+      identical(background, fill.background) &&
+      foregroundTheme == fill.themeForegroundIndex &&
+      backgroundTheme == fill.themeBackgroundIndex) {
+    return fill;
+  }
+  return fill.copyWith(
+    pattern: pattern,
+    foreground: foreground,
+    background: background,
+    themeForegroundIndex: foregroundTheme,
+    themeBackgroundIndex: backgroundTheme,
+  );
+}
+
+VsdxGradientStop? _libvisioWriteFillStop(
+  List<VsdxGradientStop> stops, {
+  required bool last,
+}) {
+  if (stops.isEmpty) return null;
+  if (last) return stops.last;
+  for (final stop in stops) {
+    if (stop.transparency < 1 - 1e-9) return stop;
+  }
+  return stops.first;
 }
 
 double _normDegrees(double degrees) {
@@ -419,7 +474,9 @@ class VsdxFill {
   /// the solid [foreground] colour. `null` means "no gradient".
   final VsdxGradient? gradient;
 
-  bool get hasFill => pattern != 0;
+  /// `FillPattern != 0`, or a modern `FillGradient` whose `FillPattern` cell
+  /// was omitted (libvisio defaults that cell to 0).
+  bool get hasFill => pattern != 0 || hasGradient;
   bool get hasGradient => gradient != null && gradient!.stops.isNotEmpty;
 
   /// Gradient the renderer should paint: an explicit `FillGradient` section,

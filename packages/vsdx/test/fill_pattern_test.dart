@@ -110,11 +110,70 @@ void main() {
       );
     }
     expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 0)), 0);
+    expect(
+      fillPatternForLibvisioWrite(
+        const VsdxFill(
+          pattern: 0,
+          gradient: VsdxGradient(
+            stops: [
+              VsdxGradientStop(position: 0, color: VsdxColor(0xFF8DC0FF)),
+              VsdxGradientStop(position: 1, color: VsdxColor(0xFF467DFE)),
+            ],
+          ),
+        ),
+      ),
+      inInclusiveRange(25, 40),
+      reason: 'omitted FillPattern still maps FillGradient to classic 25–40',
+    );
     expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 2)), 2);
     expect(
       fillPatternForLibvisioWrite(const VsdxFill(pattern: 41)),
       1,
       reason: 'ids above 40 become solid foreground, not Draw\'s bg fallback',
     );
+  });
+
+  test('FillPattern=0 FillGradient still paints and writes classic ids', () {
+    const fill = VsdxFill(
+      pattern: 0,
+      gradient: VsdxGradient(
+        angleRad: 3.92699,
+        stops: [
+          VsdxGradientStop(
+            position: 0,
+            color: VsdxColor(0xFF8DC0FF),
+            transparency: 1,
+          ),
+          VsdxGradientStop(position: 0.2, color: VsdxColor(0xFFACCFFF)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF467DFE)),
+        ],
+      ),
+    );
+    expect(fill.hasFill, isTrue);
+    expect(fill.paintGradient, isNotNull);
+    final write = fillForLibvisioWrite(fill);
+    expect(write.pattern, inInclusiveRange(25, 40));
+    expect(write.foreground, const VsdxColor(0xFFACCFFF),
+        reason: 'skip the fully-transparent first stop for FillForegnd');
+    expect(write.background, const VsdxColor(0xFF467DFE));
+
+    final page = const DocumentParser()
+        .parse(const VsdxWriter().emptyDocument())
+        .pages
+        .first;
+    final svg = VsdxToSvgSerializer().serializePage(
+      page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+          fill: fill,
+        ),
+      ),
+    );
+    expect(svg, contains('linearGradient'));
+    expect(svg, contains('url(#grad-'));
   });
 }

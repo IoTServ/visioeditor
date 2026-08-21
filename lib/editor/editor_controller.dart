@@ -4114,7 +4114,7 @@ class EditorController extends ChangeNotifier {
         final geometries = syncGeometryNoLine(
           syncGeometryNoFill(
             replacement.geometries,
-            hollow: old.fill.pattern == 0,
+            hollow: !old.fill.hasFill,
           ),
           hollow: old.line.pattern == 0,
         );
@@ -4326,7 +4326,7 @@ class EditorController extends ChangeNotifier {
     final hasText = s.richText.runs.isNotEmpty
         ? s.richText.plainText.trim().isNotEmpty
         : (s.text?.trim().isNotEmpty ?? false);
-    return !hasText && s.fill.pattern == 0 && s.line.pattern == 0;
+    return !hasText && !s.fill.hasFill && s.line.pattern == 0;
   }
 
   // --- Lock / unlock (drawio "Lock/Unlock", Cmd+L) ---------------------------
@@ -6473,7 +6473,7 @@ class EditorController extends ChangeNotifier {
                 var geos = <VsdxGeometry>[
                   VsdxShapeFactory.roundedRectGeometry(sh.width, sh.height, 0),
                 ];
-                geos = syncGeometryNoFill(geos, hollow: sh.fill.pattern == 0);
+                geos = syncGeometryNoFill(geos, hollow: !sh.fill.hasFill);
                 geos = syncGeometryNoLine(geos, hollow: !sh.line.hasLine);
                 next = next.copyWith(geometries: geos);
               }
@@ -7972,7 +7972,7 @@ class EditorController extends ChangeNotifier {
     if (!s.is1D) {
       var geos = next.geometries;
       if (clip.includeFill) {
-        geos = syncGeometryNoFill(geos, hollow: next.fill.pattern == 0);
+        geos = syncGeometryNoFill(geos, hollow: !next.fill.hasFill);
       }
       geos = syncGeometryNoLine(geos, hollow: next.line.pattern == 0);
       if (!identical(geos, next.geometries)) {

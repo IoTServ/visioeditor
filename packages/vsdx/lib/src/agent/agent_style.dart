@@ -52,7 +52,7 @@ VsdxLine lineFromHex(String? hex, {double weightInches = 0.012, int endArrow = 0
 /// `fill:none` / `line:none` export with Edraw-visible hollow flags.
 VsdxShape syncNoneGeometryFlags(VsdxShape s) {
   var geos = s.geometries;
-  geos = syncGeometryNoFill(geos, hollow: s.fill.pattern == 0);
+  geos = syncGeometryNoFill(geos, hollow: !s.fill.hasFill);
   geos = syncGeometryNoLine(geos, hollow: s.line.pattern == 0);
   if (identical(geos, s.geometries)) return s;
   return s.copyWith(geometries: geos);
