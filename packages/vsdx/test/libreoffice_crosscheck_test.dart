@@ -2709,6 +2709,43 @@ void main() {
             ),
           ),
         );
+    var reflectionPictureFlipDocument = parser.parse(blank);
+    final reflectionPictureFlipPage = reflectionPictureFlipDocument.pages.first;
+    const reflectionPictureFlipPart =
+        '/visio/media/reflection_picture_flipy.png';
+    reflectionPictureFlipDocument = reflectionPictureFlipDocument
+        .copyWith(
+          images: reflectionPictureFlipDocument.images.withImage(
+            VsdxImage(
+              partName: reflectionPictureFlipPart,
+              bytes: _splitPng(),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          reflectionPictureFlipPage.addShape(
+            VsdxShapeFactory.picture(
+              id: reflectionPictureFlipPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              imagePartName: reflectionPictureFlipPart,
+              name: 'ReflectionPictureFlipY',
+            ).copyWith(
+              flipY: true,
+              reflection: const VsdxReflection(
+                enabled: true,
+                sizeInches: 0.5,
+                distanceInches: 0.08,
+                transparency: 0.25,
+                blurInches: 0,
+              ),
+            ),
+          ),
+        );
     var cropReflectionDocument = parser.parse(blank);
     final cropReflectionPage = cropReflectionDocument.pages.first;
     const cropReflectionPart = '/visio/media/crop_reflection.png';
@@ -3215,6 +3252,10 @@ void main() {
       'reflection_picture': writer.write(
         originalBytes: blank,
         edited: reflectionPictureDocument,
+      ),
+      'reflection_picture_flipy': writer.write(
+        originalBytes: blank,
+        edited: reflectionPictureFlipDocument,
       ),
       'crop_reflection': writer.write(
         originalBytes: blank,
@@ -5212,6 +5253,90 @@ void main() {
             reason: 'LibreOffice must paint the blue (original bottom) '
                 'picture reflection below the source; '
                 'bodyR=${bodyTop.r} mirrorB=${mirror.b} mirrorR=${mirror.r}',
+          );
+        }
+        if (entry.key == 'reflection_picture_flipy') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ReflectionPictureFlipY');
+          expect(source.flipY, isTrue);
+          expect(source.reflection.enabled, isFalse);
+          expect(source.hasImage, isTrue);
+          final plate = reopened.pages.first.shapes
+              .where(isLibvisioReflectionPlate)
+              .single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.flipY, isFalse,
+              reason: 'copying FlipY onto the PNG would mirror the band twice');
+        }
+        if (entry.key == 'reflection_picture_flipy' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          final bodyTop = mean(3.9, 6.0, 4.6, 6.3);
+          final mirror = mean(3.9, 6.55, 4.6, 6.75);
+          final below = mean(3.9, 4.15, 4.6, 4.35);
+          expect(
+            bodyTop.b,
+            greaterThan(bodyTop.r + 20),
+            reason: 'LibreOffice FlipY source top must be original bottom '
+                '(blue); bodyR=${bodyTop.r} bodyB=${bodyTop.b}',
+          );
+          expect(
+            mirror.r,
+            greaterThan(mirror.b + 10),
+            reason: 'FlipY must keep the original top (red) nearest the '
+                'visual bottom (above in local Y); '
+                'mirrorR=${mirror.r} mirrorB=${mirror.b}',
+          );
+          expect(
+            below.r,
+            greaterThan(200),
+            reason: 'FlipY must not leave the unflipped blue band below; '
+                'belowR=${below.r} belowB=${below.b}',
           );
         }
         if (entry.key == 'crop_reflection') {

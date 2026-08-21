@@ -1201,6 +1201,20 @@ void _compositeOntoWhite(raster.Image work) {
   }
 }
 
+raster.Image _flipImageVertical(raster.Image source) {
+  final flipped = raster.Image(
+    width: source.width,
+    height: source.height,
+    numChannels: 4,
+  );
+  for (var y = 0; y < source.height; y++) {
+    for (var x = 0; x < source.width; x++) {
+      flipped.setPixel(x, source.height - 1 - y, source.getPixel(x, y));
+    }
+  }
+  return flipped;
+}
+
 /// Rasterize the mirrored, faded stroke band an unfilled 2-D Reflection needs.
 ///
 /// `tokens.txt` has no Reflection*, and an unfilled stroke has no fill plate
@@ -1295,17 +1309,7 @@ Uint8List? bakeStrokedReflectionPng({
     }
     _compositeOntoWhite(work);
     if (flipVertical) {
-      final flipped = raster.Image(
-        width: work.width,
-        height: work.height,
-        numChannels: 4,
-      );
-      for (var y = 0; y < work.height; y++) {
-        for (var x = 0; x < work.width; x++) {
-          flipped.setPixel(x, work.height - 1 - y, work.getPixel(x, y));
-        }
-      }
-      work = flipped;
+      work = _flipImageVertical(work);
     }
     return raster.encodePng(work);
   } catch (_) {
@@ -1404,6 +1408,10 @@ Uint8List? bakeSilhouetteDropShadowPng({
 /// bakes that treatment into a PNG sibling. Pass the Foreign frame and
 /// Img* crop when the visible window is not the whole bitmap — otherwise
 /// the sibling would mirror pixels Draw (and canvas / SVG) already clip.
+/// [flipY] matches a FlipY source: canvas FlipY's the bitmap first, so
+/// the visual bottom (original top) is nearest, then the plate sits
+/// above in local Y and PNG row 0 maps to max Y — the band is flipped
+/// so the near-axis rows land on min Y.
 Uint8List? bakePictureReflectionPng({
   required VsdxImage image,
   required double sizeFraction,
@@ -1417,6 +1425,7 @@ Uint8List? bakePictureReflectionPng({
   double imgOffsetYInches = 0,
   double? imgWidthInches,
   double? imgHeightInches,
+  bool flipY = false,
 }) {
   if (padInches < 0) return null;
   final payload = image.rasterForRendering();
@@ -1459,6 +1468,9 @@ Uint8List? bakePictureReflectionPng({
       if (composited == null) return null;
       src = composited.image;
     }
+    if (flipY) {
+      src = _flipImageVertical(src);
+    }
     final frac = sizeFraction.clamp(0.01, 1.0);
     final cropH = math.max(1, (src.height * frac).round());
     final displayW = math.max(displayWidthInches.abs(), 1e-6);
@@ -1496,6 +1508,9 @@ Uint8List? bakePictureReflectionPng({
     if (blur > 1e-6) {
       final radius = math.max(1, (blur * 1.5).round());
       work = raster.gaussianBlur(work, radius: radius);
+    }
+    if (flipY) {
+      work = _flipImageVertical(work);
     }
     return raster.encodePng(work);
   } catch (_) {

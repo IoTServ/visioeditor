@@ -137,7 +137,10 @@
 /// drop the mirror),
 /// and a Foreign picture bakes a locked Gaussian PNG sibling of
 /// the same mirrored bitmap canvas / SVG already paint (cropped
-/// pictures composite the Img* window into the frame first), then
+/// pictures composite the Img* window into the frame first; FlipY
+/// flips the bitmap before the mirror so the visual bottom is nearest,
+/// and the plate LocPin follows `_reflectFillRing` without copying FlipY),
+/// then
 /// `ReflectionSize` is written 0. draw.io Sketch lives in
 /// `User.veSketch*` rows libvisio never reads, so a save maps hachure /
 /// cross-hatch / dots onto FillPattern 2–24 (`draw:fill=hatch`) and bakes
@@ -686,6 +689,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     imgOffsetYInches: shape.imgOffsetYInches,
     imgWidthInches: shape.imgWidthInches,
     imgHeightInches: shape.imgHeightInches,
+    flipY: shape.flipY,
   );
   if (png == null) return null;
   return (png: png, padInches: box.pad);
@@ -889,7 +893,9 @@ List<VsdxShape> _bakeReflectionTree(
         final sourceImage = _imageForLibvisioWrite(images, next.imagePartName);
         if (sourceImage != null) {
           payload = _pictureReflectionPngForLibvisioWrite(next, sourceImage);
-          pngPlateFlipY = next.flipY;
+          // LocPin already follows FlipY. Copying FlipY onto the bitmap
+          // would mirror the band twice.
+          pngPlateFlipY = false;
         }
       } else {
         plate = _reflectionPlateForLibvisioWrite(

@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FlipY picture Reflections now keep the mirrored band in LibreOffice.
+  Draw used to FlipY the PNG sibling twice (and show the original
+  bottom nearest). A save FlipY's the bitmap before the mirror so the
+  visual bottom is nearest, places the plate with the same FlipY-aware
+  LocPin the filled / stroke mirrors use, and does not copy FlipY onto
+  the PNG.
 - Dashed and CompoundType unfilled-stroke Reflections now keep gaps and
   rails in LibreOffice. Draw used to show a solid mirrored ring (or drop
   the mirror for CompoundType, which is not a token). A save paints the
