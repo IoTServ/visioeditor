@@ -2868,10 +2868,9 @@ void main() {
           .shapes
           .where(isLibvisioGlowPlate)
           .single
-          .line
-          .hasLine,
+          .hasImage,
       isTrue,
-      reason: 'theme-only Glow keeps a LineWeight halo so THEMEVAL() survives',
+      reason: 'theme-only Glow bakes a Gaussian PNG so Draw keeps the blur',
     );
   });
 

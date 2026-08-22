@@ -121,22 +121,21 @@
 /// its Gaussian PNG instead, sized to the transformed bounding box.
 /// Character Overline is a token whose `readCharIX` case is empty, so a
 /// save inserts U+0305 combining overlines and clears the cell. Glow*
-/// cells are not tokens; an unfilled 1-D stroke with resolved RGB bakes a
+/// cells are not tokens; an unfilled 1-D stroke bakes a
 /// Gaussian PNG plate sized to the glow ribbon (a Foreign picture cannot
 /// hang on a zero-height 1-D XForm, and a FillForegndTrans ribbon would
-/// stay hard-edged), an unfilled 2-D stroke with resolved RGB bakes a
+/// stay hard-edged), an unfilled 2-D stroke bakes a
 /// Gaussian PNG ring, and a filled NoLine shape bakes a Gaussian PNG
-/// sibling (or a LineWeight halo when the colour is still THEMEVAL()),
-/// then GlowSize is written 0. Theme-only 1-D still uses the
-/// FillForegndTrans ribbon so THEMEVAL() survives. Filled shapes that
+/// sibling, then GlowSize is written 0. Theme-only colour
+/// (canvas `_colourOrTheme`) resolves through the document theme, then
+/// Office, into that same PNG so Draw keeps the blur. Filled shapes that
 /// already paint a stroke keep their outline — stealing Line would drop
 /// CompoundType / dashes that Draw *does* collect. That case bakes a
-/// locked Gaussian PNG sibling (canvas `_drawGlow`) when the glow colour
-/// is resolved RGB; theme-only glow still uses a LineWeight halo so
-/// THEMEVAL() survives. An unfilled 2-D CompoundType stroke uses the
+/// locked Gaussian PNG sibling (canvas `_drawGlow`). An unfilled 2-D
+/// CompoundType stroke uses the
 /// same PNG ring — canvas `_drawGlow` blurs the path, not the rails, so
 /// skipping the bake would drop the halo (CompoundType is not a token).
-/// A Foreign picture with resolved RGB bakes the same Gaussian PNG ring
+/// A Foreign picture bakes the same Gaussian PNG ring
 /// canvas `_drawGlow` paints around the image frame. Then `GlowSize` is
 /// written 0.
 /// `Letterspace` is not a token; canvas / SVG already fold FontScale into
@@ -235,6 +234,7 @@ import 'shape_factory.dart';
 import 'shape_inside.dart';
 import 'sketch_style.dart';
 import 'table.dart';
+import 'theme.dart';
 import 'user_property.dart';
 
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
@@ -1157,18 +1157,16 @@ bool _libvisioGlowEffectOn(VsdxShape shape) {
 /// or because a filled NoLine 2-D / unfilled 2-D stroke can carry the blur
 /// as a Gaussian PNG.
 ///
-/// Same-shape `bakeGlowForLibvisio` steals Fill (theme-only unfilled 1-D)
-/// or Line (theme-only filled NoLine). A default rectangle has both, so
-/// Draw would lose the outline if we reused Line. A locked sibling
-/// carries the halo — a Gaussian PNG when the colour is resolved RGB
-/// (canvas `_drawGlow`), or a LineWeight stroke when the colour is still
-/// THEMEVAL(). Filled NoLine 2-D with resolved RGB also uses the PNG so
-/// Draw does not keep a hard LineWeight outline. Unfilled 2-D with
-/// resolved RGB uses a PNG ring so Draw does not keep a hard
-/// FillForegndTrans ribbon. An unfilled 1-D stroke with resolved RGB uses
-/// a 2-D PNG plate sized to the glow ribbon (Foreign cannot hang on a
-/// zero-height 1-D XForm). A Foreign picture with resolved RGB uses the
-/// same ring around the image frame.
+/// Same-shape `bakeGlowForLibvisio` steals Fill or Line when a PNG plate
+/// cannot hang. A default rectangle has both, so Draw would lose the
+/// outline if we reused Line. A locked sibling carries the halo as a
+/// Gaussian PNG (canvas `_drawGlow`), including theme-only colour
+/// resolved through the document theme then Office. Filled NoLine 2-D
+/// uses the PNG so Draw does not keep a hard LineWeight outline.
+/// Unfilled 2-D uses a PNG ring so Draw does not keep a hard
+/// FillForegndTrans ribbon. An unfilled 1-D stroke uses a 2-D PNG plate
+/// sized to the glow ribbon (Foreign cannot hang on a zero-height 1-D
+/// XForm). A Foreign picture uses the same ring around the image frame.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.is1D) return _shapeCanLibvisioGlowStrokePng(shape);
@@ -1183,9 +1181,6 @@ bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
 bool _shapeCanLibvisioGlowPng(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.is1D || shape.hasImage) return false;
-  if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
-    return false;
-  }
   if (!_shapePaintsFill(shape, shape.geometries)) return false;
   return _softEdgesSilhouetteKind(shape) != null;
 }
@@ -1196,13 +1191,10 @@ bool _shapeCanLibvisioGlowPng(VsdxShape shape) {
 /// skipping the bake would drop the glow. 1-D uses a 2-D plate sized to
 /// the glow ribbon (canvas inflates zero-area bounds by the glow stroke;
 /// a Foreign picture cannot hang on a zero-height 1-D XForm). Theme-only
-/// colour stays a ribbon so THEMEVAL() survives.
+/// colour resolves into the PNG the same way canvas `_colourOrTheme` does.
 bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.hasImage) return false;
-  if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
-    return false;
-  }
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
   if (shape.is1D) return _glowStrokeRibbonPolygons(shape).isNotEmpty;
@@ -1211,14 +1203,11 @@ bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
 
 /// Foreign pictures: canvas `_drawGlow` blurs the image-frame path even
 /// when Fill and Line are off. The plate is 2-D, so a Gaussian PNG ring
-/// can hang beside the bitmap. Theme-only colour still steals Line.
+/// can hang beside the bitmap. Theme-only colour resolves into that PNG.
 bool _shapeCanLibvisioGlowPicturePng(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (!shape.hasImage || shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
-  if (shape.glow.color == null && shape.glow.themeColorIndex != null) {
-    return false;
-  }
   return _foreignFrameSilhouetteKind(shape) != null;
 }
 
@@ -1227,10 +1216,25 @@ bool _shapeNeedsLibvisioGlowPngBake(VsdxShape shape) =>
     _shapeCanLibvisioGlowStrokePng(shape) ||
     _shapeCanLibvisioGlowPicturePng(shape);
 
-({Uint8List png, double padInches})? _glowPngForLibvisioWrite(VsdxShape shape) {
+/// RGB canvas `_colourOrTheme` would paint. Theme-only Glow* is not a
+/// token, so Draw never sees THEMEVAL() here — resolve the slot through
+/// [theme], then Office, then the same amber fallback `_drawGlow` uses.
+VsdxColor _glowRgbForLibvisioWrite(VsdxGlow glow, VsdxTheme theme) {
+  if (glow.color != null) return glow.color!;
+  final slot = glow.themeColorIndex;
+  if (slot == null) return _kLibvisioGlowFallback;
+  return theme.resolve(slot) ??
+      VsdxTheme.office.resolve(slot) ??
+      _kLibvisioGlowFallback;
+}
+
+({Uint8List png, double padInches})? _glowPngForLibvisioWrite(
+  VsdxShape shape,
+  VsdxTheme theme,
+) {
   final kind = _softEdgesSilhouetteKind(shape);
   if (kind == null) return null;
-  final color = shape.glow.color ?? _kLibvisioGlowFallback;
+  final color = _glowRgbForLibvisioWrite(shape.glow, theme);
   final trans = _glowHaloTransparency(shape.glow).clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
   final w = shape.width.abs();
@@ -1309,11 +1313,12 @@ List<List<Offset2D>> _glowStrokeRibbonPolygons(VsdxShape shape) {
 
 ({Uint8List png, double padInches})? _glow1dStrokePngForLibvisioWrite(
   VsdxShape shape,
+  VsdxTheme theme,
 ) {
   final ribbons = _glowStrokeRibbonPolygons(shape);
   final aabb = _polygonsAabb(ribbons);
   if (aabb == null) return null;
-  final color = shape.glow.color ?? _kLibvisioGlowFallback;
+  final color = _glowRgbForLibvisioWrite(shape.glow, theme);
   final trans = _glowHaloTransparency(shape.glow).clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
   if (alpha <= 0) return null;
@@ -1366,12 +1371,13 @@ List<List<Offset2D>> _glowStrokeRibbonPolygons(VsdxShape shape) {
 
 ({Uint8List png, double padInches})? _glowStrokePngForLibvisioWrite(
   VsdxShape shape,
+  VsdxTheme theme,
 ) {
-  if (shape.is1D) return _glow1dStrokePngForLibvisioWrite(shape);
+  if (shape.is1D) return _glow1dStrokePngForLibvisioWrite(shape, theme);
   final kind = _softEdgesStrokeSilhouetteKind(shape) ??
       _foreignFrameSilhouetteKind(shape);
   if (kind == null) return null;
-  final color = shape.glow.color ?? _kLibvisioGlowFallback;
+  final color = _glowRgbForLibvisioWrite(shape.glow, theme);
   final trans = _glowHaloTransparency(shape.glow).clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
   final w = shape.width.abs();
@@ -1559,6 +1565,7 @@ List<VsdxShape> _bakeGlowPlateTree(
   required int Function() nextId,
   required String Function(int shapeId) allocatePart,
   required void Function(VsdxImage image) addImage,
+  required VsdxTheme theme,
 }) {
   final out = <VsdxShape>[];
   var changed = false;
@@ -1575,6 +1582,7 @@ List<VsdxShape> _bakeGlowPlateTree(
         nextId: nextId,
         allocatePart: allocatePart,
         addImage: addImage,
+        theme: theme,
       );
       if (!identical(children, shape.children)) {
         next = shape.copyWith(children: children);
@@ -1585,8 +1593,8 @@ List<VsdxShape> _bakeGlowPlateTree(
       VsdxShape? plate;
       if (_shapeNeedsLibvisioGlowPngBake(next)) {
         final payload = _shapeCanLibvisioGlowPng(next)
-            ? _glowPngForLibvisioWrite(next)
-            : _glowStrokePngForLibvisioWrite(next);
+            ? _glowPngForLibvisioWrite(next, theme)
+            : _glowStrokePngForLibvisioWrite(next, theme);
         if (payload != null) {
           final part = allocatePart(next.id);
           addImage(
@@ -1674,6 +1682,7 @@ VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
         registry = registry.withImage(image);
         changed = true;
       },
+      theme: document.theme,
     );
     if (identical(shapes, page.shapes)) {
       pages.add(page);
@@ -6966,15 +6975,15 @@ VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
 ///
 /// `tokens.txt` has no GlowSize. Filled 2-D that already paints a stroke
 /// keeps that outline — Line is shape-level, so a halo would replace
-/// CompoundType / dashes; that case bakes a Gaussian PNG sibling when
-/// RGB is resolved. Unfilled 1-D strokes with resolved RGB bake a
-/// Gaussian PNG plate; theme-only 1-D still becomes a FillForegndTrans
-/// ribbon so THEMEVAL() survives. Unfilled 2-D with resolved RGB bakes
-/// a Gaussian PNG ring; filled NoLine with resolved RGB
-/// bakes the same Gaussian PNG sibling; pictures with resolved RGB bake
-/// a Gaussian PNG ring around the image frame; theme-only NoLine still
-/// becomes a LineWeight halo (`xmlStringToColour` zeros LineColorTrans,
-/// so RGB is premultiplied toward white).
+/// CompoundType / dashes; that case bakes a Gaussian PNG sibling.
+/// Unfilled 1-D strokes bake a Gaussian PNG plate. Unfilled 2-D bakes a
+/// Gaussian PNG ring. Filled NoLine bakes the same Gaussian PNG sibling.
+/// Pictures bake a Gaussian PNG ring around the image frame. Theme-only
+/// colour resolves into those PNGs (document theme, then Office) so Draw
+/// keeps the blur canvas `_colourOrTheme` already paints. Remaining
+/// theme-only NoLine that cannot PNG still becomes a LineWeight halo
+/// (`xmlStringToColour` zeros LineColorTrans, so RGB is premultiplied
+/// toward white).
 bool shapeNeedsLibvisioGlowBake(VsdxShape shape) {
   if (_shapeCanLibvisioGlowPng(shape)) return false;
   if (_shapeCanLibvisioGlowStrokePng(shape)) return false;

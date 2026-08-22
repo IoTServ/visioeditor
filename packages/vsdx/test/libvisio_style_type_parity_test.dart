@@ -33,9 +33,9 @@
 /// marks so Draw paints the line too. Glow* is not a token: unfilled
 /// 1-D strokes with resolved RGB bake a Gaussian PNG plate, unfilled 2-D
 /// with resolved RGB bakes a Gaussian PNG ring, and filled NoLine shapes
-/// bake a Gaussian PNG sibling when RGB is resolved (theme-only NoLine
-/// still uses a LineWeight halo; theme-only 1-D still uses a
-/// FillForegndTrans ribbon). Character ColorTrans and ShdwForegndTrans
+/// bake a Gaussian PNG sibling. Theme-only Glow resolves the slot
+/// (document theme, then Office) into that same PNG so Draw keeps the
+/// blur canvas `_colourOrTheme` already paints. Character ColorTrans and ShdwForegndTrans
 /// cannot carry alpha through `xmlStringToColour`, so a save premultiplies
 /// those into RGB toward white and writes Trans=0 (theme-bound RGB-less
 /// cells keep THEMEVAL). Filled-shape LineColorTrans / LineGradient bake a
@@ -78,10 +78,9 @@
 /// window into the frame first). Glow on a filled
 /// shape that already paints a stroke, a filled NoLine 2-D, or an unfilled
 /// 2-D stroke, bakes a locked Gaussian PNG sibling when RGB is resolved,
-/// then `GlowSize` is written 0. A Foreign picture with resolved RGB
+/// then `GlowSize` is written 0. A Foreign picture
 /// bakes the same Gaussian PNG ring around the image frame. Theme-only
-/// glow still uses a LineWeight halo so THEMEVAL()
-/// survives. Page `PageColor` is not a token, so
+/// glow resolves the slot into that PNG so Draw keeps the blur. Page `PageColor` is not a token, so
 /// a save prepends a locked full-page plate Draw can fill. draw.io Sketch
 /// is User rows libvisio never reads, so a save maps the hatch onto
 /// FillPattern 2–24 and bakes the two jiggle strokes as locked siblings,
@@ -577,12 +576,13 @@ void main() {
         sizeInches: 0.08,
       ),
     );
-    expect(shapeNeedsLibvisioGlowBake(themeFilled), isTrue,
-        reason: 'theme-only NoLine still steals Line so THEMEVAL() survives');
-    expect(shapeNeedsLibvisioGlowPlateBake(themeFilled), isFalse);
+    expect(shapeNeedsLibvisioGlowBake(themeFilled), isFalse,
+        reason: 'theme-only NoLine bakes a Gaussian PNG like RGB');
+    expect(shapeNeedsLibvisioGlowPlateBake(themeFilled), isTrue);
     final themeWrite = libvisioShapeWrite(themeFilled);
-    expect(themeWrite.line.hasLine, isTrue);
-    expect(themeWrite.line.weightInches, closeTo(0.16, 1e-9));
+    expect(themeWrite.line.hasLine, isFalse,
+        reason: 'Line stays unused; the halo is the PNG plate');
+    expect(glowForLibvisioWrite(themeFilled).enabled, isFalse);
 
     final unfilled = VsdxShapeFactory.rectangle(
       id: 5,
@@ -670,6 +670,128 @@ void main() {
       savedDoc.pages.first.findShapeById(1)!.fill.hasFill,
       isFalse,
       reason: 'source must keep an unfilled stroke; the halo is the PNG plate',
+    );
+  });
+
+  test('theme-only Glow bakes a Gaussian PNG for LibreOffice', () {
+    const slot = ThemeSlot.accent2;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.5,
+      height: 0.8,
+      name: 'GlowTheme',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      glow: const VsdxGlow(
+        themeColorIndex: slot,
+        sizeInches: 0.12,
+        transparency: 0.2,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowBake(shape), isFalse);
+    expect(shapeNeedsLibvisioGlowPlateBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var filledDoc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    filledDoc = filledDoc.replacePage(0, filledDoc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(filledDoc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.fill.pattern, 1);
+    expect(source.glow.themeColorIndex, slot);
+    final plate = baked.pages.first.shapes.where(isLibvisioGlowPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.locked, isTrue);
+    expect(plate.width, greaterThan(source.width));
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    var ink = 0;
+    for (var y = 0; y < decoded.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          ink++;
+        }
+      }
+    }
+    expect(ink, greaterThan(8),
+        reason: 'theme slot $slot (${expected.value.toRadixString(16)}) '
+            'must freeze into the Gaussian PNG, not a LineWeight halo');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Glow plate',
+    );
+
+    final stroke = VsdxShapeFactory.line(
+      id: 2,
+      ax: 2,
+      ay: 5.5,
+      bx: 6.5,
+      by: 5.5,
+      name: 'GlowTheme1d',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.06,
+      ),
+    ).copyWith(
+      glow: const VsdxGlow(
+        themeColorIndex: slot,
+        sizeInches: 0.12,
+        transparency: 0.2,
+      ),
+    );
+    expect(shapeNeedsLibvisioGlowBake(stroke), isFalse,
+        reason: 'theme-only 1-D bakes a Gaussian PNG, not a Fill ribbon');
+    expect(shapeNeedsLibvisioGlowPlateBake(stroke), isTrue);
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(stroke));
+    final bakedStroke = documentForLibvisioWrite(doc);
+    final strokePlate =
+        bakedStroke.pages.first.shapes.where(isLibvisioGlowPlate).single;
+    expect(strokePlate.hasImage, isTrue);
+    expect(strokePlate.is1D, isFalse);
+    final strokePng = raster.decodePng(
+      bakedStroke.images.findByPart(strokePlate.imagePartName!)!.bytes,
+    )!;
+    var strokeInk = 0;
+    for (var y = 0; y < strokePng.height; y++) {
+      for (var x = 0; x < strokePng.width; x++) {
+        final pixel = strokePng.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          strokeInk++;
+        }
+      }
+    }
+    expect(strokeInk, greaterThan(8),
+        reason: 'theme-only 1-D must freeze Office accent2 into the PNG plate');
+
+    final savedFilled = writer.write(originalBytes: blank, edited: filledDoc);
+    final savedFilledDoc = parser.parse(savedFilled);
+    expect(savedFilledDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
+    expect(
+      savedFilledDoc.pages.first.shapes
+          .where(isLibvisioGlowPlate)
+          .single
+          .hasImage,
+      isTrue,
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(2)!.glow.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
     );
   });
 

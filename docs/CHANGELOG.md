@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only Glow now keeps the Gaussian halo in LibreOffice. Glow* is
+  not a token; a save used to emit a hard LineWeight / Fill ribbon so
+  THEMEVAL() survived, while canvas `_drawGlow` already blurs the theme
+  colour. A save now resolves the slot (document theme, then Office)
+  into the same PNG plate RGB glow uses.
 - Connector labels without `TxtPin` now sit on the route midpoint in
   LibreOffice. Draw used the 1-D XForm box (Begin–End centre) when
   `m_txtxform` was missing; canvas / SVG already pin a tight plate on
@@ -615,8 +620,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Canvas `_drawGlow` blurs a path stroke; a save used to emit a hard
   FillForegndTrans ribbon because Foreign cannot hang on a zero-height
   1-D XForm (`Glow*` is not a token). A 2-D PNG plate is sized to the
-  glow ribbon. Theme-only 1-D still uses the ribbon so THEMEVAL()
-  survives.
+  glow ribbon. Theme-only 1-D now freezes that colour into the same PNG.
 - Filled LineColorTrans / LineGradient with LinePattern 2–23 now keep dash
   gaps in LibreOffice. Draw used to skip the sibling ribbon (opaque dashes
   on the body). A save puts per-dash filled ribbons on the locked sibling
@@ -831,9 +835,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   2-D stroke with resolved RGB bakes a locked Gaussian PNG ring, and a
   filled 2-D (NoLine or already stroked) bakes a locked Gaussian PNG sibling
   (`LibvisioGlow.{id}`) when RGB is resolved so Draw shows the same blur
-  canvas already paints. A Foreign picture with resolved RGB bakes the
-  same Gaussian PNG ring around the image frame. Theme-only glow still
-  uses a LineWeight halo so THEMEVAL() survives. Then `GlowSize` is
+  canvas already paints. A Foreign picture bakes the
+  same Gaussian PNG ring around the image frame. Theme-only glow
+  resolves the slot into that PNG so Draw keeps the blur. Then `GlowSize` is
   written 0.
 - draw.io Sketch now survives a save into LibreOffice. `User.veSketch*`
   rows are not tokens, so a save maps hachure / cross-hatch / dots onto
