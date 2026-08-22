@@ -869,6 +869,12 @@ class VsdxShape {
   /// back into those cells.
   static const String userCollapsedHidden = 'veCollapsedHidden';
 
+  /// Restore payload for merged-table cells hidden so LibreOffice Draw skips
+  /// them. `User.veCovered` is not a token; canvas / SVG skip those cells
+  /// while Draw would still paint the 0.01" park rectangle. Unfold / Unmerge
+  /// read this row back into NoShow / HideText / FillPattern / LinePattern.
+  static const String userCoveredHidden = 'veCoveredHidden';
+
   /// Explicit draw.io-style container override.
   ///
   /// `'1'` lets an otherwise ordinary vertex accept dropped children;
@@ -1788,9 +1794,14 @@ class VsdxShape {
   }
 
   /// Whether a LibreOffice save hid this descendant of a folded container.
-  bool get libvisioCollapsedHidden {
+  bool get libvisioCollapsedHidden => _hasUserCell(userCollapsedHidden);
+
+  /// Whether a LibreOffice save hid this covered (merged-away) table cell.
+  bool get libvisioCoveredHidden => _hasUserCell(userCoveredHidden);
+
+  bool _hasUserCell(String name) {
     for (final c in userCells) {
-      if (c.name == userCollapsedHidden) return true;
+      if (c.name == name) return true;
     }
     return false;
   }
@@ -1800,9 +1811,23 @@ class VsdxShape {
   ///
   /// Idempotent once [userCollapsedHidden] is present. Nested children are
   /// hidden too — canvas skips every descendant of a folded host.
-  VsdxShape hideSubtreeForLibvisioCollapsed() {
+  VsdxShape hideSubtreeForLibvisioCollapsed() =>
+      _hideForLibvisioWrite(userCollapsedHidden);
+
+  /// Reverse [hideSubtreeForLibvisioCollapsed] on this shape and its descendants.
+  VsdxShape restoreLibvisioCollapsedHidden() =>
+      _restoreLibvisioWriteHide(userCollapsedHidden);
+
+  /// Hide a covered table cell so Draw does not paint the 0.01" park box.
+  VsdxShape hideForLibvisioCovered() => _hideForLibvisioWrite(userCoveredHidden);
+
+  /// Reverse [hideForLibvisioCovered] on this shape (Unmerge / layout).
+  VsdxShape restoreLibvisioCoveredHidden() =>
+      _restoreLibvisioWriteHide(userCoveredHidden);
+
+  VsdxShape _hideForLibvisioWrite(String payloadName) {
     final kids = <VsdxShape>[
-      for (final child in children) child.hideSubtreeForLibvisioCollapsed(),
+      for (final child in children) child._hideForLibvisioWrite(payloadName),
     ];
     var kidsChanged = kids.length != children.length;
     if (!kidsChanged) {
@@ -1813,7 +1838,7 @@ class VsdxShape {
         }
       }
     }
-    if (libvisioCollapsedHidden) {
+    if (_hasUserCell(payloadName)) {
       return kidsChanged ? copyWith(children: kids) : this;
     }
     final bits = StringBuffer();
@@ -1829,7 +1854,7 @@ class VsdxShape {
         '${line.pattern}|${imgW?.toString() ?? '-'}|${imgH?.toString() ?? '-'}';
     final others = <VsdxUserCell>[
       for (final c in userCells)
-        if (c.name != userCollapsedHidden) c,
+        if (c.name != payloadName) c,
     ];
     return copyWith(
       geometries: geos,
@@ -1842,16 +1867,15 @@ class VsdxShape {
       imgHeightInches: hasImage ? 0 : imgHeightInches,
       userCells: <VsdxUserCell>[
         ...others,
-        VsdxUserCell(name: userCollapsedHidden, value: payload),
+        VsdxUserCell(name: payloadName, value: payload),
       ],
       children: kidsChanged ? kids : children,
     );
   }
 
-  /// Reverse [hideSubtreeForLibvisioCollapsed] on this shape and its descendants.
-  VsdxShape restoreLibvisioCollapsedHidden() {
+  VsdxShape _restoreLibvisioWriteHide(String payloadName) {
     final kids = <VsdxShape>[
-      for (final child in children) child.restoreLibvisioCollapsedHidden(),
+      for (final child in children) child._restoreLibvisioWriteHide(payloadName),
     ];
     var kidsChanged = kids.length != children.length;
     if (!kidsChanged) {
@@ -1865,7 +1889,7 @@ class VsdxShape {
     String? payload;
     final others = <VsdxUserCell>[];
     for (final c in userCells) {
-      if (c.name == userCollapsedHidden) {
+      if (c.name == payloadName) {
         payload = c.value;
       } else {
         others.add(c);

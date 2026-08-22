@@ -196,7 +196,10 @@
 /// (not a token), so a save writes Geometry `NoShow`, `HideText`,
 /// `FillPattern=0` / `LinePattern=0`, and zero `ImgWidth` / `ImgHeight`
 /// on every descendant — tokens Draw collects — and stores a restore
-/// payload so Unfold can show them again.
+/// payload so Unfold can show them again. Merged-table `User.veCovered`
+/// cells are the same missing token: canvas skips them while Draw would
+/// paint the 0.01" park box, so a save applies those hide cells and
+/// stores `veCoveredHidden` for Unmerge.
 library;
 
 import 'dart:math' as math;
@@ -223,6 +226,7 @@ import 'shape.dart';
 import 'shape_factory.dart';
 import 'shape_inside.dart';
 import 'sketch_style.dart';
+import 'table.dart';
 import 'user_property.dart';
 
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
@@ -236,8 +240,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
-    bakeCollapsedForLibvisioWrite(
-      bakeShapeInsideForLibvisioWrite(
+    bakeCoveredForLibvisioWrite(
+      bakeCollapsedForLibvisioWrite(
+        bakeShapeInsideForLibvisioWrite(
         bakeWordWrapForLibvisioWrite(
           bakeLabelBorderForLibvisioWrite(
             bakeLabelPaddingForLibvisioWrite(
@@ -273,6 +278,7 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
         ),
       ),
     ),
+  ),
   );
 }
 
@@ -3397,6 +3403,76 @@ VsdxDocument bakeCollapsedForLibvisioWrite(VsdxDocument document) {
   return document.copyWith(pages: pages);
 }
 
+/// `true` when a covered (merged-away) table cell is still drawable in Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so `veCovered` never hides the 0.01" park rectangle. Geometry
+/// `NoShow`, `HideText`, `FillPattern=0` / `LinePattern=0`, and zero-size
+/// Foreign images *are* collected, so a save applies those and stores
+/// [VsdxShape.userCoveredHidden] for Unmerge.
+bool shapeNeedsLibvisioCoveredHideBake(VsdxShape shape) {
+  if (TableOps.isCovered(shape) && !shape.libvisioCoveredHidden) return true;
+  for (final child in shape.children) {
+    if (shapeNeedsLibvisioCoveredHideBake(child)) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeCoveredShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeCoveredShapeForLibvisioWrite(child),
+  ];
+  var next = shape;
+  var changed = false;
+  if (children.length != shape.children.length) {
+    changed = true;
+  } else {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (changed) next = shape.copyWith(children: children);
+  if (!TableOps.isCovered(next) || next.libvisioCoveredHidden) {
+    return changed ? next : shape;
+  }
+  return next.hideForLibvisioCovered();
+}
+
+/// Hide merged-away table cells so Draw does not paint their park boxes.
+VsdxDocument bakeCoveredForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    var needs = false;
+    for (final shape in page.shapes) {
+      if (shapeNeedsLibvisioCoveredHideBake(shape)) {
+        needs = true;
+        break;
+      }
+    }
+    if (!needs) {
+      pages.add(page);
+      continue;
+    }
+    pages.add(
+      page.copyWith(
+        shapes: <VsdxShape>[
+          for (final shape in page.shapes)
+            bakeCoveredShapeForLibvisioWrite(shape),
+        ],
+      ),
+    );
+    pagesChanged = true;
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).
 const kLibvisioCombiningOverline = '\u0305';
 
@@ -6412,7 +6488,7 @@ class LibvisioShapeWrite {
 
 /// Map [shape] onto the Fill / Line / Geometry libvisio will actually draw.
 LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
-  if (shape.libvisioCollapsedHidden) {
+  if (shape.libvisioCollapsedHidden || shape.libvisioCoveredHidden) {
     return LibvisioShapeWrite(
       geometries: <VsdxGeometry>[
         for (final geometry in shape.geometries)

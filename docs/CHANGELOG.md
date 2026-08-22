@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io merged table cells now stay hidden in LibreOffice.
+  `User.veCovered` is not a token; Draw used to paint the 0.01" park
+  rectangle. A save writes Geometry `NoShow`, `HideText`,
+  `FillPattern=0` / `LinePattern=0` on those cells and stores
+  `veCoveredHidden` so Unmerge can restore them.
 - draw.io collapsed containers now hide their children in LibreOffice.
   `User.veCollapsed` is not a token; Draw used to paint every descendant.
   A save writes Geometry `NoShow`, `HideText`, `FillPattern=0` /

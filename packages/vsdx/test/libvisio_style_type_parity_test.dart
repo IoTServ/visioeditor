@@ -128,7 +128,9 @@
 /// every open dash. draw.io collapsed containers also use a User row, so
 /// a save writes `NoShow` / `HideText` / hollow fill and line on
 /// descendants and Unfold restores
-/// them from `veCollapsedHidden`.
+/// them from `veCollapsedHidden`. Merged-table `veCovered` cells are
+/// the same missing token, so a save hides the 0.01" park box and
+/// Unmerge restores them from `veCoveredHidden`.
 library;
 
 import 'dart:io';
@@ -5231,6 +5233,84 @@ void main() {
     expect(opened.children.single.line.pattern, 1);
     expect(opened.children.single.richText.textBlock.hideText, isFalse);
     expect(opened.children.single.richText.plainText, 'kid');
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('covered table cells hide the park box for LibreOffice', () {
+    var table = TableOps.assembleTable(
+      tableId: 1,
+      pinX: 4.25,
+      pinY: 8,
+      width: 4,
+      height: 3,
+      rows: 2,
+      cols: 2,
+      name: 'MergeTable',
+    );
+    table = table.copyWith(
+      children: <VsdxShape>[
+        for (final cell in table.children)
+          TableOps.cellRow(cell) == 0 && TableOps.cellCol(cell) == 1
+              ? cell.copyWith(
+                  fill: const VsdxFill(
+                    foreground: VsdxColor(0xFFFF00FF),
+                    pattern: 1,
+                  ),
+                  richText: const VsdxRichText(
+                    runs: <VsdxTextRun>[VsdxTextRun(text: 'hid')],
+                  ),
+                )
+              : cell,
+      ],
+    );
+    table = TableOps.mergeCells(table, row: 0, col: 0, rowSpan: 1, colSpan: 2);
+    expect(shapeNeedsLibvisioCoveredHideBake(table), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(table));
+
+    final baked = documentForLibvisioWrite(doc);
+    final bakedTable = baked.pages.first.findShapeById(1)!;
+    final covered = TableOps.cellsOf(bakedTable).where(TableOps.isCovered);
+    expect(covered, hasLength(1));
+    final bakedCell = covered.single;
+    expect(bakedCell.libvisioCoveredHidden, isTrue);
+    expect(bakedCell.geometries.every((g) => g.noShow), isTrue);
+    expect(bakedCell.fill.pattern, 0);
+    expect(bakedCell.line.pattern, 0);
+    expect(bakedCell.richText.textBlock.hideText, isTrue);
+    expect(
+      shapeNeedsLibvisioCoveredHideBake(
+        documentForLibvisioWrite(baked).pages.first.findShapeById(1)!,
+      ),
+      isFalse,
+      reason: 'a second save must not stack another hide payload',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(TableOps.isTable(after), isTrue);
+    final afterCovered =
+        TableOps.cellsOf(after).where(TableOps.isCovered).single;
+    expect(afterCovered.libvisioCoveredHidden, isTrue);
+    expect(afterCovered.geometries.every((g) => g.noShow), isTrue);
+    expect(afterCovered.fill.pattern, 0);
+
+    final opened = TableOps.unmergeCells(after, row: 0, col: 0);
+    expect(TableOps.cellsOf(opened).where(TableOps.isCovered), isEmpty);
+    final restored = TableOps.cellsOf(opened).firstWhere(
+      (c) => TableOps.cellRow(c) == 0 && TableOps.cellCol(c) == 1,
+    );
+    expect(restored.libvisioCoveredHidden, isFalse);
+    expect(restored.geometries.every((g) => g.noShow), isFalse);
+    expect(restored.fill.pattern, 1);
+    expect(restored.line.pattern, 1);
+    expect(restored.richText.textBlock.hideText, isFalse);
+    expect(restored.width, greaterThan(1));
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

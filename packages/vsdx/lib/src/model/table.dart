@@ -4,7 +4,8 @@
 /// **cell** children (`User.veCell` + `veRow` / `veCol`) tile a grid.
 /// Optional `veColWidths` / `veRowHeights` store relative sizes; `veRowSpan` /
 /// `veColSpan` + `veCovered` implement merge (master keeps text, covered cells
-/// stay in the model but are hidden).
+/// stay in the model but are hidden). LibreOffice never reads `veCovered`, so
+/// a save also writes Geometry `NoShow` / hollow fill via `veCoveredHidden`.
 library;
 
 import '../utils/color.dart';
@@ -381,8 +382,11 @@ abstract final class TableOps {
           );
           continue;
         }
-        final rs = rowSpan(existing).clamp(1, dim.rows - r);
-        final cs = colSpan(existing).clamp(1, dim.cols - c);
+        final visible = existing.libvisioCoveredHidden
+            ? existing.restoreLibvisioCoveredHidden()
+            : existing;
+        final rs = rowSpan(visible).clamp(1, dim.rows - r);
+        final cs = colSpan(visible).clamp(1, dim.cols - c);
         var cellW = 0.0, cellH = 0.0;
         for (var i = 0; i < cs; i++) {
           cellW += colW[c + i];
@@ -402,7 +406,7 @@ abstract final class TableOps {
         final pinY = h - yTop - cellH / 2;
         laidOut.add(
           _cellWithFrame(
-            existing,
+            visible,
             pinX: pinX,
             pinY: pinY,
             width: cellW,

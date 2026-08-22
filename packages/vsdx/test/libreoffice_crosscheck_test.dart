@@ -3328,6 +3328,41 @@ void main() {
         .reparentShape(hiddenId, foldedId)
         .updateShapeById(foldedId, (s) => s.fold());
     collapsedDocument = collapsedDocument.replacePage(0, collapsedPage);
+    var mergedDocument = parser.parse(blank);
+    var mergedPage = mergedDocument.pages.first;
+    final tableId = mergedPage.nextFreeShapeId();
+    var mergeTable = TableOps.assembleTable(
+      tableId: tableId,
+      pinX: 4.25,
+      pinY: 8,
+      width: 4,
+      height: 3,
+      rows: 2,
+      cols: 2,
+      name: 'MergeTable',
+    );
+    mergeTable = mergeTable.copyWith(
+      children: <VsdxShape>[
+        for (final cell in mergeTable.children)
+          TableOps.cellRow(cell) == 0 && TableOps.cellCol(cell) == 1
+              ? cell.copyWith(
+                  fill: const VsdxFill(
+                    foreground: VsdxColor(0xFFFF00FF),
+                    pattern: 1,
+                  ),
+                )
+              : cell,
+      ],
+    );
+    mergeTable = TableOps.mergeCells(
+      mergeTable,
+      row: 0,
+      col: 0,
+      rowSpan: 1,
+      colSpan: 2,
+    );
+    mergedPage = mergedPage.addShape(mergeTable);
+    mergedDocument = mergedDocument.replacePage(0, mergedPage);
     var patternDashTransDocument = parser.parse(blank);
     final patternDashTransPage = patternDashTransDocument.pages.first;
     patternDashTransDocument = patternDashTransDocument.replacePage(
@@ -3771,6 +3806,10 @@ void main() {
       'collapsed': writer.write(
         originalBytes: blank,
         edited: collapsedDocument,
+      ),
+      'merged': writer.write(
+        originalBytes: blank,
+        edited: mergedDocument,
       ),
       'pattern_dash_trans': writer.write(
         originalBytes: blank,
@@ -7421,6 +7460,19 @@ void main() {
           expect(child.fill.pattern, 0);
           expect(child.line.pattern, 0);
           expect(child.richText.textBlock.hideText, isTrue);
+        }
+        if (entry.key == 'merged') {
+          final reopened = parser.parse(entry.value);
+          final table = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'MergeTable');
+          expect(TableOps.isTable(table), isTrue);
+          final covered =
+              TableOps.cellsOf(table).where(TableOps.isCovered).single;
+          expect(covered.libvisioCoveredHidden, isTrue);
+          expect(covered.geometries.every((g) => g.noShow), isTrue);
+          expect(covered.fill.pattern, 0);
+          expect(covered.line.pattern, 0);
+          expect(covered.richText.textBlock.hideText, isTrue);
         }
         if (entry.key == 'collapsed' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
