@@ -2699,6 +2699,7 @@ class VsdxWriter {
               !shapeNeedsLibvisioGlowPlateBake(edited) &&
               !shapeNeedsLibvisioCustomDashBake(edited) &&
               !shapeNeedsLibvisioFlowDashBake(edited) &&
+              !shapeNeedsLibvisioCollapsedHideBake(edited) &&
               !shapeNeedsLibvisioMiterSpikeBake(edited) &&
               !shapeNeedsLibvisioFilledStrokeRibbonBake(edited) &&
               !shapeNeedsLibvisioRoundCapMiterFlatten(edited))) {
@@ -8854,6 +8855,7 @@ class VsdxWriter {
     if (shapeNeedsLibvisioCompoundBake(shape)) return true;
     if (shapeNeedsLibvisioCustomDashBake(shape)) return true;
     if (shapeNeedsLibvisioFlowDashBake(shape)) return true;
+    if (shapeNeedsLibvisioCollapsedHideBake(shape)) return true;
     if (shapeNeedsLibvisioStrokeRibbon(shape)) return true;
     if (shapeNeedsLibvisioMiterSpikeBake(shape)) return true;
     if (shapeNeedsLibvisioFilledStrokeRibbonBake(shape)) return true;

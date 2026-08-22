@@ -192,7 +192,11 @@
 /// synthesise into MoveTo/LineTo and writes `veFlowAnimation=0`. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
 /// Begin/EndArrow as Geometry first so Draw does not hang a marker on
-/// every open dash.
+/// every open dash. draw.io collapsed containers are `User.veCollapsed`
+/// (not a token), so a save writes Geometry `NoShow`, `HideText`,
+/// `FillPattern=0` / `LinePattern=0`, and zero `ImgWidth` / `ImgHeight`
+/// on every descendant — tokens Draw collects — and stores a restore
+/// payload so Unfold can show them again.
 library;
 
 import 'dart:math' as math;
@@ -232,23 +236,27 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakePageColorForLibvisioWrite(
-    bakeShapeInsideForLibvisioWrite(
-      bakeWordWrapForLibvisioWrite(
-        bakeLabelBorderForLibvisioWrite(
-          bakeLabelPaddingForLibvisioWrite(
-            bakeFilledStrokeRibbonForLibvisioWrite(
-              bakeGeometrySoftEdgesForLibvisioWrite(
-                bakeReflectionForLibvisioWrite(
-                  bakeImageAdjustmentsForLibvisioWrite(
-                    bakeGlowPlateForLibvisioWrite(
-                      bakeGlassForLibvisioWrite(
-                        bakeSketchForLibvisioWrite(
-                          bakePageShadowForLibvisioWrite(
-                            bakeShadowForLibvisioWrite(
-                              bakeCurvedTextForLibvisioWrite(
-                                bakeShapeOpacityForLibvisioWrite(
-                                  bakeOverlineForLibvisioWrite(
-                                    bakeAutoRotateLabelForLibvisioWrite(hopped),
+    bakeCollapsedForLibvisioWrite(
+      bakeShapeInsideForLibvisioWrite(
+        bakeWordWrapForLibvisioWrite(
+          bakeLabelBorderForLibvisioWrite(
+            bakeLabelPaddingForLibvisioWrite(
+              bakeFilledStrokeRibbonForLibvisioWrite(
+                bakeGeometrySoftEdgesForLibvisioWrite(
+                  bakeReflectionForLibvisioWrite(
+                    bakeImageAdjustmentsForLibvisioWrite(
+                      bakeGlowPlateForLibvisioWrite(
+                        bakeGlassForLibvisioWrite(
+                          bakeSketchForLibvisioWrite(
+                            bakePageShadowForLibvisioWrite(
+                              bakeShadowForLibvisioWrite(
+                                bakeCurvedTextForLibvisioWrite(
+                                  bakeShapeOpacityForLibvisioWrite(
+                                    bakeOverlineForLibvisioWrite(
+                                      bakeAutoRotateLabelForLibvisioWrite(
+                                        hopped,
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ),
@@ -3306,6 +3314,89 @@ VsdxDocument bakeWordWrapForLibvisioWrite(VsdxDocument document) {
   return document.copyWith(pages: pages);
 }
 
+/// `true` when a folded host still has descendants Draw would paint.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no User
+/// rows, so `veCollapsed` never hides children. Geometry `NoShow`, `HideText`,
+/// `FillPattern=0` / `LinePattern=0`, and zero-size Foreign images *are*
+/// collected, so a save applies those and stores
+/// [VsdxShape.userCollapsedHidden] for Unfold.
+bool shapeNeedsLibvisioCollapsedHideBake(VsdxShape shape) {
+  if (!shape.collapsed) {
+    for (final child in shape.children) {
+      if (shapeNeedsLibvisioCollapsedHideBake(child)) return true;
+    }
+    return false;
+  }
+  return _collapsedDescendantNeedsHide(shape);
+}
+
+bool _collapsedDescendantNeedsHide(VsdxShape shape) {
+  for (final child in shape.children) {
+    if (!child.libvisioCollapsedHidden) return true;
+    if (_collapsedDescendantNeedsHide(child)) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeCollapsedShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeCollapsedShapeForLibvisioWrite(child),
+  ];
+  var next = shape;
+  var changed = false;
+  if (children.length != shape.children.length) {
+    changed = true;
+  } else {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (changed) next = shape.copyWith(children: children);
+  if (!next.collapsed || !_collapsedDescendantNeedsHide(next)) {
+    return changed ? next : shape;
+  }
+  final hidden = <VsdxShape>[
+    for (final child in next.children) child.hideSubtreeForLibvisioCollapsed(),
+  ];
+  return next.copyWith(children: hidden);
+}
+
+/// Hide folded-container descendants so Draw does not paint them.
+VsdxDocument bakeCollapsedForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    var needs = false;
+    for (final shape in page.shapes) {
+      if (shapeNeedsLibvisioCollapsedHideBake(shape)) {
+        needs = true;
+        break;
+      }
+    }
+    if (!needs) {
+      pages.add(page);
+      continue;
+    }
+    pages.add(
+      page.copyWith(
+        shapes: <VsdxShape>[
+          for (final shape in page.shapes)
+            bakeCollapsedShapeForLibvisioWrite(shape),
+        ],
+      ),
+    );
+    pagesChanged = true;
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).
 const kLibvisioCombiningOverline = '\u0305';
 
@@ -6321,6 +6412,17 @@ class LibvisioShapeWrite {
 
 /// Map [shape] onto the Fill / Line / Geometry libvisio will actually draw.
 LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
+  if (shape.libvisioCollapsedHidden) {
+    return LibvisioShapeWrite(
+      geometries: <VsdxGeometry>[
+        for (final geometry in shape.geometries)
+          geometry.noShow ? geometry : geometry.copyWith(noShow: true),
+      ],
+      line: shape.line.copyWith(pattern: 0),
+      fill: shape.fill.copyWith(pattern: 0, gradient: null),
+      geometryRewritten: true,
+    );
+  }
   var geometries = shape.geometries;
   var line = shape.line;
   var fill = fillForLibvisioWrite(shape.fill);

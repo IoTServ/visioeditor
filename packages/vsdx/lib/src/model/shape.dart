@@ -861,6 +861,14 @@ class VsdxShape {
   /// `'1'`, children stay in the model but are not painted or hit-tested.
   static const String userCollapsed = 'veCollapsed';
 
+  /// Restore payload for descendants hidden so LibreOffice Draw skips them.
+  ///
+  /// `User.veCollapsed` is not a libvisio token, so a save writes Geometry
+  /// `NoShow`, `HideText`, `FillPattern=0` / `LinePattern=0`, and zero
+  /// `ImgWidth`/`ImgHeight` on folded children. Unfold reads this row
+  /// back into those cells.
+  static const String userCollapsedHidden = 'veCollapsedHidden';
+
   /// Explicit draw.io-style container override.
   ///
   /// `'1'` lets an otherwise ordinary vertex accept dropped children;
@@ -1708,8 +1716,10 @@ class VsdxShape {
         if (c.name != userCollapsed) c,
     ];
     if (!value) {
-      if (others.length == userCells.length) return this;
-      return copyWith(userCells: others);
+      final cleared = others.length == userCells.length
+          ? this
+          : copyWith(userCells: others);
+      return cleared.restoreLibvisioCollapsedHidden();
     }
     return copyWith(
       userCells: <VsdxUserCell>[
@@ -1766,13 +1776,132 @@ class VsdxShape {
       for (final c in userCells)
         if (c.name != userCollapsed && c.name != userExpandedHeight) c,
     ];
-    final cleared = copyWith(userCells: others);
+    final cleared =
+        copyWith(userCells: others).restoreLibvisioCollapsedHidden();
     if ((restoreH - height).abs() < 1e-6) return cleared;
     return cleared.resizeTo(
       pinX: pinX,
       pinY: newPinY,
       width: width,
       height: restoreH,
+    );
+  }
+
+  /// Whether a LibreOffice save hid this descendant of a folded container.
+  bool get libvisioCollapsedHidden {
+    for (final c in userCells) {
+      if (c.name == userCollapsedHidden) return true;
+    }
+    return false;
+  }
+
+  /// Hide this subtree so Draw skips it (`NoShow` / `HideText` /
+  /// `FillPattern=0` / `LinePattern=0` / zero Img*).
+  ///
+  /// Idempotent once [userCollapsedHidden] is present. Nested children are
+  /// hidden too — canvas skips every descendant of a folded host.
+  VsdxShape hideSubtreeForLibvisioCollapsed() {
+    final kids = <VsdxShape>[
+      for (final child in children) child.hideSubtreeForLibvisioCollapsed(),
+    ];
+    var kidsChanged = kids.length != children.length;
+    if (!kidsChanged) {
+      for (var i = 0; i < kids.length; i++) {
+        if (!identical(kids[i], children[i])) {
+          kidsChanged = true;
+          break;
+        }
+      }
+    }
+    if (libvisioCollapsedHidden) {
+      return kidsChanged ? copyWith(children: kids) : this;
+    }
+    final bits = StringBuffer();
+    final geos = <VsdxGeometry>[];
+    for (final geometry in geometries) {
+      bits.write(geometry.noShow ? '1' : '0');
+      geos.add(geometry.noShow ? geometry : geometry.copyWith(noShow: true));
+    }
+    final hideText = richText.textBlock.hideText;
+    final imgW = hasImage ? effectiveImgWidth : null;
+    final imgH = hasImage ? effectiveImgHeight : null;
+    final payload = '1|$bits|${hideText ? 1 : 0}|${fill.pattern}|'
+        '${line.pattern}|${imgW?.toString() ?? '-'}|${imgH?.toString() ?? '-'}';
+    final others = <VsdxUserCell>[
+      for (final c in userCells)
+        if (c.name != userCollapsedHidden) c,
+    ];
+    return copyWith(
+      geometries: geos,
+      fill: fill.copyWith(pattern: 0),
+      line: line.copyWith(pattern: 0),
+      richText: richText.copyWith(
+        textBlock: richText.textBlock.copyWith(hideText: true),
+      ),
+      imgWidthInches: hasImage ? 0 : imgWidthInches,
+      imgHeightInches: hasImage ? 0 : imgHeightInches,
+      userCells: <VsdxUserCell>[
+        ...others,
+        VsdxUserCell(name: userCollapsedHidden, value: payload),
+      ],
+      children: kidsChanged ? kids : children,
+    );
+  }
+
+  /// Reverse [hideSubtreeForLibvisioCollapsed] on this shape and its descendants.
+  VsdxShape restoreLibvisioCollapsedHidden() {
+    final kids = <VsdxShape>[
+      for (final child in children) child.restoreLibvisioCollapsedHidden(),
+    ];
+    var kidsChanged = kids.length != children.length;
+    if (!kidsChanged) {
+      for (var i = 0; i < kids.length; i++) {
+        if (!identical(kids[i], children[i])) {
+          kidsChanged = true;
+          break;
+        }
+      }
+    }
+    String? payload;
+    final others = <VsdxUserCell>[];
+    for (final c in userCells) {
+      if (c.name == userCollapsedHidden) {
+        payload = c.value;
+      } else {
+        others.add(c);
+      }
+    }
+    if (payload == null) {
+      return kidsChanged ? copyWith(children: kids) : this;
+    }
+    final parts = payload.split('|');
+    final bits = parts.length > 1 ? parts[1] : '';
+    final hideText = parts.length > 2 && parts[2] == '1';
+    final fillPat = parts.length > 3 ? int.tryParse(parts[3]) : null;
+    final linePat = parts.length > 4 ? int.tryParse(parts[4]) : null;
+    final imgW = parts.length > 5 && parts[5] != '-'
+        ? double.tryParse(parts[5])
+        : null;
+    final imgH = parts.length > 6 && parts[6] != '-'
+        ? double.tryParse(parts[6])
+        : null;
+    final geos = <VsdxGeometry>[
+      for (var i = 0; i < geometries.length; i++)
+        geometries[i].copyWith(
+          noShow: i < bits.length ? bits[i] == '1' : geometries[i].noShow,
+        ),
+    ];
+    return copyWith(
+      geometries: geos,
+      fill: fillPat == null ? fill : fill.copyWith(pattern: fillPat),
+      line: linePat == null ? line : line.copyWith(pattern: linePat),
+      richText: richText.copyWith(
+        textBlock: richText.textBlock.copyWith(hideText: hideText),
+      ),
+      imgWidthInches: imgW ?? imgWidthInches,
+      imgHeightInches: imgH ?? imgHeightInches,
+      userCells: others,
+      children: kidsChanged ? kids : children,
     );
   }
 

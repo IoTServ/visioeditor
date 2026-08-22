@@ -3291,6 +3291,43 @@ void main() {
             ).withDrawioDashPattern(const <double>[8, 8]),
           ),
     );
+    var collapsedDocument = parser.parse(blank);
+    var collapsedPage = collapsedDocument.pages.first;
+    final foldedId = collapsedPage.nextFreeShapeId();
+    final hiddenId = foldedId + 1;
+    collapsedPage = collapsedPage
+        .addShape(
+          VsdxShapeFactory.container(
+            id: foldedId,
+            pinX: 4.25,
+            pinY: 8,
+            width: 4,
+            height: 3,
+            name: 'FoldedBox',
+            fill: const VsdxFill(
+              foreground: VsdxColor(0xFF1565C0),
+              pattern: 1,
+            ),
+          ),
+        )
+        .addShape(
+          VsdxShapeFactory.rectangle(
+            id: hiddenId,
+            pinX: 4.25,
+            pinY: 7,
+            width: 2,
+            height: 1,
+            name: 'HiddenChild',
+            fill: const VsdxFill(
+              foreground: VsdxColor(0xFFFF00FF),
+              pattern: 1,
+            ),
+          ),
+        );
+    collapsedPage = collapsedPage
+        .reparentShape(hiddenId, foldedId)
+        .updateShapeById(foldedId, (s) => s.fold());
+    collapsedDocument = collapsedDocument.replacePage(0, collapsedPage);
     var patternDashTransDocument = parser.parse(blank);
     final patternDashTransPage = patternDashTransDocument.pages.first;
     patternDashTransDocument = patternDashTransDocument.replacePage(
@@ -3730,6 +3767,10 @@ void main() {
       'dash_arrows': writer.write(
         originalBytes: blank,
         edited: dashArrowDocument,
+      ),
+      'collapsed': writer.write(
+        originalBytes: blank,
+        edited: collapsedDocument,
       ),
       'pattern_dash_trans': writer.write(
         originalBytes: blank,
@@ -7365,6 +7406,122 @@ void main() {
             lessThan(customStray - 15),
             reason: 'custom dash arrows must also stay a single head; '
                 'head=$customHead stray=$customStray',
+          );
+        }
+        if (entry.key == 'collapsed') {
+          final reopened = parser.parse(entry.value);
+          final host = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FoldedBox');
+          expect(host.collapsed, isTrue);
+          expect(host.children, hasLength(1));
+          final child = host.children.single;
+          expect(child.name, 'HiddenChild');
+          expect(child.libvisioCollapsedHidden, isTrue);
+          expect(child.geometries.every((g) => g.noShow), isTrue);
+          expect(child.fill.pattern, 0);
+          expect(child.line.pattern, 0);
+          expect(child.richText.textBlock.hideText, isTrue);
+        }
+        if (entry.key == 'collapsed' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double luma, double r, double g, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumLuma = 0.0;
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) {
+              return (luma: 255.0, r: 0.0, g: 255.0, b: 0.0);
+            }
+            return (
+              luma: sumLuma / count,
+              r: sumR / count,
+              g: sumG / count,
+              b: sumB / count,
+            );
+          }
+
+          final host = page.shapes.firstWhere((s) => s.name == 'FoldedBox');
+          final child = host.children.single;
+          final hostBox = page.shapePageAabb(host.id)!;
+          final childBox = page.shapePageAabb(child.id)!;
+          expect(
+            childBox.top,
+            greaterThan(hostBox.top + 0.2),
+            reason: 'folded child AABB must stick above the header so the '
+                'hidden-band sample is not the blue title',
+          );
+          final header = mean(
+            hostBox.left + 0.3,
+            hostBox.top - 0.35,
+            hostBox.right - 0.3,
+            hostBox.top - 0.05,
+          );
+          expect(
+            header.b,
+            greaterThan(header.r + 20),
+            reason: 'LibreOffice must keep the folded header; '
+                'r=${header.r} b=${header.b} luma=${header.luma}',
+          );
+          // fold() keeps descendant local pins, so after the host shrinks
+          // the child AABB overlaps the header and overshoots it. Sample
+          // the overshoot — magenta if Draw still paints, paper if not.
+          final hidden = mean(
+            childBox.left + 0.15,
+            hostBox.top + 0.08,
+            childBox.right - 0.15,
+            childBox.top - 0.05,
+          );
+          expect(
+            hidden.g,
+            greaterThan(180),
+            reason: 'LibreOffice must not paint the magenta child of a '
+                'folded container; g=${hidden.g} luma=${hidden.luma}',
+          );
+          expect(
+            hidden.luma,
+            greaterThan(200),
+            reason: 'folded descendants must stay off the sheet; '
+                'g=${hidden.g} luma=${hidden.luma}',
           );
         }
         if (entry.key == 'pattern_dash_trans') {

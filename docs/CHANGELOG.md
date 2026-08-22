@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io collapsed containers now hide their children in LibreOffice.
+  `User.veCollapsed` is not a token; Draw used to paint every descendant.
+  A save writes Geometry `NoShow`, `HideText`, `FillPattern=0` /
+  `LinePattern=0`, and zero `ImgWidth` / `ImgHeight` on those children
+  and stores `veCollapsedHidden` so Unfold can restore them.
 - draw.io Flow Animation now keeps a dashed stroke in LibreOffice.
   `User.veFlowAnimation*` is not a token; Draw used to paint a solid
   route. A save flattens the same 8 CSS-px dash canvas / SVG synthesise

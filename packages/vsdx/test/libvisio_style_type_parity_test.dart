@@ -125,7 +125,10 @@
 /// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
 /// Begin/EndArrow as Geometry first so Draw does not hang a marker on
-/// every open dash.
+/// every open dash. draw.io collapsed containers also use a User row, so
+/// a save writes `NoShow` / `HideText` / hollow fill and line on
+/// descendants and Unfold restores
+/// them from `veCollapsedHidden`.
 library;
 
 import 'dart:io';
@@ -5151,6 +5154,83 @@ void main() {
         1,
       );
     }
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('collapsed container hides descendants for LibreOffice', () {
+    final host = VsdxShapeFactory.container(
+      id: 1,
+      pinX: 4.25,
+      pinY: 8,
+      width: 4,
+      height: 3,
+      name: 'FoldedBox',
+      fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0), pattern: 1),
+    );
+    final child = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 4.25,
+      pinY: 7,
+      width: 2,
+      height: 1,
+      name: 'HiddenChild',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF00FF), pattern: 1),
+    ).copyWith(
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[VsdxTextRun(text: 'kid')],
+      ),
+    );
+    expect(shapeNeedsLibvisioCollapsedHideBake(host), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    var page = doc.pages.first.addShape(host).addShape(child);
+    page = page.reparentShape(2, 1).updateShapeById(1, (s) => s.fold());
+    doc = doc.replacePage(0, page);
+    expect(shapeNeedsLibvisioCollapsedHideBake(doc.pages.first.findShapeById(1)!),
+        isTrue);
+
+    final baked = documentForLibvisioWrite(doc);
+    final bakedHost = baked.pages.first.findShapeById(1)!;
+    expect(bakedHost.collapsed, isTrue);
+    expect(bakedHost.fill.pattern, 1);
+    expect(bakedHost.children, hasLength(1));
+    final bakedChild = bakedHost.children.single;
+    expect(bakedChild.libvisioCollapsedHidden, isTrue);
+    expect(bakedChild.geometries.every((g) => g.noShow), isTrue);
+    expect(bakedChild.fill.pattern, 0);
+    expect(bakedChild.line.pattern, 0);
+    expect(bakedChild.richText.textBlock.hideText, isTrue);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .children
+          .single
+          .libvisioCollapsedHidden,
+      isTrue,
+      reason: 'a second save must not stack another hide payload',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.collapsed, isTrue);
+    expect(after.children.single.geometries.every((g) => g.noShow), isTrue);
+    expect(after.children.single.richText.textBlock.hideText, isTrue);
+    expect(after.children.single.libvisioCollapsedHidden, isTrue);
+
+    final opened = after.unfold();
+    expect(opened.collapsed, isFalse);
+    expect(opened.children.single.libvisioCollapsedHidden, isFalse);
+    expect(opened.children.single.geometries.every((g) => g.noShow), isFalse);
+    expect(opened.children.single.fill.pattern, 1);
+    expect(opened.children.single.line.pattern, 1);
+    expect(opened.children.single.richText.textBlock.hideText, isFalse);
+    expect(opened.children.single.richText.plainText, 'kid');
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
