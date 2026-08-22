@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Flow Animation now keeps a dashed stroke in LibreOffice.
+  `User.veFlowAnimation*` is not a token; Draw used to paint a solid
+  route. A save flattens the same 8 CSS-px dash canvas / SVG synthesise
+  into MoveTo/LineTo and writes `veFlowAnimation=0` so a reopen does
+  not dash the segments twice.
+- Arrowed custom / Flow dashes now keep a single head in LibreOffice.
+  libvisio hangs `draw:marker-*` on every open subpath, so flattening
+  dashes used to duplicate the arrow. A save bakes Begin/EndArrow as
+  Geometry first, then the dashes, and clears the marker cells.
 - Unfilled 1-D stroke Glow now keeps the Gaussian halo in LibreOffice.
   Canvas `_drawGlow` blurs a path stroke; a save used to emit a hard
   FillForegndTrans ribbon because Foreign cannot hang on a zero-height

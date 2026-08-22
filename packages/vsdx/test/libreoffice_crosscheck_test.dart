@@ -3230,6 +3230,67 @@ void main() {
         ).withDrawioDashPattern(const <double>[8, 4]),
       ),
     );
+    var flowDashDocument = parser.parse(blank);
+    final flowDashPage = flowDashDocument.pages.first;
+    flowDashDocument = flowDashDocument.replacePage(
+      0,
+      flowDashPage.addShape(
+        VsdxShapeFactory.line(
+          id: flowDashPage.nextFreeShapeId(),
+          ax: 1,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          name: 'FlowDash',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.04,
+            pattern: 1,
+          ),
+        ).withFlowAnimation(true),
+      ),
+    );
+    var dashArrowDocument = parser.parse(blank);
+    final dashArrowPage = dashArrowDocument.pages.first;
+    final flowArrowId = dashArrowPage.nextFreeShapeId();
+    dashArrowDocument = dashArrowDocument.replacePage(
+      0,
+      dashArrowPage
+          .addShape(
+            VsdxShapeFactory.line(
+              id: flowArrowId,
+              ax: 1,
+              ay: 5.5,
+              bx: 7,
+              by: 5.5,
+              name: 'FlowDashArrow',
+              line: const VsdxLine(
+                color: VsdxColor(0xFF000000),
+                weightInches: 0.04,
+                pattern: 1,
+                endArrow: 4,
+                endArrowSizeInches: 0.25,
+              ),
+            ).withFlowAnimation(true),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: flowArrowId + 1,
+              ax: 1,
+              ay: 3.5,
+              bx: 7,
+              by: 3.5,
+              name: 'CustomDashArrow',
+              line: const VsdxLine(
+                color: VsdxColor(0xFF000000),
+                weightInches: 0.04,
+                pattern: 1,
+                endArrow: 4,
+                endArrowSizeInches: 0.25,
+              ),
+            ).withDrawioDashPattern(const <double>[8, 8]),
+          ),
+    );
     var patternDashTransDocument = parser.parse(blank);
     final patternDashTransPage = patternDashTransDocument.pages.first;
     patternDashTransDocument = patternDashTransDocument.replacePage(
@@ -3661,6 +3722,14 @@ void main() {
       'custom_dash': writer.write(
         originalBytes: blank,
         edited: customDashDocument,
+      ),
+      'flow_dash': writer.write(
+        originalBytes: blank,
+        edited: flowDashDocument,
+      ),
+      'dash_arrows': writer.write(
+        originalBytes: blank,
+        edited: dashArrowDocument,
       ),
       'pattern_dash_trans': writer.write(
         originalBytes: blank,
@@ -7147,6 +7216,155 @@ void main() {
             lessThan(gap - 15),
             reason: 'LibreOffice must paint the custom dash, not the nearest '
                 'built-in LinePattern; ink=$ink gap=$gap',
+          );
+        }
+        if (entry.key == 'flow_dash') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FlowDash');
+          expect(source.flowAnimation, isFalse);
+          expect(source.line.pattern, 1);
+          expect(source.line.customDashPattern, isNull);
+          final moves = source.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          expect(moves, greaterThan(1));
+        }
+        if (entry.key == 'flow_dash' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // 8 CSS px @ 96dpi = 0.0833" dash / gap from x=1.
+          final ink = meanLuma(1.02, 5.48, 1.06, 5.52);
+          final gap = meanLuma(1.11, 5.48, 1.15, 5.52);
+          expect(
+            ink,
+            lessThan(gap - 15),
+            reason: 'LibreOffice must paint the Flow Animation dash, not a '
+                'solid LinePattern-1 stroke; ink=$ink gap=$gap',
+          );
+        }
+        if (entry.key == 'dash_arrows') {
+          final reopened = parser.parse(entry.value);
+          for (final name in <String>['FlowDashArrow', 'CustomDashArrow']) {
+            final source = reopened.pages.first.shapes
+                .firstWhere((s) => s.name == name);
+            expect(source.line.endArrow, 0, reason: name);
+            expect(source.flowAnimation, isFalse, reason: name);
+            expect(
+              source.geometries.where((geometry) => !geometry.noFill).length,
+              1,
+              reason: '$name must keep one filled arrow Geometry',
+            );
+            final dashMoves = source.geometries
+                .where((geometry) => geometry.noFill)
+                .expand((geometry) => geometry.commands)
+                .whereType<MoveTo>()
+                .length;
+            expect(dashMoves, greaterThan(1), reason: name);
+          }
+        }
+        if (entry.key == 'dash_arrows' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // A marker on every dash would ink above the 0.04" stroke at the
+          // first segment's tip. The baked 0.25" head sits only at x=7.
+          final stray = meanLuma(1.04, 5.56, 1.12, 5.68);
+          final head = meanLuma(6.80, 5.42, 7.02, 5.58);
+          expect(
+            head,
+            lessThan(stray - 15),
+            reason: 'LibreOffice must keep one arrow at the route end, not a '
+                'marker on every dash; head=$head stray=$stray',
+          );
+          // custom [8,8] × 0.04" → 0.32" dash; first tip at x=1.32.
+          final customStray = meanLuma(1.26, 3.56, 1.34, 3.68);
+          final customHead = meanLuma(6.80, 3.42, 7.02, 3.58);
+          expect(
+            customHead,
+            lessThan(customStray - 15),
+            reason: 'custom dash arrows must also stay a single head; '
+                'head=$customHead stray=$customStray',
           );
         }
         if (entry.key == 'pattern_dash_trans') {

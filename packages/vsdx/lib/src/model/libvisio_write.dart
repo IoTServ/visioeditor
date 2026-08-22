@@ -187,7 +187,12 @@
 /// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
 /// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
 /// to the unwrapped line plus margins (`svg:width` Draw wraps against) and
-/// drops the User row.
+/// drops the User row. draw.io Flow Animation is `User.veFlowAnimation*`
+/// (not a token), so a save flattens the same 8 CSS-px dash canvas / SVG
+/// synthesise into MoveTo/LineTo and writes `veFlowAnimation=0`. Arrowed
+/// connectors that also flatten those dashes (or `veDashPattern`) bake
+/// Begin/EndArrow as Geometry first so Draw does not hang a marker on
+/// every open dash.
 library;
 
 import 'dart:math' as math;
@@ -6361,6 +6366,21 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     );
   }
 
+  final flowed = bakeFlowDashForLibvisio(
+    working,
+    geometries: geometries,
+    line: line,
+  );
+  if (flowed != null) {
+    geometries = flowed.geometries;
+    line = flowed.line;
+    geometryRewritten = true;
+    working = working.copyWith(
+      geometries: geometries,
+      line: line,
+    );
+  }
+
   final patterned = bakeLinePatternDashForLibvisio(
     working,
     geometries: geometries,
@@ -6730,7 +6750,10 @@ bool _arrowSizeMismatchesLibvisio({
 ///
 /// libvisio hangs `draw:marker-*` on every open path, so CompoundType rails
 /// would duplicate arrowheads, and a closed LineGradient / LineColorTrans
-/// ribbon cannot carry shape-level markers. `tokens.txt` also has no
+/// ribbon cannot carry shape-level markers. Dash bakes multiply open
+/// subpaths the same way — a flattened `veDashPattern` or Flow Animation
+/// route puts one marker on *every* dash — so those bake markers too.
+/// `tokens.txt` also has no
 /// BeginArrowSize cell — marker width follows line weight — so baking the
 /// polygon at [VsdxLine.beginArrowSizeInches] is the size Draw will paint.
 bool shapeNeedsLibvisioArrowedStrokeBake(VsdxShape shape) {
@@ -6757,6 +6780,10 @@ bool shapeNeedsLibvisioArrowedStrokeBake(VsdxShape shape) {
     return true;
   }
   final stripped = _withoutArrowheads(shape);
+  if (_customDashCanBake(stripped, stripped.line, stripped.geometries)) {
+    return true;
+  }
+  if (_flowDashCanBake(stripped, stripped.geometries)) return true;
   return shapeNeedsLibvisioCompoundBake(stripped) ||
       shapeNeedsLibvisioStrokeRibbon(stripped);
 }
@@ -7785,6 +7812,13 @@ bool _customDashCanBake(
   if (custom == null || custom.isEmpty) return false;
   final inches = effectiveDashPatternForLine(line);
   if (inches == null || inches.isEmpty) return false;
+  return _dashBakeHasStrokableGeometry(shape, geometries);
+}
+
+bool _dashBakeHasStrokableGeometry(
+  VsdxShape shape,
+  List<VsdxGeometry> geometries,
+) {
   for (final geometry in geometries) {
     if (geometry.noShow || geometry.noLine) continue;
     final points = _strokedVertices(geometry, shape);
@@ -7793,23 +7827,89 @@ bool _customDashCanBake(
   return false;
 }
 
+/// Dash canvas / SVG paint for draw.io Flow Animation, in inches.
+///
+/// `User.veFlowAnimation*` rows are not tokens, and an animated connector
+/// carries no dash cell of its own — canvas `_effectiveStrokeDashes` and the
+/// SVG `_flowStrokePaint` both synthesise 8 CSS px of ink and gap. Draw
+/// would otherwise stroke the route solid. Connectors that already dash
+/// (`LinePattern` or `veDashPattern`) keep that authored pattern.
+List<double>? flowAnimationDashInchesForLibvisioWrite(VsdxShape shape) {
+  if (!shape.flowAnimation || !shape.supportsFlowAnimation) return null;
+  if (!shape.line.hasLine) return null;
+  final authored = effectiveDashPatternForLine(shape.line);
+  if (authored != null && authored.isNotEmpty) return null;
+  const dash = 8 * drawioDashUnitInches;
+  return const <double>[dash, dash];
+}
+
+/// `true` when Flow Animation's synthetic dash must become Geometry.
+bool shapeNeedsLibvisioFlowDashBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  return _flowDashCanBake(shape, shape.geometries);
+}
+
+/// `true` when `veFlowAnimation` must go to 0 so a reopen does not dash
+/// already-flattened segments a second time.
+///
+/// Flattening either the synthesised 8 CSS-px flow dash or an authored
+/// `veDashPattern` turns the route into solid MoveTo/LineTo pieces. The
+/// canvas would then synthesise another 8 CSS-px array on top if the User
+/// row stayed 1.
+bool shapeNeedsLibvisioFlowAnimationClear(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.flowAnimation || !shape.supportsFlowAnimation) return false;
+  return shapeNeedsLibvisioFlowDashBake(shape) ||
+      shapeNeedsLibvisioCustomDashBake(shape);
+}
+
+bool _flowDashCanBake(VsdxShape shape, List<VsdxGeometry> geometries) {
+  if (flowAnimationDashInchesForLibvisioWrite(shape) == null) return false;
+  return _dashBakeHasStrokableGeometry(shape, geometries);
+}
+
+/// Flatten the Flow Animation dash into MoveTo/LineTo subpaths.
+({List<VsdxGeometry> geometries, VsdxLine line})? bakeFlowDashForLibvisio(
+  VsdxShape shape, {
+  List<VsdxGeometry>? geometries,
+  VsdxLine? line,
+}) {
+  final sourceLine = line ?? shape.line;
+  final sourceGeoms = geometries ?? shape.geometries;
+  if (!_flowDashCanBake(shape, sourceGeoms)) return null;
+  final inches = flowAnimationDashInchesForLibvisioWrite(shape);
+  if (inches == null) return null;
+  final flattened = _flattenDashGeometries(shape, sourceGeoms, inches);
+  if (flattened == null) return null;
+  return (geometries: flattened, line: sourceLine.copyWith(pattern: 1));
+}
+
 /// Drop `User.veDashPattern` / `veFixedDash` once dashes live in Geometry,
-/// and `User.veMiterLimit` once a tighter clip is baked as chamfers or a
+/// write `veFlowAnimation=0` once the flow dash does, and drop
+/// `User.veMiterLimit` once a tighter clip is baked as chamfers or a
 /// longer spike is baked as a ribbon.
 List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
   final dropDash = shapeNeedsLibvisioCustomDashBake(shape);
+  final zeroFlow = shapeNeedsLibvisioFlowAnimationClear(shape);
   final dropMiter = miterLimitForLibvisioChamfer(shape.line) != null ||
       shapeNeedsLibvisioMiterSpikeBake(shape) ||
       (shapeNeedsLibvisioFilledStrokeRibbonBake(shape) &&
           _shapeHasLibvisioMiterSpikeCorners(shape));
-  if (!dropDash && !dropMiter) return shape.userCells;
-  return <VsdxUserCell>[
+  if (!dropDash && !zeroFlow && !dropMiter) return shape.userCells;
+  final kept = <VsdxUserCell>[
     for (final cell in shape.userCells)
       if (!(dropDash &&
               (cell.name == VsdxShape.userDashPattern ||
                   cell.name == VsdxShape.userFixedDash)) &&
-          !(dropMiter && cell.name == VsdxShape.userMiterLimit))
+          !(dropMiter && cell.name == VsdxShape.userMiterLimit) &&
+          !(zeroFlow && cell.name == VsdxShape.userFlowAnimation))
         cell,
+  ];
+  if (!zeroFlow) return kept;
+  // Re-opening must not dash the already-dashed segments a second time.
+  return <VsdxUserCell>[
+    ...kept,
+    const VsdxUserCell(name: VsdxShape.userFlowAnimation, value: '0'),
   ];
 }
 

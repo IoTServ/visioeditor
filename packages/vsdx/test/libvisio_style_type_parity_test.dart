@@ -121,6 +121,11 @@
 /// TxtPin extra-mirror. Sketch jiggle with open arrows bakes arrow Geometry
 /// on the source and drops markers from the jiggle plates. draw.io Rotate with Edge is also a
 /// User row, so a save writes `TxtAngle` and drops `veAutoRotateLabel`.
+/// draw.io Flow Animation is also a User row, so a save flattens the
+/// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Arrowed
+/// connectors that also flatten those dashes (or `veDashPattern`) bake
+/// Begin/EndArrow as Geometry first so Draw does not hang a marker on
+/// every open dash.
 library;
 
 import 'dart:io';
@@ -4986,6 +4991,166 @@ void main() {
       }
     }
     expect(savedMoves, greaterThan(1));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Flow Animation bakes the synthesised 8 CSS-px dash for LibreOffice',
+      () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 3,
+      bx: 7,
+      by: 3,
+      name: 'FlowDash',
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.04,
+        pattern: 1,
+      ),
+    ).withFlowAnimation(true);
+    expect(shape.flowAnimation, isTrue);
+    expect(shape.line.customDashPattern, isNull);
+    expect(shapeNeedsLibvisioFlowDashBake(shape), isTrue);
+    expect(
+      flowAnimationDashInchesForLibvisioWrite(shape),
+      <double>[8 * drawioDashUnitInches, 8 * drawioDashUnitInches],
+    );
+
+    final write = libvisioShapeWrite(shape);
+    expect(write.line.pattern, 1);
+    expect(write.geometryRewritten, isTrue);
+    var moves = 0;
+    for (final geometry in write.geometries) {
+      for (final command in geometry.commands) {
+        if (command is MoveTo) moves++;
+      }
+    }
+    expect(moves, greaterThan(1),
+        reason: 'Flow Animation must become multiple dash subpaths, not a '
+            'solid LinePattern-1 stroke Draw would paint');
+    expect(write.line.beginArrow, 0);
+    expect(write.line.endArrow, 0);
+    expect(
+      userCellsForLibvisioWrite(shape).any(
+        (cell) =>
+            cell.name == VsdxShape.userFlowAnimation &&
+            (double.tryParse(cell.value ?? '') ?? 1) == 0,
+      ),
+      isTrue,
+    );
+    expect(
+      userCellsForLibvisioWrite(shape).any(
+        (cell) => cell.name == VsdxShape.userDashPattern,
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.flowAnimation, isFalse);
+    expect(after.line.pattern, 1);
+    expect(after.line.customDashPattern, isNull);
+    var savedMoves = 0;
+    for (final geometry in after.geometries) {
+      for (final command in geometry.commands) {
+        if (command is MoveTo) savedMoves++;
+      }
+    }
+    expect(savedMoves, greaterThan(1));
+    expect(after.line.pattern, 1);
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('arrowed Flow Animation / custom dash bake markers then dashes', () {
+    VsdxShape arrowed({
+      required int id,
+      required String name,
+      required VsdxShape Function(VsdxShape) decorate,
+    }) {
+      return decorate(
+        VsdxShapeFactory.line(
+          id: id,
+          ax: 1,
+          ay: 3,
+          bx: 7,
+          by: 3,
+          name: name,
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.04,
+            pattern: 1,
+            beginArrow: 0,
+            endArrow: 4,
+            endArrowSizeInches: 0.125,
+          ),
+        ),
+      );
+    }
+
+    final flow = arrowed(
+      id: 1,
+      name: 'FlowDashArrow',
+      decorate: (shape) => shape.withFlowAnimation(true),
+    );
+    final custom = arrowed(
+      id: 2,
+      name: 'CustomDashArrow',
+      decorate: (shape) => shape.withDrawioDashPattern(const <double>[8, 8]),
+    );
+    expect(shapeNeedsLibvisioFlowDashBake(flow), isTrue);
+    expect(shapeNeedsLibvisioCustomDashBake(custom), isTrue);
+    expect(shapeNeedsLibvisioArrowedStrokeBake(flow), isTrue);
+    expect(shapeNeedsLibvisioArrowedStrokeBake(custom), isTrue);
+
+    for (final shape in <VsdxShape>[flow, custom]) {
+      final write = libvisioShapeWrite(shape);
+      expect(write.line.beginArrow, 0);
+      expect(write.line.endArrow, 0);
+      expect(
+        write.geometries.where((geometry) => !geometry.noFill).length,
+        1,
+        reason: '${shape.name} must keep one filled arrow Geometry so Draw '
+            'does not hang a marker on every open dash',
+      );
+      var moves = 0;
+      for (final geometry in write.geometries) {
+        if (!geometry.noFill) continue;
+        for (final command in geometry.commands) {
+          if (command is MoveTo) moves++;
+        }
+      }
+      expect(moves, greaterThan(1),
+          reason: '${shape.name} must still flatten dashes after baking the '
+              'arrow');
+    }
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(flow).addShape(custom),
+    );
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final page = parser.parse(saved).pages.first;
+    for (final name in <String>['FlowDashArrow', 'CustomDashArrow']) {
+      final after = page.shapes.firstWhere((s) => s.name == name);
+      expect(after.line.endArrow, 0);
+      expect(after.flowAnimation, isFalse);
+      expect(
+        after.geometries.where((geometry) => !geometry.noFill).length,
+        1,
+      );
+    }
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
