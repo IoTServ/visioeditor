@@ -109,8 +109,10 @@
 /// opaque outline. Rounding fillets join that plate so Draw does not
 /// keep square corners after the fill is dropped.
 /// `ShadowBlur` is not a token,
-/// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. A Foreign
-/// picture with blur bakes the same filled image-frame silhouette. PageSheet
+/// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. Theme-only
+/// colour resolves through the document theme then Office into that PNG.
+/// A Foreign picture with blur bakes the same filled image-frame silhouette.
+/// PageSheet
 /// `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not tokens, so a
 /// hard-edged shadow bakes a sheared vector sibling and a blurred shadow
 /// bakes a sheared Gaussian PNG.
@@ -3029,6 +3031,78 @@ void main() {
     final oracleSoft = LibvisioOracle.tryLoad();
     if (oracleSoft == null) return;
     expect(oracleSoft.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('theme-only ShadowBlur bakes a Gaussian PNG for LibreOffice', () {
+    const slot = ThemeSlot.accent2;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'ShadowTheme',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        themeColorIndex: slot,
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0.08,
+        transparency: 0.2,
+      ),
+    );
+    expect(shapeNeedsLibvisioShadowBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioShadowBake(
+        shape.copyWith(shadow: shape.shadow.copyWith(blurInches: 0)),
+      ),
+      isFalse,
+      reason: 'hard theme-only shadows stay native so THEMEVAL survives',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shadow.enabled, isFalse);
+    expect(source.shadow.blurInches, closeTo(0, 1e-9));
+    expect(source.shadow.themeColorIndex, slot);
+    expect(source.fill.pattern, 1, reason: 'shadow bake keeps the source fill');
+    final plates = baked.pages.first.shapes.where(isLibvisioShadowPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    var ink = 0;
+    for (var y = 0; y < decoded!.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          ink++;
+        }
+      }
+    }
+    expect(ink, greaterThan(8),
+        reason: 'theme slot $slot (${expected.value.toRadixString(16)}) '
+            'must freeze into the Gaussian PNG, not a hard draw:shadow');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Shadow plate',
+    );
   });
 
   test('page oblique shadow bakes a sheared sibling for LibreOffice', () {

@@ -2849,7 +2849,9 @@ void main() {
     expect(pageXml.contains('N="QuickStyleEffectColor"'), isTrue);
     expect(pageXml.contains('THEMEVAL()'), isTrue);
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
-    expect(after.shadow.enabled, isTrue);
+    expect(after.shadow.enabled, isFalse,
+        reason:
+            'theme-only ShadowBlur bakes a Gaussian PNG so Draw keeps the blur');
     expect(after.shadow.themeColorIndex, ThemeSlot.accent1);
     expect(after.shadow.color, isNull);
     expect(after.glow.enabled, isFalse,
@@ -2871,6 +2873,23 @@ void main() {
           .hasImage,
       isTrue,
       reason: 'theme-only Glow bakes a Gaussian PNG so Draw keeps the blur',
+    );
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
+    expect(
+      parser
+          .parse(saved)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShadowPlate)
+          .single
+          .hasImage,
+      isTrue,
+      reason:
+          'theme-only ShadowBlur bakes a Gaussian PNG so Draw keeps the blur',
     );
   });
 

@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only ShadowBlur now keeps the Gaussian silhouette in
+  LibreOffice. `ShadowBlur` is not a token; a save used to skip
+  theme-only ShdwForegnd so Draw painted a hard `draw:shadow`, while
+  canvas `_drawShadow` already blurs `_colourOrTheme`. A save now
+  resolves the slot (document theme, then Office) into the same PNG
+  plate RGB shadows use.
 - Theme-only unfilled-stroke Reflection now keeps the mirror in
   LibreOffice. `Reflection*` is not a token; a save used to skip
   theme-only LineColor so Draw dropped the band, while canvas

@@ -2517,6 +2517,33 @@ void main() {
         ),
       ),
     );
+    var shadowThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final shadowThemePage = shadowThemeDocument.pages.first;
+    shadowThemeDocument = shadowThemeDocument.replacePage(
+      0,
+      shadowThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: shadowThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ShadowThemePng',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            themeColorIndex: ThemeSlot.accent6,
+            offsetXInches: 0.4,
+            offsetYInches: -0.35,
+            blurInches: 0.15,
+            transparency: 0.35,
+          ),
+        ),
+      ),
+    );
     var glowPngDocument = parser.parse(blank);
     final glowPngPage = glowPngDocument.pages.first;
     glowPngDocument = glowPngDocument.replacePage(
@@ -3863,6 +3890,10 @@ void main() {
       'shadow_blur': writer.write(
         originalBytes: blank,
         edited: shadowBlurDocument,
+      ),
+      'shadow_theme': writer.write(
+        originalBytes: blank,
+        edited: shadowThemeDocument,
       ),
       'glow_png': writer.write(
         originalBytes: blank,
@@ -5597,6 +5628,81 @@ void main() {
             lessThan(220),
             reason: 'LibreOffice must paint the Gaussian shadow halo past '
                 'the hard-offset box; body=$body halo=$halo',
+          );
+        }
+        if (entry.key == 'shadow_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ShadowThemePng');
+          expect(source.shadow.enabled, isFalse);
+          expect(source.shadow.blurInches, closeTo(0, 1e-9));
+          expect(source.fill.pattern, 1);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioShadowPlate).single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.width, greaterThan(source.width));
+        }
+        if (entry.key == 'shadow_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final halo = mean(6.22, 5.3, 6.38, 5.7);
+          expect(
+            body.r,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source fill; '
+                'bodyR=${body.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.g,
+            greaterThan(halo.r + 8),
+            reason: 'LibreOffice must paint the Gaussian Office accent6 '
+                'shadow past the hard-offset box; bodyR=${body.r} '
+                'haloG=${halo.g} haloR=${halo.r}',
           );
         }
         if (entry.key == 'glow_png') {
