@@ -3285,6 +3285,48 @@ void main() {
             ),
       ),
     );
+    var edgeLabelDocument = parser.parse(blank);
+    final edgeLabelPage = edgeLabelDocument.pages.first;
+    edgeLabelDocument = edgeLabelDocument.replacePage(
+      0,
+      edgeLabelPage.addShape(
+        VsdxShapeFactory.line(
+          id: edgeLabelPage.nextFreeShapeId(),
+          ax: 1,
+          ay: 7,
+          bx: 7,
+          by: 1,
+          name: 'EdgeLabel',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.02,
+          ),
+        ).copyWith(
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(6, 0),
+                LineTo(6, -6),
+              ],
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'MMM',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFF000000),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var customDashDocument = parser.parse(blank);
     final customDashPage = customDashDocument.pages.first;
     customDashDocument = customDashDocument.replacePage(
@@ -3864,6 +3906,10 @@ void main() {
       'auto_rotate': writer.write(
         originalBytes: blank,
         edited: autoRotateDocument,
+      ),
+      'edge_label': writer.write(
+        originalBytes: blank,
+        edited: edgeLabelDocument,
       ),
       'custom_dash': writer.write(
         originalBytes: blank,
@@ -7239,6 +7285,22 @@ void main() {
           );
           expect(source.richText.textBlock.widthInches, greaterThan(0.5));
         }
+        if (entry.key == 'edge_label') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes.single;
+          expect(source.richText.textBlock.pinXInches, isNotNull);
+          expect(source.richText.textBlock.pinYInches, isNotNull);
+          final pin = reopened.pages.first.localToPageDeep(
+            source.id,
+            Offset2D(
+              source.richText.textBlock.pinXInches!,
+              source.richText.textBlock.pinYInches!,
+            ),
+          );
+          expect(pin.x, closeTo(7, 0.2));
+          expect(pin.y, closeTo(7, 0.2));
+          expect(source.richText.textBlock.widthInches, greaterThan(0.5));
+        }
         if (entry.key == 'auto_rotate' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
@@ -7299,6 +7361,66 @@ void main() {
             lessThan(tangentInk),
             reason: 'LibreOffice must not leave the label axis-aligned; '
                 'tangent=$tangentInk horizontal=$horizontalInk',
+          );
+        }
+        if (entry.key == 'edge_label' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+
+          int darkCount(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < 180) count++;
+              }
+            }
+            return count;
+          }
+
+          // Elbow (7, 7) vs Begin–End box centre (4, 4).
+          final elbowInk = darkCount(6.55, 6.55, 7.45, 7.45);
+          final boxInk = darkCount(3.55, 3.55, 4.45, 4.45);
+          expect(
+            elbowInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the label on the route elbow; '
+                'elbow=$elbowInk box=$boxInk',
+          );
+          expect(
+            boxInk,
+            lessThan(3),
+            reason: 'LibreOffice must not park the label at the 1-D box '
+                'centre; elbow=$elbowInk box=$boxInk',
           );
         }
         if (entry.key == 'custom_dash') {

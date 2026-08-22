@@ -123,7 +123,9 @@
 /// TxtPin extra-mirror. Sketch jiggle with open arrows bakes arrow Geometry
 /// on the source and drops markers from the jiggle plates. draw.io Rotate with Edge is also a
 /// User row, so a save writes `TxtAngle` and drops `veAutoRotateLabel`.
-/// draw.io Flow Animation is also a User row, so a save flattens the
+/// Glueable 1-D labels with no `TxtPin` also write that route midpoint
+/// into `TxtPin` / a tight `TxtWidth` so Draw does not use the Begin–End
+/// box. draw.io Flow Animation is also a User row, so a save flattens the
 /// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
 /// Begin/EndArrow as Geometry first so Draw does not hang a marker on
@@ -3692,6 +3694,113 @@ void main() {
         documentForLibvisioWrite(doc).pages.first.findShapeById(2)!;
     expect(bakedHoriz.autoRotateLabel, isFalse);
     expect(bakedHoriz.richText.textBlock.angleRad, closeTo(0, 1e-6));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('loose connector labels bake TxtPin on the route midpoint', () {
+    const label = VsdxRichText(
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'MMM',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.4,
+            color: VsdxColor(0xFF000000),
+          ),
+        ),
+      ],
+    );
+    final elbow = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'EdgeLabel',
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(6, 0),
+            LineTo(6, -6),
+          ],
+        ),
+      ],
+      richText: label,
+    );
+    expect(shapeNeedsLibvisioLooseEdgeLabelBake(elbow), isTrue);
+    expect(
+      shapeNeedsLibvisioLooseEdgeLabelBake(
+        VsdxShapeFactory.rectangle(
+          id: 9,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(richText: label),
+      ),
+      isFalse,
+    );
+    expect(
+      shapeNeedsLibvisioLooseEdgeLabelBake(
+        elbow.copyWith(
+          richText: label.copyWith(
+            textBlock: const VsdxTextBlock(pinXInches: 1, pinYInches: 1),
+          ),
+        ),
+      ),
+      isFalse,
+      reason: 'an authored TxtPin must stay native',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(elbow));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final route = baked.pages.first.drawnConnectorPagePolyline(source);
+    expect(route.length, greaterThanOrEqualTo(3));
+    expect(source.richText.textBlock.pinXInches, isNotNull);
+    expect(source.richText.textBlock.pinYInches, isNotNull);
+    final pagePin = baked.pages.first.localToPageDeep(
+      source.id,
+      Offset2D(
+        source.richText.textBlock.pinXInches!,
+        source.richText.textBlock.pinYInches!,
+      ),
+    );
+    // Route midpoint is the elbow (7, 7), not the Begin–End centre (4, 4).
+    expect(pagePin.x, closeTo(7, 0.2));
+    expect(pagePin.y, closeTo(7, 0.2));
+    expect(source.richText.textBlock.widthInches, greaterThan(0.5));
+    expect(source.richText.textBlock.heightInches, greaterThan(0.2));
+    expect(source.richText.textBlock.angleRad, closeTo(0, 1e-9));
+    expect(
+      shapeNeedsLibvisioLooseEdgeLabelBake(
+        documentForLibvisioWrite(baked).pages.first.findShapeById(1)!,
+      ),
+      isFalse,
+      reason: 'a second save must not move TxtPin again',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.richText.textBlock.pinXInches, isNotNull);
+    final savedPin = savedDoc.pages.first.localToPageDeep(
+      after.id,
+      Offset2D(
+        after.richText.textBlock.pinXInches!,
+        after.richText.textBlock.pinYInches!,
+      ),
+    );
+    expect(savedPin.x, closeTo(7, 0.2));
+    expect(savedPin.y, closeTo(7, 0.2));
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

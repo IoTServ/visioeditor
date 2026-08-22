@@ -186,7 +186,11 @@
 /// siblings in the same outline bands canvas / SVG already paint, hides
 /// the source and drops the User row. FlipX / FlipY use the same TxtPin
 /// extra-mirror. Open arrowheads no longer block Sketch jiggle: plates
-/// drop Begin/EndArrow and the source keeps filled arrow Geometry. draw.io Rotate with Edge is
+/// drop Begin/EndArrow and the source keeps filled arrow Geometry. Glueable
+/// 1-D labels with no `TxtPin` sit on the drawn-route midpoint on canvas /
+/// SVG; Draw uses the 1-D XForm box (`m_txtxform` falls back to `m_xform`),
+/// so a save writes that midpoint into `TxtPin` / a tight `TxtWidth`.
+/// draw.io Rotate with Edge is
 /// `User.veAutoRotateLabel` (not a token), so a save writes the route
 /// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
 /// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
@@ -263,8 +267,10 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                     bakeShapeOpacityForLibvisioWrite(
                                       bakeLangIdRtlForLibvisioWrite(
                                         bakeOverlineForLibvisioWrite(
-                                          bakeAutoRotateLabelForLibvisioWrite(
-                                            hopped,
+                                          bakeLooseEdgeLabelForLibvisioWrite(
+                                            bakeAutoRotateLabelForLibvisioWrite(
+                                              hopped,
+                                            ),
                                           ),
                                         ),
                                       ),
@@ -4553,6 +4559,74 @@ bool _autoRotateLabelDefaultFrame(VsdxShape shape) {
       block.heightInches == null;
 }
 
+bool _hasLooseEdgeLabelText(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  final plain =
+      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
+  return plain.trim().isNotEmpty;
+}
+
+/// Pin a tight text box on the drawn-route midpoint canvas / SVG already use.
+///
+/// LibreOffice's collector falls back to the 1-D XForm (`m_xform.width/2`)
+/// when `m_txtxform` is missing, which is the Begin–End box — not the
+/// polyline. TxtPin / TxtWidth *are* collected.
+VsdxShape _applyLooseEdgeLabelFrame(VsdxShape shape, VsdxPage page) {
+  if (!_autoRotateLabelDefaultFrame(shape)) return shape;
+  final previous = shape.richText.textBlock;
+  final style = shape.richText.runs.isNotEmpty
+      ? shape.richText.runs.first.charStyle
+      : VsdxCharStyle.defaults;
+  final plain =
+      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
+  final lines =
+      plain.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+  var fs = math.max(style.effectiveFontSizeInchesForText(plain), 0.04);
+  if (style.position != VsdxTextPosition.normal) fs *= 0.7;
+  final lineHeight = fs * kLibreOfficeFontCellLineHeightFactor;
+  final tw = math.max(
+    nowrapLabelAdvanceInches(shape) +
+        previous.marginLeftInches +
+        previous.marginRightInches +
+        0.06,
+    0.2,
+  );
+  final th = math.max(
+    lines.length * lineHeight +
+        previous.marginTopInches +
+        previous.marginBottomInches,
+    0.2,
+  );
+  final route = page.drawnConnectorPagePolyline(shape);
+  final mid = route.length >= 2
+      ? _libvisioRouteMidpoint(route)
+      : VsdxPage.connectorMidpoint(shape);
+  final local = page.pageToLocalDeep(shape.id, mid);
+  return shape.copyWith(
+    richText: shape.richText.copyWith(
+      textBlock: VsdxTextBlock(
+        pinXInches: local.x,
+        pinYInches: local.y,
+        locPinXInches: tw / 2,
+        locPinYInches: th / 2,
+        widthInches: tw,
+        heightInches: th,
+        angleRad: previous.angleRad,
+        verticalAlign: previous.verticalAlign,
+        marginLeftInches: previous.marginLeftInches,
+        marginRightInches: previous.marginRightInches,
+        marginTopInches: previous.marginTopInches,
+        marginBottomInches: previous.marginBottomInches,
+        hideText: previous.hideText,
+        backgroundColor: previous.backgroundColor,
+        backgroundTransparency: previous.backgroundTransparency,
+        textDirection: previous.textDirection,
+        defaultTabStopInches: previous.defaultTabStopInches,
+      ),
+    ),
+  );
+}
+
 VsdxShape _sourceForLibvisioAutoRotateLabelWrite(
   VsdxShape shape,
   VsdxPage page,
@@ -4561,57 +4635,18 @@ VsdxShape _sourceForLibvisioAutoRotateLabelWrite(
     for (final cell in shape.userCells)
       if (cell.name != VsdxShape.userAutoRotateLabel) cell,
   ];
+  final framed = _applyLooseEdgeLabelFrame(shape, page);
+  final previous = framed.richText.textBlock;
   final angle = page.effectiveConnectorLabelAngle(shape);
-  final previous = shape.richText.textBlock;
-  var pinX = previous.pinXInches;
-  var pinY = previous.pinYInches;
-  var locPinX = previous.locPinXInches;
-  var locPinY = previous.locPinYInches;
-  var tw = previous.widthInches;
-  var th = previous.heightInches;
-  if (_autoRotateLabelDefaultFrame(shape)) {
-    final style = shape.richText.runs.isNotEmpty
-        ? shape.richText.runs.first.charStyle
-        : VsdxCharStyle.defaults;
-    final plain =
-        shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
-    final lines =
-        plain.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
-    var fs = math.max(style.effectiveFontSizeInchesForText(plain), 0.04);
-    if (style.position != VsdxTextPosition.normal) fs *= 0.7;
-    final lineHeight = fs * kLibreOfficeFontCellLineHeightFactor;
-    tw = math.max(
-      nowrapLabelAdvanceInches(shape) +
-          previous.marginLeftInches +
-          previous.marginRightInches +
-          0.06,
-      0.2,
-    );
-    th = math.max(
-      lines.length * lineHeight +
-          previous.marginTopInches +
-          previous.marginBottomInches,
-      0.2,
-    );
-    final route = page.drawnConnectorPagePolyline(shape);
-    final mid = route.length >= 2
-        ? _libvisioRouteMidpoint(route)
-        : VsdxPage.connectorMidpoint(shape);
-    final local = page.pageToLocalDeep(shape.id, mid);
-    pinX = local.x;
-    pinY = local.y;
-    locPinX = tw / 2;
-    locPinY = th / 2;
-  }
   // `copyWith(angleRad: 0)` cannot clear a previous TxtAngle because `??`
   // treats 0 as absent. Reconstruct so a horizontal route still writes 0.
   final block = VsdxTextBlock(
-    pinXInches: pinX,
-    pinYInches: pinY,
-    locPinXInches: locPinX,
-    locPinYInches: locPinY,
-    widthInches: tw,
-    heightInches: th,
+    pinXInches: previous.pinXInches,
+    pinYInches: previous.pinYInches,
+    locPinXInches: previous.locPinXInches,
+    locPinYInches: previous.locPinYInches,
+    widthInches: previous.widthInches,
+    heightInches: previous.heightInches,
     angleRad: angle,
     verticalAlign: previous.verticalAlign,
     marginLeftInches: previous.marginLeftInches,
@@ -4624,9 +4659,9 @@ VsdxShape _sourceForLibvisioAutoRotateLabelWrite(
     textDirection: previous.textDirection,
     defaultTabStopInches: previous.defaultTabStopInches,
   );
-  return shape.copyWith(
+  return framed.copyWith(
     userCells: others,
-    richText: shape.richText.copyWith(textBlock: block),
+    richText: framed.richText.copyWith(textBlock: block),
   );
 }
 
@@ -4663,6 +4698,74 @@ VsdxDocument bakeAutoRotateLabelForLibvisioWrite(VsdxDocument document) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
         bakeAutoRotateLabelShapeForLibvisioWrite(shape, page),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// `true` when a glueable connector label with no `TxtPin` must become a
+/// tight `TxtPin` / `TxtWidth` box Draw will collect.
+///
+/// LibreOffice only calls `VisioDocument::parse`. Missing `m_txtxform`
+/// falls back to the 1-D XForm centre (Begin–End box). Canvas / SVG pin
+/// a tight plate on the drawn-route midpoint. Rotate-with-Edge already
+/// writes that frame; this covers labels that are not auto-rotated.
+bool shapeNeedsLibvisioLooseEdgeLabelBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.isGlueableConnector) return false;
+  if (!_autoRotateLabelDefaultFrame(shape)) return false;
+  return _hasLooseEdgeLabelText(shape);
+}
+
+VsdxShape bakeLooseEdgeLabelShapeForLibvisioWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeLooseEdgeLabelShapeForLibvisioWrite(child, page),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shapeNeedsLibvisioLooseEdgeLabelBake(shape)
+      ? _applyLooseEdgeLabelFrame(shape, page)
+      : shape;
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Write TxtPin on the route midpoint so Draw matches canvas edge labels.
+VsdxDocument bakeLooseEdgeLabelForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeLooseEdgeLabelShapeForLibvisioWrite(shape, page),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

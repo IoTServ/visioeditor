@@ -583,6 +583,10 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Connector labels without `TxtPin` now sit on the route midpoint in
+  LibreOffice. Draw used the 1-D XForm box (Begin–End centre) when
+  `m_txtxform` was missing; canvas / SVG already pin a tight plate on
+  the polyline. A save writes that midpoint into `TxtPin` / `TxtWidth`.
 - Digit-only Arabic / Hebrew `LangID` runs now keep RTL layout in
   LibreOffice. Character `LangID` is not a token; Draw used to lay out
   `"123"` as LTR. A save prefixes U+200F when canvas / SVG already treat
