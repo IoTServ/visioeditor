@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only unfilled-stroke Reflection now keeps the mirror in
+  LibreOffice. `Reflection*` is not a token; a save used to skip
+  theme-only LineColor so Draw dropped the band, while canvas
+  `_drawReflection` already paints `_colourOrTheme`. A save now resolves
+  the slot (document theme, then Office) into the same PNG band RGB
+  strokes use.
 - Theme-only Glow now keeps the Gaussian halo in LibreOffice. Glow* is
   not a token; a save used to emit a hard LineWeight / Fill ribbon so
   THEMEVAL() survived, while canvas `_drawGlow` already blurs the theme

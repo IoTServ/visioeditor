@@ -151,7 +151,8 @@
 /// built-in LinePattern 2–23, `veDashPattern`, and CompoundType 1–4 rails
 /// go into that band as ribbons so Draw does not keep a solid ring or
 /// drop the mirror; a resolved-RGB LineGradient is sampled into the same
-/// band so Draw does not keep a solid LineColor ring), an unfilled 1-D
+/// band so Draw does not keep a solid LineColor ring; theme-only LineColor
+/// resolves into that PNG so Draw keeps the mirror), an unfilled 1-D
 /// stroke bakes the same PNG band from its stroke ribbon (a Foreign plate
 /// cannot use a zero-height 1-D XForm, and canvas `_drawReflection`
 /// already inflates that degenerate bounds by half LineWeight),
@@ -618,8 +619,8 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
 /// them; CompoundType is not a token, so skipping the bake would drop the
 /// mirror). A resolved-RGB LineGradient is sampled into the same band
 /// (`tokens.txt` has no LineGradient; a solid LineColor ring would hide
-/// the wash). Theme-only stroke colours stay native so THEMEVAL()
-/// survives. FlipY is applied when placing the plate (`_reflectFillRing`)
+/// the wash). Theme-only LineColor resolves into that PNG the same way
+/// canvas `_colourOrTheme` does. FlipY is applied when placing the plate (`_reflectFillRing`)
 /// — copying FlipY onto the PNG would mirror the already-placed band
 /// twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
@@ -629,8 +630,6 @@ bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (!shape.line.hasLine) return false;
   if (shape.line.hasGradient) {
     if (_softEdgesLineColorAt(shape) == null) return false;
-  } else if (shape.line.color == null && shape.line.themeColorIndex != null) {
-    return false;
   }
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
@@ -792,6 +791,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
 
 ({Uint8List png, double padInches})? _strokeReflectionPngForLibvisioWrite(
   VsdxShape shape,
+  VsdxTheme theme,
 ) {
   var ribbons = _softEdgesStrokeRibbonPolygons(shape);
   if (ribbons.isEmpty && shape.is1D) {
@@ -812,7 +812,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
         )
       : null;
   if (shape.line.hasGradient && lineColorAt == null) return null;
-  final color = shape.line.color ?? const VsdxColor(0xFF000000);
+  final color = _lineRgbForLibvisioWrite(shape.line, theme);
   final alpha = lineColorAt != null
       ? 255
       : (color.alpha * (1 - trans)).round().clamp(0, 255);
@@ -984,6 +984,7 @@ List<VsdxShape> _bakeReflectionTree(
   required ImageRegistry images,
   required String Function(int shapeId) allocatePart,
   required void Function(VsdxImage image) addImage,
+  required VsdxTheme theme,
 }) {
   final out = <VsdxShape>[];
   var changed = false;
@@ -1001,6 +1002,7 @@ List<VsdxShape> _bakeReflectionTree(
         images: images,
         allocatePart: allocatePart,
         addImage: addImage,
+        theme: theme,
       );
       if (!identical(children, shape.children)) {
         next = shape.copyWith(children: children);
@@ -1012,7 +1014,7 @@ List<VsdxShape> _bakeReflectionTree(
       ({Uint8List png, double padInches})? payload;
       var pngPlateFlipY = false;
       if (_shapeCanLibvisioStrokeReflectionPng(next)) {
-        payload = _strokeReflectionPngForLibvisioWrite(next);
+        payload = _strokeReflectionPngForLibvisioWrite(next, theme);
         // LocPin already follows FlipY via `_reflectFillRing`. Copying
         // FlipY onto the bitmap would mirror the band twice.
         pngPlateFlipY = false;
@@ -1111,6 +1113,7 @@ VsdxDocument bakeReflectionForLibvisioWrite(VsdxDocument document) {
         registry = registry.withImage(image);
         changed = true;
       },
+      theme: document.theme,
     );
     if (identical(shapes, page.shapes)) {
       pages.add(page);
@@ -1226,6 +1229,17 @@ VsdxColor _glowRgbForLibvisioWrite(VsdxGlow glow, VsdxTheme theme) {
   return theme.resolve(slot) ??
       VsdxTheme.office.resolve(slot) ??
       _kLibvisioGlowFallback;
+}
+
+/// RGB canvas `_colourOrTheme` would stroke. Theme-only LineColor still
+/// has to freeze into a Reflection PNG because `Reflection*` is not a token.
+VsdxColor _lineRgbForLibvisioWrite(VsdxLine line, VsdxTheme theme) {
+  if (line.color != null) return line.color!;
+  final slot = line.themeColorIndex;
+  if (slot == null) return const VsdxColor(0xFF000000);
+  return theme.resolve(slot) ??
+      VsdxTheme.office.resolve(slot) ??
+      const VsdxColor(0xFF000000);
 }
 
 ({Uint8List png, double padInches})? _glowPngForLibvisioWrite(

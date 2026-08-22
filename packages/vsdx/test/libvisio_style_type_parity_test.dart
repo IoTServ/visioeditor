@@ -75,7 +75,8 @@
 /// 1-D stroke bakes the same PNG from its stroke ribbon, and a Foreign
 /// picture bakes a locked Gaussian PNG sibling of the same mirrored bitmap
 /// canvas / SVG already paint (cropped pictures composite the Img*
-/// window into the frame first). Glow on a filled
+/// window into the frame first). Theme-only LineColor on an unfilled
+/// stroke resolves into that PNG so Draw keeps the mirror. Glow on a filled
 /// shape that already paints a stroke, a filled NoLine 2-D, or an unfilled
 /// 2-D stroke, bakes a locked Gaussian PNG sibling when RGB is resolved,
 /// then `GlowSize` is written 0. A Foreign picture
@@ -4317,10 +4318,10 @@ void main() {
     expect(reflectionForLibvisioWrite(shape).sizeInches, 0);
     expect(
       shapeNeedsLibvisioReflectionBake(
-        shape.copyWith(line: shape.line.withThemeColor(1)),
+        shape.copyWith(line: shape.line.withThemeColor(ThemeSlot.accent2)),
       ),
-      isFalse,
-      reason: 'a theme-only stroke keeps the cell so THEMEVAL() survives',
+      isTrue,
+      reason: 'theme-only LineColor bakes a PNG so Draw keeps the mirror',
     );
     expect(
       shapeNeedsLibvisioReflectionBake(shape.copyWith(flipY: true)),
@@ -4459,6 +4460,126 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('theme-only stroke Reflection bakes a PNG band for LibreOffice', () {
+    const slot = ThemeSlot.accent2;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'ThemeStrokeMirror',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        weightInches: 0.04,
+        themeColorIndex: slot,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 0.5,
+        distanceInches: 0.08,
+        transparency: 0.3,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+    expect(shape.line.color, isNull);
+    expect(shape.line.themeColorIndex, slot);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.locked, isTrue);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.themeColorIndex, slot);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    var ink = 0;
+    for (var y = 0; y < decoded.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          ink++;
+        }
+      }
+    }
+    expect(ink, greaterThan(8),
+        reason: 'theme slot $slot (${expected.value.toRadixString(16)}) '
+            'must freeze into the mirrored stroke PNG');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioReflectionPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Reflection plate',
+    );
+
+    final stroke = VsdxShapeFactory.line(
+      id: 2,
+      ax: 2,
+      ay: 5.5,
+      bx: 6.5,
+      by: 5.5,
+      name: 'ThemeStrokeMirror1d',
+      line: const VsdxLine(
+        weightInches: 0.08,
+        themeColorIndex: slot,
+      ),
+    ).copyWith(
+      reflection: const VsdxReflection(
+        enabled: true,
+        sizeInches: 1,
+        distanceInches: 0.1,
+        transparency: 0.2,
+        blurInches: 0,
+      ),
+    );
+    expect(shapeNeedsLibvisioReflectionBake(stroke), isTrue);
+    var strokeDoc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    strokeDoc =
+        strokeDoc.replacePage(0, strokeDoc.pages.first.addShape(stroke));
+    final bakedStroke = documentForLibvisioWrite(strokeDoc);
+    final strokePlate =
+        bakedStroke.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+    expect(strokePlate.hasImage, isTrue);
+    expect(strokePlate.is1D, isFalse);
+    final strokePng = raster.decodePng(
+      bakedStroke.images.findByPart(strokePlate.imagePartName!)!.bytes,
+    )!;
+    var strokeInk = 0;
+    for (var y = 0; y < strokePng.height; y++) {
+      for (var x = 0; x < strokePng.width; x++) {
+        final pixel = strokePng.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          strokeInk++;
+        }
+      }
+    }
+    expect(strokeInk, greaterThan(8),
+        reason: 'theme-only 1-D must freeze Office accent2 into the PNG band');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.reflection.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes
+          .where(isLibvisioReflectionPlate)
+          .single
+          .hasImage,
+      isTrue,
+    );
   });
 
   test('dashed unfilled stroke Reflection bakes dash gaps for LibreOffice', () {
