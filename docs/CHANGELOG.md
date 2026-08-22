@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Unfilled 1-D stroke Glow now keeps the Gaussian halo in LibreOffice.
+  Canvas `_drawGlow` blurs a path stroke; a save used to emit a hard
+  FillForegndTrans ribbon because Foreign cannot hang on a zero-height
+  1-D XForm (`Glow*` is not a token). A 2-D PNG plate is sized to the
+  glow ribbon. Theme-only 1-D still uses the ribbon so THEMEVAL()
+  survives.
 - Filled LineColorTrans / LineGradient with LinePattern 2–23 now keep dash
   gaps in LibreOffice. Draw used to skip the sibling ribbon (opaque dashes
   on the body). A save puts per-dash filled ribbons on the locked sibling

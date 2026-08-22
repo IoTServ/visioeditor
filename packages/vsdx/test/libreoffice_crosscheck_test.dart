@@ -1445,8 +1445,14 @@ void main() {
     final glowStroke = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowStroke');
     expect(glowStroke.glow.enabled, isFalse);
-    expect(glowStroke.fill.hasFill, isTrue);
-    expect(glowStroke.geometries.any((g) => !g.noFill), isTrue);
+    expect(glowStroke.fill.hasFill, isFalse);
+    expect(glowStroke.line.pattern, 1);
+    final glowStrokePlate = reopenedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowStroke.id}',
+    );
+    expect(glowStrokePlate.hasImage, isTrue);
+    expect(glowStrokePlate.is1D, isFalse);
+    expect(glowStrokePlate.height, greaterThan(0.1));
     final glowNoFill = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowNoFill');
     expect(glowNoFill.glow.enabled, isFalse);
@@ -2511,6 +2517,31 @@ void main() {
         ),
       ),
     );
+    var glowStroke1dDocument = parser.parse(blank);
+    final glowStroke1dPage = glowStroke1dDocument.pages.first;
+    glowStroke1dDocument = glowStroke1dDocument.replacePage(
+      0,
+      glowStroke1dPage.addShape(
+        VsdxShapeFactory.line(
+          id: glowStroke1dPage.nextFreeShapeId(),
+          ax: 2,
+          ay: 5.5,
+          bx: 6.5,
+          by: 5.5,
+          name: 'GlowStroke1d',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.08,
+          ),
+        ).copyWith(
+          glow: const VsdxGlow(
+            color: VsdxColor(0xFFFF00FF),
+            sizeInches: 0.16,
+            transparency: 0.2,
+          ),
+        ),
+      ),
+    );
     var glowStrokeCompoundDocument = parser.parse(blank);
     final glowStrokeCompoundPage = glowStrokeCompoundDocument.pages.first;
     glowStrokeCompoundDocument = glowStrokeCompoundDocument.replacePage(
@@ -3542,6 +3573,10 @@ void main() {
       'glow_stroke': writer.write(
         originalBytes: blank,
         edited: glowStrokeDocument,
+      ),
+      'glow_stroke_1d': writer.write(
+        originalBytes: blank,
+        edited: glowStroke1dDocument,
       ),
       'glow_stroke_compound': writer.write(
         originalBytes: blank,
@@ -5456,6 +5491,85 @@ void main() {
                 'LibreOffice must paint the Gaussian green glow ring, not a '
                 'hard FillForegndTrans ribbon; bodyR=${body.r} haloG=${halo.g} '
                 'haloR=${halo.r}',
+          );
+        }
+        if (entry.key == 'glow_stroke_1d') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GlowStroke1d');
+          expect(source.glow.enabled, isFalse);
+          expect(source.is1D, isTrue);
+          expect(source.fill.hasFill, isFalse);
+          expect(source.line.pattern, 1);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioGlowPlate).single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.is1D, isFalse);
+          expect(plate.height, greaterThan(0.2));
+        }
+        if (entry.key == 'glow_stroke_1d' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0, b: 0.0);
+            return (r: sumR / count, g: sumG / count, b: sumB / count);
+          }
+
+          final empty = mean(1.0, 2.0, 1.6, 2.6);
+          final sourceRail = mean(3.5, 5.47, 5.0, 5.53);
+          final halo = mean(3.5, 5.68, 5.0, 5.90);
+          expect(
+            sourceRail.r + sourceRail.g + sourceRail.b,
+            lessThan(empty.r + empty.g + empty.b - 30),
+            reason: 'LibreOffice must still stroke the 1-D source; '
+                'sourceRGB=${sourceRail.r},${sourceRail.g},${sourceRail.b}',
+          );
+          expect(
+            halo.g,
+            lessThan(empty.g - 8),
+            reason: 'LibreOffice must paint the 1-D magenta glow halo, not '
+                'drop it; haloG=${halo.g} emptyG=${empty.g} haloR=${halo.r}',
           );
         }
         if (entry.key == 'glow_stroke_compound') {

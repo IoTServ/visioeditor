@@ -31,10 +31,11 @@
 /// a save premultiplies those into RGB toward white. Overline still paints
 /// here even though `readCharIX` skips it; a save inserts U+0305 combining
 /// marks so Draw paints the line too. Glow* is not a token: unfilled
-/// 1-D strokes bake a FillForegndTrans ribbon, unfilled 2-D with resolved
-/// RGB bakes a Gaussian PNG ring, and filled NoLine shapes bake a
-/// Gaussian PNG sibling when RGB is resolved (theme-only NoLine still
-/// uses a LineWeight halo). Character ColorTrans and ShdwForegndTrans
+/// 1-D strokes with resolved RGB bake a Gaussian PNG plate, unfilled 2-D
+/// with resolved RGB bakes a Gaussian PNG ring, and filled NoLine shapes
+/// bake a Gaussian PNG sibling when RGB is resolved (theme-only NoLine
+/// still uses a LineWeight halo; theme-only 1-D still uses a
+/// FillForegndTrans ribbon). Character ColorTrans and ShdwForegndTrans
 /// cannot carry alpha through `xmlStringToColour`, so a save premultiplies
 /// those into RGB toward white and writes Trans=0 (theme-bound RGB-less
 /// cells keep THEMEVAL). Filled-shape LineColorTrans / LineGradient bake a
@@ -435,11 +436,11 @@ void main() {
         transparency: 0.5,
       ),
     );
-    expect(shapeNeedsLibvisioGlowBake(stroke), isTrue);
+    expect(shapeNeedsLibvisioGlowBake(stroke), isFalse,
+        reason: '1-D RGB bakes a Gaussian PNG plate, not a hard ribbon');
+    expect(shapeNeedsLibvisioGlowPlateBake(stroke), isTrue);
     final strokeWrite = libvisioShapeWrite(stroke);
-    expect(strokeWrite.fill.hasFill, isTrue);
-    expect(strokeWrite.fill.foregroundTransparency, greaterThan(0));
-    expect(strokeWrite.geometries.any((g) => !g.noFill), isTrue);
+    expect(strokeWrite.fill.hasFill, isFalse);
     expect(strokeWrite.line.hasLine, isTrue);
     expect(strokeWrite.line.weightInches, closeTo(0.04, 1e-9));
     expect(glowForLibvisioWrite(stroke).enabled, isFalse);
@@ -526,6 +527,72 @@ void main() {
     expect(unfilledWrite.line.hasLine, isTrue);
     expect(unfilledWrite.fill.hasFill, isFalse);
     expect(glowForLibvisioWrite(unfilled).enabled, isFalse);
+  });
+
+  test('1-D stroke Glow bakes a Gaussian PNG plate for LibreOffice', () {
+    const colour = VsdxColor(0xFFFF00FF);
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 2,
+      ay: 5.5,
+      bx: 6.5,
+      by: 5.5,
+      name: 'GlowStroke1d',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.06,
+      ),
+    ).copyWith(
+      glow: const VsdxGlow(
+        color: colour,
+        sizeInches: 0.12,
+        transparency: 0.25,
+      ),
+    );
+    expect(shape.is1D, isTrue);
+    expect(shape.height.abs(), closeTo(0, 1e-12));
+    expect(shapeNeedsLibvisioGlowBake(shape), isFalse);
+    expect(shapeNeedsLibvisioGlowPlateBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.is1D, isTrue);
+    expect(source.line.pattern, 1);
+    expect(source.fill.pattern, 0);
+    final plate = baked.pages.first.shapes.where(isLibvisioGlowPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.is1D, isFalse);
+    expect(plate.height, greaterThan(0.2));
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    var ink = 0;
+    for (var y = 0; y < decoded.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.r > pixel.g + 15 && pixel.b > pixel.g + 15 && pixel.a > 20) {
+          ink++;
+        }
+      }
+    }
+    expect(ink, greaterThan(8),
+        reason: 'the 1-D glow PNG must carry magenta halo ink, not an empty plate');
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(1),
+    );
+    expect(
+      savedDoc.pages.first.findShapeById(1)!.fill.hasFill,
+      isFalse,
+      reason: 'source must keep an unfilled stroke; the halo is the PNG plate',
+    );
   });
 
   test('Glow on a filled stroke bakes a sibling halo LibreOffice can collect',
@@ -6660,9 +6727,14 @@ void main() {
     final glowStroke =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowStroke');
     expect(glowStroke.glow.enabled, isFalse);
-    expect(glowStroke.fill.hasFill, isTrue);
-    expect(glowStroke.geometries.any((g) => !g.noFill), isTrue);
+    expect(glowStroke.fill.hasFill, isFalse);
     expect(glowStroke.line.hasLine, isTrue);
+    final glowStrokePlate = savedDoc.pages.first.shapes.firstWhere(
+      (s) => s.name == '$kLibvisioGlowShapeNamePrefix${glowStroke.id}',
+    );
+    expect(glowStrokePlate.hasImage, isTrue);
+    expect(glowStrokePlate.is1D, isFalse);
+    expect(glowStrokePlate.height, greaterThan(0.1));
     final glowNoFill =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowNoFill');
     expect(glowNoFill.glow.enabled, isFalse,
