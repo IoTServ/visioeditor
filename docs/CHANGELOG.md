@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Digit-only Arabic / Hebrew `LangID` runs now keep RTL layout in
+  LibreOffice. Character `LangID` is not a token; Draw used to lay out
+  `"123"` as LTR. A save prefixes U+200F when canvas / SVG already treat
+  the run as RTL from LangID. Strong Arabic / Hebrew letters are left
+  alone.
 - draw.io merged table cells now stay hidden in LibreOffice.
   `User.veCovered` is not a token; Draw used to paint the 0.01" park
   rectangle. A save writes Geometry `NoShow`, `HideText`,

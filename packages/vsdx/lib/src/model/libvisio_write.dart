@@ -40,7 +40,11 @@
 /// `readCharIX` only stores `Font` and `Size` — so an Asian-only (or
 /// complex-script-only) run whose Latin `Font` would tofu in Draw is
 /// rewritten to the Asian / complex face, and a complex-only run writes
-/// `ComplexScriptSize` into `Size`. `_lineProperties` derives `stroke-linejoin`
+/// `ComplexScriptSize` into `Size`. Character `LangID` is likewise absent
+/// (`readCharIX` has no case; `tokens.txt` has no LangID), so a digit or
+/// punctuation run that canvas / SVG already treat as RTL from LangID
+/// prefixes U+200F. Strong Arabic / Hebrew letters already set Unicode
+/// bidi, so those runs stay untouched. `_lineProperties` derives `stroke-linejoin`
 /// from `LineCap` only (round cap → round join, otherwise miter), so an
 /// explicit round / arcs join on a square/flat cap is baked with the same
 /// RelQuadBezTo fillets as shape-level Rounding, and a bevel join becomes a
@@ -243,23 +247,26 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     bakeCoveredForLibvisioWrite(
       bakeCollapsedForLibvisioWrite(
         bakeShapeInsideForLibvisioWrite(
-        bakeWordWrapForLibvisioWrite(
-          bakeLabelBorderForLibvisioWrite(
-            bakeLabelPaddingForLibvisioWrite(
-              bakeFilledStrokeRibbonForLibvisioWrite(
-                bakeGeometrySoftEdgesForLibvisioWrite(
-                  bakeReflectionForLibvisioWrite(
-                    bakeImageAdjustmentsForLibvisioWrite(
-                      bakeGlowPlateForLibvisioWrite(
-                        bakeGlassForLibvisioWrite(
-                          bakeSketchForLibvisioWrite(
-                            bakePageShadowForLibvisioWrite(
-                              bakeShadowForLibvisioWrite(
-                                bakeCurvedTextForLibvisioWrite(
-                                  bakeShapeOpacityForLibvisioWrite(
-                                    bakeOverlineForLibvisioWrite(
-                                      bakeAutoRotateLabelForLibvisioWrite(
-                                        hopped,
+          bakeWordWrapForLibvisioWrite(
+            bakeLabelBorderForLibvisioWrite(
+              bakeLabelPaddingForLibvisioWrite(
+                bakeFilledStrokeRibbonForLibvisioWrite(
+                  bakeGeometrySoftEdgesForLibvisioWrite(
+                    bakeReflectionForLibvisioWrite(
+                      bakeImageAdjustmentsForLibvisioWrite(
+                        bakeGlowPlateForLibvisioWrite(
+                          bakeGlassForLibvisioWrite(
+                            bakeSketchForLibvisioWrite(
+                              bakePageShadowForLibvisioWrite(
+                                bakeShadowForLibvisioWrite(
+                                  bakeCurvedTextForLibvisioWrite(
+                                    bakeShapeOpacityForLibvisioWrite(
+                                      bakeLangIdRtlForLibvisioWrite(
+                                        bakeOverlineForLibvisioWrite(
+                                          bakeAutoRotateLabelForLibvisioWrite(
+                                            hopped,
+                                          ),
+                                        ),
                                       ),
                                     ),
                                   ),
@@ -278,7 +285,6 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
         ),
       ),
     ),
-  ),
   );
 }
 
@@ -785,8 +791,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   if (ribbons.isEmpty && shape.is1D) {
     ribbons = _solidStrokeRibbonPolygons(shape);
   }
-  final kind =
-      shape.is1D ? null : _softEdgesStrokeSilhouetteKind(shape);
+  final kind = shape.is1D ? null : _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
   final trans = _combinedTransparency(
     shape.line.transparency,
@@ -820,8 +825,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   }
   if (w <= 1e-9 || h <= 1e-9) return null;
   final minPx = shape.is1D ? 16 : 8;
-  var innerWidthPx =
-      math.max(minPx, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerWidthPx = math.max(minPx, (w * kLibvisioSoftEdgesPxPerInch).round());
   var innerHeightPx =
       math.max(minPx, (h * kLibvisioSoftEdgesPxPerInch).round());
   const maxPx = 1024;
@@ -1283,8 +1287,8 @@ List<List<Offset2D>> _glowStrokeRibbonPolygons(VsdxShape shape) {
   if (aabb == null) {
     return (
       width: math.max(shape.width.abs(), 1e-6) + 2 * pad,
-      height: math.max(2 * math.max(shape.glow.sizeInches, 0.01), 1e-6) +
-          2 * pad,
+      height:
+          math.max(2 * math.max(shape.glow.sizeInches, 0.01), 1e-6) + 2 * pad,
       locPinX: shape.effectiveLocPinX + pad,
       locPinY: shape.effectiveLocPinY + pad,
     );
@@ -1312,8 +1316,7 @@ List<List<Offset2D>> _glowStrokeRibbonPolygons(VsdxShape shape) {
   final w = math.max(aabb.maxX - aabb.minX, 1e-6);
   final h = math.max(aabb.maxY - aabb.minY, 1e-6);
   const minPx = 16;
-  var innerWidthPx =
-      math.max(minPx, (w * kLibvisioSoftEdgesPxPerInch).round());
+  var innerWidthPx = math.max(minPx, (w * kLibvisioSoftEdgesPxPerInch).round());
   var innerHeightPx =
       math.max(minPx, (h * kLibvisioSoftEdgesPxPerInch).round());
   const maxPx = 1024;
@@ -1485,10 +1488,12 @@ VsdxShape _glowPngPlateForLibvisioWrite(
       : (
           width: source.width.abs() + pad * 2,
           height: source.height.abs() + pad * 2,
-          locPinX:
-              pad > 1e-12 ? source.effectiveLocPinX + pad : source.locPinXInches,
-          locPinY:
-              pad > 1e-12 ? source.effectiveLocPinY + pad : source.locPinYInches,
+          locPinX: pad > 1e-12
+              ? source.effectiveLocPinX + pad
+              : source.locPinXInches,
+          locPinY: pad > 1e-12
+              ? source.effectiveLocPinY + pad
+              : source.locPinYInches,
         );
   return VsdxShapeFactory.picture(
     id: id,
@@ -3420,8 +3425,7 @@ bool shapeNeedsLibvisioCoveredHideBake(VsdxShape shape) {
 
 VsdxShape bakeCoveredShapeForLibvisioWrite(VsdxShape shape) {
   final children = <VsdxShape>[
-    for (final child in shape.children)
-      bakeCoveredShapeForLibvisioWrite(child),
+    for (final child in shape.children) bakeCoveredShapeForLibvisioWrite(child),
   ];
   var next = shape;
   var changed = false;
@@ -3571,6 +3575,112 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
   for (final page in document.pages) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes) bakeOverlineShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// RIGHT-TO-LEFT MARK. Draw never reads Character `LangID`, so a save
+/// prefixes this when canvas / SVG already treat a digit/punctuation run
+/// as RTL from that cell.
+const kLibvisioRtlMark = '\u200F';
+
+bool _textHasStrongRightToLeft(String text) {
+  for (final rune in text.runes) {
+    if (isVisioRightToLeftRune(rune)) return true;
+  }
+  return false;
+}
+
+/// Prefix U+200F so Draw's Unicode bidi matches canvas LangID RTL.
+String textWithLibvisioRtlMark(String text) {
+  if (text.startsWith(kLibvisioRtlMark)) return text;
+  return '$kLibvisioRtlMark$text';
+}
+
+bool _runNeedsLibvisioLangIdRtlBake(VsdxTextRun run) {
+  final text = run.text;
+  if (text.trim().isEmpty) return false;
+  if (text.startsWith(kLibvisioRtlMark)) return false;
+  if (run.fieldSpans.isNotEmpty || run.tabIndices.isNotEmpty) return false;
+  if (_textHasStrongRightToLeft(text)) return false;
+  return isVisioRightToLeftText(text, langId: run.charStyle.langId);
+}
+
+/// `true` when Character LangID must become a leading U+200F for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has no
+/// LangID and `readCharIX` never stores it, so Draw lays out digit-only
+/// Arabic / Hebrew runs LTR. Canvas / SVG already use
+/// [isVisioRightToLeftText]. Strong RTL letters do not need the mark.
+bool shapeNeedsLibvisioLangIdRtlBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (_runNeedsLibvisioLangIdRtlBake(run)) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeLangIdRtlShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeLangIdRtlShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioLangIdRtlBake(shape)) {
+    final runs = <VsdxTextRun>[
+      for (final run in shape.richText.runs)
+        if (_runNeedsLibvisioLangIdRtlBake(run))
+          run.copyWith(text: textWithLibvisioRtlMark(run.text))
+        else
+          run,
+    ];
+    next = shape.copyWith(
+      text: VsdxRichText(runs: runs, textBlock: shape.richText.textBlock)
+          .plainText,
+      richText: shape.richText.copyWith(runs: runs),
+    );
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Prefix LangID-only RTL runs with U+200F so Draw matches canvas bidi.
+VsdxDocument bakeLangIdRtlForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeLangIdRtlShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

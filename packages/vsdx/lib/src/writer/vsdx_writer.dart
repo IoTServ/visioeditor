@@ -2695,6 +2695,7 @@ class VsdxWriter {
           (!_shapeNeedsLibvisioGeometryRewrite(edited) &&
               !shapeNeedsLibvisioTextBlockBake(edited) &&
               !shapeNeedsLibvisioFontBake(edited) &&
+              !shapeNeedsLibvisioLangIdRtlBake(edited) &&
               !shapeNeedsLibvisioGlowBake(edited) &&
               !shapeNeedsLibvisioGlowPlateBake(edited) &&
               !shapeNeedsLibvisioCustomDashBake(edited) &&

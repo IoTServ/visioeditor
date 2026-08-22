@@ -46,7 +46,9 @@
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
 /// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
-/// actually load. Mixed Latin+CJK runs keep `Font`. Character `Letterspace`
+/// actually load. Mixed Latin+CJK runs keep `Font`. Character `LangID` is
+/// not a token; digit-only Arabic / Hebrew runs prefix U+200F so Draw's
+/// Unicode bidi matches canvas / SVG. Character `Letterspace`
 /// is not a token; canvas / SVG already fold FontScale into tracking at
 /// 0.55×Size, so a save adds Letterspace into FontScale and writes
 /// Letterspace 0. Picture `SoftEdgesSize` is not a token; a 2-D Foreign
@@ -428,6 +430,69 @@ void main() {
     expect(baked.text, contains(kLibvisioCombiningOverline));
   });
 
+  test('Character LangID RTL bakes a leading U+200F for LibreOffice', () {
+    VsdxShape box(String name, String text, {String? langId}) =>
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 1.4,
+          height: 0.7,
+          name: name,
+        ).copyWith(
+          text: text,
+          richText: VsdxRichText(
+            runs: [
+              VsdxTextRun(
+                text: text,
+                charStyle: VsdxCharStyle(langId: langId),
+              ),
+            ],
+          ),
+        );
+
+    final arabicDigits = box('ArDigits', '123', langId: 'ar-SA');
+    expect(shapeNeedsLibvisioLangIdRtlBake(arabicDigits), isTrue);
+    final bakedArabic = bakeLangIdRtlShapeForLibvisioWrite(arabicDigits);
+    expect(
+      bakedArabic.richText.runs.single.text,
+      '$kLibvisioRtlMark'
+      '123',
+    );
+    expect(bakedArabic.text, startsWith(kLibvisioRtlMark));
+    expect(
+      bakeLangIdRtlShapeForLibvisioWrite(bakedArabic).richText.runs.single.text,
+      bakedArabic.richText.runs.single.text,
+      reason: 'a second save must not stack another U+200F',
+    );
+
+    final hebrewDigits = box('HeDigits', '123-456', langId: 'he-IL');
+    expect(shapeNeedsLibvisioLangIdRtlBake(hebrewDigits), isTrue);
+    expect(
+      bakeLangIdRtlShapeForLibvisioWrite(hebrewDigits)
+          .richText
+          .runs
+          .single
+          .text,
+      startsWith(kLibvisioRtlMark),
+    );
+
+    expect(
+      shapeNeedsLibvisioLangIdRtlBake(box('EnDigits', '123', langId: 'en-US')),
+      isFalse,
+    );
+    expect(
+      shapeNeedsLibvisioLangIdRtlBake(box('Arabic', 'سلام', langId: 'ar-SA')),
+      isFalse,
+      reason: 'strong RTL letters already set Unicode bidi in Draw',
+    );
+    expect(
+      shapeNeedsLibvisioLangIdRtlBake(box('Latin', 'Hi', langId: 'ar-SA')),
+      isFalse,
+    );
+    expect(shapeNeedsLibvisioLangIdRtlBake(box('Plain', '123')), isFalse);
+  });
+
   test('Glow bakes a halo Draw can collect', () {
     final stroke = VsdxShapeFactory.line(
       id: 1,
@@ -589,7 +654,8 @@ void main() {
       }
     }
     expect(ink, greaterThan(8),
-        reason: 'the 1-D glow PNG must carry magenta halo ink, not an empty plate');
+        reason:
+            'the 1-D glow PNG must carry magenta halo ink, not an empty plate');
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final savedDoc = parser.parse(saved);
@@ -2741,7 +2807,8 @@ void main() {
       ],
     );
     expect(shapeNeedsLibvisioGeometrySoftEdgesBake(open), isFalse,
-        reason: 'open-path arrows stay native so crisp heads are not in the PNG');
+        reason:
+            'open-path arrows stay native so crisp heads are not in the PNG');
   });
 
   test('ShadowBlur bakes a Gaussian PNG sibling for LibreOffice', () {
@@ -5192,7 +5259,8 @@ void main() {
     var page = doc.pages.first.addShape(host).addShape(child);
     page = page.reparentShape(2, 1).updateShapeById(1, (s) => s.fold());
     doc = doc.replacePage(0, page);
-    expect(shapeNeedsLibvisioCollapsedHideBake(doc.pages.first.findShapeById(1)!),
+    expect(
+        shapeNeedsLibvisioCollapsedHideBake(doc.pages.first.findShapeById(1)!),
         isTrue);
 
     final baked = documentForLibvisioWrite(doc);
@@ -5565,7 +5633,8 @@ void main() {
       ),
     );
     expect(shapeNeedsLibvisioFilledStrokeRibbonBake(arrowed), isTrue,
-        reason: 'closed 2-D arrow cells must not skip the LineColorTrans ribbon');
+        reason:
+            'closed 2-D arrow cells must not skip the LineColorTrans ribbon');
   });
 
   test('filled CompoundType LineColorTrans bakes rails on the sibling ribbon',
@@ -5611,7 +5680,10 @@ void main() {
     expect(savedPage.findShapeById(1)!.line.compoundType, 0);
     expect(savedPage.findShapeById(1)!.fill.foreground?.value, 0xFFFF0000);
     expect(
-      savedPage.shapes.where(isLibvisioStrokeRibbonPlate).single.geometries
+      savedPage.shapes
+          .where(isLibvisioStrokeRibbonPlate)
+          .single
+          .geometries
           .where((g) => !g.noFill)
           .length,
       greaterThanOrEqualTo(2),
@@ -5803,7 +5875,10 @@ void main() {
     final savedPage = parser.parse(saved).pages.first;
     expect(savedPage.findShapeById(1)!.line.endArrow, 0);
     expect(
-      savedPage.shapes.where(isLibvisioStrokeRibbonPlate).single.geometries
+      savedPage.shapes
+          .where(isLibvisioStrokeRibbonPlate)
+          .single
+          .geometries
           .where((g) => !g.noFill)
           .length,
       greaterThan(1),
@@ -7226,7 +7301,8 @@ void main() {
     expect(
       shapeNeedsLibvisioStrokeRibbon(arrow),
       isFalse,
-      reason: 'must not steal the chevron body as an unfilled LineGradient ribbon',
+      reason:
+          'must not steal the chevron body as an unfilled LineGradient ribbon',
     );
     expect(fillPatternForLibvisioWrite(arrow.fill), inInclusiveRange(25, 40));
     final write = libvisioShapeWrite(arrow);

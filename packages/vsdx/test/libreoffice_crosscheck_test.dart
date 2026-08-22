@@ -1282,6 +1282,52 @@ void main() {
                 blurInches: 0,
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 63,
+              pinX: 2.2,
+              pinY: 6.6,
+              width: 1.4,
+              height: 0.7,
+              name: 'LangIdRtl',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: '123',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: '123',
+                    charStyle: VsdxCharStyle(langId: 'ar-SA'),
+                  ),
+                ],
+              ),
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 64,
+              pinX: 3.8,
+              pinY: 6.6,
+              width: 1.4,
+              height: 0.7,
+              name: 'LangIdLtr',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: '123',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: '123',
+                    charStyle: VsdxCharStyle(langId: 'en-US'),
+                  ),
+                ],
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1646,6 +1692,35 @@ void main() {
         .charStyle;
     expect(arabic.fontFamily, 'Times New Roman');
     expect(arabic.fontSizeInches, closeTo(18 / 72, 1e-12));
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'Arabic')
+          .richText
+          .runs
+          .single
+          .text,
+      isNot(startsWith(kLibvisioRtlMark)),
+      reason: 'strong RTL letters already set Unicode bidi in Draw',
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'LangIdRtl')
+          .richText
+          .runs
+          .single
+          .text,
+      '$kLibvisioRtlMark'
+      '123',
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'LangIdLtr')
+          .richText
+          .runs
+          .single
+          .text,
+      '123',
+    );
     expect(
       reopenedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'FillUnknown')
@@ -3514,8 +3589,7 @@ void main() {
       ),
     );
     var filledLineTransArrowsDocument = parser.parse(blank);
-    final filledLineTransArrowsPage =
-        filledLineTransArrowsDocument.pages.first;
+    final filledLineTransArrowsPage = filledLineTransArrowsDocument.pages.first;
     filledLineTransArrowsDocument = filledLineTransArrowsDocument.replacePage(
       0,
       filledLineTransArrowsPage.addShape(
@@ -7081,7 +7155,8 @@ void main() {
                 'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
           );
         }
-        if ((entry.key == 'shape_inside' || entry.key == 'shape_inside_flipy') &&
+        if ((entry.key == 'shape_inside' ||
+                entry.key == 'shape_inside_flipy') &&
             pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
@@ -7367,8 +7442,8 @@ void main() {
         if (entry.key == 'dash_arrows') {
           final reopened = parser.parse(entry.value);
           for (final name in <String>['FlowDashArrow', 'CustomDashArrow']) {
-            final source = reopened.pages.first.shapes
-                .firstWhere((s) => s.name == name);
+            final source =
+                reopened.pages.first.shapes.firstWhere((s) => s.name == name);
             expect(source.line.endArrow, 0, reason: name);
             expect(source.flowAnimation, isFalse, reason: name);
             expect(
@@ -8173,7 +8248,8 @@ void main() {
             await File('$prefix.png').readAsBytes(),
           )!;
           final page = parser.parse(entry.value).pages.first;
-          ({double luma, double b}) mean(double x0, double y0, double x1, double y1) {
+          ({double luma, double b}) mean(
+              double x0, double y0, double x1, double y1) {
             final left = (x0 / page.widthInches * rendered.width).round();
             final right = (x1 / page.widthInches * rendered.width).round();
             final top =
@@ -8240,7 +8316,8 @@ void main() {
             await File('$prefix.png').readAsBytes(),
           )!;
           final page = parser.parse(entry.value).pages.first;
-          ({double luma, double b}) mean(double x0, double y0, double x1, double y1) {
+          ({double luma, double b}) mean(
+              double x0, double y0, double x1, double y1) {
             final left = (x0 / page.widthInches * rendered.width).round();
             final right = (x1 / page.widthInches * rendered.width).round();
             final top =
