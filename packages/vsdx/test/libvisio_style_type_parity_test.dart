@@ -98,7 +98,9 @@
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
 /// PNG sibling and drops the source fill. Resolved-RGB FillGradient,
 /// classic 25–40 washes and FillPattern 2–24 hatches go into that PNG
-/// so Draw does not keep a hard fill. An unfilled 2-D stroke with
+/// so Draw does not keep a hard fill. Theme-only FillForegnd / LineColor
+/// resolve through the document theme then Office into that PNG. An
+/// unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
 /// line. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
 /// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
@@ -1848,6 +1850,112 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('theme-only SoftEdges bakes a feathered PNG for LibreOffice', () {
+    const slot = ThemeSlot.accent2;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    final fill = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'SoftThemeFill',
+      fill: const VsdxFill(themeForegroundIndex: slot, pattern: 1),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(fill), isTrue);
+    expect(fill.fill.foreground, isNull);
+
+    final blank = writer.emptyDocument();
+    var filledDoc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    filledDoc = filledDoc.replacePage(0, filledDoc.pages.first.addShape(fill));
+    final baked = documentForLibvisioWrite(filledDoc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.locked, isTrue);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    var ink = 0;
+    for (var y = 0; y < decoded.height; y++) {
+      for (var x = 0; x < decoded.width; x++) {
+        final pixel = decoded.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          ink++;
+        }
+      }
+    }
+    expect(ink, greaterThan(8),
+        reason: 'theme slot $slot (${expected.value.toRadixString(16)}) '
+            'must freeze into the feathered PNG, not a hard THEMEVAL fill');
+    expect(
+      decoded.getPixel(0, 0).a,
+      lessThan(decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).a),
+      reason: 'SourceAlpha feather must fade the silhouette edge',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+
+    final stroke = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'SoftThemeStroke',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        themeColorIndex: slot,
+        weightInches: 0.08,
+        softEdgesInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(stroke), isTrue);
+    var strokeDoc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    strokeDoc =
+        strokeDoc.replacePage(0, strokeDoc.pages.first.addShape(stroke));
+    final strokeBaked = documentForLibvisioWrite(strokeDoc);
+    final strokeSource = strokeBaked.pages.first.findShapeById(2)!;
+    expect(strokeSource.fill.pattern, 0);
+    expect(strokeSource.line.pattern, 0);
+    expect(strokeSource.line.themeColorIndex, slot);
+    final strokePlate =
+        strokeBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(strokePlate.hasImage, isTrue);
+    final strokeDecoded = raster.decodePng(
+      strokeBaked.images.findByPart(strokePlate.imagePartName!)!.bytes,
+    )!;
+    var ring = 0;
+    for (var y = 0; y < strokeDecoded.height; y++) {
+      for (var x = 0; x < strokeDecoded.width; x++) {
+        final pixel = strokeDecoded.getPixel(x, y);
+        if (pixel.a > 20 && pixel.r > pixel.b + 20 && pixel.r > pixel.g + 10) {
+          ring++;
+        }
+      }
+    }
+    expect(ring, greaterThan(8),
+        reason: 'theme-only LineColor must freeze into the feathered ring');
+    expect(
+      strokeDecoded
+          .getPixel(strokeDecoded.width ~/ 2, strokeDecoded.height ~/ 2)
+          .r,
+      greaterThan(200),
+      reason: 'theme stroke SoftEdges PNG must keep the hollow interior',
+    );
   });
 
   test('gradient fill SoftEdges bakes a feathered wash PNG for LibreOffice',

@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only SoftEdges now keeps the feathered silhouette in
+  LibreOffice. `SoftEdgesSize` is not a token; a save used to skip
+  theme-only FillForegnd / LineColor so Draw painted a hard fill or
+  stroke, while canvas `_fillColour` / `_colourOrTheme` already
+  feathers the theme colour. A save now resolves the slot (document
+  theme, then Office) into the same PNG plate RGB SoftEdges uses.
 - Theme-only ShadowBlur now keeps the Gaussian silhouette in
   LibreOffice. `ShadowBlur` is not a token; a save used to skip
   theme-only ShdwForegnd so Draw painted a hard `draw:shadow`, while

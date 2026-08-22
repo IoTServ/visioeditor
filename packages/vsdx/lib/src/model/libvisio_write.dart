@@ -82,8 +82,10 @@
 /// same missing token: a filled 2-D shape bakes a locked Foreign sibling
 /// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use
 /// (resolved-RGB FillGradient / classic 25–40 washes and FillPattern 2–24
-/// hatches are painted into that PNG so Draw does not keep a hard fill),
-/// then SoftEdgesSize is written 0 and the source fill is dropped so the
+/// hatches are painted into that PNG so Draw does not keep a hard fill).
+/// Theme-only FillForegnd / LineColor resolve through the document theme,
+/// then Office, into that PNG so Draw keeps the feather. Then
+/// SoftEdgesSize is written 0 and the source fill is dropped so the
 /// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
@@ -1234,7 +1236,8 @@ VsdxColor _glowRgbForLibvisioWrite(VsdxGlow glow, VsdxTheme theme) {
 }
 
 /// RGB canvas `_colourOrTheme` would stroke. Theme-only LineColor still
-/// has to freeze into a Reflection PNG because `Reflection*` is not a token.
+/// has to freeze into a Reflection / SoftEdges PNG because those cells
+/// are not tokens.
 VsdxColor _lineRgbForLibvisioWrite(VsdxLine line, VsdxTheme theme) {
   if (line.color != null) return line.color!;
   final slot = line.themeColorIndex;
@@ -1242,6 +1245,32 @@ VsdxColor _lineRgbForLibvisioWrite(VsdxLine line, VsdxTheme theme) {
   return theme.resolve(slot) ??
       VsdxTheme.office.resolve(slot) ??
       const VsdxColor(0xFF000000);
+}
+
+/// RGB canvas `_fillColour` would paint. Theme-only FillForegnd still
+/// has to freeze into a SoftEdges PNG because `SoftEdgesSize` is not a
+/// token.
+VsdxColor _fillRgbForLibvisioWrite(
+  VsdxFill fill,
+  VsdxTheme theme, {
+  int? fillMatrix,
+}) {
+  if (fill.foreground != null) return fill.foreground!;
+  final slot = fill.themeForegroundIndex;
+  if (slot == null) return const VsdxColor(0xFFFFFFFF);
+  return theme.resolveFill(slot, fillMatrix: fillMatrix) ??
+      VsdxTheme.office.resolveFill(slot, fillMatrix: fillMatrix) ??
+      VsdxTheme.office.resolve(slot) ??
+      const VsdxColor(0xFFFFFFFF);
+}
+
+/// Hatch `FillBkgnd` canvas would sample. Theme-only background still
+/// has to freeze into a SoftEdges PNG with the hatch foreground.
+VsdxColor? _fillBackgroundRgbForLibvisioWrite(VsdxFill fill, VsdxTheme theme) {
+  if (fill.background != null) return fill.background;
+  final slot = fill.themeBackgroundIndex;
+  if (slot == null) return null;
+  return theme.resolve(slot) ?? VsdxTheme.office.resolve(slot);
 }
 
 ({Uint8List png, double padInches})? _glowPngForLibvisioWrite(
@@ -5182,9 +5211,11 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// CompoundType 1–4 rails join that plate too. LineGradient strokes
 /// with resolved RGB join that plate so Draw does not keep a hard
 /// opaque outline. Rounding fillets join that plate so Draw does not
-/// keep square corners after the fill is dropped. 1-D, pictures,
-/// open-path arrows, theme-only fills and unresolved theme colours stay
-/// native. Closed 2-D arrow cells do not block the bake — libvisio
+/// keep square corners after the fill is dropped. Theme-only FillForegnd
+/// / LineColor (canvas `_colourOrTheme` / `_fillColour`) resolve through
+/// the document theme, then Office, into that PNG so Draw keeps the
+/// feather. 1-D, pictures, open-path arrows, and unrecognised geometry
+/// stay native. Closed 2-D arrow cells do not block the bake — libvisio
 /// suppresses markers on Z-closed subpaths, same as canvas.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
@@ -5217,7 +5248,10 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
     }
   } else {
     if (shape.fill.pattern != 1) return false;
-    if (shape.fill.foreground == null) return false;
+    if (shape.fill.foreground == null &&
+        shape.fill.themeForegroundIndex == null) {
+      return false;
+    }
   }
   return _softEdgesSilhouetteKind(shape) != null;
 }
@@ -5235,9 +5269,6 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
     return false;
   }
   if (_openArrowheadsBlockStrokeBake(shape)) return false;
-  if (shape.line.color == null && shape.line.themeColorIndex != null) {
-    return false;
-  }
   if (shape.line.compoundType != 0) {
     return _softEdgesCompoundRibbonPolygons(shape).isNotEmpty;
   }
@@ -5408,13 +5439,17 @@ bool _softEdgesIsShapeBox(List<Offset2D> points, double w, double h) {
       (maxY - h.abs()).abs() <= 1e-6;
 }
 
-Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
+Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
   final kind = _softEdgesSilhouetteKind(shape);
   if (kind == null) return null;
   final paintGradient = shape.fill.paintGradient;
-  final colorAt = _softEdgesFillColorAt(shape);
+  final colorAt = _softEdgesFillColorAt(shape, theme);
   if (paintGradient != null && colorAt == null) return null;
-  final color = shape.fill.foreground ?? const VsdxColor(0xFFFFFFFF);
+  final color = _fillRgbForLibvisioWrite(
+    shape.fill,
+    theme,
+    fillMatrix: shape.quickStyleFillMatrix,
+  );
   final trans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
   final w = shape.width.abs();
@@ -5464,7 +5499,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
 
 ({int r, int g, int b, int a}) Function(
         double xPx, double yPx, int widthPx, int heightPx)?
-    _softEdgesFillColorAt(VsdxShape shape) {
+    _softEdgesFillColorAt(VsdxShape shape, VsdxTheme theme) {
   final w = shape.width.abs();
   final h = shape.height.abs();
   final paintGradient = shape.fill.paintGradient;
@@ -5479,10 +5514,14 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape) {
   final hatch = libvisioHatchSpec(shape.fill.pattern);
   if (hatch == null) return null;
   final fg = _fillCellRgba(
-    shape.fill.foreground,
+    _fillRgbForLibvisioWrite(
+      shape.fill,
+      theme,
+      fillMatrix: shape.quickStyleFillMatrix,
+    ),
     shape.fill.foregroundTransparency,
   );
-  final bgColor = shape.fill.background;
+  final bgColor = _fillBackgroundRgbForLibvisioWrite(shape.fill, theme);
   final bg = bgColor == null
       ? (r: 0, g: 0, b: 0, a: 0)
       : _fillCellRgba(bgColor, shape.fill.backgroundTransparency);
@@ -5677,6 +5716,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
 
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(
   VsdxShape shape, {
+  required VsdxTheme theme,
   int? holeRed,
   int? holeGreen,
   int? holeBlue,
@@ -5686,7 +5726,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   final ribbons = _softEdgesStrokeRibbonPolygons(shape);
   final kind = _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
-  final color = shape.line.color ?? const VsdxColor(0xFF000000);
+  final color = _lineRgbForLibvisioWrite(shape.line, theme);
   final trans = shape.line.transparency.clamp(0.0, 1.0);
   final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
   final w = shape.width.abs();
@@ -5707,7 +5747,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   final padPx = math.max(1, (padInches / w * innerWidthPx).ceil());
   final sigmaPx = soft / w * innerWidthPx;
   final strokeWidthPx = weight / w * innerWidthPx;
-  final fillColorAt = holeFromFill ? _softEdgesFillColorAt(shape) : null;
+  final fillColorAt = holeFromFill ? _softEdgesFillColorAt(shape, theme) : null;
   if (holeFromFill && fillColorAt == null) return null;
   final holeColorAt = fillColorAt == null
       ? null
@@ -5786,17 +5826,26 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
 
 ({Uint8List png, double padInches})? _softEdgesFillStrokePngForLibvisioWrite(
   VsdxShape shape,
+  VsdxTheme theme,
 ) {
   if (shape.fill.paintGradient != null ||
       libvisioHatchSpec(shape.fill.pattern) != null) {
-    return _softEdgesStrokePngForLibvisioWrite(shape, holeFromFill: true);
+    return _softEdgesStrokePngForLibvisioWrite(
+      shape,
+      theme: theme,
+      holeFromFill: true,
+    );
   }
-  final fillColor = shape.fill.foreground;
-  if (fillColor == null) return null;
+  final fillColor = _fillRgbForLibvisioWrite(
+    shape.fill,
+    theme,
+    fillMatrix: shape.quickStyleFillMatrix,
+  );
   final fillTrans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
   final fillAlpha = (fillColor.alpha * (1 - fillTrans)).round().clamp(0, 255);
   return _softEdgesStrokePngForLibvisioWrite(
     shape,
+    theme: theme,
     holeRed: fillColor.red,
     holeGreen: fillColor.green,
     holeBlue: fillColor.blue,
@@ -5804,16 +5853,19 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   );
 }
 
-({Uint8List png, double padInches})? _softEdgesBakePayload(VsdxShape shape) {
+({Uint8List png, double padInches})? _softEdgesBakePayload(
+  VsdxShape shape,
+  VsdxTheme theme,
+) {
   if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape)) {
-    return _softEdgesFillStrokePngForLibvisioWrite(shape);
+    return _softEdgesFillStrokePngForLibvisioWrite(shape, theme);
   }
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) {
-    final png = _softEdgesPngForLibvisioWrite(shape);
+    final png = _softEdgesPngForLibvisioWrite(shape, theme);
     if (png == null) return null;
     return (png: png, padInches: 0);
   }
-  return _softEdgesStrokePngForLibvisioWrite(shape);
+  return _softEdgesStrokePngForLibvisioWrite(shape, theme: theme);
 }
 
 VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
@@ -5894,6 +5946,7 @@ typedef _SoftEdgesImageSink = void Function(VsdxImage image);
 
 List<VsdxShape> _bakeGeometrySoftEdgesTree(
   List<VsdxShape> shapes, {
+  required VsdxTheme theme,
   required Map<int, int> plateIds,
   required int Function() nextId,
   required String Function(int shapeId) allocatePart,
@@ -5910,6 +5963,7 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
     if (shape.children.isNotEmpty) {
       final children = _bakeGeometrySoftEdgesTree(
         shape.children,
+        theme: theme,
         plateIds: plateIds,
         nextId: nextId,
         allocatePart: allocatePart,
@@ -5921,7 +5975,7 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
       }
     }
     if (shapeNeedsLibvisioGeometrySoftEdgesBake(next)) {
-      final payload = _softEdgesBakePayload(next);
+      final payload = _softEdgesBakePayload(next, theme);
       if (payload != null) {
         final part = allocatePart(next.id);
         addImage(
@@ -5994,6 +6048,7 @@ VsdxDocument bakeGeometrySoftEdgesForLibvisioWrite(VsdxDocument document) {
     var nextId = _maxShapeId(page.shapes) + 1;
     final shapes = _bakeGeometrySoftEdgesTree(
       page.shapes,
+      theme: document.theme,
       plateIds: plateIds,
       nextId: () => nextId++,
       allocatePart: allocatePart,

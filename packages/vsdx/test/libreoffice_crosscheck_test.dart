@@ -2219,6 +2219,27 @@ void main() {
         ),
       ),
     );
+    var geometrySoftThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final geometrySoftThemePage = geometrySoftThemeDocument.pages.first;
+    geometrySoftThemeDocument = geometrySoftThemeDocument.replacePage(
+      0,
+      geometrySoftThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: geometrySoftThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GeometrySoftTheme',
+          fill: const VsdxFill(
+            themeForegroundIndex: ThemeSlot.accent6,
+            pattern: 1,
+          ),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
+        ),
+      ),
+    );
     var gradientSoftDocument = parser.parse(blank);
     final gradientSoftPage = gradientSoftDocument.pages.first;
     gradientSoftDocument = gradientSoftDocument.replacePage(
@@ -2286,6 +2307,28 @@ void main() {
           fill: const VsdxFill(pattern: 0),
           line: const VsdxLine(
             color: VsdxColor(0xFF000000),
+            weightInches: 0.14,
+            softEdgesInches: 0.18,
+          ),
+        ),
+      ),
+    );
+    var strokeSoftThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final strokeSoftThemePage = strokeSoftThemeDocument.pages.first;
+    strokeSoftThemeDocument = strokeSoftThemeDocument.replacePage(
+      0,
+      strokeSoftThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: strokeSoftThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'StrokeSoftTheme',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            themeColorIndex: ThemeSlot.accent6,
             weightInches: 0.14,
             softEdgesInches: 0.18,
           ),
@@ -3843,6 +3886,10 @@ void main() {
         originalBytes: blank,
         edited: geometrySoftDocument,
       ),
+      'geometry_soft_theme': writer.write(
+        originalBytes: blank,
+        edited: geometrySoftThemeDocument,
+      ),
       'gradient_soft': writer.write(
         originalBytes: blank,
         edited: gradientSoftDocument,
@@ -3854,6 +3901,10 @@ void main() {
       'stroke_soft': writer.write(
         originalBytes: blank,
         edited: strokeSoftDocument,
+      ),
+      'stroke_soft_theme': writer.write(
+        originalBytes: blank,
+        edited: strokeSoftThemeDocument,
       ),
       'dash_soft': writer.write(
         originalBytes: blank,
@@ -4556,6 +4607,73 @@ void main() {
                 'hard fill; centre=$centre edge=$edge',
           );
         }
+        if (entry.key == 'geometry_soft_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GeometrySoftTheme');
+          expect(source.fill.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'geometry_soft_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final centre = mean(3.9, 5.2, 4.6, 5.8);
+          expect(
+            centre.g,
+            greaterThan(centre.r + 15),
+            reason: 'LibreOffice must paint the Office accent6 SoftEdges PNG, '
+                'not an empty hole after FillPattern 0; centreG=${centre.g} '
+                'centreR=${centre.r}',
+          );
+        }
         if (entry.key == 'gradient_soft') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -4752,6 +4870,84 @@ void main() {
             lessThan(200),
             reason: 'LibreOffice must paint the soft stroke ring; '
                 'interior=$interior onStroke=$onStroke',
+          );
+        }
+        if (entry.key == 'stroke_soft_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'StrokeSoftTheme');
+          expect(source.line.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'stroke_soft_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g, double luma}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumLuma = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumLuma += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) {
+              return (r: 0.0, g: 0.0, luma: 255.0);
+            }
+            return (r: sumR / count, g: sumG / count, luma: sumLuma / count);
+          }
+
+          final interior = mean(3.9, 5.2, 4.6, 5.8);
+          final onStroke = mean(2.68, 5.2, 2.82, 5.8);
+          expect(
+            interior.luma,
+            greaterThan(220),
+            reason: 'LibreOffice must keep the unfilled interior empty; '
+                'interior=${interior.luma} onStrokeG=${onStroke.g}',
+          );
+          expect(
+            onStroke.g,
+            greaterThan(onStroke.r + 8),
+            reason: 'LibreOffice must paint the Office accent6 soft stroke; '
+                'interior=${interior.luma} onStrokeG=${onStroke.g} '
+                'onStrokeR=${onStroke.r}',
           );
         }
         if (entry.key == 'dash_soft') {
