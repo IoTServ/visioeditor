@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only hard-edged ShdwForegndTrans now keeps the fade in LibreOffice.
+  `ShdwForegndTrans` is not a token and `xmlStringToColour` zeros alpha,
+  so Draw painted THEMEVAL() `draw:shadow` fully opaque, while canvas
+  already multiplies `_colourOrTheme` by (1 − ShdwForegndTrans). A save
+  now resolves the slot (document theme, then Office) and premultiplies
+  toward white the same way RGB shadows already do. Soft theme shadows
+  still keep THEMEVAL() after the Gaussian PNG bake.
 - Theme-only Character ColorTrans now keeps the fade in LibreOffice.
   `ColorTrans` is not a token (`readCharIX` has no case);
   `xmlStringToColour` also zeros alpha. A save used to leave THEMEVAL()

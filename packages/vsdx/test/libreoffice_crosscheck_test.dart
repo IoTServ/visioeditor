@@ -2661,6 +2661,33 @@ void main() {
         ),
       ),
     );
+    var shadowTransThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final shadowTransThemePage = shadowTransThemeDocument.pages.first;
+    shadowTransThemeDocument = shadowTransThemeDocument.replacePage(
+      0,
+      shadowTransThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: shadowTransThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'ShadowTransTheme',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            themeColorIndex: ThemeSlot.accent6,
+            offsetXInches: 0.4,
+            offsetYInches: -0.35,
+            blurInches: 0,
+            transparency: 0.7,
+          ),
+        ),
+      ),
+    );
     var glowPngDocument = parser.parse(blank);
     final glowPngPage = glowPngDocument.pages.first;
     glowPngDocument = glowPngDocument.replacePage(
@@ -4108,6 +4135,10 @@ void main() {
       'shadow_theme': writer.write(
         originalBytes: blank,
         edited: shadowThemeDocument,
+      ),
+      'shadow_trans_theme': writer.write(
+        originalBytes: blank,
+        edited: shadowTransThemeDocument,
       ),
       'glow_png': writer.write(
         originalBytes: blank,
@@ -6243,6 +6274,98 @@ void main() {
             reason: 'LibreOffice must paint the Gaussian Office accent6 '
                 'shadow past the hard-offset box; bodyR=${body.r} '
                 'haloG=${halo.g} haloR=${halo.r}',
+          );
+        }
+        if (entry.key == 'shadow_trans_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ShadowTransTheme');
+          final expected = colourForLibvisioAlpha(
+            VsdxTheme.office.resolve(ThemeSlot.accent6)!,
+            0.7,
+          );
+          expect(source.shadow.enabled, isTrue);
+          expect(source.shadow.color?.value, expected.value);
+          expect(source.shadow.themeColorIndex, isNull);
+          expect(source.shadow.transparency, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioShadowPlate),
+            isEmpty,
+          );
+        }
+        if (entry.key == 'shadow_trans_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final halo = mean(5.85, 5.2, 6.10, 5.8);
+          expect(
+            body.r,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source fill; '
+                'bodyR=${body.r} haloR=${halo.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.r,
+            greaterThan(160),
+            reason: 'LibreOffice must paint the faded Office accent6 shadow, '
+                'not opaque THEMEVAL green; '
+                'haloR=${halo.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.g,
+            greaterThan(halo.r),
+            reason: 'the faded accent6 blend must stay green-tinted; '
+                'haloR=${halo.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.r,
+            lessThan(245),
+            reason: 'the hard offset copy must not be missing (page white); '
+                'haloR=${halo.r} haloG=${halo.g}',
           );
         }
         if (entry.key == 'glow_png') {

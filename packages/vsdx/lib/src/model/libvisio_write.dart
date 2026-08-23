@@ -69,6 +69,8 @@
 /// theme, then Office, into that same blend — `ColorTrans` is not a
 /// token, so leaving THEMEVAL() would paint the slot fully opaque.
 /// Theme-bound colours with no transparency still keep THEMEVAL().
+/// Theme-only hard-edged ShdwForegndTrans bakes the same way —
+/// `ShadowBlur` leftovers keep THEMEVAL() after the Gaussian PNG path.
 /// A filled 2-D shape that
 /// still paints a stroke bakes LineColorTrans / LineGradient / CompoundType
 /// 1–4 rails / LinePattern 2–23 and `veDashPattern` dash ribbons / open-path
@@ -9000,11 +9002,29 @@ int? charThemeColorIndexForLibvisioWrite(
 
 /// `ShdwForegnd` / `ShdwForegndTrans` Draw will collect. Shadow alpha is
 /// `shadowFgColour.a`, which VSDX `xmlStringToColour` forces to 0.
-VsdxShadow shadowForLibvisioWrite(VsdxShadow shadow) {
-  if (!shadow.enabled ||
-      shadow.transparency <= 1e-9 ||
-      (shadow.color == null && shadow.themeColorIndex != null)) {
+///
+/// Theme-only Color still has to freeze into this RGB blend when the
+/// edge is hard: `ShdwForegndTrans` is not a token, so Draw would
+/// paint THEMEVAL() fully opaque, while canvas already multiplies
+/// `_colourOrTheme` by (1 − ShdwForegndTrans). Soft theme shadows keep
+/// THEMEVAL() on the leftover after the Gaussian PNG bake.
+VsdxShadow shadowForLibvisioWrite(
+  VsdxShadow shadow, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
+  if (!shadow.enabled || shadow.transparency <= 1e-9) {
     return shadow;
+  }
+  if (shadow.color == null && shadow.themeColorIndex != null) {
+    if (shadow.blurInches > 1e-6) return shadow;
+    return shadow.copyWith(
+      color: colourForLibvisioAlpha(
+        _shadowRgbForLibvisioWrite(shadow, theme),
+        shadow.transparency,
+      ),
+      transparency: 0,
+      clearThemeColorIndex: true,
+    );
   }
   return shadow.copyWith(
     color: colourForLibvisioAlpha(

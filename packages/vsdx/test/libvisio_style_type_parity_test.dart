@@ -38,8 +38,10 @@
 /// blur canvas `_colourOrTheme` already paints. Character ColorTrans and ShdwForegndTrans
 /// cannot carry alpha through `xmlStringToColour`, so a save premultiplies
 /// those into RGB toward white and writes Trans=0. Theme-only Character
-/// Color resolves through the document theme then Office into that same
-/// blend (`ColorTrans` is not a token, so THEMEVAL() would stay opaque).
+/// Color and hard-edged ShdwForegnd resolve through the document theme
+/// then Office into that same blend (`ColorTrans` / `ShdwForegndTrans`
+/// are not tokens, so THEMEVAL() would stay opaque). Soft theme shadows
+/// keep THEMEVAL() after the Gaussian PNG bake.
 /// Theme-bound colours with no transparency still keep THEMEVAL.
 /// Filled-shape LineColorTrans / LineGradient bake a
 /// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
@@ -3381,7 +3383,7 @@ void main() {
         shape.copyWith(shadow: shape.shadow.copyWith(blurInches: 0)),
       ),
       isFalse,
-      reason: 'hard theme-only shadows stay native so THEMEVAL survives',
+      reason: 'hard theme-only shadows stay native; opaque ones keep THEMEVAL',
     );
 
     final blank = writer.emptyDocument();
@@ -3422,6 +3424,80 @@ void main() {
           .where(isLibvisioShadowPlate),
       hasLength(1),
       reason: 'a second save must not stack another Shadow plate',
+    );
+  });
+
+  test('theme-only hard ShdwForegndTrans bakes RGB for LibreOffice', () {
+    const slot = ThemeSlot.accent6;
+    const trans = 0.7;
+    final expected = colourForLibvisioAlpha(
+      VsdxTheme.office.resolve(slot)!,
+      trans,
+    );
+    const shadow = VsdxShadow(
+      enabled: true,
+      themeColorIndex: slot,
+      offsetXInches: 0.4,
+      offsetYInches: -0.35,
+      blurInches: 0,
+      transparency: trans,
+    );
+    expect(shadow.color, isNull);
+    expect(shadowForLibvisioWrite(shadow).color?.value, expected.value);
+    expect(shadowForLibvisioWrite(shadow).transparency, 0);
+    expect(shadowForLibvisioWrite(shadow).themeColorIndex, isNull);
+    expect(
+      shadowForLibvisioWrite(
+        shadow.copyWith(transparency: 0),
+      ).themeColorIndex,
+      slot,
+      reason: 'opaque theme ShdwForegnd still keeps THEMEVAL',
+    );
+    expect(
+      shadowForLibvisioWrite(
+        shadow.copyWith(blurInches: 0.08),
+      ).themeColorIndex,
+      slot,
+      reason: 'soft theme leftovers keep THEMEVAL after the PNG bake',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'ShadowTransTheme',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(shadow: shadow);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(xml.contains('N="ShdwForegndTrans" V="0.7"'), isFalse);
+    final hex = (expected.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(
+      xml.contains('N="ShdwForegnd" V="#$hex"'),
+      isTrue,
+      reason: 'theme ShdwForegndTrans must freeze into hex, not THEMEVAL; '
+          'expected=#$hex',
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.shadow.enabled, isTrue);
+    expect(after.shadow.color?.value, expected.value);
+    expect(after.shadow.themeColorIndex, isNull);
+    expect(after.shadow.transparency, closeTo(0, 1e-9));
+    expect(after.shadow.blurInches, closeTo(0, 1e-9));
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioShadowPlate),
+      isEmpty,
     );
   });
 
