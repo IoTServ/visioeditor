@@ -1479,14 +1479,15 @@ void main() {
         reopenedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Bullets');
     expect(
       bullets.richText.runs.map((run) => run.paraStyle.bullet).toList(),
-      <int>[1, 2, 3, 4, 5, 6, 7],
-      reason: 'Bullet 1–7 must round-trip; Draw collects the cell',
+      <int>[0, 0, 0, 0, 0, 0, 0],
+      reason: 'Draw never paints text:bullet-char; the glyph is in the text',
     );
     expect(
-      bullets.richText.runs.map((run) => run.paraStyle.resolvedBulletGlyph),
-      <String>[
-        for (var bullet = 1; bullet <= 7; bullet++) libvisioBulletGlyph(bullet),
+      [
+        for (var i = 0; i < 7; i++)
+          bullets.richText.runs[i].text.contains(libvisioBulletGlyph(i + 1)),
       ],
+      <bool>[true, true, true, true, true, true, true],
     );
     final glowStroke = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'GlowStroke');
@@ -2445,6 +2446,66 @@ void main() {
             .withWordWrap(false),
       ),
     );
+    var overlineTabDocument = parser.parse(blank);
+    final overlineTabPage = overlineTabDocument.pages.first;
+    overlineTabDocument = overlineTabDocument.replacePage(
+      0,
+      overlineTabPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: overlineTabPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3.2,
+          height: 0.8,
+          name: 'OverlineTab',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          richText: const VsdxRichText(
+            tabSets: <VsdxTabSet>[
+              VsdxTabSet(
+                ix: 0,
+                stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\t',
+                tabIndices: <int>[0],
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  overline: true,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.left,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'B',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  overline: true,
+                  color: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.left,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var geometrySoftDocument = parser.parse(blank);
     final geometrySoftPage = geometrySoftDocument.pages.first;
     geometrySoftDocument = geometrySoftDocument.replacePage(
@@ -3221,6 +3282,58 @@ void main() {
                 charStyle: VsdxCharStyle(
                   fontFamily: 'Arial',
                   fontSizeInches: 1,
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    var highlightMixedWrapDocument = parser.parse(blank);
+    final highlightMixedWrapPage = highlightMixedWrapDocument.pages.first;
+    highlightMixedWrapDocument = highlightMixedWrapDocument.replacePage(
+      0,
+      highlightMixedWrapPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: highlightMixedWrapPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.5,
+          height: 2.4,
+          name: 'HighlightMixedWrap',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'MMMM MMMM',
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+            runs: [
+              VsdxTextRun(
+                text: 'MMMM ',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'MMMM',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
                   highlight: VsdxColor(0xFF00FF00),
                 ),
                 paraStyle: VsdxParaStyle(
@@ -4845,6 +4958,10 @@ void main() {
         originalBytes: blank,
         edited: wordWrapTabDocument,
       ),
+      'overline_tab': writer.write(
+        originalBytes: blank,
+        edited: overlineTabDocument,
+      ),
       'geometry_soft': writer.write(
         originalBytes: blank,
         edited: geometrySoftDocument,
@@ -4956,6 +5073,10 @@ void main() {
       'highlight_mixed_nl': writer.write(
         originalBytes: blank,
         edited: highlightMixedNlDocument,
+      ),
+      'highlight_mixed_wrap': writer.write(
+        originalBytes: blank,
+        edited: highlightMixedWrapDocument,
       ),
       'highlight_mixed_tab': writer.write(
         originalBytes: blank,
@@ -5904,6 +6025,101 @@ void main() {
             sameLine.lime,
             greaterThan(wrapped.lime),
             reason: 'Draw must not wrap the tab field under A; '
+                'lineL=${sameLine.lime} wrapL=${wrapped.lime}',
+          );
+        }
+        if (entry.key == 'overline_tab') {
+          final reopened = parser.parse(entry.value);
+          final box = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'OverlineTab');
+          expect(
+            box.richText.runs.every((run) => !run.charStyle.overline),
+            isTrue,
+          );
+          expect(box.richText.plainText, contains('\t'));
+          expect(
+            box.richText.plainText
+                .split('\t')
+                .where((part) => part.isNotEmpty)
+                .every((part) => part.contains(kLibvisioCombiningOverline)),
+            isTrue,
+          );
+        }
+        if (entry.key == 'overline_tab' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int red, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var red = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b < 40) red++;
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (red: red, lime: lime);
+          }
+
+          // The 3.2" box is left-aligned from pin 4.25, so A sits near
+          // 2.65". Draw may still use DefaultTabStop for the jump.
+          // Keep red A and lime B on one band so the combining marks
+          // stay on the same line.
+          final left = countWindow(2.55, 5.15, 4.3, 5.85);
+          final sameLine = countWindow(3.2, 5.15, 6.5, 5.85);
+          final wrapped = countWindow(2.55, 4.5, 4.6, 5.05);
+          expect(
+            left.red,
+            greaterThan(8),
+            reason: 'LibreOffice must paint overlined red A; '
+                'leftR=${left.red} leftL=${left.lime} '
+                'lineR=${sameLine.red} lineL=${sameLine.lime} '
+                'wrapR=${wrapped.red} wrapL=${wrapped.lime}',
+          );
+          expect(
+            sameLine.lime,
+            greaterThan(8),
+            reason: 'LibreOffice must keep overlined lime B on the line; '
+                'leftR=${left.red} leftL=${left.lime} '
+                'lineR=${sameLine.red} lineL=${sameLine.lime} '
+                'wrapR=${wrapped.red} wrapL=${wrapped.lime}',
+          );
+          expect(
+            sameLine.lime,
+            greaterThan(wrapped.lime),
+            reason: 'Draw must not wrap the overlined tab field under A; '
                 'lineL=${sameLine.lime} wrapL=${wrapped.lime}',
           );
         }
@@ -8226,6 +8442,101 @@ void main() {
             lower.lime,
             greaterThan(lower.magenta),
             reason: 'second line must stay lime, not magenta; '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+        }
+        if (entry.key == 'highlight_mixed_wrap') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final plates = page.shapes.where(isLibvisioHighlightPlate).toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(2));
+          expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+          expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+          expect(plates[0].pinY, greaterThan(plates[1].pinY + 0.15));
+          expect(
+            page.shapes
+                .firstWhere((s) => s.name == 'HighlightMixedWrap')
+                .richText
+                .textBlock
+                .hideText,
+            isTrue,
+          );
+        }
+        if (entry.key == 'highlight_mixed_wrap' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+
+          ({int magenta, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var magenta = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+                  magenta++;
+                }
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (magenta: magenta, lime: lime);
+          }
+
+          final upper = countWindow(3.5, 5.45, 5.0, 6.2);
+          final lower = countWindow(3.5, 4.7, 5.0, 5.4);
+          expect(
+            upper.magenta,
+            greaterThan(20),
+            reason: 'LibreOffice must wrap magenta onto the first line; '
+                'upperM=${upper.magenta} upperL=${upper.lime} '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+          expect(
+            lower.lime,
+            greaterThan(20),
+            reason: 'LibreOffice must wrap lime onto the second line; '
+                'upperM=${upper.magenta} upperL=${upper.lime} '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+          expect(
+            lower.lime,
+            greaterThan(lower.magenta),
+            reason: 'wrapped second word must stay lime, not magenta; '
                 'lowerM=${lower.magenta} lowerL=${lower.lime}',
           );
         }

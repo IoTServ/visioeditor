@@ -38,8 +38,9 @@
 /// one TextBkgnd, so a save inserts locked FillForegnd siblings that
 /// carry each highlighted run (same advance as nowrap / curved-text),
 /// stacks explicit newlines the same way canvas / SVG already wrap those
-/// markers, and pins tab fields with the same `visioTabFieldStart`
-/// canvas / SVG / libvisio `_fillTabSet` use. `TextDirection` is a
+/// markers, wraps `User.veWordWrap` lines to TxtWidth with the same
+/// word/space units shape-inside uses, and pins tab fields with the same
+/// `visioTabFieldStart` canvas / SVG / libvisio `_fillTabSet` use. `TextDirection` is a
 /// token the parser stores, but `_flushText` never emits
 /// `style:writing-mode`, so Draw would keep a horizontal run; a save
 /// folds canvas / SVG's −90° block rotation into `TxtAngle`, swaps
@@ -165,7 +166,13 @@
 /// silhouette into its Gaussian PNG instead, sized to the transformed
 /// bounding box.
 /// Character Overline is a token whose `readCharIX` case is empty, so a
-/// save inserts U+0305 combining overlines and clears the cell. Glow*
+/// save inserts U+0305 combining overlines and clears the cell, including
+/// tabbed runs (U+0009 keeps its `tabIndices` stop).
+/// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
+/// `text:bullet-char`, but Draw's drawing-text import keeps only the
+/// `text:min-label-width` inset, so a save writes the glyph into the
+/// paragraph text and folds the label field into a hanging
+/// `IndLeft` / `IndFirst`. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a
 /// Gaussian PNG plate sized to the glow ribbon (a Foreign picture cannot
 /// hang on a zero-height 1-D XForm, and a FillForegndTrans ribbon would
@@ -327,7 +334,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                             bakeLooseEdgeLabelForLibvisioWrite(
                                               bakeAutoRotateLabelForLibvisioWrite(
                                                 bakeTextDirectionForLibvisioWrite(
-                                                  hopped,
+                                                  bakeBulletGlyphForLibvisioWrite(
+                                                    hopped,
+                                                  ),
                                                 ),
                                               ),
                                             ),
@@ -3755,12 +3764,193 @@ String textWithCombiningOverline(String text) {
 bool _runNeedsLibvisioOverlineBake(VsdxTextRun run) {
   if (!run.charStyle.overline) return false;
   if (run.text.isEmpty) return false;
-  if (run.fieldSpans.isNotEmpty || run.tabIndices.isNotEmpty) return false;
+  // Tabs stay in the string; U+0305 is skipped on U+0009 so tabIndices
+  // still name the same stops. Field runs stay native — their spans
+  // are character offsets a prefix would shift.
+  if (run.fieldSpans.isNotEmpty) return false;
   if (run.text.contains(kLibvisioCombiningOverline)) return false;
   for (final rune in run.text.runes) {
     if (_runeTakesCombiningOverline(rune)) return true;
   }
   return false;
+}
+
+/// Gap canvas / SVG leave between the bullet glyph and the body text.
+///
+/// `TextPosAfterBullet` is the *minimum* physical label field, so a wide
+/// custom `BulletStr` pushes the body further right (canvas
+/// `_paintParagraphBlock`, SVG `labelWidth`).
+double libvisioBulletLabelWidth(VsdxParaStyle para, VsdxCharStyle body) {
+  final bodyFont = body.fontSizeInches > 0 ? body.fontSizeInches : 0.14;
+  final glyph = nowrapTextAdvanceInches(
+    para.resolvedBulletGlyph,
+    VsdxCharStyle.defaults.copyWith(
+      fontSizeInches: para.effectiveBulletFontSizeInches(bodyFont),
+    ),
+  );
+  final minimum =
+      para.textPosAfterBulletInches > 0 ? para.textPosAfterBulletInches : 0.25;
+  return math.max(minimum, glyph);
+}
+
+/// `true` when a `Bullet` list must become a literal glyph for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `Bullet` / `BulletStr` /
+/// `BulletFont` / `TextPosAfterBullet` *are* tokens, and
+/// `_bulletFromParaFormat` resolves the glyph into
+/// `addOpenUnorderedListLevel`'s `text:bullet-char`, but Draw's drawing-text
+/// import keeps only the `text:min-label-width` inset — the glyph itself is
+/// never painted. Canvas / SVG do paint it, so a save writes the resolved
+/// character into the paragraph text, folds the label field into
+/// `IndLeft` / `IndFirst` (a hanging indent Draw does collect as
+/// `fo:margin-left` / `fo:text-indent`), and drops the Bullet cells so
+/// reopening does not stack a second marker. Field runs stay native — a
+/// prefix would move every `<fld>` span.
+bool shapeNeedsLibvisioBulletGlyphBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.curvedText || shape.shapeInside) return false;
+  for (final run in shape.richText.runs) {
+    if (run.fieldSpans.isNotEmpty) return false;
+  }
+  for (final run in shape.richText.runs) {
+    if (run.paraStyle.bullet != 0) return true;
+  }
+  return false;
+}
+
+/// Index of the paragraph each run starts in (Visio breaks at `\n`).
+List<int> _libvisioParagraphIndexPerRun(List<VsdxTextRun> runs) {
+  final out = <int>[];
+  var index = 0;
+  for (final run in runs) {
+    out.add(index);
+    index += '\n'.allMatches(run.text).length;
+  }
+  return out;
+}
+
+/// Prefix every paragraph [run] *starts* with the resolved bullet glyph.
+///
+/// [opensParagraph] is false when an earlier run already carries this
+/// paragraph's glyph; the breaks inside [run] still open new ones.
+String _libvisioBulletPrefixedText(
+  String text,
+  String glyph, {
+  required bool opensParagraph,
+}) {
+  final parts = text.split('\n');
+  final buf = StringBuffer();
+  for (var i = 0; i < parts.length; i++) {
+    if (i > 0) buf.write('\n');
+    final lead = i > 0 || opensParagraph;
+    // An empty trailing paragraph would only contribute an orphan glyph.
+    if (lead && parts[i].isNotEmpty) buf.write('$glyph ');
+    buf.write(parts[i]);
+  }
+  return buf.toString();
+}
+
+VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
+  final runs = shape.richText.runs;
+  final paraOf = _libvisioParagraphIndexPerRun(runs);
+  // The body font of a paragraph comes from its first non-empty run, the
+  // same run canvas / SVG size the glyph against.
+  final bodyStyle = <int, VsdxCharStyle>{};
+  for (var i = 0; i < runs.length; i++) {
+    if (runs[i].text.trim().isEmpty) continue;
+    bodyStyle.putIfAbsent(paraOf[i], () => runs[i].charStyle);
+  }
+  final firstRunOfPara = <int, int>{};
+  for (var i = 0; i < runs.length; i++) {
+    firstRunOfPara.putIfAbsent(paraOf[i], () => i);
+  }
+  final next = <VsdxTextRun>[];
+  for (var i = 0; i < runs.length; i++) {
+    final run = runs[i];
+    final para = run.paraStyle;
+    if (para.bullet == 0) {
+      next.add(run);
+      continue;
+    }
+    final label = libvisioBulletLabelWidth(
+      para,
+      bodyStyle[paraOf[i]] ?? VsdxCharStyle.defaults,
+    );
+    final flattened = para.copyWith(
+      bullet: 0,
+      clearBulletStr: true,
+      clearBulletFont: true,
+      clearBulletFontSize: true,
+      textPosAfterBulletInches: 0,
+      indentLeftInches: para.indentLeftInches + label,
+      indentFirstInches: para.indentFirstInches - label,
+    );
+    next.add(run.copyWith(
+      text: _libvisioBulletPrefixedText(
+        run.text,
+        para.resolvedBulletGlyph,
+        opensParagraph: firstRunOfPara[paraOf[i]] == i,
+      ),
+      paraStyle: flattened,
+    ));
+  }
+  final rich = shape.richText.copyWith(runs: next);
+  return shape.copyWith(
+    richText: rich,
+    text: shape.text == null ? null : rich.plainText,
+  );
+}
+
+VsdxShape bakeBulletGlyphShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeBulletGlyphShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shapeNeedsLibvisioBulletGlyphBake(shape)
+      ? _sourceForLibvisioBulletGlyphWrite(shape)
+      : shape;
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Write the bullet glyph Draw never paints from `text:bullet-char`.
+VsdxDocument bakeBulletGlyphForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeBulletGlyphShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
 }
 
 /// `true` when Character Overline must become combining marks for Draw.
@@ -3848,6 +4038,7 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
 /// using the same nowrap advance curved-text uses, then hides the source
 /// label so Draw paints those glyphs above the body fill. Explicit
 /// newlines stack the same way canvas / SVG already wrap those markers.
+/// Word Wrap on also wraps to TxtWidth with the same word/space units.
 /// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`).
 /// Vertical text is folded into `TxtAngle` first so plate centres
 /// follow TxtPin. Glueable labels get a route TxtPin first, then the
@@ -3984,12 +4175,105 @@ List<({_HighlightSeg seg, double x})> _placeHighlightLine(
   return out;
 }
 
+List<List<_HighlightSeg>> _wrapHighlightSegs(
+  List<_HighlightSeg> segs,
+  double lineMax,
+) {
+  if (segs.isEmpty) return [<_HighlightSeg>[]];
+  final lines = <List<_HighlightSeg>>[];
+  var cur = <_HighlightSeg>[];
+  var curW = 0.0;
+
+  void flush() {
+    if (cur.isEmpty) return;
+    lines.add(cur);
+    cur = <_HighlightSeg>[];
+    curW = 0.0;
+  }
+
+  void append(_HighlightSeg next) {
+    cur.add(next);
+    curW += next.width;
+  }
+
+  for (final s in segs) {
+    if (s.text.isEmpty) {
+      append(s);
+      continue;
+    }
+    for (final unit in _libvisioWrapUnits(s.text)) {
+      final uw = nowrapTextAdvanceInches(unit, s.style);
+      final uh = math.max(
+        s.style.effectiveFontSizeInchesForText(unit),
+        0.04,
+      );
+      final isBlank = unit.trim().isEmpty;
+      if (curW > 1e-9 && curW + uw > lineMax && !isBlank) {
+        flush();
+      }
+      if (cur.isEmpty && isBlank) continue;
+      if (uw > lineMax && unit.length > 1 && !isBlank) {
+        for (final r in unit.runes) {
+          final ch = String.fromCharCode(r);
+          final cw = nowrapTextAdvanceInches(ch, s.style);
+          final chH = math.max(
+            s.style.effectiveFontSizeInchesForText(ch),
+            0.04,
+          );
+          if (curW > 1e-9 && curW + cw > lineMax) flush();
+          append((
+            text: ch,
+            style: s.style,
+            para: s.para,
+            width: cw,
+            height: chH,
+            tabSetIx: null,
+          ));
+        }
+        continue;
+      }
+      append((
+        text: unit,
+        style: s.style,
+        para: s.para,
+        width: uw,
+        height: uh,
+        tabSetIx: null,
+      ));
+    }
+  }
+  flush();
+  return lines.isEmpty ? [segs] : lines;
+}
+
+List<List<_HighlightSeg>> _wrapHighlightLines(
+  List<List<_HighlightSeg>> lines,
+  VsdxShape shape,
+) {
+  if (!shape.wordWrap) return lines;
+  final block = shape.richText.textBlock;
+  final tw = (block.widthInches ?? shape.width).abs();
+  final contentW = math.max(
+    0.04,
+    tw - block.marginLeftInches - block.marginRightInches,
+  );
+  final out = <List<_HighlightSeg>>[];
+  for (final line in lines) {
+    if (line.any((s) => s.tabSetIx != null)) {
+      out.add(line);
+      continue;
+    }
+    out.addAll(_wrapHighlightSegs(line, contentW));
+  }
+  return out;
+}
+
 List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
   VsdxShape source, {
   required List<int> plateIds,
   required int Function() nextId,
 }) {
-  final lines = _mixedHighlightLines(source);
+  final lines = _wrapHighlightLines(_mixedHighlightLines(source), source);
   if (lines.every((line) => line.isEmpty)) return const <VsdxShape>[];
   final block = source.richText.textBlock;
   final tw = (block.widthInches ?? source.width).abs();
@@ -4045,7 +4329,7 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
     for (final p in placed) {
       final s = p.seg;
       final color = s.style.highlight;
-      if (color != null && s.width > 1e-9) {
+      if (color != null && s.width > 1e-9 && s.text.trim().isNotEmpty) {
         final local = _textFlipAboutPin(
           source,
           _textRotateAboutPin(

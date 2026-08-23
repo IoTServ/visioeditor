@@ -27,8 +27,9 @@
 /// there — `VSDContentCollector` paints it as span `fo:background-color`
 /// and Draw shows the plate. Mixed run colours cannot share that cell, so
 /// a save inserts locked FillForegnd siblings of each highlighted run,
-/// including explicit newlines stacked like canvas / SVG and tab
-/// fields pinned with `visioTabFieldStart`. `TextDirection` is stored
+/// including explicit newlines stacked like canvas / SVG, Word Wrap
+/// lines broken at TxtWidth, and tab fields pinned with
+/// `visioTabFieldStart`. `TextDirection` is stored
 /// but `_flushText` never emits writing-mode, so a save folds the
 /// canvas −90° into `TxtAngle` and swaps TxtWidth/TxtHeight. Glueable
 /// labels pin TxtPin first, then swap that tight plate. Mixed
@@ -39,7 +40,8 @@
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
 /// a save premultiplies those into RGB toward white. Overline still paints
 /// here even though `readCharIX` skips it; a save inserts U+0305 combining
-/// marks so Draw paints the line too. Glow* is not a token: unfilled
+/// marks, including tabbed runs whose `tabIndices` still name the stop.
+/// Glow* is not a token: unfilled
 /// 1-D strokes with resolved RGB bake a Gaussian PNG plate, unfilled 2-D
 /// with resolved RGB bakes a Gaussian PNG ring, and filled NoLine shapes
 /// bake a Gaussian PNG sibling. Theme-only Glow resolves the slot
@@ -461,6 +463,90 @@ void main() {
     expect(
         baked.richText.runs.single.text, contains(kLibvisioCombiningOverline));
     expect(baked.text, contains(kLibvisioCombiningOverline));
+  });
+
+  test('Character Overline bakes combining marks past tab fields', () {
+    const tabs = <VsdxTabSet>[
+      VsdxTabSet(
+        ix: 0,
+        stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+      ),
+    ];
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3.2,
+      height: 0.8,
+      name: 'OverlineTab',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      richText: const VsdxRichText(
+        tabSets: tabs,
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          verticalAlign: VsdxVertAlign.middle,
+        ),
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'A\tB',
+            tabIndices: <int>[0],
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 0.4,
+              overline: true,
+              color: VsdxColor(0xFF000000),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.left,
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioOverlineBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final run = source.richText.runs.single;
+    expect(run.charStyle.overline, isFalse);
+    expect(run.text, contains('\t'));
+    expect(run.tabIndices, <int>[0]);
+    expect(
+      run.text
+          .split('\t')
+          .every((part) => part.contains(kLibvisioCombiningOverline)),
+      isTrue,
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      run.text,
+      reason: 'a second save must not stack another overline',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.single.charStyle.overline, isFalse);
+    expect(
+      after.richText.runs.single.text.split('\t').every(
+            (part) => part.contains(kLibvisioCombiningOverline),
+          ),
+      isTrue,
+    );
   });
 
   test('Character LangID RTL bakes a leading U+200F for LibreOffice', () {
@@ -1987,6 +2073,96 @@ void main() {
       closeTo(0.5, 1e-9),
     );
     expect(after.richText.textBlock.widthInches, greaterThan(1.0));
+  });
+
+  test('Bullet lists bake the glyph LibreOffice never paints', () {
+    const para = VsdxParaStyle(
+      bullet: 3,
+      textPosAfterBulletInches: 0.25,
+      indentLeftInches: 0.1,
+    );
+    const body = VsdxCharStyle(
+      fontFamily: 'Arial',
+      fontSizeInches: 0.3,
+      color: VsdxColor(0xFF000000),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'BulletBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'AAA\nBBB',
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(text: 'AAA\nBBB', charStyle: body, paraStyle: para),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioBulletGlyphBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioBulletGlyphBake(
+        shape.copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[VsdxTextRun(text: 'AAA', charStyle: body)],
+          ),
+        ),
+      ),
+      isFalse,
+    );
+    // TextPosAfterBullet is the minimum field; a wide glyph expands it.
+    expect(libvisioBulletLabelWidth(para, body), closeTo(0.25, 1e-9));
+    expect(
+      libvisioBulletLabelWidth(
+        para.copyWith(bulletStr: 'LONG'),
+        body,
+      ),
+      greaterThan(0.5),
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final run = source.richText.runs.single;
+    expect(run.text, '\u25a0 AAA\n\u25a0 BBB');
+    expect(source.text, '\u25a0 AAA\n\u25a0 BBB');
+    expect(run.paraStyle.bullet, 0);
+    expect(run.paraStyle.bulletStr, isNull);
+    expect(run.paraStyle.textPosAfterBulletInches, 0);
+    // Hanging indent: the glyph sits back at the old IndLeft, wrapped body
+    // lines hang at IndLeft + the label field.
+    expect(run.paraStyle.indentLeftInches, closeTo(0.35, 1e-9));
+    expect(run.paraStyle.indentFirstInches, closeTo(-0.25, 1e-9));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      '\u25a0 AAA\n\u25a0 BBB',
+      reason: 'a second save must not stack another glyph',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    final savedRun = after.richText.runs.first;
+    expect(savedRun.paraStyle.bullet, 0);
+    expect(after.richText.plainText, startsWith('\u25a0 AAA'));
+    expect(savedRun.paraStyle.indentLeftInches, closeTo(0.35, 1e-6));
+    expect(savedRun.paraStyle.indentFirstInches, closeTo(-0.25, 1e-6));
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
   test('Word Wrap off bakes TxtWidth LibreOffice wraps against', () {
@@ -6426,6 +6602,98 @@ void main() {
         isTrue);
   });
 
+  test('mixed Character Highlight wraps to TxtWidth for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 1.5,
+      height: 2.4,
+      name: 'HighlightMixedWrap',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'MMMM MMMM',
+      richText: const VsdxRichText(
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          verticalAlign: VsdxVertAlign.middle,
+        ),
+        runs: [
+          VsdxTextRun(
+            text: 'MMMM ',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 0.4,
+              highlight: VsdxColor(0xFFFF00FF),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+          VsdxTextRun(
+            text: 'MMMM',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 0.4,
+              highlight: VsdxColor(0xFF00FF00),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioMixedHighlightBake(shape), isTrue);
+    expect(shape.wordWrap, isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioHighlightPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(2));
+    expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+    expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+    expect(plates[0].richText.plainText.trim(), 'MMMM');
+    expect(plates[1].richText.plainText.trim(), 'MMMM');
+    expect(
+      plates[0].pinY,
+      greaterThan(plates[1].pinY + 0.15),
+      reason: 'Visio Y-up: the wrapped second word sits below the first',
+    );
+    expect(plates[0].pinX, closeTo(plates[1].pinX, 0.45));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioHighlightPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Highlight plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioHighlightPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.findShapeById(1)!.richText.textBlock.hideText,
+      isTrue,
+    );
+  });
+
   test('mixed Character Highlight tabs bake pinned plates', () {
     const tabs = <VsdxTabSet>[
       VsdxTabSet(
@@ -8456,9 +8724,18 @@ void main() {
           .where((s) => s.name.startsWith('Bullet'))
           .map((s) => s.richText.runs.single.paraStyle.bullet)
           .toList(),
-      <int>[1, 2, 3, 4, 5, 6, 7],
-      reason: 'Bullet 1–7 cells must round-trip for Draw to collect',
+      <int>[0, 0, 0, 0, 0, 0, 0],
+      reason: 'Draw never paints text:bullet-char; the glyph is in the text',
     );
+    for (var bullet = 1; bullet <= 7; bullet++) {
+      expect(
+        savedDoc.pages.first.shapes
+            .firstWhere((s) => s.name == 'Bullet$bullet')
+            .richText
+            .plainText,
+        contains(libvisioBulletGlyph(bullet)),
+      );
+    }
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     final afterPages = oracle.svgPages(saved);
@@ -8470,9 +8747,15 @@ void main() {
       greaterThanOrEqualTo(22),
       reason: 'libvisio must dash LinePattern 2–23',
     );
-    // RVNGSVGDrawingGenerator drops list markers (and span fo:background-color).
-    // vsd2raw still records the bullet-char Draw paints.
-    _expectVsd2rawCollected(saved, const <String>['text:bullet-char']);
+    // RVNGSVGDrawingGenerator drops list markers. After the glyph bake
+    // the characters live in the paragraph text Draw actually paints.
+    for (var bullet = 1; bullet <= 7; bullet++) {
+      expect(
+        after,
+        contains(libvisioBulletGlyph(bullet)),
+        reason: 'libvisio must keep baked Bullet $bullet in the text',
+      );
+    }
   });
 
   test('classic FillPattern 2–40 and modern FillGradient paint and save', () {
@@ -9521,7 +9804,15 @@ void main() {
     expect(xml, contains('N="Case" V="1"'));
     expect(xml, contains('N="Pos" V="1"'));
     expect(xml, contains('N="DblUnderline" V="1"'));
-    expect(xml, contains('N="Bullet" V="1"'));
+    expect(xml.contains('N="Bullet" V="1"'), isFalse,
+        reason: 'Draw never paints text:bullet-char; the glyph is in the text');
+    expect(
+      savedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'CollectedChar')
+          .richText
+          .plainText,
+      contains(libvisioBulletGlyph(1)),
+    );
     final glowNoLine =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'GlowNoLine');
     expect(glowNoLine.glow.enabled, isFalse,
@@ -9636,7 +9927,9 @@ void main() {
     expect(collected.charStyle.textCase, VsdxTextCase.allCaps);
     expect(collected.charStyle.position, VsdxTextPosition.superscript);
     expect(collected.charStyle.doubleUnderline, isTrue);
-    expect(collected.paraStyle.bullet, 1);
+    expect(collected.paraStyle.bullet, 0,
+        reason: 'Draw never paints text:bullet-char; the glyph is in the text');
+    expect(collected.text, contains(libvisioBulletGlyph(1)));
     expect(
       savedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'CollectedChar')
@@ -9673,7 +9966,6 @@ void main() {
       'style:text-position: super',
       'style:text-underline-type: double',
       'style:text-scale',
-      'text:bullet-char',
       'draw:shadow',
     ]);
 

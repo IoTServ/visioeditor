@@ -583,6 +583,26 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Paragraph `Bullet` lists now keep their marker in LibreOffice. The
+  cells are tokens and libvisio resolves `text:bullet-char`, but Draw's
+  drawing-text import keeps only the hanging inset, so a save writes
+  the resolved glyph into the paragraph text, folds
+  `TextPosAfterBullet` into `IndLeft` / `IndFirst`, and drops the
+  Bullet cells so a second save does not stack another marker. Field
+  runs stay native.
+- Mixed Character Highlight now wraps to `TxtWidth` in LibreOffice.
+  `XML_HIGHLIGHT` is still an empty `readCharIX` case, so a save
+  already bakes per-run plates for mixed colours, but a wrapped line
+  used to stay one plate so Draw painted a single band while canvas /
+  SVG already break at the text box. A save now wraps those plates
+  with the same word/space units shape-inside uses. Tab fields stay
+  on one line.
+- Character Overline on tabbed runs now keeps the line in LibreOffice.
+  `readCharIX` still skips `XML_OVERLINE`, so a save already inserts
+  U+0305 combining marks, but tabbed runs used to stay native so Draw
+  dropped the line while canvas / SVG already paint it past the tab
+  field. A save now writes those marks around U+0009 and keeps
+  `tabIndices` on the same stop. Field runs stay native.
 - Word Wrap off on connector labels now keeps the run on one line in
   LibreOffice. `User.veWordWrap` is not a token, so a save already
   expands TxtWidth for a 2-D unwrapped label, but 1-D labels used to

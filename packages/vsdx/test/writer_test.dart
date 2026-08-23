@@ -6129,8 +6129,10 @@ void main() {
     expect(run.charStyle.textCase, VsdxTextCase.allCaps);
     expect(run.charStyle.fontScale, closeTo(0.9, 1e-6));
     expect(run.charStyle.doubleUnderline, isTrue);
-    expect(run.paraStyle.bullet, 1);
-    expect(run.paraStyle.bulletStr, '•');
+    expect(run.paraStyle.bullet, 0,
+        reason: 'Draw never paints text:bullet-char; the glyph is in the text');
+    expect(run.paraStyle.bulletStr, isNull);
+    expect(run.text, contains('•'));
     expect(run.paraStyle.flags, 2);
   });
 
