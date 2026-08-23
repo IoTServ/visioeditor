@@ -112,9 +112,10 @@
 /// draw.io Label Border is also a User row, so a save bakes a locked
 /// NoFill sibling whose LineColor Draw collects, then drops
 /// `veLabelBorderColor`. Glueable labels pin TxtPin first so that
-/// stroke sits on the route plate. draw.io Label Padding is also a User row, so a
-/// save adds the pixel inset into Left/Right/Top/BottomMargin and drops
-/// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
+/// stroke sits on the route plate. draw.io Label Padding is also a User
+/// row, so a save adds the pixel inset into Left/Right/Top/BottomMargin
+/// and drops `veLabelPadding`. Glueable labels also grow the tight
+/// route plate. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line — including tab fields
 /// pinned with `visioTabFieldStart` — and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
@@ -1875,6 +1876,115 @@ void main() {
     _expectVsd2rawCollected(saved, const <String>[
       'fo:padding-left',
     ]);
+  });
+
+  test('Label Padding grows a connector-label plate for LibreOffice', () {
+    const pad = VsdxLabelPadding.all(48);
+    const label = VsdxRichText(
+      textBlock: VsdxTextBlock(
+        marginLeftInches: 0,
+        marginRightInches: 0,
+        marginTopInches: 0,
+        marginBottomInches: 0,
+        verticalAlign: VsdxVertAlign.middle,
+        backgroundColor: VsdxColor(0xFFFF00FF),
+      ),
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'M',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.5,
+            color: VsdxColor(0xFF000000),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.center,
+          ),
+        ),
+      ],
+    );
+    final elbow = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'LabelPaddingEdge',
+    )
+        .copyWith(
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(6, 0),
+                LineTo(6, -6),
+              ],
+            ),
+          ],
+          richText: label,
+        )
+        .withLabelPadding(pad)
+        .withLabelBorderColor(const VsdxColor(0xFF1565C0));
+    expect(shapeNeedsLibvisioLabelPaddingBake(elbow), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(elbow));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.labelPadding.isZero, isTrue);
+    expect(
+      source.richText.textBlock.marginLeftInches,
+      closeTo(48 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+    );
+    expect(
+      source.richText.textBlock.marginTopInches,
+      closeTo(48 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+    );
+    expect(source.richText.textBlock.pinXInches, isNotNull);
+    expect(
+      source.richText.textBlock.widthInches,
+      greaterThan(1.0),
+    );
+    expect(
+      source.richText.textBlock.heightInches,
+      greaterThan(1.0),
+    );
+    final pagePin = baked.pages.first.localToPageDeep(
+      source.id,
+      Offset2D(
+        source.richText.textBlock.pinXInches!,
+        source.richText.textBlock.pinYInches!,
+      ),
+    );
+    expect(pagePin.x, closeTo(7, 0.2));
+    expect(pagePin.y, closeTo(7, 0.2));
+    final plate =
+        baked.pages.first.shapes.firstWhere(isLibvisioLabelBorderPlate);
+    expect(plate.width, greaterThan(1.0));
+    expect(plate.pinX, closeTo(7, 0.35));
+    expect(plate.pinY, closeTo(7, 0.35));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .marginLeftInches,
+      closeTo(48 / kLibvisioLabelPaddingPxPerInch, 1e-12),
+      reason: 'a second save must not stack another inset',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.labelPadding.isZero, isTrue);
+    expect(
+      after.richText.textBlock.marginLeftInches,
+      closeTo(0.5, 1e-9),
+    );
+    expect(after.richText.textBlock.widthInches, greaterThan(1.0));
   });
 
   test('Word Wrap off bakes TxtWidth LibreOffice wraps against', () {

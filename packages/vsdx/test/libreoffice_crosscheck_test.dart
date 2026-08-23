@@ -2213,6 +2213,62 @@ void main() {
             .withLabelPadding(const VsdxLabelPadding(left: 48)),
       ),
     );
+    var labelPaddingEdgeDocument = parser.parse(blank);
+    final labelPaddingEdgePage = labelPaddingEdgeDocument.pages.first;
+    labelPaddingEdgeDocument = labelPaddingEdgeDocument.replacePage(
+      0,
+      labelPaddingEdgePage.addShape(
+        VsdxShapeFactory.line(
+          id: labelPaddingEdgePage.nextFreeShapeId(),
+          ax: 1,
+          ay: 7,
+          bx: 7,
+          by: 1,
+          name: 'LabelPaddingEdge',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.02,
+          ),
+        )
+            .copyWith(
+              geometries: const <VsdxGeometry>[
+                VsdxGeometry(
+                  noFill: true,
+                  commands: <VsdxPathCommand>[
+                    MoveTo(0, 0),
+                    LineTo(6, 0),
+                    LineTo(6, -6),
+                  ],
+                ),
+              ],
+              richText: const VsdxRichText(
+                textBlock: VsdxTextBlock(
+                  marginLeftInches: 0,
+                  marginRightInches: 0,
+                  marginTopInches: 0,
+                  marginBottomInches: 0,
+                  verticalAlign: VsdxVertAlign.middle,
+                  backgroundColor: VsdxColor(0xFFFF00FF),
+                ),
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'M',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.5,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            )
+            .withLabelPadding(const VsdxLabelPadding.all(48))
+            .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
+      ),
+    );
     var wordWrapDocument = parser.parse(blank);
     final wordWrapPage = wordWrapDocument.pages.first;
     wordWrapDocument = wordWrapDocument.replacePage(
@@ -4690,6 +4746,10 @@ void main() {
         originalBytes: blank,
         edited: labelPaddingDocument,
       ),
+      'label_padding_edge': writer.write(
+        originalBytes: blank,
+        edited: labelPaddingEdgeDocument,
+      ),
       'word_wrap': writer.write(
         originalBytes: blank,
         edited: wordWrapDocument,
@@ -5450,6 +5510,88 @@ void main() {
             greaterThan(inset * 2),
             reason: 'LibreOffice must honour baked LeftMargin as fo:padding; '
                 'inset=$inset glyph=$glyph',
+          );
+        }
+        if (entry.key == 'label_padding_edge') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LabelPaddingEdge');
+          expect(source.labelPadding.isZero, isTrue);
+          expect(
+            source.richText.textBlock.marginLeftInches,
+            closeTo(0.5, 1e-6),
+          );
+          expect(source.richText.textBlock.widthInches, greaterThan(1.0));
+          expect(source.richText.textBlock.heightInches, greaterThan(1.0));
+          final pin = reopened.pages.first.localToPageDeep(
+            source.id,
+            Offset2D(
+              source.richText.textBlock.pinXInches!,
+              source.richText.textBlock.pinYInches!,
+            ),
+          );
+          expect(pin.x, closeTo(7, 0.2));
+          expect(pin.y, closeTo(7, 0.2));
+          final plate = reopened.pages.first.shapes
+              .firstWhere(isLibvisioLabelBorderPlate);
+          expect(plate.width, greaterThan(1.0));
+          expect(plate.pinX, closeTo(7, 0.35));
+        }
+        if (entry.key == 'label_padding_edge' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          bool isBlueStroke(raster.Pixel pixel) =>
+              pixel.b > pixel.r + 30 && pixel.b > pixel.g + 10 && pixel.r < 200;
+          int countBlue(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                if (isBlueStroke(rendered.getPixel(x, y))) count++;
+              }
+            }
+            return count;
+          }
+
+          final pad = countBlue(6.20, 6.70, 6.45, 7.30);
+          final box = countBlue(3.55, 3.55, 4.45, 4.45);
+          expect(
+            pad,
+            greaterThan(8),
+            reason: 'LibreOffice must stroke the padded Label Border away '
+                'from the glyphs; pad=$pad box=$box',
+          );
+          expect(
+            box,
+            lessThan(3),
+            reason: 'LibreOffice must not stroke the Begin–End box; '
+                'pad=$pad box=$box',
           );
         }
         if (entry.key == 'word_wrap' && pdftoppm != null) {

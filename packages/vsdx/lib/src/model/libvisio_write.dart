@@ -224,7 +224,9 @@
 /// draw.io Label Padding is
 /// `User.veLabelPadding` (not a token), so a save adds the pixel inset
 /// into Left/Right/Top/BottomMargin (`fo:padding-*`) Draw collects, then
-/// drops the User row. draw.io Curved Text is `User.veCurvedText`
+/// drops the User row. Glueable labels pin TxtPin first and grow that
+/// tight plate so the pad sits around the glyphs, not inside the
+/// Begin–End box. draw.io Curved Text is `User.veCurvedText`
 /// (not a token), so a save inserts locked per-glyph siblings along the
 /// same quadratic arc canvas / SVG already paint, hides the source
 /// (`HideText` is a token) and drops the User row. FlipX / FlipY extra
@@ -3262,16 +3264,22 @@ VsdxDocument bakeLabelBorderForLibvisioWrite(VsdxDocument document) {
 /// rows, so `veLabelPadding` never becomes ODF padding. Left/Right/Top/
 /// BottomMargin *are* collected (`VSDContentCollector` maps them to
 /// `fo:padding-*`), so a save adds the pixel inset at 96 dpi and drops
-/// the User row. Glueable 1-D labels stay native — their loose plate
-/// depends on layout.
+/// the User row. Glueable labels need a TxtPin / TxtWidth first (loose
+/// bake pins the route) and grow that tight plate so the pad sits
+/// around the glyphs the way canvas / SVG already paint it.
 bool shapeNeedsLibvisioLabelPaddingBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.isGlueableConnector) return false;
   if (shape.labelPadding.isZero) return false;
   if (shape.richText.textBlock.hideText) return false;
   final hasText =
       !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
-  return hasText;
+  if (!hasText) return false;
+  if (shape.is1D || shape.isGlueableConnector) {
+    final block = shape.richText.textBlock;
+    if (block.pinXInches == null && block.pinYInches == null) return false;
+    if (block.widthInches == null) return false;
+  }
+  return true;
 }
 
 VsdxShape bakeLabelPaddingShapeForLibvisioWrite(VsdxShape shape) {
@@ -3293,16 +3301,40 @@ VsdxShape bakeLabelPaddingShapeForLibvisioWrite(VsdxShape shape) {
     final pad = shape.labelPadding;
     final block = shape.richText.textBlock;
     final px = kLibvisioLabelPaddingPxPerInch;
+    final dL = pad.left / px;
+    final dR = pad.right / px;
+    final dT = pad.top / px;
+    final dB = pad.bottom / px;
+    var nextBlock = block.copyWith(
+      marginLeftInches: block.marginLeftInches + dL,
+      marginRightInches: block.marginRightInches + dR,
+      marginTopInches: block.marginTopInches + dT,
+      marginBottomInches: block.marginBottomInches + dB,
+    );
+    var formulas = shape.formulas;
+    if (shape.is1D || shape.isGlueableConnector) {
+      final tw = (block.widthInches ?? shape.width).abs();
+      final th = (block.heightInches ?? shape.height).abs();
+      final locX = block.locPinXInches ?? tw / 2;
+      final locY = block.locPinYInches ?? th / 2;
+      final newTw = tw + dL + dR;
+      final newTh = th + dT + dB;
+      nextBlock = nextBlock.copyWith(
+        widthInches: newTw,
+        heightInches: newTh,
+        locPinXInches: locX + dL,
+        locPinYInches: locY + dB,
+      );
+      formulas = Map<String, String>.of(shape.formulas)
+        ..remove('TxtWidth')
+        ..remove('TxtHeight')
+        ..remove('TxtLocPinX')
+        ..remove('TxtLocPinY');
+    }
     next = shape
         .copyWith(
-          richText: shape.richText.copyWith(
-            textBlock: block.copyWith(
-              marginLeftInches: block.marginLeftInches + pad.left / px,
-              marginRightInches: block.marginRightInches + pad.right / px,
-              marginTopInches: block.marginTopInches + pad.top / px,
-              marginBottomInches: block.marginBottomInches + pad.bottom / px,
-            ),
-          ),
+          richText: shape.richText.copyWith(textBlock: nextBlock),
+          formulas: formulas,
         )
         .withLabelPadding(VsdxLabelPadding.zero);
   }

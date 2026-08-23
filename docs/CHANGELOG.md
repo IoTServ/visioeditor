@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Connector Label Padding now keeps its inset in LibreOffice.
+  `User.veLabelPadding` is not a token, so a save already folds 2-D
+  padding into Margin cells, but 1-D labels used to skip so Draw
+  dropped the inset while canvas / SVG already pad the route plate. A
+  save now pins a missing TxtPin first, grows that tight frame by the
+  pixel inset, and writes the same margins Draw collects as
+  `fo:padding-*`.
 - Connector Label Border now keeps its 1px frame in LibreOffice.
   `User.veLabelBorderColor` is not a token, so a save already bakes a
   locked NoFill sibling for 2-D text, but 1-D labels used to skip so
