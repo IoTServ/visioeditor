@@ -118,6 +118,8 @@
 /// route plate. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line — including tab fields
 /// pinned with `visioTabFieldStart` — and drops `veWordWrap`.
+/// Glueable labels pin TxtPin first so that wider plate stays on the
+/// route.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
 /// PNG sibling and drops the source fill. Resolved-RGB FillGradient,
 /// theme-only gradient stops, classic 25–40 washes and FillPattern 2–24
@@ -2087,6 +2089,120 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Word Wrap off expands a connector-label TxtWidth for LibreOffice', () {
+    final stub = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'WordWrapEdge',
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(6, 0),
+            LineTo(6, -6),
+          ],
+        ),
+      ],
+    );
+    final blank = writer.emptyDocument();
+    var probe = parser.parse(blank);
+    probe = probe.replacePage(0, probe.pages.first.addShape(stub));
+    final local = probe.pages.first.pageToLocalDeep(1, const Offset2D(7, 7));
+    const label = VsdxRichText(
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'MMMM',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.35,
+            color: VsdxColor(0xFFFF0000),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.left,
+          ),
+        ),
+        VsdxTextRun(
+          text: 'MMMM',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.35,
+            color: VsdxColor(0xFF00FF00),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.left,
+          ),
+        ),
+      ],
+    );
+    final elbow = stub
+        .copyWith(
+          richText: label.copyWith(
+            textBlock: VsdxTextBlock(
+              pinXInches: local.x,
+              pinYInches: local.y,
+              locPinXInches: 0.4,
+              locPinYInches: 0.8,
+              widthInches: 0.8,
+              heightInches: 1.6,
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+          ),
+        )
+        .withWordWrap(false);
+    expect(shapeNeedsLibvisioWordWrapBake(elbow), isTrue);
+    expect(
+      shapeNeedsLibvisioWordWrapBake(
+        stub.copyWith(richText: label).withWordWrap(false),
+      ),
+      isFalse,
+      reason: 'a missing TxtPin must wait for the loose-label bake',
+    );
+    final needed = nowrapTxtWidthForLibvisioWrite(elbow);
+    expect(needed, greaterThan(1.4));
+
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(elbow));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.wordWrap, isTrue);
+    expect(source.richText.textBlock.widthInches, closeTo(needed, 1e-9));
+    expect(source.richText.textBlock.locPinXInches, closeTo(0.4, 1e-9));
+    final pagePin = baked.pages.first.localToPageDeep(
+      source.id,
+      Offset2D(
+        source.richText.textBlock.pinXInches!,
+        source.richText.textBlock.pinYInches!,
+      ),
+    );
+    expect(pagePin.x, closeTo(7, 0.2));
+    expect(pagePin.y, closeTo(7, 0.2));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .widthInches,
+      closeTo(needed, 1e-9),
+      reason: 'a second save must not stack another TxtWidth',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.wordWrap, isTrue);
+    expect(after.richText.textBlock.widthInches, closeTo(needed, 1e-6));
   });
 
   test('Word Wrap off bakes TxtWidth past tab fields for LibreOffice', () {

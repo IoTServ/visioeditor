@@ -249,7 +249,8 @@
 /// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
 /// to the unwrapped line plus margins (`svg:width` Draw wraps against),
 /// including tab fields pinned with `visioTabFieldStart`, and drops the
-/// User row. draw.io Flow Animation is `User.veFlowAnimation*`
+/// User row. Glueable labels pin TxtPin first so that wider plate stays
+/// on the route, not the Begin–End box. draw.io Flow Animation is `User.veFlowAnimation*`
 /// (not a token), so a save flattens the same 8 CSS-px dash canvas / SVG
 /// synthesise into MoveTo/LineTo and writes `veFlowAnimation=0`. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
@@ -3442,13 +3443,19 @@ double nowrapTxtWidthForLibvisioWrite(VsdxShape shape) {
 /// rows, so `veWordWrap` never becomes ODF `fo:wrap-option`. TxtWidth *is*
 /// collected (`svg:width` of the text object), and Draw wraps to that box,
 /// so a save widens the frame to the unwrapped line and drops the User row.
-/// Glueable 1-D labels, vertical text and curved text stay native —
-/// their layout is not a single horizontal measure. Tab fields use the
+/// Glueable labels need a TxtPin / TxtWidth first (loose bake pins the
+/// route) so the expanded plate stays on the polyline, not the
+/// Begin–End box. Vertical text and curved text stay native — their
+/// layout is not a single horizontal measure. Tab fields use the
 /// same `visioTabFieldStart` canvas / SVG / libvisio `_fillTabSet` use
 /// so Draw keeps the stop on one unwrapped line.
 bool shapeNeedsLibvisioWordWrapBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (shape.is1D || shape.isGlueableConnector) {
+    final block = shape.richText.textBlock;
+    if (block.pinXInches == null && block.pinYInches == null) return false;
+    if (block.widthInches == null) return false;
+  }
   if (shape.wordWrap) return false;
   if (shape.curvedText) return false;
   if (shape.richText.textBlock.hideText) return false;

@@ -2303,6 +2303,89 @@ void main() {
             .withWordWrap(false),
       ),
     );
+    var wordWrapEdgeDocument = parser.parse(blank);
+    final wordWrapEdgePage = wordWrapEdgeDocument.pages.first;
+    final wordWrapEdgeStub = VsdxShapeFactory.line(
+      id: wordWrapEdgePage.nextFreeShapeId(),
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'WordWrapEdge',
+      line: const VsdxLine(
+        color: VsdxColor(0xFF000000),
+        weightInches: 0.02,
+      ),
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(6, 0),
+            LineTo(6, -6),
+          ],
+        ),
+      ],
+    );
+    wordWrapEdgeDocument = wordWrapEdgeDocument.replacePage(
+      0,
+      wordWrapEdgePage.addShape(wordWrapEdgeStub),
+    );
+    final wordWrapEdgeLocal = wordWrapEdgeDocument.pages.first.pageToLocalDeep(
+      wordWrapEdgeStub.id,
+      const Offset2D(7, 7),
+    );
+    wordWrapEdgeDocument = wordWrapEdgeDocument.replacePage(
+      0,
+      wordWrapEdgeDocument.pages.first.copyWith(
+        shapes: <VsdxShape>[
+          wordWrapEdgeStub
+              .copyWith(
+                richText: VsdxRichText(
+                  textBlock: VsdxTextBlock(
+                    pinXInches: wordWrapEdgeLocal.x,
+                    pinYInches: wordWrapEdgeLocal.y,
+                    locPinXInches: 0.4,
+                    locPinYInches: 0.8,
+                    widthInches: 0.8,
+                    heightInches: 1.6,
+                    marginLeftInches: 0,
+                    marginRightInches: 0,
+                    marginTopInches: 0,
+                    marginBottomInches: 0,
+                    verticalAlign: VsdxVertAlign.middle,
+                  ),
+                  runs: const <VsdxTextRun>[
+                    VsdxTextRun(
+                      text: 'MMMM',
+                      charStyle: VsdxCharStyle(
+                        fontFamily: 'Arial',
+                        fontSizeInches: 0.35,
+                        color: VsdxColor(0xFFFF0000),
+                      ),
+                      paraStyle: VsdxParaStyle(
+                        horizontalAlign: VsdxHorzAlign.left,
+                      ),
+                    ),
+                    VsdxTextRun(
+                      text: 'MMMM',
+                      charStyle: VsdxCharStyle(
+                        fontFamily: 'Arial',
+                        fontSizeInches: 0.35,
+                        color: VsdxColor(0xFF00FF00),
+                      ),
+                      paraStyle: VsdxParaStyle(
+                        horizontalAlign: VsdxHorzAlign.left,
+                      ),
+                    ),
+                  ],
+                ),
+              )
+              .withWordWrap(false),
+        ],
+      ),
+    );
     var wordWrapTabDocument = parser.parse(blank);
     final wordWrapTabPage = wordWrapTabDocument.pages.first;
     wordWrapTabDocument = wordWrapTabDocument.replacePage(
@@ -4754,6 +4837,10 @@ void main() {
         originalBytes: blank,
         edited: wordWrapDocument,
       ),
+      'word_wrap_edge': writer.write(
+        originalBytes: blank,
+        edited: wordWrapEdgeDocument,
+      ),
       'word_wrap_tab': writer.write(
         originalBytes: blank,
         edited: wordWrapTabDocument,
@@ -5648,6 +5735,92 @@ void main() {
             greaterThan(wrapped * 2),
             reason: 'Draw must not wrap the baked TxtWidth back into the box; '
                 'overflow=$overflow wrapped=$wrapped',
+          );
+        }
+        if (entry.key == 'word_wrap_edge') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'WordWrapEdge');
+          expect(source.wordWrap, isTrue);
+          expect(source.richText.textBlock.widthInches, greaterThan(1.4));
+          final pin = reopened.pages.first.localToPageDeep(
+            source.id,
+            Offset2D(
+              source.richText.textBlock.pinXInches!,
+              source.richText.textBlock.pinYInches!,
+            ),
+          );
+          expect(pin.x, closeTo(7, 0.2));
+          expect(pin.y, closeTo(7, 0.2));
+        }
+        if (entry.key == 'word_wrap_edge' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int red, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var red = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40) red++;
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (red: red, lime: lime);
+          }
+
+          final first = countWindow(6.45, 6.70, 7.15, 7.30);
+          final second = countWindow(7.55, 6.70, 8.40, 7.30);
+          final below = countWindow(6.45, 6.10, 8.20, 6.45);
+          expect(
+            first.red,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the red run on the route; '
+                'firstR=${first.red} firstL=${first.lime}',
+          );
+          expect(
+            second.lime,
+            greaterThan(8),
+            reason: 'LibreOffice must keep the lime run on the same line; '
+                'secondL=${second.lime} belowL=${below.lime}',
+          );
+          expect(
+            second.lime,
+            greaterThan(below.lime),
+            reason: 'LibreOffice must not wrap the connector label under '
+                'the first run; secondL=${second.lime} belowL=${below.lime}',
           );
         }
         if (entry.key == 'word_wrap_tab') {

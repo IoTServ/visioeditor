@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Word Wrap off on connector labels now keeps the run on one line in
+  LibreOffice. `User.veWordWrap` is not a token, so a save already
+  expands TxtWidth for a 2-D unwrapped label, but 1-D labels used to
+  skip so Draw wrapped a narrow authored TxtWidth while canvas / SVG
+  already overflow that box. A save now pins a missing TxtPin first,
+  then expands that route plate to the unwrapped line. Vertical text
+  and curved text stay native.
 - Connector Label Padding now keeps its inset in LibreOffice.
   `User.veLabelPadding` is not a token, so a save already folds 2-D
   padding into Margin cells, but 1-D labels used to skip so Draw
