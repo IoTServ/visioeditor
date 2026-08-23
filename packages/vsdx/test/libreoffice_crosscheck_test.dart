@@ -3203,6 +3203,44 @@ void main() {
             ),
           ),
     );
+    var obliqueShadowThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final obliqueShadowThemePage = obliqueShadowThemeDocument.pages.first;
+    obliqueShadowThemeDocument = obliqueShadowThemeDocument.replacePage(
+      0,
+      obliqueShadowThemePage
+          .copyWith(
+            pageSheet: obliqueShadowThemePage.pageSheet.copyWith(
+              shadowType: 1,
+              shadowObliqueAngle: 0.6,
+              shadowScaleFactor: 1.0,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: obliqueShadowThemePage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 2,
+              height: 2,
+              name: 'ObliqueShadowTheme',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFEEEEEE),
+                pattern: 1,
+              ),
+              line: const VsdxLine(pattern: 0),
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                themeColorIndex: ThemeSlot.accent6,
+                offsetXInches: 0.3,
+                offsetYInches: -0.3,
+                blurInches: 0,
+                transparency: 0,
+              ),
+            ),
+          ),
+    );
     var obliqueShadowBlurDocument = parser.parse(blank);
     final obliqueShadowBlurPage = obliqueShadowBlurDocument.pages.first;
     obliqueShadowBlurDocument = obliqueShadowBlurDocument.replacePage(
@@ -4025,6 +4063,10 @@ void main() {
       'oblique_shadow': writer.write(
         originalBytes: blank,
         edited: obliqueShadowDocument,
+      ),
+      'oblique_shadow_theme': writer.write(
+        originalBytes: blank,
+        edited: obliqueShadowThemeDocument,
       ),
       'oblique_shadow_blur': writer.write(
         originalBytes: blank,
@@ -7527,6 +7569,84 @@ void main() {
             lessThan(120),
             reason: 'the offset shadow must still sit below the shape; '
                 'below=$below',
+          );
+        }
+        if (entry.key == 'oblique_shadow_theme') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          expect(page.pageSheet.shadowType, 1);
+          final source =
+              page.shapes.firstWhere((s) => s.name == 'ObliqueShadowTheme');
+          expect(source.shadow.enabled, isFalse,
+              reason: 'ShdwPattern 0 so Draw adds no unsheared copy');
+          final plate = page.shapes.where(isLibvisioPageShadowPlate).single;
+          expect(
+            plate.fill.foreground?.value,
+            VsdxTheme.office.resolve(ThemeSlot.accent6)!.value,
+            reason: 'theme-only ShdwForegnd must freeze into FillForegnd',
+          );
+          expect(plate.line.pattern, 0);
+        }
+        if (entry.key == 'oblique_shadow_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final leanRight = mean(5.45, 5.90, 6.00, 6.10);
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          expect(
+            body.r,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source fill; '
+                'bodyR=${body.r} leanG=${leanRight.g}',
+          );
+          expect(
+            leanRight.g,
+            greaterThan(leanRight.r + 8),
+            reason: 'LibreOffice must paint the sheared Office accent6 shadow; '
+                'leanG=${leanRight.g} leanR=${leanRight.r} bodyR=${body.r}',
           );
         }
         if (entry.key == 'oblique_shadow_blur') {

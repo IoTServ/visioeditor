@@ -117,7 +117,8 @@
 /// PageSheet
 /// `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor` are not tokens, so a
 /// hard-edged shadow bakes a sheared vector sibling and a blurred shadow
-/// bakes a sheared Gaussian PNG.
+/// bakes a sheared Gaussian PNG. Theme-only colour resolves through the
+/// document theme then Office into that sibling.
 /// draw.io Curved Text is also a User row, so a save bakes locked
 /// per-glyph siblings along the canvas quadratic arc, hides the source
 /// and drops `veCurvedText`. FlipX / FlipY extra text mirrors about TxtPin
@@ -3363,6 +3364,77 @@ void main() {
     final after = oracle.svgPages(saved)?.join() ?? '';
     expect(after, isNotEmpty);
     _expectVsd2rawCollected(saved, const <String>['draw:fill-color: #000000']);
+  });
+
+  test('theme-only page oblique shadow bakes a sheared sibling for LibreOffice',
+      () {
+    const slot = ThemeSlot.accent2;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 1.4,
+      height: 0.8,
+      name: 'ObliqueShadowTheme',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        themeColorIndex: slot,
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0,
+        transparency: 0.4,
+      ),
+    );
+    expect(shape.shadow.color, isNull);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final obliquePage = doc.pages.first.addShape(shape).copyWith(
+          pageSheet: doc.pages.first.pageSheet.copyWith(
+            shadowType: 1,
+            shadowObliqueAngle: 0.5,
+            shadowScaleFactor: 1.2,
+          ),
+        );
+    expect(shapeNeedsLibvisioPageShadowBake(shape, obliquePage), isTrue);
+    expect(
+      shapeNeedsLibvisioPageShadowBake(
+        shape.copyWith(shadow: shape.shadow.copyWith(blurInches: 0.08)),
+        obliquePage,
+      ),
+      isFalse,
+      reason: 'a blurred theme shadow keeps the Gaussian PNG path',
+    );
+
+    doc = doc.replacePage(0, obliquePage);
+    final baked = documentForLibvisioWrite(doc);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioPageShadowPlate).single;
+    expect(plate.locked, isTrue);
+    expect(plate.fill.pattern, 1);
+    expect(plate.fill.foreground?.value, expected.value,
+        reason: 'theme slot $slot must freeze into FillForegnd');
+    expect(plate.fill.foregroundTransparency, closeTo(0.4, 1e-9));
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shadow.enabled, isFalse);
+    expect(source.shadow.themeColorIndex, slot);
+    expect(
+      baked.pages.first.shapes.indexOf(plate),
+      lessThan(baked.pages.first.shapes.indexOf(source)),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioPageShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another sheared plate',
+    );
   });
 
   test('blurred shadow on an oblique page shears its Gaussian PNG', () {

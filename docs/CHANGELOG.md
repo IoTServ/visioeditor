@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only hard-edged shadows on an oblique page now keep the shear
+  in LibreOffice. `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor`
+  are not tokens; a save used to skip theme-only ShdwForegnd so Draw
+  painted an unsheared `draw:shadow`, while canvas `_applyPageShadowXform`
+  already shears `_colourOrTheme`. A save now resolves the slot
+  (document theme, then Office) into the same sheared sibling RGB
+  shadows use.
 - Theme-only SoftEdges now keeps the feathered silhouette in
   LibreOffice. `SoftEdgesSize` is not a token; a save used to skip
   theme-only FillForegnd / LineColor so Draw painted a hard fill or

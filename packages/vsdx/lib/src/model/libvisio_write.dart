@@ -121,8 +121,11 @@
 /// a hard-edged shadow on an oblique page bakes the sheared, scaled
 /// silhouette canvas `_applyPageShadowXform` paints into a locked NoLine
 /// sibling whose FillForegndTrans Draw collects, then ShdwPattern goes to 0.
-/// A blurred shadow on the same page rasterizes that sheared silhouette into
-/// its Gaussian PNG instead, sized to the transformed bounding box.
+/// Theme-only colour resolves through the document theme, then Office,
+/// into that sibling's FillForegnd so Draw keeps both the shear and the
+/// slot. A blurred shadow on the same page rasterizes that sheared
+/// silhouette into its Gaussian PNG instead, sized to the transformed
+/// bounding box.
 /// Character Overline is a token whose `readCharIX` case is empty, so a
 /// save inserts U+0305 combining overlines and clears the cell. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a
@@ -6548,7 +6551,9 @@ bool pageSheetShearsLibvisioShadows(VsdxPageSheet sheet) =>
 /// Canvas `_applyPageShadowXform` scales and shears the silhouette about the
 /// shape LocPin before offsetting it. Blurred shadows already bake a Gaussian
 /// PNG, so this covers the hard-edged ones Draw would otherwise draw
-/// unsheared. 1-D, groups and unresolved theme colours stay native.
+/// unsheared. Theme-only colour resolves through the document theme then
+/// Office into the plate FillForegnd — Draw never sees THEMEVAL() on
+/// `ShdwType`. 1-D and groups stay native.
 bool shapeNeedsLibvisioPageShadowBake(VsdxShape shape, VsdxPage page) {
   if (!pageSheetShearsLibvisioShadows(page.pageSheet)) return false;
   if (_isLibvisioBakePlate(shape)) return false;
@@ -6558,9 +6563,6 @@ bool shapeNeedsLibvisioPageShadowBake(VsdxShape shape, VsdxPage page) {
   // Blur takes the Gaussian PNG path instead.
   if (shape.shadow.blurInches > 1e-6) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
-  if (shape.shadow.color == null && shape.shadow.themeColorIndex != null) {
-    return false;
-  }
   if (!_shapePaintsFill(shape, shape.geometries) && !shape.hasImage) {
     return false;
   }
@@ -6615,6 +6617,7 @@ VsdxShape _pageShadowPlateForLibvisioWrite(
   VsdxShape source,
   VsdxPage page, {
   required int id,
+  required VsdxTheme theme,
 }) {
   final sheet = page.pageSheet;
   final dx = libvisioEffectiveShadowOffset(
@@ -6625,7 +6628,7 @@ VsdxShape _pageShadowPlateForLibvisioWrite(
     source.shadow.offsetYInches,
     sheet.shadowOffsetYInches,
   );
-  final colour = source.shadow.color ?? _kLibvisioShadowFallback;
+  final colour = _shadowRgbForLibvisioWrite(source.shadow, theme);
   // Canvas opacity is colourAlpha × (1 - ShdwForegndTrans) × (1 - FillTrans);
   // FillForegndTrans is a token, so carry all three there.
   final opacity = colour.alpha /
@@ -6696,6 +6699,7 @@ bool pageNeedsLibvisioPageShadowBake(VsdxPage page) {
 List<VsdxShape> _bakePageShadowTree(
   List<VsdxShape> shapes, {
   required VsdxPage page,
+  required VsdxTheme theme,
   required Map<int, int> plateIds,
   required int Function() nextId,
 }) {
@@ -6711,6 +6715,7 @@ List<VsdxShape> _bakePageShadowTree(
       final children = _bakePageShadowTree(
         shape.children,
         page: page,
+        theme: theme,
         plateIds: plateIds,
         nextId: nextId,
       );
@@ -6724,6 +6729,7 @@ List<VsdxShape> _bakePageShadowTree(
         next,
         page,
         id: plateIds[next.id] ?? nextId(),
+        theme: theme,
       );
       if (plate.geometries.isNotEmpty) {
         out.add(plate);
@@ -6769,6 +6775,7 @@ VsdxDocument bakePageShadowForLibvisioWrite(VsdxDocument document) {
     final shapes = _bakePageShadowTree(
       page.shapes,
       page: page,
+      theme: document.theme,
       plateIds: plateIds,
       nextId: () => nextId++,
     );
