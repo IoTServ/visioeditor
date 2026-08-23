@@ -583,6 +583,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Vertical `TextDirection` on connector labels now stays vertical in
+  LibreOffice. `_flushText` never emits `style:writing-mode`, so a save
+  already folds 2-D `TextDirection=1` into `TxtAngle`, but 1-D labels
+  used to skip so Draw laid the run out horizontally at the Begin–End
+  centre while canvas / SVG already rotate −90° about the route
+  midpoint. A save now pins a missing TxtPin to the route first, then
+  swaps the tight plate so Draw's TextBkgnd stands at the elbow
+  (adding `TxtAngle` −90° would lay that swapped box back down via
+  `librevenge:rotate`). TextDirection=0. Rotate with Edge is dropped
+  so reopen does not add a second tangent. Curved text and Shape
+  Inside stay native.
 - Word Wrap off with tab fields now keeps the stop on one line in
   LibreOffice. `User.veWordWrap` is not a token, so a save already
   expands TxtWidth for a plain unwrapped label, but a tab used to skip

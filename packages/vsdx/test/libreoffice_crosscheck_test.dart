@@ -3151,6 +3151,60 @@ void main() {
             .withWordWrap(false),
       ),
     );
+    var textDirectionEdgeDocument = parser.parse(blank);
+    final textDirectionEdgePage = textDirectionEdgeDocument.pages.first;
+    textDirectionEdgeDocument = textDirectionEdgeDocument.replacePage(
+      0,
+      textDirectionEdgePage.addShape(
+        VsdxShapeFactory.line(
+          id: textDirectionEdgePage.nextFreeShapeId(),
+          ax: 1,
+          ay: 7,
+          bx: 7,
+          by: 1,
+          name: 'TextDirectionEdge',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.02,
+          ),
+        ).copyWith(
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(6, 0),
+                LineTo(6, -6),
+              ],
+            ),
+          ],
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+              textDirection: 1,
+              backgroundColor: VsdxColor(0xFFFF00FF),
+            ),
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'MMMM',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.5,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var highlightMixedVertDocument = parser.parse(blank);
     final highlightMixedVertPage = highlightMixedVertDocument.pages.first;
     highlightMixedVertDocument = highlightMixedVertDocument.replacePage(
@@ -4714,6 +4768,10 @@ void main() {
       'text_direction': writer.write(
         originalBytes: blank,
         edited: textDirectionDocument,
+      ),
+      'text_direction_edge': writer.write(
+        originalBytes: blank,
+        edited: textDirectionEdgeDocument,
       ),
       'highlight_mixed_vert': writer.write(
         originalBytes: blank,
@@ -7905,6 +7963,94 @@ void main() {
             greaterThan(west),
             reason: 'rotated TextBkgnd must sit on the vertical axis, not '
                 'the original wide box; north=$north west=$west',
+          );
+        }
+        if (entry.key == 'text_direction_edge') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'TextDirectionEdge');
+          expect(source.richText.textBlock.textDirection, 0);
+          expect(source.richText.textBlock.angleRad, closeTo(0, 1e-6));
+          final pin = reopened.pages.first.localToPageDeep(
+            source.id,
+            Offset2D(
+              source.richText.textBlock.pinXInches!,
+              source.richText.textBlock.pinYInches!,
+            ),
+          );
+          expect(pin.x, closeTo(7, 0.2));
+          expect(pin.y, closeTo(7, 0.2));
+          expect(
+            source.richText.textBlock.heightInches,
+            greaterThan(source.richText.textBlock.widthInches! + 0.3),
+          );
+        }
+        if (entry.key == 'text_direction_edge' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          int countMagenta(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var n = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) n++;
+              }
+            }
+            return n;
+          }
+
+          final north = countMagenta(6.8, 7.35, 7.2, 7.75);
+          final east = countMagenta(7.35, 6.8, 7.75, 7.2);
+          final box = countMagenta(3.6, 3.6, 4.4, 4.4);
+          expect(
+            north,
+            greaterThan(8),
+            reason: 'LibreOffice must rotate the connector TextDirection=1 '
+                'plate at the elbow; north=$north east=$east box=$box',
+          );
+          expect(
+            north,
+            greaterThan(east),
+            reason: 'rotated TextBkgnd must stand on the vertical axis at '
+                'the elbow, not stay a wide run; north=$north east=$east',
+          );
+          expect(
+            box,
+            lessThan(3),
+            reason: 'LibreOffice must not park the vertical label at the '
+                '1-D box centre; north=$north box=$box',
           );
         }
         if (entry.key == 'highlight_mixed_vert') {

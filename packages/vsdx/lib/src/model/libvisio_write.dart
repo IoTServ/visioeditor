@@ -44,11 +44,15 @@
 /// `style:writing-mode`, so Draw would keep a horizontal run; a save
 /// folds canvas / SVG's −90° block rotation into `TxtAngle`, swaps
 /// TxtWidth/TxtHeight and remaps margins, then writes TextDirection=0
-/// so reopen does not rotate twice. Authored TextBkgnd stays native.
-/// Mixed Highlight on that rotated frame follows TxtAngle about TxtPin.
-/// Connector labels use the same plates after a missing TxtPin is
-/// pinned to the route — `readCharIX` would otherwise drop every
-/// marker while canvas / SVG already paint them on the polyline.
+/// so reopen does not rotate twice. Glueable labels with no TxtPin are
+/// pinned to the route first; that tight plate then swaps width×height
+/// so Draw's TextBkgnd stands up. `TxtAngle` stays 0 — Draw's
+/// `librevenge:rotate` would lay the swapped box back down. Authored
+/// TextBkgnd stays
+/// native. Mixed Highlight on that rotated frame follows TxtAngle
+/// about TxtPin. Connector labels use the same plates after a missing
+/// TxtPin is pinned to the route — `readCharIX` would otherwise drop
+/// every marker while canvas / SVG already paint them on the polyline.
 /// `TextBkgndTrans` and layer
 /// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
 /// zeros alpha), so a save premultiplies those into RGB toward white.
@@ -5093,22 +5097,35 @@ VsdxDocument bakeShapeInsideForLibvisioWrite(VsdxDocument document) {
 /// folds that rotation into TxtAngle, swaps TxtWidth/TxtHeight, remaps
 /// LocPin so the box centre stays on TxtPin, writes TextDirection=0 so
 /// canvas reopen does not rotate twice, and drops Txt* formulas that
-/// would restore the unswapped box. Glueable 1-D labels, curved text
-/// and Shape Inside stay native — their layout is not a swapped
-/// rectangle.
+/// would restore the unswapped box. Glueable labels with no TxtPin are
+/// pinned to the route first, then that tight plate swaps the same way
+/// so Draw's TextBkgnd stands at the elbow (`TxtAngle` stays 0 so
+/// `librevenge:rotate` does not lay it back down). Curved text and
+/// Shape Inside stay native — their layout is not a swapped rectangle.
 bool shapeNeedsLibvisioTextDirectionBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.isGlueableConnector) return false;
   if (shape.curvedText || shape.shapeInside) return false;
   if (shape.richText.textBlock.hideText) return false;
   if (shape.richText.textBlock.textDirection != 1) return false;
   final hasText =
       !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
-  return hasText;
+  if (!hasText) return false;
+  if (shape.isGlueableConnector) return true;
+  if (shape.is1D) {
+    final block = shape.richText.textBlock;
+    return block.pinXInches != null || block.pinYInches != null;
+  }
+  return true;
 }
 
 /// Fold `TextDirection=1` into `TxtAngle` / swapped TxtWidth×TxtHeight.
-VsdxShape _sourceForLibvisioTextDirectionWrite(VsdxShape shape) {
+///
+/// [addAngle] is false for a loose connector plate: Draw's
+/// `librevenge:rotate` would lay the already-swapped box back down.
+VsdxShape _sourceForLibvisioTextDirectionWrite(
+  VsdxShape shape, {
+  bool addAngle = true,
+}) {
   final block = shape.richText.textBlock;
   final tw = (block.widthInches ?? shape.width).abs();
   final th = (block.heightInches ?? shape.height).abs();
@@ -5116,7 +5133,7 @@ VsdxShape _sourceForLibvisioTextDirectionWrite(VsdxShape shape) {
   final locY = block.locPinYInches ?? th / 2;
   // Extra −90° is about TxtPin in Draw. Canvas TextDirection rotates
   // about the block centre, so LocPin moves to keep that centre fixed:
-  // L' = (th − Ly, Lx).
+  // L' = (th − Ly, Lx). Draw's TextBkgnd follows this swapped box.
   final nextBlock = VsdxTextBlock(
     pinXInches: block.pinXInches ?? shape.width / 2,
     pinYInches: block.pinYInches ?? shape.height / 2,
@@ -5124,7 +5141,7 @@ VsdxShape _sourceForLibvisioTextDirectionWrite(VsdxShape shape) {
     locPinYInches: locX,
     widthInches: th,
     heightInches: tw,
-    angleRad: block.angleRad - math.pi / 2,
+    angleRad: addAngle ? block.angleRad - math.pi / 2 : block.angleRad,
     verticalAlign: block.verticalAlign,
     marginLeftInches: block.marginTopInches,
     marginRightInches: block.marginBottomInches,
@@ -5153,16 +5170,27 @@ VsdxShape _sourceForLibvisioTextDirectionWrite(VsdxShape shape) {
       formulas.remove(key);
     }
   }
+  var userCells = shape.userCells;
+  if (shape.autoRotateLabel) {
+    userCells = <VsdxUserCell>[
+      for (final cell in shape.userCells)
+        if (cell.name != VsdxShape.userAutoRotateLabel) cell,
+    ];
+  }
   return shape.copyWith(
     richText: shape.richText.copyWith(textBlock: nextBlock),
     formulas: formulas,
+    userCells: userCells,
   );
 }
 
-VsdxShape bakeTextDirectionShapeForLibvisioWrite(VsdxShape shape) {
+VsdxShape bakeTextDirectionShapeForLibvisioWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
   final children = <VsdxShape>[
     for (final child in shape.children)
-      bakeTextDirectionShapeForLibvisioWrite(child),
+      bakeTextDirectionShapeForLibvisioWrite(child, page),
   ];
   var childrenChanged = children.length != shape.children.length;
   if (!childrenChanged) {
@@ -5173,9 +5201,15 @@ VsdxShape bakeTextDirectionShapeForLibvisioWrite(VsdxShape shape) {
       }
     }
   }
-  var next = shapeNeedsLibvisioTextDirectionBake(shape)
-      ? _sourceForLibvisioTextDirectionWrite(shape)
-      : shape;
+  var next = shape;
+  if (shapeNeedsLibvisioTextDirectionBake(shape)) {
+    final loose = shape.isGlueableConnector && _missingEdgeLabelPin(shape);
+    final framed = loose ? _applyLooseEdgeLabelFrame(shape, page) : shape;
+    next = _sourceForLibvisioTextDirectionWrite(
+      framed,
+      addAngle: !loose,
+    );
+  }
   if (childrenChanged) next = next.copyWith(children: children);
   return next;
 }
@@ -5188,7 +5222,7 @@ VsdxDocument bakeTextDirectionForLibvisioWrite(VsdxDocument document) {
   for (final page in document.pages) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
-        bakeTextDirectionShapeForLibvisioWrite(shape),
+        bakeTextDirectionShapeForLibvisioWrite(shape, page),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

@@ -30,7 +30,8 @@
 /// including explicit newlines stacked like canvas / SVG and tab
 /// fields pinned with `visioTabFieldStart`. `TextDirection` is stored
 /// but `_flushText` never emits writing-mode, so a save folds the
-/// canvas −90° into `TxtAngle` and swaps TxtWidth/TxtHeight. Mixed
+/// canvas −90° into `TxtAngle` and swaps TxtWidth/TxtHeight. Glueable
+/// labels pin TxtPin first, then swap that tight plate. Mixed
 /// Highlight on that rotated frame follows TxtPin. Connector labels
 /// use the same plates after TxtPin is pinned to the route.
 /// `RVNGSVGDrawingGenerator` drops that property,
@@ -6268,6 +6269,109 @@ void main() {
     expect(after.richText.textBlock.angleRad, closeTo(-math.pi / 2, 1e-9));
     expect(after.richText.textBlock.widthInches, closeTo(0.8, 1e-9));
     expect(after.richText.textBlock.heightInches, closeTo(3, 1e-9));
+  });
+
+  test('TextDirection=1 on a connector label bakes TxtAngle at the elbow', () {
+    const label = VsdxRichText(
+      textBlock: VsdxTextBlock(
+        marginLeftInches: 0,
+        marginRightInches: 0,
+        marginTopInches: 0,
+        marginBottomInches: 0,
+        verticalAlign: VsdxVertAlign.middle,
+        textDirection: 1,
+        backgroundColor: VsdxColor(0xFFFF00FF),
+      ),
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'MMMM',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.5,
+            color: VsdxColor(0xFF000000),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.center,
+          ),
+        ),
+      ],
+    );
+    final elbow = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'TextDirectionEdge',
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(6, 0),
+            LineTo(6, -6),
+          ],
+        ),
+      ],
+      richText: label,
+    );
+    expect(shapeNeedsLibvisioTextDirectionBake(elbow), isTrue);
+    expect(
+      shapeNeedsLibvisioTextDirectionBake(
+        VsdxShapeFactory.line(id: 9, ax: 0, ay: 0, bx: 2, by: 0).copyWith(
+          richText: label.copyWith(
+            textBlock: const VsdxTextBlock(textDirection: 0),
+          ),
+        ),
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(elbow));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final block = source.richText.textBlock;
+    expect(block.textDirection, 0);
+    expect(block.angleRad, closeTo(0, 1e-9));
+    expect(block.pinXInches, isNotNull);
+    expect(block.heightInches, greaterThan(block.widthInches! + 0.3));
+    expect(block.widthInches, lessThan(1.0));
+    final pagePin = baked.pages.first.localToPageDeep(
+      source.id,
+      Offset2D(block.pinXInches!, block.pinYInches!),
+    );
+    expect(pagePin.x, closeTo(7, 0.2));
+    expect(pagePin.y, closeTo(7, 0.2));
+    expect(source.autoRotateLabel, isFalse);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(0, 1e-9),
+      reason: 'a second save must not rotate another −90°',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.richText.textBlock.textDirection, 0);
+    expect(after.richText.textBlock.angleRad, closeTo(0, 1e-9));
+    final savedPin = savedDoc.pages.first.localToPageDeep(
+      after.id,
+      Offset2D(
+        after.richText.textBlock.pinXInches!,
+        after.richText.textBlock.pinYInches!,
+      ),
+    );
+    expect(savedPin.x, closeTo(7, 0.2));
+    expect(savedPin.y, closeTo(7, 0.2));
   });
 
   test('mixed Character Highlight follows baked TextDirection', () {
