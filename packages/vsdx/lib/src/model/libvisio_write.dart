@@ -97,7 +97,8 @@
 /// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use
 /// (resolved-RGB and theme-only FillGradient / classic 25–40 washes and
 /// FillPattern 2–24 hatches are painted into that PNG so Draw does not
-/// keep a hard fill). Theme-only FillForegnd / LineColor / gradient
+/// keep a hard fill, including an RGB hatch whose FillBkgnd is
+/// theme-only). Theme-only FillForegnd / LineColor / gradient
 /// stops resolve through the document theme, then Office, into that PNG
 /// so Draw keeps the feather. Then
 /// SoftEdgesSize is written 0 and the source fill is dropped so the
@@ -5594,11 +5595,10 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
       return false;
     }
   } else if (libvisioHatchSpec(shape.fill.pattern) != null) {
+    // Theme-only FillForegnd still skips: a bake drops the hatch cells
+    // (audit_probe keeps theme FG/BG + SoftEdgesSize). RGB FG + theme
+    // FillBkgnd is safe — the PNG sampler already freezes that slot.
     if (shape.fill.foreground == null) return false;
-    if (shape.fill.background == null &&
-        shape.fill.themeBackgroundIndex != null) {
-      return false;
-    }
   } else {
     if (shape.fill.pattern != 1) return false;
     if (shape.fill.foreground == null &&
@@ -7300,11 +7300,10 @@ LibvisioShapeWrite libvisioShapeWrite(
     line = line.copyWith(miterLimit: 4.0);
   }
   if (line.transparency > 1e-9 &&
-      !shapeNeedsLibvisioFilledStrokeRibbonBake(shape) &&
-      (line.color != null || line.themeColorIndex == null)) {
+      !shapeNeedsLibvisioFilledStrokeRibbonBake(shape)) {
     line = line.copyWith(
       color: colourForLibvisioAlpha(
-        line.color ?? const VsdxColor(0xFF000000),
+        _lineRgbForLibvisioWrite(line, theme),
         line.transparency,
       ),
       transparency: 0,

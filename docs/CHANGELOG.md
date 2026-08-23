@@ -583,6 +583,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Hatch SoftEdges whose FillBkgnd is theme-only now keeps the wash in
+  LibreOffice. `SoftEdgesSize` is not a token; a save already bakes RGB
+  hatch FG/BG into a feathered PNG, but a theme-only FillBkgnd used to
+  skip so Draw painted a hard hatch (or a hollow plate) while canvas
+  already samples `_colourOrTheme`. A save now resolves the slot
+  (document theme, then Office) into that same PNG. Theme-only
+  FillForegnd still stays native so audit theme cells survive.
+- Theme-only LineColorTrans now freezes when a FillForegndTrans ribbon
+  cannot bake. `LineColorTrans` is not a token; rectangles already
+  become a sibling ribbon, but a geometry-less body used to leave
+  THEMEVAL() so Draw painted the slot fully opaque. A save now
+  resolves the slot (document theme, then Office) and premultiplies
+  toward white the same way RGB LineColorTrans already does.
 - Mixed Character Highlight now keeps each run marker in LibreOffice.
   `readCharIX` skips Highlight; a uniform marker already becomes
   TextBkgnd, but mixed colours cannot share that cell so Draw dropped

@@ -2324,6 +2324,28 @@ void main() {
         ),
       ),
     );
+    var hatchSoftThemeBgDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final hatchSoftThemeBgPage = hatchSoftThemeBgDocument.pages.first;
+    hatchSoftThemeBgDocument = hatchSoftThemeBgDocument.replacePage(
+      0,
+      hatchSoftThemeBgPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: hatchSoftThemeBgPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'HatchSoftThemeBg',
+          fill: const VsdxFill(
+            foreground: VsdxColor(0xFFFF0000),
+            themeBackgroundIndex: ThemeSlot.accent6,
+            pattern: 6,
+          ),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
+        ),
+      ),
+    );
     var strokeSoftDocument = parser.parse(blank);
     final strokeSoftPage = strokeSoftDocument.pages.first;
     strokeSoftDocument = strokeSoftDocument.replacePage(
@@ -4195,6 +4217,10 @@ void main() {
         originalBytes: blank,
         edited: hatchSoftDocument,
       ),
+      'hatch_soft_theme_bg': writer.write(
+        originalBytes: blank,
+        edited: hatchSoftThemeBgDocument,
+      ),
       'stroke_soft': writer.write(
         originalBytes: blank,
         edited: strokeSoftDocument,
@@ -5207,6 +5233,63 @@ void main() {
               greaterThan(redInk),
               reason: 'LibreOffice must paint baked hatch background; '
                   'redInk=$redInk blueInk=$blueInk',
+            );
+          }
+        }
+        if (entry.key == 'hatch_soft_theme_bg') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'HatchSoftThemeBg');
+          expect(source.fill.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+          if (pdftoppm != null) {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '96',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            )!;
+            final page = reopened.pages.first;
+            final x = (4.25 / page.widthInches * rendered.width).round();
+            final y0 = ((page.heightInches - 6.2) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final y1 = ((page.heightInches - 4.8) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var redInk = 0;
+            var greenInk = 0;
+            for (var y = y0; y < y1; y++) {
+              final p = rendered.getPixel(x, y);
+              if (p.r > p.g + 40) redInk++;
+              if (p.g > p.r + 8 && p.g > p.b) greenInk++;
+            }
+            expect(
+              redInk,
+              greaterThan(2),
+              reason: 'LibreOffice must paint baked hatch strokes; '
+                  'redInk=$redInk greenInk=$greenInk',
+            );
+            expect(
+              greenInk,
+              greaterThan(redInk),
+              reason: 'LibreOffice must paint the frozen Office accent6 '
+                  'hatch background, not a hollow THEMEVAL plate; '
+                  'redInk=$redInk greenInk=$greenInk',
             );
           }
         }

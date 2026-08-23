@@ -2296,6 +2296,100 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('hatch SoftEdges freezes theme-only FillBkgnd for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'HatchSoftThemeBg',
+      fill: const VsdxFill(
+        foreground: VsdxColor(0xFFFF0000),
+        themeBackgroundIndex: ThemeSlot.accent6,
+        pattern: 6,
+      ),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final expected = VsdxTheme.office.resolve(ThemeSlot.accent6)!;
+    var redInk = 0;
+    var themeInk = 0;
+    final x = decoded.width ~/ 2;
+    for (var y = decoded.height ~/ 4; y < decoded.height * 3 ~/ 4; y++) {
+      final p = decoded.getPixel(x, y);
+      if (p.a < 80) continue;
+      if (p.r > p.g + 40) redInk++;
+      if (p.g > p.r + 8 &&
+          (p.g - expected.green).abs() < 40 &&
+          (p.b - expected.blue).abs() < 40) {
+        themeInk++;
+      }
+    }
+    expect(
+      redInk,
+      greaterThan(2),
+      reason: 'SoftEdges PNG must keep FillPattern 6 red strokes; '
+          'redInk=$redInk themeInk=$themeInk',
+    );
+    expect(
+      themeInk,
+      greaterThan(redInk),
+      reason: 'theme FillBkgnd must freeze into the hatch PNG, not stay '
+          'transparent; redInk=$redInk themeInk=$themeInk',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+  });
+
+  test('theme-only LineColorTrans freezes when a ribbon cannot bake', () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'ThemeLineTrans',
+      pinX: 1,
+      pinY: 1,
+      width: 1,
+      height: 1,
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        themeColorIndex: ThemeSlot.accent6,
+        transparency: 0.7,
+        weightInches: 0.08,
+      ),
+    );
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isFalse);
+    final write = libvisioShapeWrite(shape, theme: VsdxTheme.office);
+    expect(write.line.themeColorIndex, isNull);
+    expect(write.line.transparency, closeTo(0, 1e-9));
+    expect(
+      write.line.color,
+      colourForLibvisioAlpha(
+        VsdxTheme.office.resolve(ThemeSlot.accent6)!,
+        0.7,
+      ),
+    );
+  });
+
   test('gradient and hatch SoftEdges strokes join the feathered plate', () {
     const wash = VsdxGradient(
       stops: <VsdxGradientStop>[
