@@ -2761,6 +2761,43 @@ void main() {
         ),
       ),
     );
+    var glowSplineThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final glowSplineThemePage = glowSplineThemeDocument.pages.first;
+    glowSplineThemeDocument = glowSplineThemeDocument.replacePage(
+      0,
+      glowSplineThemePage.addShape(
+        VsdxShape(
+          id: glowSplineThemePage.nextFreeShapeId(),
+          name: 'GlowSplineTheme',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          // A spline body has no SoftEdges silhouette, so Glow cannot become
+          // a Gaussian PNG and falls back to the LineWeight halo.
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                SplineStart(x: 0.75, y: 1.6, a: 0, b: 0, c: 3),
+                SplineKnot(x: 2.25, y: 1.6, knot: 1),
+                LineTo(3, 0),
+                LineTo(0, 0),
+              ],
+            ),
+          ],
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          glow: const VsdxGlow(
+            themeColorIndex: ThemeSlot.accent6,
+            sizeInches: 0.28,
+            transparency: 0.15,
+          ),
+        ),
+      ),
+    );
     var charTransThemeDocument =
         parser.parse(blank).copyWith(theme: VsdxTheme.office);
     final charTransThemePage = charTransThemeDocument.pages.first;
@@ -4151,6 +4188,10 @@ void main() {
       'glow_theme': writer.write(
         originalBytes: blank,
         edited: glowThemeDocument,
+      ),
+      'glow_spline_theme': writer.write(
+        originalBytes: blank,
+        edited: glowSplineThemeDocument,
       ),
       'char_trans_theme': writer.write(
         originalBytes: blank,
@@ -6588,6 +6629,89 @@ void main() {
             reason: 'LibreOffice must paint the Gaussian Office accent6 glow, '
                 'not a hard LineWeight halo; bodyR=${body.r} haloG=${halo.g} '
                 'haloR=${halo.r}',
+          );
+        }
+        if (entry.key == 'glow_spline_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GlowSplineTheme');
+          final expected = colourForLibvisioAlpha(
+            VsdxTheme.office.resolve(ThemeSlot.accent6)!,
+            0.4 + 0.6 * 0.15,
+          );
+          expect(source.glow.enabled, isFalse);
+          expect(
+            source.line.color?.value,
+            expected.value,
+            reason: 'the LineWeight halo must carry the faded slot as RGB',
+          );
+          expect(source.line.themeColorIndex, isNull);
+          expect(source.line.transparency, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioGlowPlate),
+            isEmpty,
+          );
+        }
+        if (entry.key == 'glow_spline_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final halo = mean(3.9, 4.28, 4.6, 4.42);
+          expect(
+            halo.r,
+            greaterThan(150),
+            reason: 'LibreOffice must paint the faded Office accent6 halo, not '
+                'the opaque black THEMEVAL() fallback getThemeColour drops; '
+                'haloR=${halo.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.g,
+            greaterThan(halo.r),
+            reason: 'the faded accent6 halo must stay green-tinted; '
+                'haloR=${halo.r} haloG=${halo.g}',
           );
         }
         if (entry.key == 'char_trans_theme') {

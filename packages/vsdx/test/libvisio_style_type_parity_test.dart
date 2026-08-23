@@ -807,6 +807,98 @@ void main() {
     );
   });
 
+  test('theme-only Glow LineWeight halo freezes RGB for LibreOffice', () {
+    const slot = ThemeSlot.accent6;
+    const glow = VsdxGlow(
+      themeColorIndex: slot,
+      sizeInches: 0.28,
+      transparency: 0.15,
+    );
+    // Canvas `_drawGlow` fades the halo by 0.4 + 0.6 * GlowColorTrans.
+    final expected = colourForLibvisioAlpha(
+      VsdxTheme.office.resolve(slot)!,
+      0.4 + 0.6 * 0.15,
+    );
+
+    // A spline body has no SoftEdges silhouette, so Glow cannot become a
+    // Gaussian PNG and falls back to the LineWeight halo.
+    VsdxShape splineBody(int id, String name, {required bool stroked}) =>
+        VsdxShape(
+          id: id,
+          name: name,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                SplineStart(x: 0.75, y: 1.6, a: 0, b: 0, c: 3),
+                SplineKnot(x: 2.25, y: 1.6, knot: 1),
+                LineTo(3, 0),
+                LineTo(0, 0),
+              ],
+            ),
+          ],
+          fill: const VsdxFill(foreground: VsdxColor(0xFFEEEEEE), pattern: 1),
+          line: stroked
+              ? const VsdxLine(color: VsdxColor.black, weightInches: 0.04)
+              : const VsdxLine(pattern: 0),
+        ).copyWith(glow: glow);
+
+    final stolen = splineBody(1, 'GlowSplineTheme', stroked: false);
+    expect(shapeNeedsLibvisioGlowBake(stolen), isTrue,
+        reason: 'no silhouette, so the halo has to steal Line');
+    expect(shapeNeedsLibvisioGlowPlateBake(stolen), isFalse);
+    final stolenWrite = libvisioShapeWrite(stolen);
+    expect(stolenWrite.line.color?.value, expected.value);
+    expect(stolenWrite.line.themeColorIndex, isNull,
+        reason: 'getThemeColour stops at 8, so THEMEVAL would paint black');
+    expect(stolenWrite.line.transparency, 0);
+    expect(stolenWrite.line.weightInches, closeTo(0.56, 1e-9));
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(stolen));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(xml.contains('N="QuickStyleLineColor"'), isFalse);
+    final hex = (expected.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(
+      xml.contains('N="LineColor" V="#$hex"'),
+      isTrue,
+      reason: 'the halo must be hex, not THEMEVAL; expected=#$hex',
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.color?.value, expected.value);
+    expect(after.line.themeColorIndex, isNull);
+
+    // Filled + stroked keeps its outline, so the halo becomes a sibling plate
+    // that goes through the same LineWeight fallback.
+    final plated = splineBody(2, 'GlowSplinePlate', stroked: true);
+    expect(shapeNeedsLibvisioGlowPlateBake(plated), isTrue);
+    var platedDoc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    platedDoc =
+        platedDoc.replacePage(0, platedDoc.pages.first.addShape(plated));
+    final plate = documentForLibvisioWrite(platedDoc)
+        .pages
+        .first
+        .shapes
+        .where(isLibvisioGlowPlate)
+        .single;
+    expect(plate.hasImage, isFalse);
+    expect(plate.locked, isTrue);
+    expect(plate.line.color?.value, expected.value);
+    expect(plate.line.themeColorIndex, isNull);
+    expect(plate.line.transparency, 0);
+  });
+
   test('Glow on a filled stroke bakes a sibling halo LibreOffice can collect',
       () {
     const colour = VsdxColor(0xFF00CC66);

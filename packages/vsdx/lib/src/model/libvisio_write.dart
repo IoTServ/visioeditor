@@ -1528,7 +1528,11 @@ List<VsdxGeometry> _glowPlateGeometriesForLibvisioWrite(VsdxShape shape) {
   ];
 }
 
-VsdxShape _glowPlateForLibvisioWrite(VsdxShape source, {required int id}) {
+VsdxShape _glowPlateForLibvisioWrite(
+  VsdxShape source, {
+  required int id,
+  required VsdxTheme theme,
+}) {
   return VsdxShape(
     id: id,
     name: '$kLibvisioGlowShapeNamePrefix${source.id}',
@@ -1551,6 +1555,7 @@ VsdxShape _glowPlateForLibvisioWrite(VsdxShape source, {required int id}) {
         pattern: 1,
       ),
       source.glow,
+      theme,
     ),
     layerMemberIds: source.layerMemberIds,
     locked: true,
@@ -1690,6 +1695,7 @@ List<VsdxShape> _bakeGlowPlateTree(
         plate = _glowPlateForLibvisioWrite(
           next,
           id: plateIds[next.id] ?? nextId(),
+          theme: theme,
         );
       }
       if (plate != null && (plate.geometries.isNotEmpty || plate.hasImage)) {
@@ -7006,6 +7012,7 @@ LibvisioShapeWrite libvisioShapeWrite(
     geometries: geometries,
     line: line,
     fill: fill,
+    theme: theme,
   );
   if (glow != null) {
     geometries = glow.geometries;
@@ -7081,30 +7088,40 @@ double _glowHaloTransparency(VsdxGlow glow) =>
 
 const _kLibvisioGlowFallback = VsdxColor(0xFFFFC107);
 
-VsdxFill _glowFillForLibvisio(VsdxGlow glow) {
-  final trans = _glowHaloTransparency(glow);
+/// Glow ribbon fill Draw collects. `FillForegndTrans` *is* a token, so only
+/// the RGB has to freeze: `QuickStyleFillColor` would go through the same
+/// `getThemeColour` table that stops at 8, so a THEMEVAL() ribbon lost the
+/// slot canvas `_drawGlow` paints.
+VsdxFill _glowFillForLibvisio(
+  VsdxGlow glow, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
   return VsdxFill(
-    foreground: glow.color ??
-        (glow.themeColorIndex == null ? _kLibvisioGlowFallback : null),
+    foreground: _glowRgbForLibvisioWrite(glow, theme),
     pattern: 1,
-    themeForegroundIndex: glow.color == null ? glow.themeColorIndex : null,
-    foregroundTransparency: trans,
+    foregroundTransparency: _glowHaloTransparency(glow),
   );
 }
 
-VsdxLine _glowLineForLibvisio(VsdxLine line, VsdxGlow glow) {
+/// LineWeight halo Draw collects when Glow cannot become a Gaussian PNG.
+///
+/// Theme-only colour has to freeze into RGB here. `Glow*` is not a token,
+/// so the slot would have to survive as `QuickStyleLineColor`, but
+/// `VSDXTheme::getThemeColour` maps 0–8 onto dk1/lt1/accent1–6/bkgnd and
+/// returns nothing above that, and `VSDLineStyle::override` applies the
+/// explicit `LineColor` *after* the theme. A THEMEVAL() halo therefore
+/// painted opaque black instead of the faded slot canvas `_drawGlow`
+/// blends. LineColorTrans is not a token either, so the halo alpha is
+/// premultiplied toward white the same way the resolved-RGB path does.
+VsdxLine _glowLineForLibvisio(
+  VsdxLine line,
+  VsdxGlow glow, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
   final weight = math.max(glow.sizeInches * 2, 0.02);
-  if (glow.color == null && glow.themeColorIndex != null) {
-    return line.withThemeColor(glow.themeColorIndex!).copyWith(
-          weightInches: weight,
-          pattern: 1,
-          transparency: 0,
-          cap: LineCap.round,
-        );
-  }
   return line.copyWith(
     color: colourForLibvisioAlpha(
-      glow.color ?? _kLibvisioGlowFallback,
+      _glowRgbForLibvisioWrite(glow, theme),
       _glowHaloTransparency(glow),
     ),
     weightInches: weight,
@@ -7159,6 +7176,7 @@ VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
   required List<VsdxGeometry> geometries,
   required VsdxLine line,
   required VsdxFill fill,
+  VsdxTheme theme = VsdxTheme.empty,
 }) {
   if (!shapeNeedsLibvisioGlowBake(shape)) return null;
   final glow = shape.glow;
@@ -7188,12 +7206,16 @@ VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
       added = true;
     }
     if (added) {
-      return (geometries: out, line: line, fill: _glowFillForLibvisio(glow));
+      return (
+        geometries: out,
+        line: line,
+        fill: _glowFillForLibvisio(glow, theme),
+      );
     }
     if (!paintsLine) {
       return (
         geometries: geometries,
-        line: _glowLineForLibvisio(line, glow),
+        line: _glowLineForLibvisio(line, glow, theme),
         fill: fill,
       );
     }
@@ -7202,7 +7224,7 @@ VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
   if (!paintsLine) {
     return (
       geometries: geometries,
-      line: _glowLineForLibvisio(line, glow),
+      line: _glowLineForLibvisio(line, glow, theme),
       fill: fill,
     );
   }

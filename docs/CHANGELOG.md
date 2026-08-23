@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only Glow halos that cannot become a Gaussian PNG (spline or
+  multi-subpath bodies) now keep their colour in LibreOffice. `Glow*` is
+  not a token, so the slot had to survive as `QuickStyleLineColor`, but
+  `VSDXTheme::getThemeColour` only maps 0–8 onto dk1/lt1/accent1–6/bkgnd
+  and `VSDLineStyle::override` applies the explicit `LineColor` after the
+  theme — Draw painted an opaque black halo. A save now resolves the slot
+  (document theme, then Office) and premultiplies the canvas
+  `0.4 + 0.6 x GlowColorTrans` halo fade toward white, for both the
+  Line-stealing path and the sibling plate.
 - Theme-only hard-edged ShdwForegndTrans now keeps the fade in LibreOffice.
   `ShdwForegndTrans` is not a token and `xmlStringToColour` zeros alpha,
   so Draw painted THEMEVAL() `draw:shadow` fully opaque, while canvas
