@@ -73,6 +73,12 @@
 /// theme, then Office, into that same blend — `ColorTrans` is not a
 /// token, so leaving THEMEVAL() would paint the slot fully opaque.
 /// Theme-bound colours with no transparency still keep THEMEVAL().
+/// Theme-only FillForegnd / FillBkgnd with FillForegndTrans /
+/// FillBkgndTrans freeze into RGB and *keep* Trans — those cells *are*
+/// tokens, so Draw still composites the wash, while THEMEVAL() plus
+/// `QuickStyleFillColor` 9 paints faded black (`getThemeColour` stops
+/// at 8, and `VSDFillStyle::override` applies explicit FillForegnd
+/// after the theme).
 /// Theme-only hard-edged ShdwForegndTrans bakes the same way —
 /// `ShadowBlur` leftovers keep THEMEVAL() after the Gaussian PNG path.
 /// A filled 2-D shape that
@@ -7326,6 +7332,7 @@ LibvisioShapeWrite libvisioShapeWrite(
   }
 
   fill = _fillWithoutStaleLibvisioPattern(fill, geometries);
+  fill = fillThemeTransForLibvisioWrite(fill, theme);
 
   return LibvisioShapeWrite(
     geometries: geometries,
@@ -9271,6 +9278,47 @@ VsdxTextBlock textBlockForPaint(VsdxShape shape) {
     return block;
   }
   return block.withoutBackgroundColor();
+}
+
+/// Fill cells Draw will collect. `FillForegndTrans` / `FillBkgndTrans`
+/// *are* tokens, so transparency stays. Theme-only FillForegnd /
+/// FillBkgnd still have to freeze into RGB because
+/// `VSDXTheme::getThemeColour` only maps 0–8 (dk1/lt1/accent1–6/bkgnd)
+/// and `VSDFillStyle::override` applies explicit FillForegnd after the
+/// theme — THEMEVAL() plus `QuickStyleFillColor=9` paints faded black,
+/// while canvas already multiplies `_colourOrTheme` by
+/// (1 − FillForegndTrans). Theme-bound colours with no transparency
+/// still keep THEMEVAL().
+VsdxFill fillThemeTransForLibvisioWrite(
+  VsdxFill fill, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
+  final fgTrans = fill.foregroundTransparency > 1e-9;
+  final bgTrans = fill.backgroundTransparency > 1e-9;
+  if (!fgTrans && !bgTrans) return fill;
+
+  var foreground = fill.foreground;
+  var background = fill.background;
+  var clearFg = false;
+  var clearBg = false;
+  if (fgTrans && foreground == null && fill.themeForegroundIndex != null) {
+    foreground = _fillRgbForLibvisioWrite(fill, theme);
+    clearFg = true;
+  }
+  if (bgTrans && background == null && fill.themeBackgroundIndex != null) {
+    final resolved = _fillBackgroundRgbForLibvisioWrite(fill, theme);
+    if (resolved != null) {
+      background = resolved;
+      clearBg = true;
+    }
+  }
+  if (!clearFg && !clearBg) return fill;
+  return fill.copyWith(
+    foreground: foreground,
+    background: background,
+    clearThemeForegroundIndex: clearFg,
+    clearThemeBackgroundIndex: clearBg,
+  );
 }
 
 /// RGB Draw will paint when libvisio strips alpha (`xmlStringToColour`

@@ -2863,6 +2863,28 @@ void main() {
         ),
       ),
     );
+    var fillTransThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final fillTransThemePage = fillTransThemeDocument.pages.first;
+    fillTransThemeDocument = fillTransThemeDocument.replacePage(
+      0,
+      fillTransThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: fillTransThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'FillTransTheme',
+          fill: const VsdxFill(
+            themeForegroundIndex: ThemeSlot.accent6,
+            foregroundTransparency: 0.7,
+            pattern: 1,
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
     var highlightMixedDocument = parser.parse(blank);
     final highlightMixedPage = highlightMixedDocument.pages.first;
     highlightMixedDocument = highlightMixedDocument.replacePage(
@@ -4296,6 +4318,10 @@ void main() {
       'char_trans_theme': writer.write(
         originalBytes: blank,
         edited: charTransThemeDocument,
+      ),
+      'fill_trans_theme': writer.write(
+        originalBytes: blank,
+        edited: fillTransThemeDocument,
       ),
       'highlight_mixed': writer.write(
         originalBytes: blank,
@@ -6969,6 +6995,104 @@ void main() {
             greaterThan(glyph.r),
             reason: 'the faded accent6 blend must stay green-tinted; '
                 'glyphR=${glyph.r} glyphG=${glyph.g}',
+          );
+        }
+        if (entry.key == 'fill_trans_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'FillTransTheme');
+          expect(
+            source.fill.foreground?.value,
+            VsdxTheme.office.resolve(ThemeSlot.accent6)!.value,
+            reason: 'theme FillForegndTrans must freeze into FillForegnd',
+          );
+          expect(source.fill.themeForegroundIndex, isNull);
+          expect(
+            source.fill.foregroundTransparency,
+            closeTo(0.7, 1e-9),
+            reason: 'FillForegndTrans is a token; keep it so Draw composites',
+          );
+        }
+        if (entry.key == 'fill_trans_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g, double b, int n}) bodyMean() {
+            final left = (3.4 / page.widthInches * rendered.width).round();
+            final right = (5.1 / page.widthInches * rendered.width).round();
+            final top = ((page.heightInches - 6.2) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final bottom = ((page.heightInches - 4.8) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0, b: 0.0, n: 0);
+            return (
+              r: sumR / count,
+              g: sumG / count,
+              b: sumB / count,
+              n: count
+            );
+          }
+
+          final body = bodyMean();
+          expect(
+            body.n,
+            greaterThan(200),
+            reason: 'LibreOffice must paint the faded theme fill; '
+                'bodyN=${body.n} bodyR=${body.r} bodyG=${body.g}',
+          );
+          expect(
+            body.r,
+            greaterThan(160),
+            reason: 'LibreOffice must paint faded Office accent6, not opaque '
+                'THEMEVAL green; bodyR=${body.r} bodyG=${body.g}',
+          );
+          expect(
+            body.g,
+            greaterThan(body.r + 8),
+            reason: 'the faded accent6 fill must stay green-tinted, not the '
+                'grey getThemeColour(9) fallback; '
+                'bodyR=${body.r} bodyG=${body.g} bodyB=${body.b}',
+          );
+          expect(
+            body.g,
+            greaterThan(body.b),
+            reason: 'the faded accent6 fill must stay green-tinted; '
+                'bodyG=${body.g} bodyB=${body.b}',
           );
         }
         if (entry.key == 'highlight_mixed') {

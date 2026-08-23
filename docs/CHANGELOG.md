@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only FillForegndTrans now keeps the wash in LibreOffice.
+  `FillForegndTrans` is a token, but `VSDXTheme::getThemeColour` only
+  maps 0–8 and `VSDFillStyle::override` applies explicit FillForegnd
+  after the theme, so THEMEVAL() plus `QuickStyleFillColor=9` painted
+  faded black while canvas already multiplies `_colourOrTheme` by
+  (1 − FillForegndTrans). A save now resolves the slot (document
+  theme, then Office) into FillForegnd and keeps FillForegndTrans so
+  Draw still composites over the page. Theme-only FillBkgndTrans
+  freezes the same way. Opaque theme fills still keep THEMEVAL().
 - Hatch SoftEdges whose FillBkgnd is theme-only now keeps the wash in
   LibreOffice. `SoftEdgesSize` is not a token; a save already bakes RGB
   hatch FG/BG into a feathered PNG, but a theme-only FillBkgnd used to

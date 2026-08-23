@@ -45,6 +45,10 @@
 /// are not tokens, so THEMEVAL() would stay opaque). Soft theme shadows
 /// keep THEMEVAL() after the Gaussian PNG bake.
 /// Theme-bound colours with no transparency still keep THEMEVAL.
+/// Theme-only FillForegnd / FillBkgnd with FillForegndTrans /
+/// FillBkgndTrans freeze into RGB and keep Trans — those cells *are*
+/// tokens, so Draw still composites the wash, while THEMEVAL() plus
+/// QuickStyle 9 paints faded black (`getThemeColour` stops at 8).
 /// Filled-shape LineColorTrans / LineGradient bake a
 /// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
 /// the source line. Theme-only LineColor freezes into that ribbon
@@ -6007,6 +6011,85 @@ void main() {
     expect(after.richText.runs.single.charStyle.color?.value, expected.value);
     expect(after.richText.runs.single.charStyle.themeColorIndex, isNull);
     expect(after.richText.runs.single.charStyle.transparency, closeTo(0, 1e-9));
+  });
+
+  test('theme-only FillForegndTrans freezes RGB for LibreOffice', () {
+    const slot = ThemeSlot.accent6;
+    const trans = 0.7;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    const fill = VsdxFill(
+      themeForegroundIndex: slot,
+      foregroundTransparency: trans,
+      pattern: 1,
+    );
+    expect(fill.foreground, isNull);
+    final frozen = fillThemeTransForLibvisioWrite(fill, VsdxTheme.office);
+    expect(frozen.foreground?.value, expected.value);
+    expect(frozen.themeForegroundIndex, isNull);
+    expect(frozen.foregroundTransparency, closeTo(trans, 1e-9));
+    expect(
+      fillThemeTransForLibvisioWrite(
+        const VsdxFill(themeForegroundIndex: slot, pattern: 1),
+        VsdxTheme.office,
+      ).themeForegroundIndex,
+      slot,
+      reason: 'opaque theme FillForegnd still keeps THEMEVAL',
+    );
+
+    const hatch = VsdxFill(
+      foreground: VsdxColor(0xFFFF0000),
+      themeBackgroundIndex: slot,
+      backgroundTransparency: trans,
+      pattern: 6,
+    );
+    final hatchFrozen = fillThemeTransForLibvisioWrite(hatch, VsdxTheme.office);
+    expect(hatchFrozen.background?.value, expected.value);
+    expect(hatchFrozen.themeBackgroundIndex, isNull);
+    expect(hatchFrozen.backgroundTransparency, closeTo(trans, 1e-9));
+    expect(hatchFrozen.foreground?.value, 0xFFFF0000);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'FillTransTheme',
+      fill: fill,
+      line: const VsdxLine(pattern: 0),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final write = libvisioShapeWrite(shape, theme: VsdxTheme.office);
+    expect(write.fill.foreground?.value, expected.value);
+    expect(write.fill.themeForegroundIndex, isNull);
+    expect(write.fill.foregroundTransparency, closeTo(trans, 1e-9));
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(xml.contains('N="FillForegnd" F="THEMEVAL()'), isFalse);
+    final hex = (expected.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(
+      xml.contains('N="FillForegnd" V="#$hex"'),
+      isTrue,
+      reason: 'theme FillForegndTrans must freeze into hex FillForegnd, not '
+          'THEMEVAL; expected=#$hex',
+    );
+    expect(
+      xml.contains('N="FillForegndTrans"'),
+      isTrue,
+      reason: 'FillForegndTrans is a token; keep it so Draw composites',
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.fill.foreground?.value, expected.value);
+    expect(after.fill.themeForegroundIndex, isNull);
+    expect(after.fill.foregroundTransparency, closeTo(trans, 1e-9));
   });
 
   test('Asian/complex Character Font and Size bake for LibreOffice', () {
