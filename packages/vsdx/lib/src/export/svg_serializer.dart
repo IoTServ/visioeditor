@@ -193,6 +193,7 @@ class VsdxToSvgSerializer {
   double _layerTintTrans = 0;
   bool _textFlipX = false;
   bool _textFlipY = false;
+  bool _suppressCharacterHighlight = false;
   int _variationColorIndex = 0;
   int _variationStyleIndex = 0;
 
@@ -4524,6 +4525,11 @@ class VsdxToSvgSerializer {
         (fallback == null || fallback.isEmpty)) {
       return;
     }
+    final previousHighlightSuppression = _suppressCharacterHighlight;
+    _suppressCharacterHighlight = pageHasLibvisioHighlightPlate(page, shape.id);
+    void restoreHighlightSuppression() {
+      _suppressCharacterHighlight = previousHighlightSuppression;
+    }
 
     // Match canvas: rotate about TxtPin, then offset by −TxtLocPin so the
     // block's lower-left is the local origin (not the text centroid).
@@ -4558,6 +4564,7 @@ class VsdxToSvgSerializer {
         backgroundTransparency: block.backgroundTransparency,
         indent: indent,
       );
+      restoreHighlightSuppression();
       return;
     }
     final labelBorder = shape.labelBorderColor;
@@ -4638,6 +4645,7 @@ class VsdxToSvgSerializer {
         paintIdScope: paintIdScope,
         indent: indent,
       );
+      restoreHighlightSuppression();
       return;
     }
 
@@ -4670,6 +4678,7 @@ class VsdxToSvgSerializer {
         verticalAlign: block.verticalAlign,
         indent: indent,
       );
+      restoreHighlightSuppression();
       return;
     }
 
@@ -4933,6 +4942,7 @@ class VsdxToSvgSerializer {
       );
     }
     buf.writeln('$indent</g>');
+    restoreHighlightSuppression();
   }
 
   /// SVG/PDF draw.io label box: the text block positions glyphs, while this
@@ -5971,7 +5981,7 @@ class VsdxToSvgSerializer {
       '${letterSpacing.abs() > 1e-9 ? 'letter-spacing="${_n(letterSpacing * coordinateScale)}" ' : ''}'
       'fill="${_hex(color)}" fill-opacity="${_n(op)}"',
     );
-    if (c.highlight != null) {
+    if (c.highlight != null && !_suppressCharacterHighlight) {
       // libvisio skips Character Highlight; paint a marker halo so SVG export
       // still shows the run (canvas uses TextStyle.backgroundColor).
       attrs.write(

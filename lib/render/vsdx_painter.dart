@@ -274,6 +274,9 @@ class VsdxPainter extends CustomPainter {
   bool _textFlipX = false;
   bool _textFlipY = false;
 
+  /// Drop run highlight when a save already inserted FillForegnd siblings.
+  bool _suppressCharacterHighlight = false;
+
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
@@ -2634,6 +2637,15 @@ class VsdxPainter extends CustomPainter {
     }
     // Match Visio / libvisio: HideText suppresses the painted label.
     if (block.hideText) return;
+    final previousHighlightSuppression = _suppressCharacterHighlight;
+    final highlightPage = _paintTarget ?? page;
+    _suppressCharacterHighlight =
+        highlightPage != null &&
+        pageHasLibvisioHighlightPlate(highlightPage, shape.id);
+    void restoreHighlightSuppression() {
+      _suppressCharacterHighlight = previousHighlightSuppression;
+    }
+
     final s = pxPerInch;
     final tw = block.widthInches ?? shape.width;
     final th = block.heightInches ?? shape.height;
@@ -2781,6 +2793,7 @@ class VsdxPainter extends CustomPainter {
         tp!.paint(canvas, Offset(ox, oy));
       }
       canvas.restore();
+      restoreHighlightSuppression();
       return;
     }
 
@@ -2880,6 +2893,7 @@ class VsdxPainter extends CustomPainter {
         backgroundColor: inlineBackground,
       );
       canvas.restore();
+      restoreHighlightSuppression();
       return;
     }
 
@@ -2921,6 +2935,7 @@ class VsdxPainter extends CustomPainter {
         backgroundColor: inlineBackground,
       );
       canvas.restore();
+      restoreHighlightSuppression();
       return;
     }
 
@@ -2958,6 +2973,7 @@ class VsdxPainter extends CustomPainter {
         backgroundColor: inlineBackground,
       );
       canvas.restore();
+      restoreHighlightSuppression();
       return;
     }
 
@@ -2984,6 +3000,7 @@ class VsdxPainter extends CustomPainter {
         backgroundColor: inlineBackground,
       );
       canvas.restore();
+      restoreHighlightSuppression();
       return;
     }
 
@@ -3025,6 +3042,7 @@ class VsdxPainter extends CustomPainter {
 
     tp.paint(canvas, Offset(ox, oy));
     canvas.restore();
+    restoreHighlightSuppression();
   }
 
   /// libvisio flattens group transforms before handing text objects to
@@ -4139,7 +4157,7 @@ class VsdxPainter extends CustomPainter {
     final widthScale = run.charStyle.fontScale <= 0
         ? 1.0
         : run.charStyle.fontScale.clamp(0.1, 4.0);
-    final hl = run.charStyle.highlight;
+    final hl = _suppressCharacterHighlight ? null : run.charStyle.highlight;
     final spanBackground = hl != null ? Color(hl.value) : backgroundColor;
     final style = TextStyle(
       color: c,

@@ -25,7 +25,9 @@
 /// `LineCap` 0/1/2 is a token libvisio *does* collect. Character Highlight is skipped by
 /// `readCharIX` but a uniform marker with no authored TextBkgnd is written
 /// there — `VSDContentCollector` paints it as span `fo:background-color`
-/// and Draw shows the plate. `RVNGSVGDrawingGenerator` drops that property,
+/// and Draw shows the plate. Mixed run colours cannot share that cell, so
+/// a save inserts locked FillForegnd siblings of each highlighted run.
+/// `RVNGSVGDrawingGenerator` drops that property,
 /// so the oracle SVG is the wrong place to look; `vsd2raw` still has it.
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
 /// a save premultiplies those into RGB toward white. Overline still paints
@@ -5664,6 +5666,133 @@ void main() {
       ),
     );
     expect(shapeNeedsLibvisioTextBkgndBake(withBlock), isFalse);
+  });
+
+  test('mixed Character Highlight bakes per-run plates for LibreOffice', () {
+    VsdxShape mixed({
+      VsdxColor? blockBackground,
+      bool hideText = false,
+    }) =>
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 4,
+          pinY: 5,
+          width: 4,
+          height: 2,
+          name: 'HighlightMixed',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'MM',
+          richText: VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+              hideText: hideText,
+              backgroundColor: blockBackground,
+            ),
+            runs: const [
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+
+    final shape = mixed();
+    expect(uniformCharacterHighlight(shape), isNull);
+    expect(shapeNeedsLibvisioMixedHighlightBake(shape), isTrue);
+    expect(shapeNeedsLibvisioTextBkgndBake(shape), isFalse);
+    expect(
+      shapeNeedsLibvisioMixedHighlightBake(
+        mixed(blockBackground: const VsdxColor(0xFFFFFF00)),
+      ),
+      isFalse,
+    );
+    expect(
+        shapeNeedsLibvisioMixedHighlightBake(mixed(hideText: true)), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioHighlightPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(2));
+    expect(plates.every((p) => p.locked), isTrue);
+    expect(plates.every((p) => p.line.pattern == 0), isTrue);
+    expect(plates.every((p) => p.fill.pattern == 1), isTrue);
+    expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+    expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+    expect(libvisioHighlightSourceId(plates[0]), 1);
+    expect(plates.map((p) => p.richText.plainText).join(), 'MM');
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(source.richText.runs[0].charStyle.highlight?.value, 0xFFFF00FF);
+    expect(source.richText.runs[1].charStyle.highlight?.value, 0xFF00FF00);
+    expect(source.richText.textBlock.backgroundColor, isNull);
+    expect(pageHasLibvisioHighlightPlate(baked.pages.first, 1), isTrue);
+    expect(
+      characterHighlightForPaint(
+        source.richText.runs.first,
+        shape: source,
+        page: baked.pages.first,
+      ),
+      isNull,
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioHighlightPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Highlight plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioHighlightPlate),
+      hasLength(2),
+    );
+    final savedSource = savedDoc.pages.first.findShapeById(1)!;
+    expect(savedSource.richText.textBlock.hideText, isTrue);
+    expect(
+      savedSource.richText.runs[0].charStyle.highlight?.value,
+      0xFFFF00FF,
+    );
+    expect(
+      savedSource.richText.runs[1].charStyle.highlight?.value,
+      0xFF00FF00,
+    );
+    expect(savedSource.richText.textBlock.backgroundColor, isNull);
   });
 
   test('TextBkgndTrans premultiplies into TextBkgnd for LibreOffice', () {

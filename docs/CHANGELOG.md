@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mixed Character Highlight now keeps each run marker in LibreOffice.
+  `readCharIX` skips Highlight; a uniform marker already becomes
+  TextBkgnd, but mixed colours cannot share that cell so Draw dropped
+  every marker. A save now inserts locked FillForegnd siblings that
+  carry each highlighted run (same nowrap advance as curved-text),
+  hides the source label, and keeps the Highlight cells for Visio.
 - Theme-only LineColorTrans ribbons now keep the theme wash in LibreOffice.
   `LineColorTrans` is not a token, so a save already bakes a FillForegndTrans
   sibling. Theme-only LineColor used to write a black FillForegnd fallback

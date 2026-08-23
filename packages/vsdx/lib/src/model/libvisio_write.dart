@@ -34,7 +34,11 @@
 /// is skipped by
 /// `readCharIX` but `TextBkgnd` is collected and painted as
 /// `fo:background-color`, so a uniform highlight with no authored
-/// text-block fill is written there. `TextBkgndTrans` and layer
+/// text-block fill is written there. Mixed run colours cannot share
+/// one TextBkgnd, so a save inserts locked FillForegnd siblings that
+/// carry each highlighted run (same advance as nowrap / curved-text),
+/// hides the source label, and leaves the Highlight cells for Visio.
+/// `TextBkgndTrans` and layer
 /// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
 /// zeros alpha), so a save premultiplies those into RGB toward white.
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens —
@@ -288,9 +292,11 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                     bakeShapeOpacityForLibvisioWrite(
                                       bakeLangIdRtlForLibvisioWrite(
                                         bakeOverlineForLibvisioWrite(
-                                          bakeLooseEdgeLabelForLibvisioWrite(
-                                            bakeAutoRotateLabelForLibvisioWrite(
-                                              hopped,
+                                          bakeMixedHighlightForLibvisioWrite(
+                                            bakeLooseEdgeLabelForLibvisioWrite(
+                                              bakeAutoRotateLabelForLibvisioWrite(
+                                                hopped,
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -1840,6 +1846,33 @@ int? libvisioSoftEdgesSourceId(VsdxShape plate) {
   );
 }
 
+/// Name prefix of the per-run siblings mixed Character Highlight becomes.
+const kLibvisioHighlightShapeNamePrefix = 'LibvisioHighlight.';
+
+bool isLibvisioHighlightPlate(VsdxShape shape) =>
+    shape.name.startsWith(kLibvisioHighlightShapeNamePrefix);
+
+int? libvisioHighlightSourceId(VsdxShape plate) {
+  if (!isLibvisioHighlightPlate(plate)) return null;
+  return int.tryParse(plate.name.split('.').last);
+}
+
+/// `true` when a save already inserted Highlight siblings for [sourceId].
+bool pageHasLibvisioHighlightPlate(VsdxPage page, int sourceId) {
+  bool walk(VsdxShape shape) {
+    if (libvisioHighlightSourceId(shape) == sourceId) return true;
+    for (final child in shape.children) {
+      if (walk(child)) return true;
+    }
+    return false;
+  }
+
+  for (final shape in page.shapes) {
+    if (walk(shape)) return true;
+  }
+  return false;
+}
+
 /// Name prefix of the per-glyph siblings `User.veCurvedText` becomes.
 const kLibvisioCurvedTextShapeNamePrefix = 'LibvisioCurved.';
 
@@ -1913,6 +1946,7 @@ bool isLibvisioBakePlate(VsdxShape shape) =>
     isLibvisioPageShadowPlate(shape) ||
     isLibvisioCurvedTextPlate(shape) ||
     isLibvisioShapeInsidePlate(shape) ||
+    isLibvisioHighlightPlate(shape) ||
     shape.name == kLibvisioPageColorShapeName;
 
 bool _isLibvisioBakePlate(VsdxShape shape) => isLibvisioBakePlate(shape);
@@ -3703,6 +3737,274 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
     }
   }
   if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// `true` when mixed Character Highlight must become per-run plates for Draw.
+///
+/// `readCharIX` has `case XML_HIGHLIGHT: break;`. A uniform marker already
+/// becomes TextBkgnd. Mixed colours cannot share that cell, so a save
+/// inserts locked FillForegnd siblings that carry each highlighted run
+/// using the same nowrap advance curved-text uses, then hides the source
+/// label so Draw paints those glyphs above the body fill. Single-line
+/// 2-D labels only — tabs, wraps, vertical text, 1-D and authored
+/// TextBkgnd stay native.
+bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (shape.curvedText || shape.shapeInside) return false;
+  final block = shape.richText.textBlock;
+  if (block.hideText) return false;
+  if (block.textDirection == 1) return false;
+  if (block.backgroundColor != null) return false;
+  if (uniformCharacterHighlight(shape) != null) return false;
+  var sawHighlight = false;
+  for (final run in shape.richText.runs) {
+    if (run.text.contains('\t') ||
+        run.text.contains('\n') ||
+        run.text.contains('\r')) {
+      return false;
+    }
+    if (run.text.trim().isEmpty) continue;
+    if (run.charStyle.highlight != null) sawHighlight = true;
+  }
+  return sawHighlight;
+}
+
+List<({VsdxTextRun run, double width, double height})>
+    _mixedHighlightRunMetrics(VsdxShape shape) {
+  final out = <({VsdxTextRun run, double width, double height})>[];
+  for (final run in shape.richText.runs) {
+    if (run.text.isEmpty) continue;
+    final width = nowrapTextAdvanceInches(run.text, run.charStyle);
+    final height = math.max(
+      run.charStyle.effectiveFontSizeInchesForText(run.text),
+      0.04,
+    );
+    out.add((run: run, width: width, height: height));
+  }
+  return out;
+}
+
+List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
+  VsdxShape source, {
+  required List<int> plateIds,
+  required int Function() nextId,
+}) {
+  final metrics = _mixedHighlightRunMetrics(source);
+  if (metrics.isEmpty) return const <VsdxShape>[];
+  final block = source.richText.textBlock;
+  final tw = (block.widthInches ?? source.width).abs();
+  final th = (block.heightInches ?? source.height).abs();
+  final pinX = block.pinXInches ?? source.width / 2;
+  final pinY = block.pinYInches ?? source.height / 2;
+  final locX = block.locPinXInches ?? tw / 2;
+  final locY = block.locPinYInches ?? th / 2;
+  final originX = pinX - locX;
+  final originY = pinY - locY;
+  var totalW = 0.0;
+  var lineH = 0.04;
+  for (final m in metrics) {
+    totalW += m.width;
+    if (m.height > lineH) lineH = m.height;
+  }
+  final align = metrics.first.run.paraStyle.effectiveHorizontalAlign;
+  final contentW =
+      math.max(0.0, tw - block.marginLeftInches - block.marginRightInches);
+  var cursor = originX + block.marginLeftInches;
+  switch (align) {
+    case VsdxHorzAlign.center:
+      cursor += math.max(0.0, (contentW - totalW) / 2);
+    case VsdxHorzAlign.right:
+      cursor += math.max(0.0, contentW - totalW);
+    case VsdxHorzAlign.left:
+    case VsdxHorzAlign.justify:
+    case VsdxHorzAlign.full:
+      break;
+  }
+  final midY = switch (block.verticalAlign) {
+    VsdxVertAlign.top => originY + th - block.marginTopInches - lineH / 2,
+    VsdxVertAlign.bottom => originY + block.marginBottomInches + lineH / 2,
+    VsdxVertAlign.middle => originY + th / 2,
+  };
+  final out = <VsdxShape>[];
+  var plate = 0;
+  for (final m in metrics) {
+    final color = m.run.charStyle.highlight;
+    if (color != null && m.width > 1e-9) {
+      final local = _textFlipAboutPin(
+        source,
+        Offset2D(cursor + m.width / 2, midY),
+      );
+      final page = _parentFromLocal(source, local);
+      final id = plate < plateIds.length ? plateIds[plate] : nextId();
+      final pw = math.max(m.width, lineH) * 1.2;
+      final ph = lineH * 1.5;
+      final style = m.run.charStyle.copyWith(clearHighlight: true);
+      out.add(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: page.x,
+          pinY: page.y,
+          width: pw,
+          height: ph,
+          name: '$kLibvisioHighlightShapeNamePrefix$plate.${source.id}',
+          fill: VsdxFill(foreground: color, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          locPinXInches: pw / 2,
+          locPinYInches: ph / 2,
+          angleRad: source.angleRad + block.angleRad,
+          locked: true,
+          layerMemberIds: source.layerMemberIds,
+          text: m.run.text,
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: m.run.text,
+                charStyle: style,
+                paraStyle: const VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              widthInches: pw,
+              heightInches: ph,
+              locPinXInches: pw / 2,
+              locPinYInches: ph / 2,
+              verticalAlign: VsdxVertAlign.middle,
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+            ),
+          ),
+        ),
+      );
+      plate++;
+    }
+    cursor += m.width;
+  }
+  return out;
+}
+
+void _collectHighlightPlateIds(
+  List<VsdxShape> shapes,
+  Map<int, List<int>> into,
+) {
+  for (final shape in shapes) {
+    final sourceId = libvisioHighlightSourceId(shape);
+    if (sourceId != null) {
+      (into[sourceId] ??= <int>[]).add(shape.id);
+    }
+    _collectHighlightPlateIds(shape.children, into);
+  }
+}
+
+bool pageNeedsLibvisioMixedHighlightBake(VsdxPage page) {
+  var hasPlate = false;
+  var needs = false;
+  void walk(VsdxShape shape) {
+    if (isLibvisioHighlightPlate(shape)) {
+      hasPlate = true;
+    } else if (shapeNeedsLibvisioMixedHighlightBake(shape)) {
+      needs = true;
+    }
+    for (final child in shape.children) {
+      walk(child);
+    }
+  }
+
+  for (final shape in page.shapes) {
+    walk(shape);
+  }
+  return hasPlate || needs;
+}
+
+VsdxShape _sourceForLibvisioMixedHighlightWrite(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return shape;
+  return shape.copyWith(
+    richText: shape.richText.copyWith(
+      textBlock: shape.richText.textBlock.copyWith(hideText: true),
+    ),
+  );
+}
+
+List<VsdxShape> _bakeMixedHighlightTree(
+  List<VsdxShape> shapes, {
+  required Map<int, List<int>> plateIds,
+  required int Function() nextId,
+}) {
+  final out = <VsdxShape>[];
+  var changed = false;
+  for (final shape in shapes) {
+    if (isLibvisioHighlightPlate(shape)) {
+      changed = true;
+      continue;
+    }
+    var next = shape;
+    if (shape.children.isNotEmpty) {
+      final children = _bakeMixedHighlightTree(
+        shape.children,
+        plateIds: plateIds,
+        nextId: nextId,
+      );
+      if (!identical(children, shape.children)) {
+        next = shape.copyWith(children: children);
+        changed = true;
+      }
+    }
+    if (shapeNeedsLibvisioMixedHighlightBake(next) ||
+        plateIds.containsKey(next.id)) {
+      final plates = _mixedHighlightPlatesForLibvisioWrite(
+        next,
+        plateIds: plateIds[next.id] ?? const <int>[],
+        nextId: nextId,
+      );
+      if (plates.isEmpty) {
+        out.add(next);
+        continue;
+      }
+      // Body fill first, then glyph plates so Draw does not cover the
+      // markers. Hide the source label — Highlight is not a token.
+      out.add(_sourceForLibvisioMixedHighlightWrite(next));
+      out.addAll(plates);
+      changed = true;
+      continue;
+    }
+    out.add(next);
+    if (!identical(next, shape)) changed = true;
+  }
+  return changed ? out : shapes;
+}
+
+/// Insert (or keep) the per-run Highlight siblings Draw can fill.
+VsdxDocument bakeMixedHighlightForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    if (!pageNeedsLibvisioMixedHighlightBake(page)) {
+      pages.add(page);
+      continue;
+    }
+    final plateIds = <int, List<int>>{};
+    _collectHighlightPlateIds(page.shapes, plateIds);
+    var nextId = _maxShapeId(page.shapes) + 1;
+    final shapes = _bakeMixedHighlightTree(
+      page.shapes,
+      plateIds: plateIds,
+      nextId: () => nextId++,
+    );
+    if (identical(shapes, page.shapes)) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      changed = true;
+    }
+  }
+  if (!changed) return document;
   return document.copyWith(pages: pages);
 }
 
@@ -8933,6 +9235,23 @@ VsdxTextBlock textBlockForLibvisioWrite(VsdxShape shape) {
     );
   }
   return block;
+}
+
+/// Character Highlight to paint here. `null` when a save already inserted
+/// per-run FillForegnd siblings, so canvas / SVG do not stack a second halo.
+VsdxColor? characterHighlightForPaint(
+  VsdxTextRun run, {
+  VsdxShape? shape,
+  VsdxPage? page,
+}) {
+  final highlight = run.charStyle.highlight;
+  if (highlight == null) return null;
+  if (shape != null &&
+      page != null &&
+      pageHasLibvisioHighlightPlate(page, shape.id)) {
+    return null;
+  }
+  return highlight;
 }
 
 /// TextBkgnd to paint here. `null` when it is only the LibreOffice stand-in

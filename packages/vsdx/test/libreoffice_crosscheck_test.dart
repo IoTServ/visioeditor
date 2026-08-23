@@ -2841,6 +2841,58 @@ void main() {
         ),
       ),
     );
+    var highlightMixedDocument = parser.parse(blank);
+    final highlightMixedPage = highlightMixedDocument.pages.first;
+    highlightMixedDocument = highlightMixedDocument.replacePage(
+      0,
+      highlightMixedPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: highlightMixedPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4,
+          height: 2,
+          name: 'HighlightMixed',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'MM',
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+            runs: [
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var glowStrokeDocument = parser.parse(blank);
     final glowStrokePage = glowStrokeDocument.pages.first;
     glowStrokeDocument = glowStrokeDocument.replacePage(
@@ -4218,6 +4270,10 @@ void main() {
       'char_trans_theme': writer.write(
         originalBytes: blank,
         edited: charTransThemeDocument,
+      ),
+      'highlight_mixed': writer.write(
+        originalBytes: blank,
+        edited: highlightMixedDocument,
       ),
       'glow_stroke': writer.write(
         originalBytes: blank,
@@ -6830,6 +6886,64 @@ void main() {
             greaterThan(glyph.r),
             reason: 'the faded accent6 blend must stay green-tinted; '
                 'glyphR=${glyph.r} glyphG=${glyph.g}',
+          );
+        }
+        if (entry.key == 'highlight_mixed') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          expect(
+            page.shapes.where(isLibvisioHighlightPlate),
+            hasLength(2),
+          );
+          final source =
+              page.shapes.firstWhere((s) => s.name == 'HighlightMixed');
+          expect(source.richText.textBlock.hideText, isTrue);
+          expect(
+            source.richText.runs[0].charStyle.highlight?.value,
+            0xFFFF00FF,
+          );
+          expect(
+            source.richText.runs[1].charStyle.highlight?.value,
+            0xFF00FF00,
+          );
+          expect(source.richText.textBlock.backgroundColor, isNull);
+        }
+        if (entry.key == 'highlight_mixed' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          var limePixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+              magentaPixels++;
+            }
+            if (pixel.g > 200 && pixel.r < 40) {
+              limePixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(50),
+            reason: 'LibreOffice must paint the magenta Highlight plate; '
+                'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+          expect(
+            limePixels,
+            greaterThan(50),
+            reason: 'LibreOffice must paint the lime Highlight plate; '
+                'magentaPixels=$magentaPixels limePixels=$limePixels',
           );
         }
         if (entry.key == 'glow_stroke') {
