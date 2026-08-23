@@ -76,7 +76,10 @@
 /// 1–4 rails / LinePattern 2–23 and `veDashPattern` dash ribbons / open-path
 /// arrow Geometry / a long `veMiterLimit` spike as a locked sibling ribbon
 /// whose FillForegndTrans Draw collects, then drops the source line so Draw
-/// does not paint an opaque (or short-miter) stroke on top. Page
+/// does not paint an opaque (or short-miter) stroke on top. Theme-only
+/// LineColor freezes into that ribbon FillForegnd (document theme, then
+/// Office) — a black fallback plus THEMEVAL painted grey, while canvas
+/// already strokes `_colourOrTheme`. Page
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
@@ -1253,7 +1256,10 @@ VsdxColor _glowRgbForLibvisioWrite(VsdxGlow glow, VsdxTheme theme) {
 /// RGB canvas `_colourOrTheme` would stroke. Theme-only LineColor still
 /// has to freeze into a Reflection / SoftEdges PNG because those cells
 /// are not tokens.
-VsdxColor _lineRgbForLibvisioWrite(VsdxLine line, VsdxTheme theme) {
+VsdxColor _lineRgbForLibvisioWrite(
+  VsdxLine line, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
   if (line.color != null) return line.color!;
   final slot = line.themeColorIndex;
   if (slot == null) return const VsdxColor(0xFF000000);
@@ -2243,10 +2249,8 @@ VsdxShape _sourceForLibvisioSketchWrite(VsdxShape shape) {
         if (!next.fill.hasFill) {
           next = next.copyWith(
             fill: VsdxFill(
-              foreground: line.color ?? const VsdxColor(0xFF000000),
+              foreground: _lineRgbForLibvisioWrite(line),
               pattern: 1,
-              themeForegroundIndex:
-                  line.color == null ? line.themeColorIndex : null,
               foregroundTransparency: line.transparency.clamp(0.0, 1.0),
             ),
           );
@@ -6972,9 +6976,8 @@ LibvisioShapeWrite libvisioShapeWrite(
     geometries = <VsdxGeometry>[...geometries, ...arrowGeoms];
     if (!fill.hasFill) {
       fill = VsdxFill(
-        foreground: line.color ?? const VsdxColor(0xFF000000),
+        foreground: _lineRgbForLibvisioWrite(line, theme),
         pattern: 1,
-        themeForegroundIndex: line.color == null ? line.themeColorIndex : null,
         foregroundTransparency: line.transparency.clamp(0.0, 1.0),
       );
     }
@@ -7465,14 +7468,8 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
   if (!addedRails) return null;
 
   if (useRibbons) {
-    final fill = _fillFromLineStroke(shape.line) ??
-        VsdxFill(
-          foreground: shape.line.color ?? const VsdxColor(0xFF000000),
-          background: shape.line.color ?? const VsdxColor(0xFF000000),
-          pattern: 1,
-          themeForegroundIndex:
-              shape.line.color == null ? shape.line.themeColorIndex : null,
-        );
+    final fill =
+        _fillFromLineStroke(shape.line) ?? _opaqueFillFromLine(shape.line);
     return (
       geometries: out,
       line: shape.line.copyWith(
@@ -7564,11 +7561,14 @@ bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
   return _shapeHasLibvisioMiterSpikeCorners(shape);
 }
 
-VsdxFill _opaqueFillFromLine(VsdxLine line) => VsdxFill(
-      foreground: line.color ?? const VsdxColor(0xFF000000),
-      background: line.color ?? const VsdxColor(0xFF000000),
+VsdxFill _opaqueFillFromLine(
+  VsdxLine line, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) =>
+    VsdxFill(
+      foreground: _lineRgbForLibvisioWrite(line, theme),
+      background: _lineRgbForLibvisioWrite(line, theme),
       pattern: 1,
-      themeForegroundIndex: line.color == null ? line.themeColorIndex : null,
     );
 
 /// `true` when an unfilled LineGradient / LineColorTrans stroke vanishes in Draw.
@@ -8243,7 +8243,7 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
     )) {
       return null;
     }
-    fill = _opaqueFillFromLine(line);
+    fill = _opaqueFillFromLine(line, theme);
   }
 
   final weight = line.weightInches > 1e-9 ? line.weightInches : 0.01;
@@ -8330,11 +8330,14 @@ VsdxFill? _fillFromLineStroke(
     );
   }
   if (transparency <= 1e-9) return null;
+  // Freeze theme LineColor: writer emits hex whenever foreground is set, and
+  // the previous black fallback plus THEMEVAL painted a grey wash. FillForegndTrans
+  // is a token, so Draw still composites this RGB over the page / body.
+  final color = _lineRgbForLibvisioWrite(line, theme);
   return VsdxFill(
-    foreground: line.color ?? const VsdxColor(0xFF000000),
-    background: line.color ?? const VsdxColor(0xFF000000),
+    foreground: color,
+    background: color,
     pattern: 1,
-    themeForegroundIndex: line.color == null ? line.themeColorIndex : null,
     foregroundTransparency: transparency,
     backgroundTransparency: transparency,
   );

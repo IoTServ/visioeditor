@@ -3926,6 +3926,28 @@ void main() {
         ),
       ),
     );
+    var filledLineTransThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final filledLineTransThemePage = filledLineTransThemeDocument.pages.first;
+    filledLineTransThemeDocument = filledLineTransThemeDocument.replacePage(
+      0,
+      filledLineTransThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: filledLineTransThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'LineTransTheme',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(
+            themeColorIndex: ThemeSlot.accent6,
+            weightInches: 0.28,
+            transparency: 0.7,
+          ),
+        ),
+      ),
+    );
     var filledLineTransCompoundDocument = parser.parse(blank);
     final filledLineTransCompoundPage =
         filledLineTransCompoundDocument.pages.first;
@@ -4332,6 +4354,10 @@ void main() {
       'filled_line_trans': writer.write(
         originalBytes: blank,
         edited: filledLineTransDocument,
+      ),
+      'filled_line_trans_theme': writer.write(
+        originalBytes: blank,
+        edited: filledLineTransThemeDocument,
       ),
       'filled_line_trans_compound': writer.write(
         originalBytes: blank,
@@ -9367,6 +9393,91 @@ void main() {
             lessThan(90),
             reason: 'LibreOffice must composite the stroke over the fill, not '
                 'premultiply toward white; inner=$innerStroke interior=$interior',
+          );
+        }
+        if (entry.key == 'filled_line_trans_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineTransTheme');
+          expect(source.line.pattern, 0);
+          expect(source.fill.foreground?.value, 0xFFFF0000);
+          final plate = reopened.pages.first.shapes
+              .where(isLibvisioStrokeRibbonPlate)
+              .single;
+          expect(
+            plate.fill.foreground?.value,
+            VsdxTheme.office.resolve(ThemeSlot.accent6)!.value,
+          );
+          expect(plate.fill.themeForegroundIndex, isNull);
+          expect(plate.fill.foregroundTransparency, closeTo(0.7, 1e-9));
+        }
+        if (entry.key == 'filled_line_trans_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0);
+            return (r: sumR / count, g: sumG / count);
+          }
+
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final halo = mean(5.78, 5.2, 5.88, 5.8);
+          expect(
+            body.r,
+            greaterThan(body.g + 40),
+            reason: 'LibreOffice must still paint the red fill; '
+                'bodyR=${body.r} haloR=${halo.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.g,
+            greaterThan(halo.r + 8),
+            reason: 'LibreOffice must paint the faded Office accent6 stroke, '
+                'not the black fallback; '
+                'haloR=${halo.r} haloG=${halo.g}',
+          );
+          expect(
+            halo.r,
+            greaterThan(160),
+            reason: 'FillForegndTrans must fade the frozen accent6 over white; '
+                'haloR=${halo.r} haloG=${halo.g}',
           );
         }
         if (entry.key == 'filled_line_trans_compound') {

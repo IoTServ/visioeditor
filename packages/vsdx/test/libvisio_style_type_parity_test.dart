@@ -45,7 +45,9 @@
 /// Theme-bound colours with no transparency still keep THEMEVAL.
 /// Filled-shape LineColorTrans / LineGradient bake a
 /// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
-/// the source line. CompoundType 1–4 rails, LinePattern 2–23 dashes, and
+/// the source line. Theme-only LineColor freezes into that ribbon
+/// FillForegnd (document theme, then Office) so Draw does not paint the
+/// black fallback. CompoundType 1–4 rails, LinePattern 2–23 dashes, and
 /// open-path Begin/EndArrow join that sibling so Draw does not keep an
 /// opaque stroke (or hang markers on a dropped line) on top of the wash.
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
@@ -6691,6 +6693,56 @@ void main() {
     expect(shapeNeedsLibvisioFilledStrokeRibbonBake(arrowed), isTrue,
         reason:
             'closed 2-D arrow cells must not skip the LineColorTrans ribbon');
+  });
+
+  test('theme-only LineColorTrans bakes RGB on the sibling ribbon', () {
+    const slot = ThemeSlot.accent6;
+    const trans = 0.7;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'LineTransTheme',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(
+        themeColorIndex: slot,
+        weightInches: 0.28,
+        transparency: trans,
+      ),
+    );
+    expect(shape.line.color, isNull);
+    expect(shapeNeedsLibvisioFilledStrokeRibbonBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final page = parser.parse(saved).pages.first;
+    final after = page.findShapeById(1)!;
+    expect(after.fill.foreground?.value, 0xFFFF0000);
+    expect(after.line.pattern, 0);
+    final plate = page.shapes.where(isLibvisioStrokeRibbonPlate).single;
+    expect(plate.fill.foreground?.value, expected.value,
+        reason: 'theme LineColor must freeze into FillForegnd, not black');
+    expect(plate.fill.themeForegroundIndex, isNull);
+    expect(plate.fill.foregroundTransparency, closeTo(trans, 1e-9));
+
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    final hex = (expected.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(xml.contains('N="FillForegnd" V="#$hex"'), isTrue);
+    expect(
+      xml.contains('N="FillForegnd" V="#000000"'),
+      isFalse,
+      reason: 'theme LineColorTrans must not keep the black fallback',
+    );
   });
 
   test('filled CompoundType LineColorTrans bakes rails on the sibling ribbon',

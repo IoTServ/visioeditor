@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only LineColorTrans ribbons now keep the theme wash in LibreOffice.
+  `LineColorTrans` is not a token, so a save already bakes a FillForegndTrans
+  sibling. Theme-only LineColor used to write a black FillForegnd fallback
+  (writer emits hex whenever colour is set), so Draw painted grey while
+  canvas already strokes `_colourOrTheme`. A save now resolves the slot
+  (document theme, then Office) into that ribbon FillForegnd and keeps
+  FillForegndTrans so Draw still composites over the body.
 - Theme-only Glow halos that cannot become a Gaussian PNG (spline or
   multi-subpath bodies) now keep their colour in LibreOffice. `Glow*` is
   not a token, so the slot had to survive as `QuickStyleLineColor`, but
