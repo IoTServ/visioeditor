@@ -38,8 +38,9 @@
 /// one TextBkgnd, so a save inserts locked FillForegnd siblings that
 /// carry each highlighted run (same advance as nowrap / curved-text),
 /// stacks explicit newlines the same way canvas / SVG already wrap those
-/// markers, hides the source label, and leaves the Highlight cells for
-/// Visio. Tabs, vertical text and 1-D labels stay native.
+/// markers, and pins tab fields with the same `visioTabFieldStart`
+/// canvas / SVG / libvisio `_fillTabSet` use. Vertical text, 1-D and
+/// authored TextBkgnd stay native.
 /// `TextBkgndTrans` and layer
 /// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
 /// zeros alpha), so a save premultiplies those into RGB toward white.
@@ -3760,7 +3761,8 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
 /// using the same nowrap advance curved-text uses, then hides the source
 /// label so Draw paints those glyphs above the body fill. Explicit
 /// newlines stack the same way canvas / SVG already wrap those markers.
-/// Tabs, vertical text, 1-D and authored TextBkgnd stay native.
+/// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`). Vertical
+/// text, 1-D and authored TextBkgnd stay native.
 bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -3772,7 +3774,6 @@ bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (uniformCharacterHighlight(shape) != null) return false;
   var sawHighlight = false;
   for (final run in shape.richText.runs) {
-    if (run.text.contains('\t')) return false;
     if (run.text.trim().isEmpty) continue;
     if (run.charStyle.highlight != null) sawHighlight = true;
   }
@@ -3785,6 +3786,7 @@ typedef _HighlightSeg = ({
   VsdxParaStyle para,
   double width,
   double height,
+  int? tabSetIx,
 });
 
 List<List<_HighlightSeg>> _mixedHighlightLines(VsdxShape shape) {
@@ -3802,18 +3804,96 @@ List<List<_HighlightSeg>> _mixedHighlightLines(VsdxShape shape) {
       para: run.paraStyle,
       width: width,
       height: height,
+      tabSetIx: null,
+    ));
+  }
+
+  void addTab(VsdxTextRun run, int tabSetIx) {
+    lines.last.add((
+      text: '',
+      style: run.charStyle,
+      para: run.paraStyle,
+      width: 0,
+      height: 0.04,
+      tabSetIx: tabSetIx,
     ));
   }
 
   for (final run in shape.richText.runs) {
+    var tab = 0;
     final parts =
         run.text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
     for (var i = 0; i < parts.length; i++) {
-      addSeg(parts[i], run);
+      final part = parts[i];
+      var start = 0;
+      for (var c = 0; c < part.length; c++) {
+        if (part.codeUnitAt(c) != 0x09) continue;
+        if (c > start) addSeg(part.substring(start, c), run);
+        addTab(run, tab < run.tabIndices.length ? run.tabIndices[tab] : 0);
+        tab++;
+        start = c + 1;
+      }
+      if (start < part.length) addSeg(part.substring(start), run);
       if (i != parts.length - 1) lines.add(<_HighlightSeg>[]);
     }
   }
   return lines;
+}
+
+List<({_HighlightSeg seg, double x})> _placeHighlightLine(
+  List<_HighlightSeg> line,
+  VsdxShape source,
+) {
+  final hasTab = line.any((s) => s.tabSetIx != null);
+  if (!hasTab) {
+    var x = 0.0;
+    final out = <({_HighlightSeg seg, double x})>[];
+    for (final s in line) {
+      out.add((seg: s, x: x));
+      x += s.width;
+    }
+    return out;
+  }
+  final tabSets = source.richText.tabSets;
+  final defaultStop = source.richText.textBlock.defaultTabStopInches;
+  var x = 0.0;
+  final out = <({_HighlightSeg seg, double x})>[];
+  for (var i = 0; i < line.length; i++) {
+    final s = line[i];
+    final tabSetIx = s.tabSetIx;
+    if (tabSetIx != null) {
+      var following = 0.0;
+      var decimalPrefix = 0.0;
+      var sawDecimal = false;
+      for (var j = i + 1; j < line.length; j++) {
+        if (line[j].tabSetIx != null) break;
+        following += line[j].width;
+        if (sawDecimal) continue;
+        final dot = line[j].text.indexOf('.');
+        if (dot < 0) {
+          decimalPrefix += line[j].width;
+        } else {
+          decimalPrefix += nowrapTextAdvanceInches(
+            line[j].text.substring(0, dot),
+            line[j].style,
+          );
+          sawDecimal = true;
+        }
+      }
+      x = visioTabFieldStart(
+        tabSets: tabSets,
+        tabSetIx: tabSetIx,
+        currentPosition: x,
+        followingWidth: following,
+        decimalPrefixWidth: decimalPrefix,
+        defaultTabStop: defaultStop,
+      );
+      continue;
+    }
+    out.add((seg: s, x: x));
+    x += s.width;
+  }
+  return out;
 }
 
 List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
@@ -3854,30 +3934,33 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
     }
     final line = lines[li];
     final lineH = lineHeights[li];
+    final placed = _placeHighlightLine(line, source);
     var totalW = 0.0;
-    for (final s in line) {
-      totalW += s.width;
+    for (final p in placed) {
+      final end = p.x + p.seg.width;
+      if (end > totalW) totalW = end;
     }
     final align = line.isNotEmpty
         ? line.first.para.effectiveHorizontalAlign
         : VsdxHorzAlign.left;
-    var cursor = originX + block.marginLeftInches;
+    var origin = originX + block.marginLeftInches;
     switch (align) {
       case VsdxHorzAlign.center:
-        cursor += math.max(0.0, (contentW - totalW) / 2);
+        origin += math.max(0.0, (contentW - totalW) / 2);
       case VsdxHorzAlign.right:
-        cursor += math.max(0.0, contentW - totalW);
+        origin += math.max(0.0, contentW - totalW);
       case VsdxHorzAlign.left:
       case VsdxHorzAlign.justify:
       case VsdxHorzAlign.full:
         break;
     }
-    for (final s in line) {
+    for (final p in placed) {
+      final s = p.seg;
       final color = s.style.highlight;
       if (color != null && s.width > 1e-9) {
         final local = _textFlipAboutPin(
           source,
-          Offset2D(cursor + s.width / 2, midY),
+          Offset2D(origin + p.x + s.width / 2, midY),
         );
         final page = _parentFromLocal(source, local);
         final id = plate < plateIds.length ? plateIds[plate] : nextId();
@@ -3927,7 +4010,6 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
         );
         plate++;
       }
-      cursor += s.width;
     }
   }
   return out;

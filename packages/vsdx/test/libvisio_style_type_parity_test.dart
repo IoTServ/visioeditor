@@ -27,8 +27,8 @@
 /// there — `VSDContentCollector` paints it as span `fo:background-color`
 /// and Draw shows the plate. Mixed run colours cannot share that cell, so
 /// a save inserts locked FillForegnd siblings of each highlighted run,
-/// including explicit newlines stacked like canvas / SVG. Tabs stay
-/// native.
+/// including explicit newlines stacked like canvas / SVG and tab
+/// fields pinned with `visioTabFieldStart`.
 /// `RVNGSVGDrawingGenerator` drops that property,
 /// so the oracle SVG is the wrong place to look; `vsd2raw` still has it.
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
@@ -5972,23 +5972,6 @@ void main() {
       ),
     );
     expect(shapeNeedsLibvisioMixedHighlightBake(shape), isTrue);
-    expect(
-      shapeNeedsLibvisioMixedHighlightBake(
-        shape.copyWith(
-          richText: shape.richText.copyWith(
-            runs: [
-              VsdxTextRun(
-                text: 'M\tM',
-                charStyle: shape.richText.runs.first.charStyle,
-              ),
-              shape.richText.runs.last,
-            ],
-          ),
-        ),
-      ),
-      isFalse,
-      reason: 'tabs stay native',
-    );
 
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -6029,6 +6012,93 @@ void main() {
     );
     expect(savedDoc.pages.first.findShapeById(1)!.richText.textBlock.hideText,
         isTrue);
+  });
+
+  test('mixed Character Highlight tabs bake pinned plates', () {
+    const tabs = <VsdxTabSet>[
+      VsdxTabSet(
+        ix: 0,
+        stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+      ),
+    ];
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4,
+      height: 2,
+      name: 'HighlightMixedTab',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'M\tM',
+      richText: const VsdxRichText(
+        tabSets: tabs,
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          verticalAlign: VsdxVertAlign.middle,
+        ),
+        runs: [
+          VsdxTextRun(
+            text: 'M\t',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 1,
+              highlight: VsdxColor(0xFFFF00FF),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.left,
+            ),
+          ),
+          VsdxTextRun(
+            text: 'M',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 1,
+              highlight: VsdxColor(0xFF00FF00),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.left,
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioMixedHighlightBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioHighlightPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(2));
+    expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+    expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+    expect(plates[1].pinX - plates[0].pinX, greaterThan(1.2));
+    expect(plates[0].pinY, closeTo(plates[1].pinY, 0.2));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioHighlightPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Highlight plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioHighlightPlate),
+      hasLength(2),
+    );
   });
 
   test('TextBkgndTrans premultiplies into TextBkgnd for LibreOffice', () {

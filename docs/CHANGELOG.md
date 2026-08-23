@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mixed Character Highlight with tab fields now keeps each run marker
+  in LibreOffice. `readCharIX` skips Highlight; a save already bakes
+  mixed colours and explicit newlines as locked FillForegnd siblings,
+  but a tab used to skip the whole bake so Draw dropped every marker
+  while canvas / SVG already pin those fields with `visioTabFieldStart`
+  (libvisio `_fillTabSet`). A save now places each highlighted field
+  at that same stop. Vertical text and 1-D labels stay native.
 - Mixed Character Highlight with explicit newlines now keeps each run
   marker in LibreOffice. `readCharIX` skips Highlight; a save already
   bakes single-line mixed colours as locked FillForegnd siblings, but
