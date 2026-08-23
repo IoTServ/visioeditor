@@ -97,9 +97,10 @@
 /// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
 /// PNG sibling and drops the source fill. Resolved-RGB FillGradient,
-/// classic 25–40 washes and FillPattern 2–24 hatches go into that PNG
-/// so Draw does not keep a hard fill. Theme-only FillForegnd / LineColor
-/// resolve through the document theme then Office into that PNG. An
+/// theme-only gradient stops, classic 25–40 washes and FillPattern 2–24
+/// hatches go into that PNG so Draw does not keep a hard fill.
+/// Theme-only FillForegnd / LineColor / gradient stops resolve through
+/// the document theme then Office into that PNG. An
 /// unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
 /// line. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
@@ -107,8 +108,8 @@
 /// solid or dashed stroke bakes both into one padded plate and drops fill
 /// and line. Gradient / hatch fills with a stroke join that plate.
 /// CompoundType 1–4 rails join that plate too. LineGradient strokes
-/// with resolved RGB join that plate so Draw does not keep a hard
-/// opaque outline. Rounding fillets join that plate so Draw does not
+/// with resolved-RGB or theme-only stops join that plate so Draw does
+/// not keep a hard opaque outline. Rounding fillets join that plate so Draw does not
 /// keep square corners after the fill is dropped.
 /// `ShadowBlur` is not a token,
 /// so a save bakes a Gaussian PNG sibling and clears ShdwPattern. Theme-only
@@ -2053,6 +2054,78 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test(
+      'theme-only FillGradient SoftEdges bakes a feathered PNG for LibreOffice',
+      () {
+    const slot0 = ThemeSlot.accent6;
+    const slot1 = ThemeSlot.accent1;
+    final expected0 = VsdxTheme.office.resolve(slot0)!;
+    final expected1 = VsdxTheme.office.resolve(slot1)!;
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, themeColorIndex: slot0),
+        VsdxGradientStop(position: 1, themeColorIndex: slot1),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'GradientSoftTheme',
+      fill: const VsdxFill(pattern: 1, gradient: wash),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shape.fill.gradient!.stops.first.color, isNull);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.fill.hasGradient, isFalse);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.hasImage, isTrue);
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    final left = decoded.getPixel(decoded.width ~/ 4, decoded.height ~/ 2);
+    final right = decoded.getPixel(decoded.width * 3 ~/ 4, decoded.height ~/ 2);
+    expect(
+      left.g,
+      greaterThan(left.r + 15),
+      reason: 'theme slot $slot0 (${expected0.value.toRadixString(16)}) '
+          'must freeze into the left of the feathered PNG; '
+          'left=$left right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(right.r + 15),
+      reason: 'theme slot $slot1 (${expected1.value.toRadixString(16)}) '
+          'must freeze into the right of the feathered PNG; '
+          'left=$left right=$right',
+    );
+    expect(
+      decoded.getPixel(0, 0).a,
+      lessThan(decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2).a),
+      reason: 'SourceAlpha feather must fade the silhouette edge',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+  });
+
   test('hatch fill SoftEdges bakes a feathered hatch PNG for LibreOffice', () {
     final shape = VsdxShapeFactory.rectangle(
       id: 1,
@@ -2513,6 +2586,141 @@ void main() {
       writerBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
       hasLength(1),
     );
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('theme-only LineGradient SoftEdges bakes the wash into the plate', () {
+    const slot0 = ThemeSlot.accent6;
+    const slot1 = ThemeSlot.accent1;
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, themeColorIndex: slot0),
+        VsdxGradientStop(position: 1, themeColorIndex: slot1),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'LineGradSoftTheme',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        weightInches: 0.16,
+        softEdgesInches: 0.12,
+        gradient: wash,
+      ),
+    );
+    expect(shape.line.color, isNull);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.line.hasGradient, isFalse);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final decoded = raster.decodePng(
+      baked.images.findByPart(plate.imagePartName!)!.bytes,
+    )!;
+    const padInches = 0.16 / 2 + 0.12 * 3;
+    const plateW = 2 + 2 * padInches;
+    const plateH = 1.2 + 2 * padInches;
+    ({int r, int g, int b}) sample(double visioX, double visioY) {
+      final x = ((padInches + visioX) / plateW * decoded.width)
+          .round()
+          .clamp(1, decoded.width - 2);
+      final y = ((padInches + (1.2 - visioY)) / plateH * decoded.height)
+          .round()
+          .clamp(1, decoded.height - 2);
+      final pixel = decoded.getPixel(x, y);
+      return (r: pixel.r.toInt(), g: pixel.g.toInt(), b: pixel.b.toInt());
+    }
+
+    final left = sample(0, 0.6);
+    final right = sample(2, 0.6);
+    expect(
+      left.g,
+      greaterThan(left.r + 15),
+      reason: 'theme-only LineGradient SoftEdges PNG must keep the green '
+          'start of the wash; left=$left right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(right.r + 15),
+      reason: 'theme-only LineGradient SoftEdges PNG must keep the blue '
+          'end of the wash; left=$left right=$right',
+    );
+  });
+
+  test('theme-only LineGradient bakes a themed ribbon for LibreOffice', () {
+    const slot0 = ThemeSlot.accent6;
+    const slot1 = ThemeSlot.accent1;
+    final shape = VsdxShape(
+      id: 1,
+      name: 'LineGradTheme',
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 0.2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[MoveTo(0, 0.1), LineTo(2, 0.1)],
+        ),
+      ],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        pattern: 1,
+        weightInches: 0.06,
+        gradient: VsdxGradient(
+          stops: <VsdxGradientStop>[
+            VsdxGradientStop(position: 0, themeColorIndex: slot0),
+            VsdxGradientStop(position: 1, themeColorIndex: slot1),
+          ],
+        ),
+      ),
+    );
+    expect(shape.line.color, isNull);
+    expect(shapeNeedsLibvisioStrokeRibbon(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.line.hasGradient, isFalse);
+    expect(after.line.pattern, 0);
+    expect(
+      after.fill.themeForegroundIndex == slot0 ||
+          after.fill.foreground?.value ==
+              VsdxTheme.office.resolve(slot0)!.value,
+      isTrue,
+      reason: 'theme-only LineGradient must not bake a black ribbon; '
+          'fill=${after.fill.foreground} theme=${after.fill.themeForegroundIndex}',
+    );
+    expect(
+      after.fill.themeBackgroundIndex == slot1 ||
+          after.fill.background?.value ==
+              VsdxTheme.office.resolve(slot1)!.value,
+      isTrue,
+      reason: 'the ribbon FillBkgnd must keep the last stop slot',
+    );
+    expect(
+      after.fill.hasGradient ||
+          (after.fill.pattern >= 25 && after.fill.pattern <= 40),
+      isTrue,
+      reason: 'LineGradient ribbon must become a classic FillPattern',
+    );
+    expect(after.geometries.any((g) => !g.noFill), isTrue);
+
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);

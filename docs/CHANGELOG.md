@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only FillGradient / LineGradient stops now keep their wash in
+  LibreOffice. Those sections are not tokens; a save used to skip
+  theme-only stops so SoftEdges / Reflection PNGs stayed empty and an
+  unfilled LineGradient ribbon baked black, while canvas
+  `_buildGradientShader` already samples `_colourOrTheme`. A save now
+  resolves each slot (document theme, then Office) into those PNG
+  samples and into the ribbon FillForegnd / FillBkgnd Draw collects.
 - Theme-only hard-edged shadows on an oblique page now keep the shear
   in LibreOffice. `ShdwType` / `ShdwObliqueAngle` / `ShdwScaleFactor`
   are not tokens; a save used to skip theme-only ShdwForegnd so Draw

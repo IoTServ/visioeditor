@@ -10,7 +10,8 @@
 /// pattern 2–23, or — when `User.veDashPattern` is not one of those ids —
 /// MoveTo/LineTo dashes with LinePattern=1. A modern FillGradient whose
 /// FillPattern was omitted (libvisio default 0) becomes classic FillPattern
-/// 25–40 plus FillForegnd/FillBkgnd from the stops — otherwise Draw stays
+/// 25–40 plus FillForegnd/FillBkgnd from the stops (resolved RGB or the
+/// stop's theme slot) — otherwise Draw stays
 /// hollow and an unfilled LineGradient ribbon would steal the body. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
@@ -81,10 +82,11 @@
 /// frame and Draw does not crop the halo off. Geometry `SoftEdgesSize` is the
 /// same missing token: a filled 2-D shape bakes a locked Foreign sibling
 /// whose PNG alpha uses the same SourceAlpha feather canvas / SVG use
-/// (resolved-RGB FillGradient / classic 25–40 washes and FillPattern 2–24
-/// hatches are painted into that PNG so Draw does not keep a hard fill).
-/// Theme-only FillForegnd / LineColor resolve through the document theme,
-/// then Office, into that PNG so Draw keeps the feather. Then
+/// (resolved-RGB and theme-only FillGradient / classic 25–40 washes and
+/// FillPattern 2–24 hatches are painted into that PNG so Draw does not
+/// keep a hard fill). Theme-only FillForegnd / LineColor / gradient
+/// stops resolve through the document theme, then Office, into that PNG
+/// so Draw keeps the feather. Then
 /// SoftEdgesSize is written 0 and the source fill is dropped so the
 /// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
@@ -101,9 +103,10 @@
 /// are not a token either, so Draw would otherwise keep a single hard
 /// stroke (or hard parallel rails) on a feathered fill. LineGradient is
 /// likewise missing from `tokens.txt`, so a 2-D SoftEdges stroke with
-/// resolved-RGB stops samples that wash into the same padded PNG and
-/// drops the source line — Draw would otherwise keep a hard opaque
-/// outline (or a hard filled ribbon) on a feathered body. Rounding is a
+/// resolved-RGB or theme-only stops samples that wash into the same
+/// padded PNG and drops the source line — Draw would otherwise keep a
+/// hard opaque outline (or a hard filled ribbon) on a feathered body.
+/// Rounding is a
 /// token Draw *does* collect, but the PNG silhouette used to stay a
 /// sharp box, so a save dropped the fill and left square corners. The
 /// same `filletPolyline` canvas / SVG / libvisio use is sampled into
@@ -157,9 +160,10 @@
 /// stroke (filling the mirror would paint an interior Draw leaves empty;
 /// built-in LinePattern 2–23, `veDashPattern`, and CompoundType 1–4 rails
 /// go into that band as ribbons so Draw does not keep a solid ring or
-/// drop the mirror; a resolved-RGB LineGradient is sampled into the same
-/// band so Draw does not keep a solid LineColor ring; theme-only LineColor
-/// resolves into that PNG so Draw keeps the mirror), an unfilled 1-D
+/// drop the mirror; a resolved-RGB or theme-only LineGradient is sampled
+/// into the same band so Draw does not keep a solid LineColor ring;
+/// theme-only LineColor resolves into that PNG so Draw keeps the
+/// mirror), an unfilled 1-D
 /// stroke bakes the same PNG band from its stroke ribbon (a Foreign plate
 /// cannot use a zero-height 1-D XForm, and canvas `_drawReflection`
 /// already inflates that degenerate bounds by half LineWeight),
@@ -624,10 +628,11 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
 /// `veDashPattern`, and CompoundType 1–4 rails are painted as ribbons so
 /// Draw keeps the gaps / thick-thin contrast (a solid ring would hide
 /// them; CompoundType is not a token, so skipping the bake would drop the
-/// mirror). A resolved-RGB LineGradient is sampled into the same band
-/// (`tokens.txt` has no LineGradient; a solid LineColor ring would hide
-/// the wash). Theme-only LineColor resolves into that PNG the same way
-/// canvas `_colourOrTheme` does. FlipY is applied when placing the plate (`_reflectFillRing`)
+/// mirror). A resolved-RGB or theme-only LineGradient is sampled into
+/// the same band (`tokens.txt` has no LineGradient; a solid LineColor
+/// ring would hide the wash). Theme-only LineColor / gradient stops
+/// resolve into that PNG the same way canvas `_colourOrTheme` does.
+/// FlipY is applied when placing the plate (`_reflectFillRing`)
 /// — copying FlipY onto the PNG would mirror the already-placed band
 /// twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
@@ -816,6 +821,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
           trans,
           shape.width.abs(),
           math.max(shape.height.abs(), 1e-6),
+          theme,
         )
       : null;
   if (shape.line.hasGradient && lineColorAt == null) return null;
@@ -1272,6 +1278,20 @@ VsdxColor _fillRgbForLibvisioWrite(
 VsdxColor? _fillBackgroundRgbForLibvisioWrite(VsdxFill fill, VsdxTheme theme) {
   if (fill.background != null) return fill.background;
   final slot = fill.themeBackgroundIndex;
+  if (slot == null) return null;
+  return theme.resolve(slot) ?? VsdxTheme.office.resolve(slot);
+}
+
+/// RGB canvas `_colourOrTheme` would sample at a gradient stop. Theme-only
+/// GradientStopColor is not a token (`FillGradient` / `LineGradient` never
+/// reach `VSDContentCollector`), so SoftEdges / Reflection PNGs freeze the
+/// slot through [theme], then Office.
+VsdxColor? _gradientStopRgbForLibvisioWrite(
+  VsdxGradientStop stop,
+  VsdxTheme theme,
+) {
+  if (stop.color != null) return stop.color;
+  final slot = stop.themeColorIndex;
   if (slot == null) return null;
   return theme.resolve(slot) ?? VsdxTheme.office.resolve(slot);
 }
@@ -2714,9 +2734,10 @@ List<List<Offset2D>> _libvisioStrokeSilhouettePolygons(VsdxShape shape) {
 VsdxShape _strokeRibbonPlateForLibvisioWrite(
   VsdxShape source, {
   required int id,
+  VsdxTheme theme = VsdxTheme.empty,
 }) {
-  final fill =
-      _fillFromLineStroke(source.line) ?? _opaqueFillFromLine(source.line);
+  final fill = _fillFromLineStroke(source.line, theme) ??
+      _opaqueFillFromLine(source.line);
   return VsdxShape(
     id: id,
     name: '$kLibvisioStrokeRibbonShapeNamePrefix${source.id}',
@@ -2797,6 +2818,7 @@ bool pageNeedsLibvisioFilledStrokeRibbonBake(VsdxPage page) {
 
 List<VsdxShape> _bakeFilledStrokeRibbonTree(
   List<VsdxShape> shapes, {
+  required VsdxTheme theme,
   required Map<int, int> plateIds,
   required int Function() nextId,
 }) {
@@ -2811,6 +2833,7 @@ List<VsdxShape> _bakeFilledStrokeRibbonTree(
     if (shape.children.isNotEmpty) {
       final children = _bakeFilledStrokeRibbonTree(
         shape.children,
+        theme: theme,
         plateIds: plateIds,
         nextId: nextId,
       );
@@ -2823,6 +2846,7 @@ List<VsdxShape> _bakeFilledStrokeRibbonTree(
       final plate = _strokeRibbonPlateForLibvisioWrite(
         next,
         id: plateIds[next.id] ?? nextId(),
+        theme: theme,
       );
       if (plate.geometries.isEmpty) {
         out.add(next);
@@ -2853,7 +2877,10 @@ List<VsdxShape> _bakeFilledStrokeRibbonTree(
   return changed ? out : shapes;
 }
 
-VsdxPage bakeFilledStrokeRibbonPageForLibvisioWrite(VsdxPage page) {
+VsdxPage bakeFilledStrokeRibbonPageForLibvisioWrite(
+  VsdxPage page, {
+  VsdxTheme theme = VsdxTheme.empty,
+}) {
   if (!pageNeedsLibvisioFilledStrokeRibbonBake(page)) return page;
   final plateIds = <int, int>{};
   _collectStrokeRibbonPlateIds(page.shapes, plateIds);
@@ -2861,6 +2888,7 @@ VsdxPage bakeFilledStrokeRibbonPageForLibvisioWrite(VsdxPage page) {
   return page.copyWith(
     shapes: _bakeFilledStrokeRibbonTree(
       page.shapes,
+      theme: theme,
       plateIds: plateIds,
       nextId: () => nextId++,
     ),
@@ -2874,7 +2902,10 @@ VsdxDocument bakeFilledStrokeRibbonForLibvisioWrite(VsdxDocument document) {
   final pages = <VsdxPage>[];
   var changed = false;
   for (final page in document.pages) {
-    final next = bakeFilledStrokeRibbonPageForLibvisioWrite(page);
+    final next = bakeFilledStrokeRibbonPageForLibvisioWrite(
+      page,
+      theme: document.theme,
+    );
     changed |= !identical(next, page);
     pages.add(next);
   }
@@ -5212,14 +5243,15 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// one padded plate and drops fill and line, so Draw does not keep a
 /// hard outline. Gradient / hatch fills with a stroke join that plate.
 /// CompoundType 1–4 rails join that plate too. LineGradient strokes
-/// with resolved RGB join that plate so Draw does not keep a hard
-/// opaque outline. Rounding fillets join that plate so Draw does not
-/// keep square corners after the fill is dropped. Theme-only FillForegnd
-/// / LineColor (canvas `_colourOrTheme` / `_fillColour`) resolve through
-/// the document theme, then Office, into that PNG so Draw keeps the
-/// feather. 1-D, pictures, open-path arrows, and unrecognised geometry
-/// stay native. Closed 2-D arrow cells do not block the bake — libvisio
-/// suppresses markers on Z-closed subpaths, same as canvas.
+/// with resolved-RGB or theme-only stops join that plate so Draw does
+/// not keep a hard opaque outline. Rounding fillets join that plate so
+/// Draw does not keep square corners after the fill is dropped.
+/// Theme-only FillForegnd / LineColor / gradient stops (canvas
+/// `_colourOrTheme` / `_fillColour`) resolve through the document theme,
+/// then Office, into that PNG so Draw keeps the feather. 1-D, pictures,
+/// open-path arrows, and unrecognised geometry stay native. Closed 2-D
+/// arrow cells do not block the bake — libvisio suppresses markers on
+/// Z-closed subpaths, same as canvas.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
@@ -5512,6 +5544,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
       shape.fill.foregroundTransparency,
       w,
       h,
+      theme,
     );
   }
   final hatch = libvisioHatchSpec(shape.fill.pattern);
@@ -5542,8 +5575,10 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
 }
 
 ({int r, int g, int b, int a}) Function(
-        double xPx, double yPx, int widthPx, int heightPx)?
-    _softEdgesLineColorAt(VsdxShape shape) {
+    double xPx, double yPx, int widthPx, int heightPx)? _softEdgesLineColorAt(
+  VsdxShape shape, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
   final gradient = shape.line.gradient;
   if (gradient == null || gradient.stops.isEmpty) return null;
   return _softEdgesGradientSampler(
@@ -5551,6 +5586,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
     shape.line.transparency,
     shape.width.abs(),
     shape.height.abs(),
+    theme,
   );
 }
 
@@ -5560,9 +5596,10 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
   VsdxGradient gradient,
   double transparency,
   double w,
-  double h,
-) {
-  final stops = _gradientBakeStops(gradient, transparency);
+  double h, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
+  final stops = _gradientBakeStops(gradient, transparency, theme);
   if (stops.isEmpty) return null;
   final linear = gradient.type == VsdxGradientType.linear;
   final angle = gradient.angleRad;
@@ -5587,12 +5624,13 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
 
 List<({double position, int r, int g, int b, int a})> _gradientBakeStops(
   VsdxGradient gradient,
-  double fillTransparency,
-) {
+  double fillTransparency, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
   final fillAlpha = 1 - fillTransparency.clamp(0.0, 1.0);
   final out = <({double position, int r, int g, int b, int a})>[];
   for (final stop in gradient.stops) {
-    final color = stop.color;
+    final color = _gradientStopRgbForLibvisioWrite(stop, theme);
     if (color == null) return const [];
     final a =
         (color.alpha * (1 - stop.transparency.clamp(0.0, 1.0)) * fillAlpha)
@@ -5756,7 +5794,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
       ? null
       : (double innerX, double innerY) =>
           fillColorAt(innerX, innerY, innerWidthPx, innerHeightPx);
-  final lineColorAt = _softEdgesLineColorAt(shape);
+  final lineColorAt = _softEdgesLineColorAt(shape, theme);
   final strokeColorAt = lineColorAt == null
       ? null
       : (double innerX, double innerY) =>
@@ -6805,7 +6843,10 @@ class LibvisioShapeWrite {
 }
 
 /// Map [shape] onto the Fill / Line / Geometry libvisio will actually draw.
-LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
+LibvisioShapeWrite libvisioShapeWrite(
+  VsdxShape shape, {
+  VsdxTheme theme = VsdxTheme.empty,
+}) {
   if (shape.libvisioCollapsedHidden || shape.libvisioCoveredHidden) {
     return LibvisioShapeWrite(
       geometries: <VsdxGeometry>[
@@ -6906,6 +6947,7 @@ LibvisioShapeWrite libvisioShapeWrite(VsdxShape shape) {
     shape: working,
     geometries: geometries,
     line: line,
+    theme: theme,
   );
   if (ribbon != null) {
     geometries = ribbon.geometries;
@@ -8162,10 +8204,11 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
   required VsdxShape shape,
   required List<VsdxGeometry> geometries,
   required VsdxLine line,
+  VsdxTheme theme = VsdxTheme.empty,
 }) {
   if (!shapeNeedsLibvisioStrokeRibbon(shape)) return null;
   if (!line.hasLine) return null;
-  var fill = _fillFromLineStroke(line);
+  var fill = _fillFromLineStroke(line, theme);
   if (fill == null) {
     if (!shapeNeedsLibvisioMiterSpikeBake(
       shape.copyWith(geometries: geometries, line: line),
@@ -8218,23 +8261,40 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
   );
 }
 
-VsdxFill? _fillFromLineStroke(VsdxLine line) {
+VsdxFill? _fillFromLineStroke(
+  VsdxLine line, [
+  VsdxTheme theme = VsdxTheme.empty,
+]) {
   final transparency = line.transparency.clamp(0.0, 1.0);
   if (line.hasGradient) {
     final gradient = line.gradient!;
-    VsdxColor? first;
-    VsdxColor? last;
+    VsdxColor? firstColor;
+    VsdxColor? lastColor;
+    var saw = false;
     for (final stop in gradient.stops) {
-      if (stop.color != null) {
-        first ??= stop.color;
-        last = stop.color;
+      final color = _gradientStopRgbForLibvisioWrite(stop, theme);
+      if (color == null) continue;
+      if (!saw) {
+        firstColor = color;
+        saw = true;
       }
+      lastColor = color;
     }
-    first ??= line.color ?? const VsdxColor(0xFF000000);
-    last ??= first;
+    if (!saw) {
+      firstColor = line.color ??
+          _gradientStopRgbForLibvisioWrite(
+            VsdxGradientStop(
+              position: 0,
+              themeColorIndex: line.themeColorIndex,
+            ),
+            theme,
+          ) ??
+          const VsdxColor(0xFF000000);
+      lastColor = firstColor;
+    }
     return VsdxFill(
-      foreground: first,
-      background: last,
+      foreground: firstColor,
+      background: lastColor,
       pattern: 1,
       gradient: gradient,
       foregroundTransparency: transparency,

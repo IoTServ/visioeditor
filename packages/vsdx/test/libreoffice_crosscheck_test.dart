@@ -2271,6 +2271,38 @@ void main() {
         ),
       ),
     );
+    var gradientSoftThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final gradientSoftThemePage = gradientSoftThemeDocument.pages.first;
+    gradientSoftThemeDocument = gradientSoftThemeDocument.replacePage(
+      0,
+      gradientSoftThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: gradientSoftThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'GradientSoftTheme',
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  themeColorIndex: ThemeSlot.accent6,
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  themeColorIndex: ThemeSlot.accent1,
+                ),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
+        ),
+      ),
+    );
     var hatchSoftDocument = parser.parse(blank);
     final hatchSoftPage = hatchSoftDocument.pages.first;
     hatchSoftDocument = hatchSoftDocument.replacePage(
@@ -2506,6 +2538,48 @@ void main() {
                 VsdxGradientStop(
                   position: 1,
                   color: VsdxColor(0xFF0000FF),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    var lineGradThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final lineGradThemePage = lineGradThemeDocument.pages.first;
+    lineGradThemeDocument = lineGradThemeDocument.replacePage(
+      0,
+      lineGradThemePage.addShape(
+        VsdxShape(
+          id: lineGradThemePage.nextFreeShapeId(),
+          name: 'LineGradTheme',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 0.24,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0.12),
+                LineTo(3, 0.12),
+              ],
+            ),
+          ],
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.18,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  themeColorIndex: ThemeSlot.accent6,
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  themeColorIndex: ThemeSlot.accent1,
                 ),
               ],
             ),
@@ -3932,6 +4006,10 @@ void main() {
         originalBytes: blank,
         edited: gradientSoftDocument,
       ),
+      'gradient_soft_theme': writer.write(
+        originalBytes: blank,
+        edited: gradientSoftThemeDocument,
+      ),
       'hatch_soft': writer.write(
         originalBytes: blank,
         edited: hatchSoftDocument,
@@ -3971,6 +4049,10 @@ void main() {
       'line_grad_soft': writer.write(
         originalBytes: blank,
         edited: lineGradSoftDocument,
+      ),
+      'line_grad_theme': writer.write(
+        originalBytes: blank,
+        edited: lineGradThemeDocument,
       ),
       'round_soft': writer.write(
         originalBytes: blank,
@@ -4785,6 +4867,88 @@ void main() {
               right.b,
               greaterThan(left.b + 40),
               reason: 'LibreOffice must paint the baked red-to-blue wash; '
+                  'left=$left right=$right',
+            );
+          }
+        }
+        if (entry.key == 'gradient_soft_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'GradientSoftTheme');
+          expect(source.fill.pattern, 0);
+          expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+          if (pdftoppm != null) {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '96',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            )!;
+            final page = reopened.pages.first;
+            ({double r, double g, double b}) meanRgb(
+              double x0,
+              double y0,
+              double x1,
+              double y1,
+            ) {
+              final left = (x0 / page.widthInches * rendered.width).round();
+              final right = (x1 / page.widthInches * rendered.width).round();
+              final top = ((page.heightInches - y1) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              final bottom = ((page.heightInches - y0) /
+                      page.heightInches *
+                      rendered.height)
+                  .round();
+              var sumR = 0.0;
+              var sumG = 0.0;
+              var sumB = 0.0;
+              var count = 0;
+              for (var y = top; y < bottom; y++) {
+                for (var x = left; x < right; x++) {
+                  if (x < 0 ||
+                      y < 0 ||
+                      x >= rendered.width ||
+                      y >= rendered.height) {
+                    continue;
+                  }
+                  final p = rendered.getPixel(x, y);
+                  sumR += p.r;
+                  sumG += p.g;
+                  sumB += p.b;
+                  count++;
+                }
+              }
+              if (count == 0) return (r: 0, g: 0, b: 0);
+              return (r: sumR / count, g: sumG / count, b: sumB / count);
+            }
+
+            final left = meanRgb(3.15, 5.3, 3.55, 5.7);
+            final right = meanRgb(4.95, 5.3, 5.35, 5.7);
+            expect(
+              left.g,
+              greaterThan(left.r + 8),
+              reason: 'LibreOffice must paint the baked accent6-to-accent1 '
+                  'FillGradient SoftEdges PNG, not a hard THEMEVAL fill; '
+                  'left=$left right=$right',
+            );
+            expect(
+              right.b,
+              greaterThan(right.r + 8),
+              reason: 'LibreOffice must keep the blue end of the theme wash; '
                   'left=$left right=$right',
             );
           }
@@ -5709,6 +5873,97 @@ void main() {
             greaterThan(200),
             reason: 'LibreOffice must keep the hollow interior empty; '
                 'centre=$centre left=$left',
+          );
+        }
+        if (entry.key == 'line_grad_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGradTheme');
+          expect(source.line.hasGradient, isFalse);
+          expect(source.line.pattern, 0);
+          expect(
+            source.fill.themeForegroundIndex == ThemeSlot.accent6 ||
+                source.fill.foreground?.value ==
+                    VsdxTheme.office.resolve(ThemeSlot.accent6)!.value,
+            isTrue,
+            reason: 'theme-only LineGradient must not bake a black ribbon; '
+                'fill=${source.fill.foreground} '
+                'theme=${source.fill.themeForegroundIndex}',
+          );
+          expect(source.geometries.any((g) => !g.noFill), isTrue);
+        }
+        if (entry.key == 'line_grad_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double g, double b}) meanRgb(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumG += pixel.g;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0, b: 0.0);
+            return (r: sumR / count, g: sumG / count, b: sumB / count);
+          }
+
+          final left = meanRgb(2.85, 5.38, 3.25, 5.62);
+          final right = meanRgb(5.25, 5.38, 5.65, 5.62);
+          expect(
+            left.b,
+            greaterThan(right.b + 20),
+            reason: 'LibreOffice classic 25–40 paints FillBkgnd (last stop) '
+                'on the left of a 1-D ribbon; left=$left right=$right',
+          );
+          expect(
+            right.g,
+            greaterThan(right.r + 8),
+            reason: 'LibreOffice must keep the green FillForegnd end of the '
+                'theme wash; left=$left right=$right',
+          );
+          expect(
+            left.b,
+            greaterThan(left.r + 8),
+            reason: 'LibreOffice must keep the blue FillBkgnd end of the '
+                'theme wash, not a black ribbon; left=$left right=$right',
           );
         }
         if (entry.key == 'round_soft') {
