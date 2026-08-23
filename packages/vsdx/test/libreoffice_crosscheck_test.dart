@@ -3047,6 +3047,104 @@ void main() {
         ),
       ),
     );
+    var textDirectionDocument = parser.parse(blank);
+    final textDirectionPage = textDirectionDocument.pages.first;
+    textDirectionDocument = textDirectionDocument.replacePage(
+      0,
+      textDirectionPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: textDirectionPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 0.8,
+          name: 'TextDirection',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              text: 'MMMM',
+              richText: const VsdxRichText(
+                textBlock: VsdxTextBlock(
+                  marginLeftInches: 0,
+                  marginRightInches: 0,
+                  marginTopInches: 0,
+                  marginBottomInches: 0,
+                  verticalAlign: VsdxVertAlign.middle,
+                  textDirection: 1,
+                  backgroundColor: VsdxColor(0xFFFF00FF),
+                ),
+                runs: [
+                  VsdxTextRun(
+                    text: 'MMMM',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.5,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            )
+            .withWordWrap(false),
+      ),
+    );
+    var highlightMixedVertDocument = parser.parse(blank);
+    final highlightMixedVertPage = highlightMixedVertDocument.pages.first;
+    highlightMixedVertDocument = highlightMixedVertDocument.replacePage(
+      0,
+      highlightMixedVertPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: highlightMixedVertPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4,
+          height: 2,
+          name: 'HighlightMixedVert',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'MM',
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+              textDirection: 1,
+            ),
+            runs: [
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var glowStrokeDocument = parser.parse(blank);
     final glowStrokePage = glowStrokeDocument.pages.first;
     glowStrokeDocument = glowStrokeDocument.replacePage(
@@ -4493,6 +4591,14 @@ void main() {
       'highlight_mixed_tab': writer.write(
         originalBytes: blank,
         edited: highlightMixedTabDocument,
+      ),
+      'text_direction': writer.write(
+        originalBytes: blank,
+        edited: textDirectionDocument,
+      ),
+      'highlight_mixed_vert': writer.write(
+        originalBytes: blank,
+        edited: highlightMixedVertDocument,
       ),
       'glow_stroke': writer.write(
         originalBytes: blank,
@@ -7516,6 +7622,183 @@ void main() {
             greaterThan(tabField.magenta),
             reason: 'the tab field must stay lime; '
                 'tabM=${tabField.magenta} tabL=${tabField.lime}',
+          );
+        }
+        if (entry.key == 'text_direction') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'TextDirection');
+          expect(source.richText.textBlock.textDirection, 0);
+          expect(
+            source.richText.textBlock.angleRad,
+            closeTo(-math.pi / 2, 1e-6),
+          );
+          expect(source.richText.textBlock.widthInches, greaterThan(0.7));
+          expect(
+            source.richText.textBlock.heightInches,
+            closeTo(3, 1e-6),
+          );
+        }
+        if (entry.key == 'text_direction' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          int countMagenta(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var n = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) n++;
+              }
+            }
+            return n;
+          }
+
+          final north = countMagenta(4.05, 5.95, 4.45, 6.35);
+          final west = countMagenta(3.2, 5.25, 3.65, 5.75);
+          expect(
+            north,
+            greaterThan(15),
+            reason: 'LibreOffice must rotate TextDirection=1 into a tall '
+                'column; north=$north west=$west',
+          );
+          expect(
+            north,
+            greaterThan(west),
+            reason: 'rotated TextBkgnd must sit on the vertical axis, not '
+                'the original wide box; north=$north west=$west',
+          );
+        }
+        if (entry.key == 'highlight_mixed_vert') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final plates = page.shapes.where(isLibvisioHighlightPlate).toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(2));
+          expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+          expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+          expect(plates[0].pinY, greaterThan(plates[1].pinY + 0.2));
+          expect(plates[0].pinX, closeTo(plates[1].pinX, 0.35));
+          expect(
+            page.shapes
+                .firstWhere((s) => s.name == 'HighlightMixedVert')
+                .richText
+                .textBlock
+                .textDirection,
+            0,
+          );
+        }
+        if (entry.key == 'highlight_mixed_vert' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int magenta, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var magenta = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+                  magenta++;
+                }
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (magenta: magenta, lime: lime);
+          }
+
+          final upper = countWindow(4.0, 5.7, 4.5, 6.25);
+          final lower = countWindow(4.0, 4.75, 4.5, 5.3);
+          expect(
+            upper.magenta,
+            greaterThan(20),
+            reason: 'LibreOffice must paint magenta above after TextDirection '
+                'bake; upperM=${upper.magenta} upperL=${upper.lime} '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+          expect(
+            lower.lime,
+            greaterThan(20),
+            reason: 'LibreOffice must paint lime below after TextDirection '
+                'bake; upperM=${upper.magenta} upperL=${upper.lime} '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+          expect(
+            upper.magenta,
+            greaterThan(upper.lime),
+            reason: 'upper plate must stay magenta; '
+                'upperM=${upper.magenta} upperL=${upper.lime}',
+          );
+          expect(
+            lower.lime,
+            greaterThan(lower.magenta),
+            reason: 'lower plate must stay lime; '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
           );
         }
         if (entry.key == 'glow_stroke') {

@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Vertical `TextDirection` now stays vertical in LibreOffice. The cell
+  is a token (`readTextBlockIX` stores it) but `_flushText` never emits
+  `style:writing-mode`, so Draw laid the run out horizontally while
+  canvas / SVG already rotate −90° about the text-block centre. A save
+  now folds that rotation into `TxtAngle`, swaps TxtWidth/TxtHeight,
+  remaps LocPin and margins, and writes TextDirection=0 so reopen does
+  not rotate twice. Mixed Character Highlight plates follow TxtPin on
+  that rotated frame. Glueable 1-D labels, curved text and Shape Inside
+  stay native.
 - Mixed Character Highlight with tab fields now keeps each run marker
   in LibreOffice. `readCharIX` skips Highlight; a save already bakes
   mixed colours and explicit newlines as locked FillForegnd siblings,

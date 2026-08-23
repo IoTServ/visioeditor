@@ -39,8 +39,14 @@
 /// carry each highlighted run (same advance as nowrap / curved-text),
 /// stacks explicit newlines the same way canvas / SVG already wrap those
 /// markers, and pins tab fields with the same `visioTabFieldStart`
-/// canvas / SVG / libvisio `_fillTabSet` use. Vertical text, 1-D and
-/// authored TextBkgnd stay native.
+/// canvas / SVG / libvisio `_fillTabSet` use. `TextDirection` is a
+/// token the parser stores, but `_flushText` never emits
+/// `style:writing-mode`, so Draw would keep a horizontal run; a save
+/// folds canvas / SVG's −90° block rotation into `TxtAngle`, swaps
+/// TxtWidth/TxtHeight and remaps margins, then writes TextDirection=0
+/// so reopen does not rotate twice. 1-D labels and authored TextBkgnd
+/// stay native. Mixed Highlight on that rotated frame follows
+/// TxtAngle about TxtPin.
 /// `TextBkgndTrans` and layer
 /// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
 /// zeros alpha), so a save premultiplies those into RGB toward white.
@@ -308,7 +314,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                           bakeMixedHighlightForLibvisioWrite(
                                             bakeLooseEdgeLabelForLibvisioWrite(
                                               bakeAutoRotateLabelForLibvisioWrite(
-                                                hopped,
+                                                bakeTextDirectionForLibvisioWrite(
+                                                  hopped,
+                                                ),
                                               ),
                                             ),
                                           ),
@@ -3028,6 +3036,27 @@ Offset2D _textFlipAboutPin(VsdxShape shape, Offset2D local) {
   return Offset2D(pinX + dx, pinY + dy);
 }
 
+/// Apply `TxtAngle` about TxtPin (canvas: rotate, then FlipX/Y).
+///
+/// Mixed Highlight plates live in the text-block rectangle. Draw
+/// rotates that rectangle about TxtPin; without this step a baked
+/// TextDirection `TxtAngle` would leave plate centres on the unrotated
+/// line while glyphs spin in place.
+Offset2D _textRotateAboutPin(VsdxShape shape, Offset2D local) {
+  final block = shape.richText.textBlock;
+  if (block.angleRad.abs() <= 1e-12) return local;
+  final pinX = block.pinXInches ?? shape.width / 2;
+  final pinY = block.pinYInches ?? shape.height / 2;
+  final dx = local.x - pinX;
+  final dy = local.y - pinY;
+  final cosA = math.cos(block.angleRad);
+  final sinA = math.sin(block.angleRad);
+  return Offset2D(
+    pinX + dx * cosA - dy * sinA,
+    pinY + dx * sinA + dy * cosA,
+  );
+}
+
 VsdxShape _labelBorderPlateForLibvisioWrite(
   VsdxShape source, {
   required int id,
@@ -3761,8 +3790,9 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
 /// using the same nowrap advance curved-text uses, then hides the source
 /// label so Draw paints those glyphs above the body fill. Explicit
 /// newlines stack the same way canvas / SVG already wrap those markers.
-/// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`). Vertical
-/// text, 1-D and authored TextBkgnd stay native.
+/// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`).
+/// Vertical text is folded into `TxtAngle` first so plate centres
+/// follow TxtPin; 1-D and authored TextBkgnd stay native.
 bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -3960,7 +3990,10 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
       if (color != null && s.width > 1e-9) {
         final local = _textFlipAboutPin(
           source,
-          Offset2D(origin + p.x + s.width / 2, midY),
+          _textRotateAboutPin(
+            source,
+            Offset2D(origin + p.x + s.width / 2, midY),
+          ),
         );
         final page = _parentFromLocal(source, local);
         final id = plate < plateIds.length ? plateIds[plate] : nextId();
@@ -5037,6 +5070,134 @@ VsdxDocument bakeShapeInsideForLibvisioWrite(VsdxDocument document) {
     }
   }
   if (!changed) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// `true` when `TextDirection=1` must become a `TxtAngle` Draw paints.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `TextDirection` *is* a
+/// token (`readTextBlockIX` stores it) but `_flushText` never writes
+/// `style:writing-mode` or extra rotation, so Draw lays the run out
+/// horizontally. Canvas / SVG rotate −90° about the text-block centre
+/// and swap width×height (margins remapped likewise). `TxtAngle` *is*
+/// collected (`m_txtxform->angle` → `librevenge:rotate`), so a save
+/// folds that rotation into TxtAngle, swaps TxtWidth/TxtHeight, remaps
+/// LocPin so the box centre stays on TxtPin, writes TextDirection=0 so
+/// canvas reopen does not rotate twice, and drops Txt* formulas that
+/// would restore the unswapped box. Glueable 1-D labels, curved text
+/// and Shape Inside stay native — their layout is not a swapped
+/// rectangle.
+bool shapeNeedsLibvisioTextDirectionBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.is1D || shape.isGlueableConnector) return false;
+  if (shape.curvedText || shape.shapeInside) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  if (shape.richText.textBlock.textDirection != 1) return false;
+  final hasText =
+      !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
+  return hasText;
+}
+
+/// Fold `TextDirection=1` into `TxtAngle` / swapped TxtWidth×TxtHeight.
+VsdxShape _sourceForLibvisioTextDirectionWrite(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  final tw = (block.widthInches ?? shape.width).abs();
+  final th = (block.heightInches ?? shape.height).abs();
+  final locX = block.locPinXInches ?? tw / 2;
+  final locY = block.locPinYInches ?? th / 2;
+  // Extra −90° is about TxtPin in Draw. Canvas TextDirection rotates
+  // about the block centre, so LocPin moves to keep that centre fixed:
+  // L' = (th − Ly, Lx).
+  final nextBlock = VsdxTextBlock(
+    pinXInches: block.pinXInches ?? shape.width / 2,
+    pinYInches: block.pinYInches ?? shape.height / 2,
+    locPinXInches: th - locY,
+    locPinYInches: locX,
+    widthInches: th,
+    heightInches: tw,
+    angleRad: block.angleRad - math.pi / 2,
+    verticalAlign: block.verticalAlign,
+    marginLeftInches: block.marginTopInches,
+    marginRightInches: block.marginBottomInches,
+    marginTopInches: block.marginRightInches,
+    marginBottomInches: block.marginLeftInches,
+    hideText: block.hideText,
+    backgroundColor: block.backgroundColor,
+    backgroundTransparency: block.backgroundTransparency,
+    textDirection: 0,
+    defaultTabStopInches: block.defaultTabStopInches,
+  );
+  var formulas = shape.formulas;
+  const keys = <String>[
+    'TxtWidth',
+    'TxtHeight',
+    'TxtLocPinX',
+    'TxtLocPinY',
+    'TxtPinX',
+    'TxtPinY',
+    'TxtAngle',
+    'TextDirection',
+  ];
+  if (keys.any(formulas.containsKey)) {
+    formulas = Map<String, String>.of(shape.formulas);
+    for (final key in keys) {
+      formulas.remove(key);
+    }
+  }
+  return shape.copyWith(
+    richText: shape.richText.copyWith(textBlock: nextBlock),
+    formulas: formulas,
+  );
+}
+
+VsdxShape bakeTextDirectionShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeTextDirectionShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shapeNeedsLibvisioTextDirectionBake(shape)
+      ? _sourceForLibvisioTextDirectionWrite(shape)
+      : shape;
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Write `TxtAngle` Draw collects for vertical text, then drop TextDirection.
+VsdxDocument bakeTextDirectionForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeTextDirectionShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
   return document.copyWith(pages: pages);
 }
 

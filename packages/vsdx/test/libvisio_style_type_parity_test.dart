@@ -28,7 +28,10 @@
 /// and Draw shows the plate. Mixed run colours cannot share that cell, so
 /// a save inserts locked FillForegnd siblings of each highlighted run,
 /// including explicit newlines stacked like canvas / SVG and tab
-/// fields pinned with `visioTabFieldStart`.
+/// fields pinned with `visioTabFieldStart`. `TextDirection` is stored
+/// but `_flushText` never emits writing-mode, so a save folds the
+/// canvas −90° into `TxtAngle` and swaps TxtWidth/TxtHeight. Mixed
+/// Highlight on that rotated frame follows TxtPin.
 /// `RVNGSVGDrawingGenerator` drops that property,
 /// so the oracle SVG is the wrong place to look; `vsd2raw` still has it.
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
@@ -6098,6 +6101,183 @@ void main() {
     expect(
       parser.parse(saved).pages.first.shapes.where(isLibvisioHighlightPlate),
       hasLength(2),
+    );
+  });
+
+  test('TextDirection=1 bakes TxtAngle LibreOffice rotates', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 0.8,
+      name: 'TextDirection',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'MMMM',
+      richText: const VsdxRichText(
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          verticalAlign: VsdxVertAlign.middle,
+          textDirection: 1,
+        ),
+        runs: [
+          VsdxTextRun(
+            text: 'MMMM',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 0.5,
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioTextDirectionBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioTextDirectionBake(
+        shape.copyWith(
+          richText: shape.richText.copyWith(
+            textBlock: const VsdxTextBlock(textDirection: 0),
+          ),
+        ),
+      ),
+      isFalse,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final block = source.richText.textBlock;
+    expect(block.textDirection, 0);
+    expect(block.angleRad, closeTo(-math.pi / 2, 1e-9));
+    expect(block.widthInches, closeTo(0.8, 1e-9));
+    expect(block.heightInches, closeTo(3, 1e-9));
+    expect(block.locPinXInches, closeTo(0.4, 1e-9));
+    expect(block.locPinYInches, closeTo(1.5, 1e-9));
+    expect(block.pinXInches, closeTo(1.5, 1e-9));
+    expect(block.pinYInches, closeTo(0.4, 1e-9));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(-math.pi / 2, 1e-9),
+      reason: 'a second save must not rotate another −90°',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.textBlock.textDirection, 0);
+    expect(after.richText.textBlock.angleRad, closeTo(-math.pi / 2, 1e-9));
+    expect(after.richText.textBlock.widthInches, closeTo(0.8, 1e-9));
+    expect(after.richText.textBlock.heightInches, closeTo(3, 1e-9));
+  });
+
+  test('mixed Character Highlight follows baked TextDirection', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4,
+      height: 2,
+      name: 'HighlightMixedVert',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'MM',
+      richText: const VsdxRichText(
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          verticalAlign: VsdxVertAlign.middle,
+          textDirection: 1,
+        ),
+        runs: [
+          VsdxTextRun(
+            text: 'M',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 1,
+              highlight: VsdxColor(0xFFFF00FF),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+          VsdxTextRun(
+            text: 'M',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 1,
+              highlight: VsdxColor(0xFF00FF00),
+            ),
+            paraStyle: VsdxParaStyle(
+              horizontalAlign: VsdxHorzAlign.center,
+            ),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioTextDirectionBake(shape), isTrue);
+    expect(
+      shapeNeedsLibvisioMixedHighlightBake(shape),
+      isFalse,
+      reason: 'plates wait until TextDirection has become TxtAngle',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.richText.textBlock.textDirection, 0);
+    expect(source.richText.textBlock.angleRad, closeTo(-math.pi / 2, 1e-9));
+    expect(source.richText.textBlock.hideText, isTrue);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioHighlightPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(2));
+    expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+    expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+    expect(plates[0].pinY, greaterThan(plates[1].pinY + 0.2));
+    expect(plates[0].pinX, closeTo(plates[1].pinX, 0.35));
+    expect(plates[0].angleRad, closeTo(-math.pi / 2, 1e-6));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioHighlightPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Highlight plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioHighlightPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.findShapeById(1)!.richText.textBlock.textDirection,
+      0,
     );
   });
 
