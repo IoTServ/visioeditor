@@ -238,7 +238,8 @@
 /// (not a token), so a save inserts locked per-glyph siblings along the
 /// same quadratic arc canvas / SVG already paint, hides the source
 /// (`HideText` is a token) and drops the User row. Tab fields become
-/// spaces so a `\t` does not skip the arc. FlipX / FlipY extra
+/// spaces so a `\t` does not skip the arc. Combining Overline / bidi
+/// marks stay on the preceding glyph. FlipX / FlipY extra
 /// text mirrors (canvas `_textFlip*`) are applied about TxtPin before
 /// the shape XForm so Draw keeps the upright arc. draw.io Shape Inside is
 /// `User.veShapeInside` (not a token), so a save inserts locked per-line
@@ -3738,6 +3739,10 @@ VsdxDocument bakeCoveredForLibvisioWrite(VsdxDocument document) {
 /// Combining overline `readCharIX` skips (`case XML_OVERLINE: break`).
 const kLibvisioCombiningOverline = '\u0305';
 
+/// Marks that must ride on the previous curved-text glyph, not a plate.
+bool _curvedTextClusterMark(int rune) =>
+    _isCombiningMarkRune(rune) || rune == 0x200E || rune == 0x200F;
+
 bool _isCombiningMarkRune(int rune) =>
     (rune >= 0x0300 && rune <= 0x036F) ||
     (rune >= 0x1AB0 && rune <= 0x1AFF) ||
@@ -4633,6 +4638,8 @@ const _kLibvisioCurvedTextMaxGlyphs = 64;
 /// per glyph on the same quadratic arc canvas / SVG already paint, then
 /// hides the source and drops the User row. Tab fields become spaces —
 /// canvas / SVG already paint `\t` as a gap on the arc, not a stop.
+/// Combining marks (Overline's U+0305) and bidi marks stay on the
+/// preceding glyph so Draw does not park an orphan plate on the arc.
 /// Glueable 1-D labels, vertical text and TxtAngle stay native. FlipX /
 /// FlipY extra text mirrors about TxtPin are baked so Draw keeps the
 /// upright arc.
@@ -4647,7 +4654,7 @@ bool shapeNeedsLibvisioCurvedTextBake(VsdxShape shape) {
   if (plain.isEmpty) return false;
   var n = 0;
   for (final r in plain.runes) {
-    if (r == 0x20) continue;
+    if (r == 0x20 || _curvedTextClusterMark(r)) continue;
     n++;
     if (n > _kLibvisioCurvedTextMaxGlyphs) return false;
   }
@@ -4768,7 +4775,9 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
   final runes = plain.runes.toList(growable: false);
   final widths = <double>[
     for (final r in runes)
-      nowrapTextAdvanceInches(String.fromCharCode(r), style),
+      _curvedTextClusterMark(r)
+          ? 0.0
+          : nowrapTextAdvanceInches(String.fromCharCode(r), style),
   ];
   var totalW = 0.0;
   for (final w in widths) {
@@ -4778,10 +4787,31 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
   final out = <VsdxShape>[];
   var cursor = pad;
   var glyph = 0;
+  var pendingMarks = '';
   for (var i = 0; i < runes.length; i++) {
     final w = widths[i];
     final ch = String.fromCharCode(runes[i]);
+    if (_curvedTextClusterMark(runes[i])) {
+      if (out.isNotEmpty) {
+        final last = out.removeLast();
+        final next = '${last.text ?? ''}$ch';
+        final run = last.richText.runs.single;
+        out.add(
+          last.copyWith(
+            text: next,
+            richText: last.richText.copyWith(
+              runs: <VsdxTextRun>[run.copyWith(text: next)],
+            ),
+          ),
+        );
+      } else {
+        pendingMarks += ch;
+      }
+      continue;
+    }
     if (runes[i] != 0x20 && ch.trim().isNotEmpty) {
+      final cluster = '$pendingMarks$ch';
+      pendingMarks = '';
       final centerDist = (cursor + w / 2).clamp(0.0, arcLen);
       final t = _arcTForDistance(cum, centerDist);
       final pos = _quadBezPoint(p0, p1, p2, t);
@@ -4814,11 +4844,11 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
           angleRad: source.angleRad + localAngle,
           locked: true,
           layerMemberIds: source.layerMemberIds,
-          text: ch,
+          text: cluster,
           richText: VsdxRichText(
             runs: <VsdxTextRun>[
               VsdxTextRun(
-                text: ch,
+                text: cluster,
                 charStyle: style,
                 paraStyle: const VsdxParaStyle(
                   horizontalAlign: VsdxHorzAlign.center,

@@ -5053,6 +5053,124 @@ void main() {
     );
   });
 
+  test('Curved Text keeps Overline combining marks on each glyph', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 1.0,
+      height: 3.0,
+      name: 'ArcOverline',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withCurvedText(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'ARC',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  overline: true,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioOverlineBake(shape), isTrue);
+    expect(shapeNeedsLibvisioCurvedTextBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(3),
+        reason: 'U+0305 must ride on A/R/C, not become orphan plates');
+    expect(
+      plates
+          .map((p) =>
+              p.richText.plainText.replaceAll(kLibvisioCombiningOverline, ''))
+          .join(),
+      'ARC',
+    );
+    expect(
+      plates.every(
+          (p) => p.richText.plainText.contains(kLibvisioCombiningOverline)),
+      isTrue,
+    );
+    expect(
+      plates.every((p) => !p.richText.runs.single.charStyle.overline),
+      isTrue,
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioCurvedTextPlate),
+      hasLength(3),
+    );
+  });
+
+  test('Curved Text keeps a leading U+200F on the first glyph', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 1.0,
+      height: 3.0,
+      name: 'ArcRtl',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withCurvedText(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '123',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  langId: 'ar-SA',
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioLangIdRtlBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(3),
+        reason: 'U+200F must ride on the first digit, not become a plate');
+    expect(plates.first.richText.plainText, startsWith(kLibvisioRtlMark));
+    expect(
+      plates
+          .map((p) => p.richText.plainText.replaceAll(kLibvisioRtlMark, ''))
+          .join(),
+      '123',
+    );
+  });
+
   test('Shape Inside bakes per-line siblings for LibreOffice', () {
     VsdxShape oval({
       required int id,

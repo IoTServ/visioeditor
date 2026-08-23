@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Curved Text now keeps Overline and LangID RTL marks on each glyph
+  in LibreOffice. `readCharIX` still skips `XML_OVERLINE` and never
+  stores LangID, so a save already inserts U+0305 / U+200F, but the
+  arc bake used to treat those marks as their own plates so Draw
+  parked orphan glyphs while canvas / SVG already attach them to the
+  preceding letter. A save now clusters those marks onto the glyph.
 - Tab fields no longer drop Curved Text, Shape Inside or LangID RTL
   in LibreOffice. `tokens.txt` has no User rows or LangID, so a save
   already bakes those effects, but a `\t` used to skip the whole
