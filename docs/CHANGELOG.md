@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mixed Character Highlight with explicit newlines now keeps each run
+  marker in LibreOffice. `readCharIX` skips Highlight; a save already
+  bakes single-line mixed colours as locked FillForegnd siblings, but
+  a newline used to skip the whole bake so Draw dropped every marker
+  while canvas / SVG already wrap those plates. A save now stacks the
+  same nowrap advance per line. Tabs, vertical text and 1-D labels
+  stay native.
 - Connector labels that have `TxtWidth` but no `TxtPin` now sit on the
   route in LibreOffice. Canvas / SVG already centre a tight plate on
   the polyline whenever `TxtPin` is missing. Draw constructs

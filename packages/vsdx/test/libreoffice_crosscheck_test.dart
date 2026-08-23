@@ -2937,6 +2937,58 @@ void main() {
         ),
       ),
     );
+    var highlightMixedNlDocument = parser.parse(blank);
+    final highlightMixedNlPage = highlightMixedNlDocument.pages.first;
+    highlightMixedNlDocument = highlightMixedNlDocument.replacePage(
+      0,
+      highlightMixedNlPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: highlightMixedNlPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4,
+          height: 2.4,
+          name: 'HighlightMixedNl',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'M\nM',
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+            runs: [
+              VsdxTextRun(
+                text: 'M\n',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 1,
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var glowStrokeDocument = parser.parse(blank);
     final glowStrokePage = glowStrokeDocument.pages.first;
     glowStrokeDocument = glowStrokeDocument.replacePage(
@@ -4375,6 +4427,10 @@ void main() {
       'highlight_mixed': writer.write(
         originalBytes: blank,
         edited: highlightMixedDocument,
+      ),
+      'highlight_mixed_nl': writer.write(
+        originalBytes: blank,
+        edited: highlightMixedNlDocument,
       ),
       'glow_stroke': writer.write(
         originalBytes: blank,
@@ -7204,6 +7260,107 @@ void main() {
             greaterThan(50),
             reason: 'LibreOffice must paint the lime Highlight plate; '
                 'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+        }
+        if (entry.key == 'highlight_mixed_nl') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final plates = page.shapes.where(isLibvisioHighlightPlate).toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(2));
+          expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+          expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+          expect(plates[0].pinY, greaterThan(plates[1].pinY + 0.4));
+          expect(
+            page.shapes
+                .firstWhere((s) => s.name == 'HighlightMixedNl')
+                .richText
+                .textBlock
+                .hideText,
+            isTrue,
+          );
+        }
+        if (entry.key == 'highlight_mixed_nl' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+
+          ({int magenta, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var magenta = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+                  magenta++;
+                }
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (magenta: magenta, lime: lime);
+          }
+
+          final upper = countWindow(3.7, 5.55, 4.8, 6.45);
+          final lower = countWindow(3.7, 4.55, 4.8, 5.45);
+          expect(
+            upper.magenta,
+            greaterThan(20),
+            reason: 'LibreOffice must paint magenta on the first line; '
+                'upperM=${upper.magenta} upperL=${upper.lime} '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+          expect(
+            lower.lime,
+            greaterThan(20),
+            reason: 'LibreOffice must paint lime on the second line; '
+                'upperM=${upper.magenta} upperL=${upper.lime} '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
+          );
+          expect(
+            upper.magenta,
+            greaterThan(upper.lime),
+            reason: 'first line must stay magenta, not lime; '
+                'upperM=${upper.magenta} upperL=${upper.lime}',
+          );
+          expect(
+            lower.lime,
+            greaterThan(lower.magenta),
+            reason: 'second line must stay lime, not magenta; '
+                'lowerM=${lower.magenta} lowerL=${lower.lime}',
           );
         }
         if (entry.key == 'glow_stroke') {

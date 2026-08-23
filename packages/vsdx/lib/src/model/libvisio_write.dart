@@ -37,7 +37,9 @@
 /// text-block fill is written there. Mixed run colours cannot share
 /// one TextBkgnd, so a save inserts locked FillForegnd siblings that
 /// carry each highlighted run (same advance as nowrap / curved-text),
-/// hides the source label, and leaves the Highlight cells for Visio.
+/// stacks explicit newlines the same way canvas / SVG already wrap those
+/// markers, hides the source label, and leaves the Highlight cells for
+/// Visio. Tabs, vertical text and 1-D labels stay native.
 /// `TextBkgndTrans` and layer
 /// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
 /// zeros alpha), so a save premultiplies those into RGB toward white.
@@ -3756,9 +3758,9 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
 /// becomes TextBkgnd. Mixed colours cannot share that cell, so a save
 /// inserts locked FillForegnd siblings that carry each highlighted run
 /// using the same nowrap advance curved-text uses, then hides the source
-/// label so Draw paints those glyphs above the body fill. Single-line
-/// 2-D labels only — tabs, wraps, vertical text, 1-D and authored
-/// TextBkgnd stay native.
+/// label so Draw paints those glyphs above the body fill. Explicit
+/// newlines stack the same way canvas / SVG already wrap those markers.
+/// Tabs, vertical text, 1-D and authored TextBkgnd stay native.
 bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -3770,30 +3772,48 @@ bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (uniformCharacterHighlight(shape) != null) return false;
   var sawHighlight = false;
   for (final run in shape.richText.runs) {
-    if (run.text.contains('\t') ||
-        run.text.contains('\n') ||
-        run.text.contains('\r')) {
-      return false;
-    }
+    if (run.text.contains('\t')) return false;
     if (run.text.trim().isEmpty) continue;
     if (run.charStyle.highlight != null) sawHighlight = true;
   }
   return sawHighlight;
 }
 
-List<({VsdxTextRun run, double width, double height})>
-    _mixedHighlightRunMetrics(VsdxShape shape) {
-  final out = <({VsdxTextRun run, double width, double height})>[];
-  for (final run in shape.richText.runs) {
-    if (run.text.isEmpty) continue;
-    final width = nowrapTextAdvanceInches(run.text, run.charStyle);
+typedef _HighlightSeg = ({
+  String text,
+  VsdxCharStyle style,
+  VsdxParaStyle para,
+  double width,
+  double height,
+});
+
+List<List<_HighlightSeg>> _mixedHighlightLines(VsdxShape shape) {
+  final lines = <List<_HighlightSeg>>[<_HighlightSeg>[]];
+  void addSeg(String text, VsdxTextRun run) {
+    if (text.isEmpty) return;
+    final width = nowrapTextAdvanceInches(text, run.charStyle);
     final height = math.max(
-      run.charStyle.effectiveFontSizeInchesForText(run.text),
+      run.charStyle.effectiveFontSizeInchesForText(text),
       0.04,
     );
-    out.add((run: run, width: width, height: height));
+    lines.last.add((
+      text: text,
+      style: run.charStyle,
+      para: run.paraStyle,
+      width: width,
+      height: height,
+    ));
   }
-  return out;
+
+  for (final run in shape.richText.runs) {
+    final parts =
+        run.text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    for (var i = 0; i < parts.length; i++) {
+      addSeg(parts[i], run);
+      if (i != parts.length - 1) lines.add(<_HighlightSeg>[]);
+    }
+  }
+  return lines;
 }
 
 List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
@@ -3801,8 +3821,8 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
   required List<int> plateIds,
   required int Function() nextId,
 }) {
-  final metrics = _mixedHighlightRunMetrics(source);
-  if (metrics.isEmpty) return const <VsdxShape>[];
+  final lines = _mixedHighlightLines(source);
+  if (lines.every((line) => line.isEmpty)) return const <VsdxShape>[];
   final block = source.richText.textBlock;
   final tw = (block.widthInches ?? source.width).abs();
   final th = (block.heightInches ?? source.height).abs();
@@ -3812,89 +3832,103 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
   final locY = block.locPinYInches ?? th / 2;
   final originX = pinX - locX;
   final originY = pinY - locY;
-  var totalW = 0.0;
-  var lineH = 0.04;
-  for (final m in metrics) {
-    totalW += m.width;
-    if (m.height > lineH) lineH = m.height;
-  }
-  final align = metrics.first.run.paraStyle.effectiveHorizontalAlign;
+  final lineHeights = <double>[
+    for (final line in lines)
+      line.fold<double>(0.04, (h, s) => math.max(h, s.height)),
+  ];
+  final totalH = lineHeights.fold<double>(0, (a, b) => a + b);
+  final firstH = lineHeights.first;
+  var midY = switch (block.verticalAlign) {
+    VsdxVertAlign.top => originY + th - block.marginTopInches - firstH / 2,
+    VsdxVertAlign.bottom =>
+      originY + block.marginBottomInches + totalH - firstH / 2,
+    VsdxVertAlign.middle => originY + th / 2 + totalH / 2 - firstH / 2,
+  };
   final contentW =
       math.max(0.0, tw - block.marginLeftInches - block.marginRightInches);
-  var cursor = originX + block.marginLeftInches;
-  switch (align) {
-    case VsdxHorzAlign.center:
-      cursor += math.max(0.0, (contentW - totalW) / 2);
-    case VsdxHorzAlign.right:
-      cursor += math.max(0.0, contentW - totalW);
-    case VsdxHorzAlign.left:
-    case VsdxHorzAlign.justify:
-    case VsdxHorzAlign.full:
-      break;
-  }
-  final midY = switch (block.verticalAlign) {
-    VsdxVertAlign.top => originY + th - block.marginTopInches - lineH / 2,
-    VsdxVertAlign.bottom => originY + block.marginBottomInches + lineH / 2,
-    VsdxVertAlign.middle => originY + th / 2,
-  };
   final out = <VsdxShape>[];
   var plate = 0;
-  for (final m in metrics) {
-    final color = m.run.charStyle.highlight;
-    if (color != null && m.width > 1e-9) {
-      final local = _textFlipAboutPin(
-        source,
-        Offset2D(cursor + m.width / 2, midY),
-      );
-      final page = _parentFromLocal(source, local);
-      final id = plate < plateIds.length ? plateIds[plate] : nextId();
-      final pw = math.max(m.width, lineH) * 1.2;
-      final ph = lineH * 1.5;
-      final style = m.run.charStyle.copyWith(clearHighlight: true);
-      out.add(
-        VsdxShapeFactory.rectangle(
-          id: id,
-          pinX: page.x,
-          pinY: page.y,
-          width: pw,
-          height: ph,
-          name: '$kLibvisioHighlightShapeNamePrefix$plate.${source.id}',
-          fill: VsdxFill(foreground: color, pattern: 1),
-          line: const VsdxLine(pattern: 0),
-        ).copyWith(
-          locPinXInches: pw / 2,
-          locPinYInches: ph / 2,
-          angleRad: source.angleRad + block.angleRad,
-          locked: true,
-          layerMemberIds: source.layerMemberIds,
-          text: m.run.text,
-          richText: VsdxRichText(
-            runs: <VsdxTextRun>[
-              VsdxTextRun(
-                text: m.run.text,
-                charStyle: style,
-                paraStyle: const VsdxParaStyle(
-                  horizontalAlign: VsdxHorzAlign.center,
+  for (var li = 0; li < lines.length; li++) {
+    if (li > 0) {
+      midY -= (lineHeights[li - 1] + lineHeights[li]) / 2;
+    }
+    final line = lines[li];
+    final lineH = lineHeights[li];
+    var totalW = 0.0;
+    for (final s in line) {
+      totalW += s.width;
+    }
+    final align = line.isNotEmpty
+        ? line.first.para.effectiveHorizontalAlign
+        : VsdxHorzAlign.left;
+    var cursor = originX + block.marginLeftInches;
+    switch (align) {
+      case VsdxHorzAlign.center:
+        cursor += math.max(0.0, (contentW - totalW) / 2);
+      case VsdxHorzAlign.right:
+        cursor += math.max(0.0, contentW - totalW);
+      case VsdxHorzAlign.left:
+      case VsdxHorzAlign.justify:
+      case VsdxHorzAlign.full:
+        break;
+    }
+    for (final s in line) {
+      final color = s.style.highlight;
+      if (color != null && s.width > 1e-9) {
+        final local = _textFlipAboutPin(
+          source,
+          Offset2D(cursor + s.width / 2, midY),
+        );
+        final page = _parentFromLocal(source, local);
+        final id = plate < plateIds.length ? plateIds[plate] : nextId();
+        final pw = math.max(s.width, lineH) * 1.2;
+        final ph = lineH * 1.5;
+        final style = s.style.copyWith(clearHighlight: true);
+        out.add(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: page.x,
+            pinY: page.y,
+            width: pw,
+            height: ph,
+            name: '$kLibvisioHighlightShapeNamePrefix$plate.${source.id}',
+            fill: VsdxFill(foreground: color, pattern: 1),
+            line: const VsdxLine(pattern: 0),
+          ).copyWith(
+            locPinXInches: pw / 2,
+            locPinYInches: ph / 2,
+            angleRad: source.angleRad + block.angleRad,
+            locked: true,
+            layerMemberIds: source.layerMemberIds,
+            text: s.text,
+            richText: VsdxRichText(
+              runs: <VsdxTextRun>[
+                VsdxTextRun(
+                  text: s.text,
+                  charStyle: style,
+                  paraStyle: const VsdxParaStyle(
+                    horizontalAlign: VsdxHorzAlign.center,
+                  ),
                 ),
+              ],
+              textBlock: VsdxTextBlock(
+                widthInches: pw,
+                heightInches: ph,
+                locPinXInches: pw / 2,
+                locPinYInches: ph / 2,
+                verticalAlign: VsdxVertAlign.middle,
+                marginLeftInches: 0,
+                marginRightInches: 0,
+                marginTopInches: 0,
+                marginBottomInches: 0,
               ),
-            ],
-            textBlock: VsdxTextBlock(
-              widthInches: pw,
-              heightInches: ph,
-              locPinXInches: pw / 2,
-              locPinYInches: ph / 2,
-              verticalAlign: VsdxVertAlign.middle,
-              marginLeftInches: 0,
-              marginRightInches: 0,
-              marginTopInches: 0,
-              marginBottomInches: 0,
             ),
           ),
-        ),
-      );
-      plate++;
+        );
+        plate++;
+      }
+      cursor += s.width;
     }
-    cursor += m.width;
   }
   return out;
 }
