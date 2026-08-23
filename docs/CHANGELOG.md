@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Word Wrap off with tab fields now keeps the stop on one line in
+  LibreOffice. `User.veWordWrap` is not a token, so a save already
+  expands TxtWidth for a plain unwrapped label, but a tab used to skip
+  the bake so Draw wrapped the next field under the first while canvas
+  / SVG already pin those fields with `visioTabFieldStart` (libvisio
+  `_fillTabSet`). A save now measures that same stop into TxtWidth.
+  Glueable 1-D labels, vertical text and curved text stay native.
 - Mixed Character Highlight on connector labels now keeps each run
   marker in LibreOffice. `readCharIX` skips Highlight; a save already
   bakes 2-D mixed colours as locked FillForegnd siblings, but 1-D

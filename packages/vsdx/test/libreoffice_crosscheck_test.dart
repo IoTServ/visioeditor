@@ -2202,6 +2202,65 @@ void main() {
             .withWordWrap(false),
       ),
     );
+    var wordWrapTabDocument = parser.parse(blank);
+    final wordWrapTabPage = wordWrapTabDocument.pages.first;
+    wordWrapTabDocument = wordWrapTabDocument.replacePage(
+      0,
+      wordWrapTabPage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: wordWrapTabPage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.2,
+          height: 0.8,
+          name: 'WordWrapTab',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        )
+            .copyWith(
+              richText: const VsdxRichText(
+                tabSets: <VsdxTabSet>[
+                  VsdxTabSet(
+                    ix: 0,
+                    stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  marginLeftInches: 0,
+                  marginRightInches: 0,
+                  marginTopInches: 0,
+                  marginBottomInches: 0,
+                  verticalAlign: VsdxVertAlign.middle,
+                ),
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'A\t',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.35,
+                      color: VsdxColor(0xFFFF0000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.left,
+                    ),
+                  ),
+                  VsdxTextRun(
+                    text: 'B',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.35,
+                      color: VsdxColor(0xFF00FF00),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.left,
+                    ),
+                  ),
+                ],
+              ),
+            )
+            .withWordWrap(false),
+      ),
+    );
     var geometrySoftDocument = parser.parse(blank);
     final geometrySoftPage = geometrySoftDocument.pages.first;
     geometrySoftDocument = geometrySoftDocument.replacePage(
@@ -4532,6 +4591,10 @@ void main() {
         originalBytes: blank,
         edited: wordWrapDocument,
       ),
+      'word_wrap_tab': writer.write(
+        originalBytes: blank,
+        edited: wordWrapTabDocument,
+      ),
       'geometry_soft': writer.write(
         originalBytes: blank,
         edited: geometrySoftDocument,
@@ -5267,6 +5330,90 @@ void main() {
             greaterThan(wrapped * 2),
             reason: 'Draw must not wrap the baked TxtWidth back into the box; '
                 'overflow=$overflow wrapped=$wrapped',
+          );
+        }
+        if (entry.key == 'word_wrap_tab') {
+          final reopened = parser.parse(entry.value);
+          final box = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'WordWrapTab');
+          expect(box.wordWrap, isTrue);
+          expect(box.richText.textBlock.widthInches, greaterThan(2));
+        }
+        if (entry.key == 'word_wrap_tab' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int red, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var red = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b < 40) red++;
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (red: red, lime: lime);
+          }
+
+          // Draw collects Tabs (`style:tab-stops`) but may still use
+          // DefaultTabStop for the jump. The bake's job is the unwrapped
+          // line: B must stay on the same band, not wrap under A.
+          final left = countWindow(3.65, 5.15, 4.15, 5.85);
+          final sameLine = countWindow(3.9, 5.15, 6.3, 5.85);
+          final wrapped = countWindow(3.65, 4.5, 4.6, 5.05);
+          expect(
+            left.red,
+            greaterThan(10),
+            reason: 'LibreOffice must paint red A on the unwrapped line; '
+                'leftR=${left.red} leftL=${left.lime} '
+                'lineR=${sameLine.red} lineL=${sameLine.lime} '
+                'wrapR=${wrapped.red} wrapL=${wrapped.lime}',
+          );
+          expect(
+            sameLine.lime,
+            greaterThan(10),
+            reason: 'LibreOffice must keep lime B on the same line; '
+                'leftR=${left.red} leftL=${left.lime} '
+                'lineR=${sameLine.red} lineL=${sameLine.lime} '
+                'wrapR=${wrapped.red} wrapL=${wrapped.lime}',
+          );
+          expect(
+            sameLine.lime,
+            greaterThan(wrapped.lime),
+            reason: 'Draw must not wrap the tab field under A; '
+                'lineL=${sameLine.lime} wrapL=${wrapped.lime}',
           );
         }
         if (entry.key == 'geometry_soft' && pdftoppm != null) {

@@ -113,7 +113,8 @@
 /// `veLabelBorderColor`. draw.io Label Padding is also a User row, so a
 /// save adds the pixel inset into Left/Right/Top/BottomMargin and drops
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
-/// expands TxtWidth to the unwrapped line and drops `veWordWrap`.
+/// expands TxtWidth to the unwrapped line — including tab fields
+/// pinned with `visioTabFieldStart` — and drops `veWordWrap`.
 /// Geometry `SoftEdgesSize` is not a token, so a save bakes a feathered
 /// PNG sibling and drops the source fill. Resolved-RGB FillGradient,
 /// theme-only gradient stops, classic 25–40 washes and FillPattern 2–24
@@ -1878,6 +1879,89 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Word Wrap off bakes TxtWidth past tab fields for LibreOffice', () {
+    const tabs = <VsdxTabSet>[
+      VsdxTabSet(
+        ix: 0,
+        stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+      ),
+    ];
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 1.2,
+      height: 0.8,
+      name: 'WordWrapTab',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    )
+        .copyWith(
+          richText: const VsdxRichText(
+            tabSets: tabs,
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\t',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.35,
+                  color: VsdxColor(0xFFFF0000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.left,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'B',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.35,
+                  color: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.left,
+                ),
+              ),
+            ],
+          ),
+        )
+        .withWordWrap(false);
+    expect(shapeNeedsLibvisioWordWrapBake(shape), isTrue);
+    final needed = nowrapTxtWidthForLibvisioWrite(shape);
+    expect(needed, greaterThan(2));
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.wordWrap, isTrue);
+    expect(source.richText.textBlock.widthInches, closeTo(needed, 1e-9));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .widthInches,
+      closeTo(needed, 1e-9),
+      reason: 'a second save must not stack another TxtWidth',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.wordWrap, isTrue);
+    expect(after.richText.textBlock.widthInches, closeTo(needed, 1e-6));
   });
 
   test('geometry SoftEdges bakes a feathered PNG sibling for LibreOffice', () {

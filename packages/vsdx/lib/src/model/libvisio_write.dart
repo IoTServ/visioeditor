@@ -239,8 +239,9 @@
 /// `User.veAutoRotateLabel` (not a token), so a save writes the route
 /// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
 /// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
-/// to the unwrapped line plus margins (`svg:width` Draw wraps against) and
-/// drops the User row. draw.io Flow Animation is `User.veFlowAnimation*`
+/// to the unwrapped line plus margins (`svg:width` Draw wraps against),
+/// including tab fields pinned with `visioTabFieldStart`, and drops the
+/// User row. draw.io Flow Animation is `User.veFlowAnimation*`
 /// (not a token), so a save flattens the same 8 CSS-px dash canvas / SVG
 /// synthesise into MoveTo/LineTo and writes `veFlowAnimation=0`. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
@@ -3353,6 +3354,17 @@ double nowrapTextAdvanceInches(String text, VsdxCharStyle style) {
 }
 
 double nowrapLabelAdvanceInches(VsdxShape shape) {
+  if (shape.richText.runs.isNotEmpty) {
+    var widest = 0.0;
+    for (final line in _mixedHighlightLines(shape)) {
+      final placed = _placeHighlightLine(line, shape);
+      for (final p in placed) {
+        final end = p.x + p.seg.width;
+        if (end > widest) widest = end;
+      }
+    }
+    return widest;
+  }
   var widest = 0.0;
   var current = 0.0;
   void addRun(String text, VsdxCharStyle style) {
@@ -3366,11 +3378,7 @@ double nowrapLabelAdvanceInches(VsdxShape shape) {
     }
   }
 
-  if (!shape.richText.isEmpty) {
-    for (final run in shape.richText.runs) {
-      addRun(run.text, run.charStyle);
-    }
-  } else if (shape.text != null && shape.text!.isNotEmpty) {
+  if (shape.text != null && shape.text!.isNotEmpty) {
     addRun(shape.text!, VsdxCharStyle.defaults);
   }
   if (current > widest) widest = current;
@@ -3392,8 +3400,10 @@ double nowrapTxtWidthForLibvisioWrite(VsdxShape shape) {
 /// rows, so `veWordWrap` never becomes ODF `fo:wrap-option`. TxtWidth *is*
 /// collected (`svg:width` of the text object), and Draw wraps to that box,
 /// so a save widens the frame to the unwrapped line and drops the User row.
-/// Glueable 1-D labels, vertical text, curved text, and tabbed labels stay
-/// native — their layout is not a single horizontal measure.
+/// Glueable 1-D labels, vertical text and curved text stay native —
+/// their layout is not a single horizontal measure. Tab fields use the
+/// same `visioTabFieldStart` canvas / SVG / libvisio `_fillTabSet` use
+/// so Draw keeps the stop on one unwrapped line.
 bool shapeNeedsLibvisioWordWrapBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -3409,9 +3419,6 @@ bool shapeNeedsLibvisioWordWrapBake(VsdxShape shape) {
   final hasText =
       !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
   if (!hasText) return false;
-  final plain =
-      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
-  if (plain.contains('\t')) return false;
   return nowrapTxtWidthForLibvisioWrite(shape) > 1e-9;
 }
 
