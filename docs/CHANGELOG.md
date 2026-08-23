@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only Character ColorTrans now keeps the fade in LibreOffice.
+  `ColorTrans` is not a token (`readCharIX` has no case);
+  `xmlStringToColour` also zeros alpha. A save used to leave THEMEVAL()
+  Color so Draw painted the slot fully opaque, while canvas already
+  multiplies `_colourOrTheme` by (1 − ColorTrans). A save now resolves
+  the slot (document theme, then Office) and premultiplies toward white
+  the same way RGB ColorTrans already does.
 - Theme-only FillGradient / LineGradient stops now keep their wash in
   LibreOffice. Those sections are not tokens; a save used to skip
   theme-only stops so SoftEdges / Reflection PNGs stayed empty and an

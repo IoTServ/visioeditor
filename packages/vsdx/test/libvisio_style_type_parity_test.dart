@@ -37,8 +37,11 @@
 /// (document theme, then Office) into that same PNG so Draw keeps the
 /// blur canvas `_colourOrTheme` already paints. Character ColorTrans and ShdwForegndTrans
 /// cannot carry alpha through `xmlStringToColour`, so a save premultiplies
-/// those into RGB toward white and writes Trans=0 (theme-bound RGB-less
-/// cells keep THEMEVAL). Filled-shape LineColorTrans / LineGradient bake a
+/// those into RGB toward white and writes Trans=0. Theme-only Character
+/// Color resolves through the document theme then Office into that same
+/// blend (`ColorTrans` is not a token, so THEMEVAL() would stay opaque).
+/// Theme-bound colours with no transparency still keep THEMEVAL.
+/// Filled-shape LineColorTrans / LineGradient bake a
 /// locked sibling ribbon whose FillForegndTrans Draw collects, then drop
 /// the source line. CompoundType 1–4 rails, LinePattern 2–23 dashes, and
 /// open-path Begin/EndArrow join that sibling so Draw does not keep an
@@ -5540,6 +5543,77 @@ void main() {
       0.5,
       reason: 'ColorTrans without Color stays; Draw never tints those rows',
     );
+  });
+
+  test('theme-only Character ColorTrans bakes RGB for LibreOffice', () {
+    const slot = ThemeSlot.accent6;
+    const trans = 0.7;
+    final expected = colourForLibvisioAlpha(
+      VsdxTheme.office.resolve(slot)!,
+      trans,
+    );
+    const style = VsdxCharStyle(
+      themeColorIndex: slot,
+      transparency: trans,
+      fontSizeInches: 0.5,
+    );
+    expect(style.color, isNull);
+    expect(charColorForLibvisioWrite(style)?.value, expected.value);
+    expect(charTransparencyForLibvisioWrite(style), 0);
+    expect(charThemeColorIndexForLibvisioWrite(style), isNull);
+    expect(
+      charColorForLibvisioWrite(
+        const VsdxCharStyle(themeColorIndex: slot),
+      ),
+      isNull,
+      reason: 'opaque theme Color still keeps THEMEVAL',
+    );
+    expect(
+      charThemeColorIndexForLibvisioWrite(
+        const VsdxCharStyle(themeColorIndex: slot),
+      ),
+      slot,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'CharTransTheme',
+      fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'H',
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(text: 'H', charStyle: style),
+        ],
+      ),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(xml.contains('N="ColorTrans" V="0.7"'), isFalse);
+    final hex = (expected.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(
+      xml.contains('N="Color" V="#$hex"'),
+      isTrue,
+      reason: 'theme ColorTrans must freeze into hex Color, not THEMEVAL; '
+          'expected=#$hex',
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.single.charStyle.color?.value, expected.value);
+    expect(after.richText.runs.single.charStyle.themeColorIndex, isNull);
+    expect(after.richText.runs.single.charStyle.transparency, closeTo(0, 1e-9));
   });
 
   test('Asian/complex Character Font and Size bake for LibreOffice', () {

@@ -2734,6 +2734,49 @@ void main() {
         ),
       ),
     );
+    var charTransThemeDocument =
+        parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final charTransThemePage = charTransThemeDocument.pages.first;
+    charTransThemeDocument = charTransThemeDocument.replacePage(
+      0,
+      charTransThemePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: charTransThemePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'CharTransTheme',
+          fill: const VsdxFill(foreground: VsdxColor(0xFFFF0000), pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'H',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'H',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  themeColorIndex: ThemeSlot.accent6,
+                  transparency: 0.7,
+                  fontSizeInches: 1.1,
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+            ),
+          ),
+        ),
+      ),
+    );
     var glowStrokeDocument = parser.parse(blank);
     final glowStrokePage = glowStrokeDocument.pages.first;
     glowStrokeDocument = glowStrokeDocument.replacePage(
@@ -4077,6 +4120,10 @@ void main() {
       'glow_theme': writer.write(
         originalBytes: blank,
         edited: glowThemeDocument,
+      ),
+      'char_trans_theme': writer.write(
+        originalBytes: blank,
+        edited: charTransThemeDocument,
       ),
       'glow_stroke': writer.write(
         originalBytes: blank,
@@ -6418,6 +6465,98 @@ void main() {
             reason: 'LibreOffice must paint the Gaussian Office accent6 glow, '
                 'not a hard LineWeight halo; bodyR=${body.r} haloG=${halo.g} '
                 'haloR=${halo.r}',
+          );
+        }
+        if (entry.key == 'char_trans_theme') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'CharTransTheme');
+          final expected = colourForLibvisioAlpha(
+            VsdxTheme.office.resolve(ThemeSlot.accent6)!,
+            0.7,
+          );
+          expect(
+            source.richText.runs.single.charStyle.color?.value,
+            expected.value,
+            reason: 'theme ColorTrans must freeze into Color',
+          );
+          expect(source.richText.runs.single.charStyle.themeColorIndex, isNull);
+          expect(
+            source.richText.runs.single.charStyle.transparency,
+            closeTo(0, 1e-9),
+          );
+        }
+        if (entry.key == 'char_trans_theme' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          // H holes stay the red fill, so a window mean is red-dominated.
+          // Keep only green-tinted stroke pixels (faded mint ≈ 212,228).
+          ({double r, double g, int n}) glyphMean() {
+            final left = (3.85 / page.widthInches * rendered.width).round();
+            final right = (4.65 / page.widthInches * rendered.width).round();
+            final top = ((page.heightInches - 5.85) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final bottom = ((page.heightInches - 5.15) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var sumR = 0.0;
+            var sumG = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.g > 80 && pixel.g > pixel.r * 0.6) {
+                  sumR += pixel.r;
+                  sumG += pixel.g;
+                  count++;
+                }
+              }
+            }
+            if (count == 0) return (r: 0.0, g: 0.0, n: 0);
+            return (r: sumR / count, g: sumG / count, n: count);
+          }
+
+          final glyph = glyphMean();
+          expect(
+            glyph.n,
+            greaterThan(400),
+            reason: 'LibreOffice must paint the H, not only the red fill; '
+                'glyphN=${glyph.n} glyphR=${glyph.r} glyphG=${glyph.g}',
+          );
+          expect(
+            glyph.r,
+            greaterThan(160),
+            reason: 'LibreOffice must paint the faded Office accent6 glyph, '
+                'not opaque THEMEVAL green; '
+                'glyphR=${glyph.r} glyphG=${glyph.g}',
+          );
+          expect(
+            glyph.g,
+            greaterThan(glyph.r),
+            reason: 'the faded accent6 blend must stay green-tinted; '
+                'glyphR=${glyph.r} glyphG=${glyph.g}',
           );
         }
         if (entry.key == 'glow_stroke') {

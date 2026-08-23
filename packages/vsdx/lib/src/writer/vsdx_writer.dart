@@ -4625,14 +4625,15 @@ class VsdxWriter {
     changed |= _writeValueIfNeeded(
         _ensureCell(row, 'Style'), _charStyleBits(c).toString());
     final charColor = charColorForLibvisioWrite(c);
+    final charTheme = charThemeColorIndexForLibvisioWrite(c);
     if (charColor != null) {
       changed |=
           _writeValueIfNeeded(_ensureCell(row, 'Color'), _hex(charColor));
-    } else if (c.themeColorIndex != null) {
+    } else if (charTheme != null) {
       final cell = _ensureCell(row, 'Color');
       if (cell.getAttribute('F') != 'THEMEVAL()' ||
-          cell.getAttribute('V') != c.themeColorIndex!.toString()) {
-        _writeValue(cell, c.themeColorIndex!.toString(), preserveFormula: true);
+          cell.getAttribute('V') != charTheme.toString()) {
+        _writeValue(cell, charTheme.toString(), preserveFormula: true);
         cell.setAttribute('F', 'THEMEVAL()');
         changed = true;
       }
@@ -4839,13 +4840,14 @@ class VsdxWriter {
         _ensureCell(row, 'Size'), _fmt(fontSizeForLibvisioWrite(c, text)));
     _writeValue(_ensureCell(row, 'Style'), _charStyleBits(c).toString());
     final charColor = charColorForLibvisioWrite(c);
+    final charTheme = charThemeColorIndexForLibvisioWrite(c);
     if (charColor != null) {
       _writeValue(_ensureCell(row, 'Color'), _hex(charColor));
-    } else if (c.themeColorIndex != null) {
+    } else if (charTheme != null) {
       // Encode the theme slot in V (a cached value Visio recomputes from the
       // THEMEVAL formula) so the specific accent survives a round-trip.
       final cell = _ensureCell(row, 'Color');
-      _writeValue(cell, c.themeColorIndex!.toString(), preserveFormula: true);
+      _writeValue(cell, charTheme.toString(), preserveFormula: true);
       cell.setAttribute('F', 'THEMEVAL()');
     } else {
       // Match [_charCells] rebuild: omit Color when unbound so a prior
@@ -7902,14 +7904,15 @@ class VsdxWriter {
     // editor-created labels (color: null) drift to black after save→reopen.
     // Edraw / Visio still resolve black via DefaultTextStyle / StyleSheets.
     final charColor = charColorForLibvisioWrite(c);
+    final charTheme = charThemeColorIndexForLibvisioWrite(c);
     if (charColor != null) {
       cells.add(_cell('Color', _hex(charColor)));
-    } else if (c.themeColorIndex != null) {
+    } else if (charTheme != null) {
       // Match [_writeCharRow]: cache the theme slot in V so accent survives
       // fresh emit → reopen (parser reads V when F=THEMEVAL()).
       cells.add(_cell(
         'Color',
-        c.themeColorIndex!.toString(),
+        charTheme.toString(),
         formula: 'THEMEVAL()',
       ));
     }

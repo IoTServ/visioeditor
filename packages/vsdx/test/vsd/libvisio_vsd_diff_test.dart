@@ -704,7 +704,7 @@ void _expectRichText(
         reason: '$reason run $i small caps');
     expect(bc.color, charColorForLibvisioWrite(ac),
         reason: '$reason run $i color');
-    expect(bc.themeColorIndex, ac.themeColorIndex,
+    expect(bc.themeColorIndex, charThemeColorIndexForLibvisioWrite(ac),
         reason: '$reason run $i theme color');
     expect(bc.underline, ac.underline, reason: '$reason run $i underline');
     expect(bc.strikethrough, ac.strikethrough,
