@@ -4238,6 +4238,45 @@ void main() {
             ),
       ),
     );
+    var curvedTextTabDocument = parser.parse(blank);
+    curvedTextTabDocument = curvedTextTabDocument.replacePage(
+      0,
+      curvedTextTabDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: curvedTextTabDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.0,
+          height: 3.0,
+          name: 'CurvedTextTab',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                tabSets: <VsdxTabSet>[
+                  VsdxTabSet(
+                    ix: 0,
+                    stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+                  ),
+                ],
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'A\tC',
+                    tabIndices: <int>[0],
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     var shapeInsideDocument = parser.parse(blank);
     final shapeInsidePage = shapeInsideDocument.pages.first;
     shapeInsideDocument = shapeInsideDocument.replacePage(
@@ -5220,6 +5259,10 @@ void main() {
       'curved_text_flipy': writer.write(
         originalBytes: blank,
         edited: curvedTextFlipDocument,
+      ),
+      'curved_text_tab': writer.write(
+        originalBytes: blank,
+        edited: curvedTextTabDocument,
       ),
       'shape_inside': writer.write(
         originalBytes: blank,
@@ -10611,6 +10654,106 @@ void main() {
             reason: 'The middle glyph must sit on the upward arc, not on the '
                 'straight baseline of the side letters; '
                 'mid=$midInk left=$leftInk right=$rightInk below=$belowMid',
+          );
+        }
+        if (entry.key == 'curved_text_tab') {
+          final reopened = parser.parse(entry.value);
+          final plates = reopened.pages.first.shapes
+              .where(isLibvisioCurvedTextPlate)
+              .toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(2));
+          expect(plates.map((p) => p.richText.plainText).join(), 'AC');
+          expect(
+            reopened.pages.first.shapes
+                .firstWhere((s) => s.name == 'CurvedTextTab')
+                .curvedText,
+            isFalse,
+          );
+        }
+        if (entry.key == 'curved_text_tab' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          final plates = page.shapes.where(isLibvisioCurvedTextPlate).toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          int darkCount(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final luma = 0.299 * rendered.getPixel(x, y).r +
+                    0.587 * rendered.getPixel(x, y).g +
+                    0.114 * rendered.getPixel(x, y).b;
+                if (luma < 180) count++;
+              }
+            }
+            return count;
+          }
+
+          int inkAt(VsdxShape plate) {
+            const r = 0.2;
+            return darkCount(
+              plate.pinX - r,
+              plate.pinY - r,
+              plate.pinX + r,
+              plate.pinY + r,
+            );
+          }
+
+          expect(plates, hasLength(2));
+          expect(
+            inkAt(plates[0]),
+            greaterThan(8),
+            reason: 'LibreOffice must paint tabbed curved A; '
+                'a=${inkAt(plates[0])} c=${inkAt(plates[1])}',
+          );
+          expect(
+            inkAt(plates[1]),
+            greaterThan(8),
+            reason: 'LibreOffice must paint tabbed curved C; '
+                'a=${inkAt(plates[0])} c=${inkAt(plates[1])}',
+          );
+          expect(
+            (plates[0].pinX - plates[1].pinX).abs(),
+            greaterThan(0.15),
+            reason: 'tab becomes a space on the arc, so A and C stay apart',
           );
         }
         if ((entry.key == 'shape_inside' ||

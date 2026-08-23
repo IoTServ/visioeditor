@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Tab fields no longer drop Curved Text, Shape Inside or LangID RTL
+  in LibreOffice. `tokens.txt` has no User rows or LangID, so a save
+  already bakes those effects, but a `\t` used to skip the whole
+  shape so Draw kept a rectangular LTR run while canvas / SVG already
+  treat the tab as a gap (arc / outline wrap) or keep the stop
+  (LangID). A save now writes those tabs as spaces on the arc and
+  outline plates, and still prefixes U+200F on tabbed digit runs.
 - Vertical connector labels now keep Rotate with Edge in LibreOffice.
   `_flushText` never emits `style:writing-mode`, so a save already
   swaps 1-D `TextDirection=1` into a tall plate, but that step used

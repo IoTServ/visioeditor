@@ -612,6 +612,70 @@ void main() {
     expect(shapeNeedsLibvisioLangIdRtlBake(box('Plain', '123')), isFalse);
   });
 
+  test('Character LangID RTL bakes a leading U+200F past tab fields', () {
+    const tabs = <VsdxTabSet>[
+      VsdxTabSet(
+        ix: 0,
+        stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+      ),
+    ];
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3.2,
+      height: 0.8,
+      name: 'LangIdRtlTab',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      richText: const VsdxRichText(
+        tabSets: tabs,
+        textBlock: VsdxTextBlock(
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          verticalAlign: VsdxVertAlign.middle,
+        ),
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: '12\t34',
+            tabIndices: <int>[0],
+            charStyle: VsdxCharStyle(langId: 'ar-SA'),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioLangIdRtlBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final run = baked.pages.first.findShapeById(1)!.richText.runs.single;
+    expect(run.text, startsWith(kLibvisioRtlMark));
+    expect(run.text, contains('\t'));
+    expect(run.tabIndices, <int>[0]);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      run.text,
+      reason: 'a second save must not stack another U+200F',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.single.text, startsWith(kLibvisioRtlMark));
+    expect(after.richText.runs.single.text, contains('\t'));
+  });
+
   test('Glow bakes a halo Draw can collect', () {
     final stroke = VsdxShapeFactory.line(
       id: 1,
@@ -4922,6 +4986,73 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('Curved Text bakes per-glyph siblings past tab fields', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 1.0,
+      height: 3.0,
+      name: 'ArcTab',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withCurvedText(true).copyWith(
+          richText: const VsdxRichText(
+            tabSets: <VsdxTabSet>[
+              VsdxTabSet(
+                ix: 0,
+                stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+              ),
+            ],
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\tC',
+                tabIndices: <int>[0],
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioCurvedTextBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(2));
+    expect(plates.map((p) => p.richText.plainText).join(), 'AC');
+    expect(plates.every((p) => !p.richText.plainText.contains('\t')), isTrue);
+    expect(baked.pages.first.findShapeById(1)!.curvedText, isFalse);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioCurvedTextPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Curved Text plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioCurvedTextPlate),
+      hasLength(2),
+    );
+  });
+
   test('Shape Inside bakes per-line siblings for LibreOffice', () {
     VsdxShape oval({
       required int id,
@@ -5043,6 +5174,78 @@ void main() {
     final oracleInside = LibvisioOracle.tryLoad();
     if (oracleInside == null) return;
     expect(oracleInside.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('Shape Inside bakes per-line siblings past tab fields', () {
+    final shape = VsdxShapeFactory.ellipse(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 3,
+      height: 4,
+      name: 'OvalTab',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withShapeInside(true).copyWith(
+          richText: const VsdxRichText(
+            tabSets: <VsdxTabSet>[
+              VsdxTabSet(
+                ix: 0,
+                stops: <VsdxTabStop>[VsdxTabStop(positionInches: 2)],
+              ),
+            ],
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'SHAPE\tINSIDE FLOW ALONG THE ELLIPSE',
+                tabIndices: <int>[0],
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.22,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        );
+    expect(shape.supportsShapeInside, isTrue);
+    expect(shapeNeedsLibvisioShapeInsideBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioShapeInsidePlate).toList();
+    expect(plates, isNotEmpty);
+    expect(
+      plates.every((p) => !p.richText.plainText.contains('\t')),
+      isTrue,
+    );
+    expect(baked.pages.first.findShapeById(1)!.shapeInside, isFalse);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShapeInsidePlate)
+          .length,
+      plates.length,
+      reason: 'a second save must not stack another Shape Inside plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    expect(
+        parser.parse(saved).pages.first.findShapeById(1)!.shapeInside, isFalse);
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioShapeInsidePlate),
+      hasLength(plates.length),
+    );
   });
 
   test('Rotate with Edge bakes TxtAngle for LibreOffice', () {

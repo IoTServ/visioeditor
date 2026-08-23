@@ -64,6 +64,7 @@
 /// `ComplexScriptSize` into `Size`. Character `LangID` is likewise absent
 /// (`readCharIX` has no case; `tokens.txt` has no LangID), so a digit or
 /// punctuation run that canvas / SVG already treat as RTL from LangID
+/// (including tabbed digit runs)
 /// prefixes U+200F. Strong Arabic / Hebrew letters already set Unicode
 /// bidi, so those runs stay untouched. `_lineProperties` derives `stroke-linejoin`
 /// from `LineCap` only (round cap → round join, otherwise miter), so an
@@ -236,7 +237,8 @@
 /// Begin–End box. draw.io Curved Text is `User.veCurvedText`
 /// (not a token), so a save inserts locked per-glyph siblings along the
 /// same quadratic arc canvas / SVG already paint, hides the source
-/// (`HideText` is a token) and drops the User row. FlipX / FlipY extra
+/// (`HideText` is a token) and drops the User row. Tab fields become
+/// spaces so a `\t` does not skip the arc. FlipX / FlipY extra
 /// text mirrors (canvas `_textFlip*`) are applied about TxtPin before
 /// the shape XForm so Draw keeps the upright arc. draw.io Shape Inside is
 /// `User.veShapeInside` (not a token), so a save inserts locked per-line
@@ -4534,7 +4536,10 @@ bool _runNeedsLibvisioLangIdRtlBake(VsdxTextRun run) {
   final text = run.text;
   if (text.trim().isEmpty) return false;
   if (text.startsWith(kLibvisioRtlMark)) return false;
-  if (run.fieldSpans.isNotEmpty || run.tabIndices.isNotEmpty) return false;
+  // Tabs stay in the string; U+200F is a prefix so tabIndices still
+  // name the same stops. Field runs stay native — their spans are
+  // character offsets a prefix would shift.
+  if (run.fieldSpans.isNotEmpty) return false;
   if (_textHasStrongRightToLeft(text)) return false;
   return isVisioRightToLeftText(text, langId: run.charStyle.langId);
 }
@@ -4626,9 +4631,11 @@ const _kLibvisioCurvedTextMaxGlyphs = 64;
 /// rows, so the arc never becomes ODF text-on-path. Pin / Angle / Font /
 /// HideText *are* collected, so a save places one locked character shape
 /// per glyph on the same quadratic arc canvas / SVG already paint, then
-/// hides the source and drops the User row. Glueable 1-D labels, vertical
-/// text, tabbed labels and TxtAngle stay native. FlipX / FlipY extra
-/// text mirrors about TxtPin are baked so Draw keeps the upright arc.
+/// hides the source and drops the User row. Tab fields become spaces —
+/// canvas / SVG already paint `\t` as a gap on the arc, not a stop.
+/// Glueable 1-D labels, vertical text and TxtAngle stay native. FlipX /
+/// FlipY extra text mirrors about TxtPin are baked so Draw keeps the
+/// upright arc.
 bool shapeNeedsLibvisioCurvedTextBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -4638,7 +4645,6 @@ bool shapeNeedsLibvisioCurvedTextBake(VsdxShape shape) {
   if (shape.richText.textBlock.angleRad.abs() > 1e-12) return false;
   final plain = _curvedTextPlain(shape);
   if (plain.isEmpty) return false;
-  if (plain.contains('\t')) return false;
   var n = 0;
   for (final r in plain.runes) {
     if (r == 0x20) continue;
@@ -4667,7 +4673,11 @@ String _libvisioInitialCaps(String text) {
 String _curvedTextPlain(VsdxShape shape) {
   final raw =
       shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
-  var text = raw.replaceAll('\n', ' ').replaceAll('\r', ' ').trim();
+  var text = raw
+      .replaceAll('\n', ' ')
+      .replaceAll('\r', ' ')
+      .replaceAll('\t', ' ')
+      .trim();
   final style = shape.richText.runs.isNotEmpty
       ? shape.richText.runs.first.charStyle
       : VsdxCharStyle.defaults;
@@ -4990,9 +5000,11 @@ bool _shapeInsideDefaultTextBlock(VsdxShape shape) {
 /// rows, so outline text-flow never becomes ODF. TxtWidth / HideText /
 /// HorzAlign *are* collected, so a save places one locked line shape per
 /// wrapped band canvas / SVG already paint, then hides the source and
-/// drops the User row. Glueable 1-D labels, vertical text, curved text,
-/// tabbed labels and TxtAngle stay native. FlipX / FlipY extra text
-/// mirrors about TxtPin are baked so Draw keeps the upright bands.
+/// drops the User row. Tab fields become spaces — canvas wrap units
+/// already treat `\t` as a blank, and SVG skips outline flow when a
+/// tab is present. Glueable 1-D labels, vertical text, curved text
+/// and TxtAngle stay native. FlipX / FlipY extra text mirrors about
+/// TxtPin are baked so Draw keeps the upright bands.
 bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -5006,7 +5018,6 @@ bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
   if (!_shapeInsideDefaultTextBlock(shape)) return false;
   final plain = _shapeInsidePlain(shape);
   if (plain.trim().isEmpty) return false;
-  if (plain.contains('\t')) return false;
   for (final run in shape.richText.runs) {
     if (run.paraStyle.bullet != 0) return false;
     if (run.paraStyle.indentFirstInches.abs() > 1e-9) return false;
@@ -5019,7 +5030,10 @@ bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
 String _shapeInsidePlain(VsdxShape shape) {
   final raw =
       shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
-  final text = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+  final text = raw
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .replaceAll('\t', ' ');
   final style = shape.richText.runs.isNotEmpty
       ? shape.richText.runs.first.charStyle
       : VsdxCharStyle.defaults;
