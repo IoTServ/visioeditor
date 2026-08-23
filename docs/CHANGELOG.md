@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mixed Character Highlight on connector labels now keeps each run
+  marker in LibreOffice. `readCharIX` skips Highlight; a save already
+  bakes 2-D mixed colours as locked FillForegnd siblings, but 1-D
+  labels used to skip so Draw dropped every marker while canvas / SVG
+  already paint them on the polyline. A save now pins a missing TxtPin
+  to the route first, then places those same plates in that frame.
+  Authored TextBkgnd stays native.
 - Vertical `TextDirection` now stays vertical in LibreOffice. The cell
   is a token (`readTextBlockIX` stores it) but `_flushText` never emits
   `style:writing-mode`, so Draw laid the run out horizontally while

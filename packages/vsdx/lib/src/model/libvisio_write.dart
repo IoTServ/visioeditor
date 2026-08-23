@@ -44,9 +44,11 @@
 /// `style:writing-mode`, so Draw would keep a horizontal run; a save
 /// folds canvas / SVG's −90° block rotation into `TxtAngle`, swaps
 /// TxtWidth/TxtHeight and remaps margins, then writes TextDirection=0
-/// so reopen does not rotate twice. 1-D labels and authored TextBkgnd
-/// stay native. Mixed Highlight on that rotated frame follows
-/// TxtAngle about TxtPin.
+/// so reopen does not rotate twice. Authored TextBkgnd stays native.
+/// Mixed Highlight on that rotated frame follows TxtAngle about TxtPin.
+/// Connector labels use the same plates after a missing TxtPin is
+/// pinned to the route — `readCharIX` would otherwise drop every
+/// marker while canvas / SVG already paint them on the polyline.
 /// `TextBkgndTrans` and layer
 /// `ColorTrans` have no VSDX collector case (`xmlStringToColour` also
 /// zeros alpha), so a save premultiplies those into RGB toward white.
@@ -3792,10 +3794,10 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
 /// newlines stack the same way canvas / SVG already wrap those markers.
 /// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`).
 /// Vertical text is folded into `TxtAngle` first so plate centres
-/// follow TxtPin; 1-D and authored TextBkgnd stay native.
+/// follow TxtPin. Glueable labels get a route TxtPin first, then the
+/// same plates; authored TextBkgnd stays native.
 bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.isGlueableConnector) return false;
   if (shape.curvedText || shape.shapeInside) return false;
   final block = shape.richText.textBlock;
   if (block.hideText) return false;

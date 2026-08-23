@@ -4022,6 +4022,62 @@ void main() {
         ),
       ),
     );
+    var highlightMixedEdgeDocument = parser.parse(blank);
+    final highlightMixedEdgePage = highlightMixedEdgeDocument.pages.first;
+    highlightMixedEdgeDocument = highlightMixedEdgeDocument.replacePage(
+      0,
+      highlightMixedEdgePage.addShape(
+        VsdxShapeFactory.line(
+          id: highlightMixedEdgePage.nextFreeShapeId(),
+          ax: 1,
+          ay: 7,
+          bx: 7,
+          by: 1,
+          name: 'HighlightMixedEdge',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.02,
+          ),
+        ).copyWith(
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(6, 0),
+                LineTo(6, -6),
+              ],
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'M',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var customDashDocument = parser.parse(blank);
     final customDashPage = customDashDocument.pages.first;
     customDashDocument = customDashDocument.replacePage(
@@ -4703,6 +4759,10 @@ void main() {
       'edge_label_wide': writer.write(
         originalBytes: blank,
         edited: edgeLabelWideDocument,
+      ),
+      'highlight_mixed_edge': writer.write(
+        originalBytes: blank,
+        edited: highlightMixedEdgeDocument,
       ),
       'custom_dash': writer.write(
         originalBytes: blank,
@@ -9768,6 +9828,117 @@ void main() {
             lessThan(3),
             reason: 'LibreOffice must not park the label at the 1-D box '
                 'centre; elbow=$elbowInk box=$boxInk',
+          );
+        }
+        if (entry.key == 'highlight_mixed_edge') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final plates = page.shapes.where(isLibvisioHighlightPlate).toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(2));
+          expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+          expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+          expect(plates[0].pinX, closeTo(7, 0.6));
+          expect(plates[0].pinY, closeTo(7, 0.6));
+          expect(plates[1].pinX, greaterThan(plates[0].pinX + 0.15));
+          expect(
+            page.shapes
+                .firstWhere((s) => s.name == 'HighlightMixedEdge')
+                .richText
+                .textBlock
+                .hideText,
+            isTrue,
+          );
+        }
+        if (entry.key == 'highlight_mixed_edge' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int magenta, int lime}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var magenta = 0;
+            var lime = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+                  magenta++;
+                }
+                if (pixel.g > 200 && pixel.r < 40) lime++;
+              }
+            }
+            return (magenta: magenta, lime: lime);
+          }
+
+          final left = countWindow(6.35, 6.55, 6.95, 7.45);
+          final right = countWindow(7.05, 6.55, 7.65, 7.45);
+          final box = countWindow(3.55, 3.55, 4.45, 4.45);
+          expect(
+            left.magenta,
+            greaterThan(10),
+            reason: 'LibreOffice must paint magenta on the route elbow; '
+                'leftM=${left.magenta} leftL=${left.lime} '
+                'rightM=${right.magenta} rightL=${right.lime} '
+                'boxM=${box.magenta} boxL=${box.lime}',
+          );
+          expect(
+            right.lime,
+            greaterThan(10),
+            reason: 'LibreOffice must paint lime on the route elbow; '
+                'leftM=${left.magenta} leftL=${left.lime} '
+                'rightM=${right.magenta} rightL=${right.lime} '
+                'boxM=${box.magenta} boxL=${box.lime}',
+          );
+          expect(
+            left.magenta,
+            greaterThan(left.lime),
+            reason: 'left plate must stay magenta; '
+                'leftM=${left.magenta} leftL=${left.lime}',
+          );
+          expect(
+            right.lime,
+            greaterThan(right.magenta),
+            reason: 'right plate must stay lime; '
+                'rightM=${right.magenta} rightL=${right.lime}',
+          );
+          expect(
+            box.magenta + box.lime,
+            lessThan(5),
+            reason: 'markers must not sit on the Begin–End centre; '
+                'boxM=${box.magenta} boxL=${box.lime}',
           );
         }
         if (entry.key == 'custom_dash') {

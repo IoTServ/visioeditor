@@ -31,7 +31,8 @@
 /// fields pinned with `visioTabFieldStart`. `TextDirection` is stored
 /// but `_flushText` never emits writing-mode, so a save folds the
 /// canvas −90° into `TxtAngle` and swaps TxtWidth/TxtHeight. Mixed
-/// Highlight on that rotated frame follows TxtPin.
+/// Highlight on that rotated frame follows TxtPin. Connector labels
+/// use the same plates after TxtPin is pinned to the route.
 /// `RVNGSVGDrawingGenerator` drops that property,
 /// so the oracle SVG is the wrong place to look; `vsd2raw` still has it.
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
@@ -6278,6 +6279,100 @@ void main() {
     expect(
       savedDoc.pages.first.findShapeById(1)!.richText.textBlock.textDirection,
       0,
+    );
+  });
+
+  test('mixed Character Highlight bakes connector-label plates', () {
+    const label = VsdxRichText(
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'M',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.4,
+            highlight: VsdxColor(0xFFFF00FF),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.center,
+          ),
+        ),
+        VsdxTextRun(
+          text: 'M',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.4,
+            highlight: VsdxColor(0xFF00FF00),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.center,
+          ),
+        ),
+      ],
+    );
+    final elbow = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'HighlightMixedEdge',
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(6, 0),
+            LineTo(6, -6),
+          ],
+        ),
+      ],
+      richText: label,
+    );
+    expect(shapeNeedsLibvisioLooseEdgeLabelBake(elbow), isTrue);
+    expect(shapeNeedsLibvisioMixedHighlightBake(elbow), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(elbow));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(source.richText.textBlock.pinXInches, isNotNull);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioHighlightPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(2));
+    expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+    expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+    expect(plates[0].pinX, closeTo(7, 0.6));
+    expect(plates[0].pinY, closeTo(7, 0.6));
+    expect(plates[1].pinX, closeTo(7, 0.6));
+    expect(plates[1].pinY, closeTo(7, 0.6));
+    expect(plates[1].pinX, greaterThan(plates[0].pinX + 0.15));
+    expect(plates[0].pinY, closeTo(plates[1].pinY, 0.25));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioHighlightPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Highlight plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioHighlightPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.findShapeById(1)!.richText.textBlock.hideText,
+      isTrue,
     );
   });
 
