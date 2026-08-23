@@ -4341,6 +4341,49 @@ void main() {
             ),
       ),
     );
+    var textDirectionAutoRotateDocument = parser.parse(blank);
+    final textDirectionAutoRotatePage =
+        textDirectionAutoRotateDocument.pages.first;
+    textDirectionAutoRotateDocument =
+        textDirectionAutoRotateDocument.replacePage(
+      0,
+      textDirectionAutoRotatePage.addShape(
+        VsdxShapeFactory.line(
+          id: textDirectionAutoRotatePage.nextFreeShapeId(),
+          ax: 2,
+          ay: 3,
+          bx: 6.5,
+          by: 7.5,
+          name: 'TextDirectionAutoRotate',
+          line: const VsdxLine(pattern: 0),
+        ).withAutoRotateLabel(true).copyWith(
+              richText: const VsdxRichText(
+                textBlock: VsdxTextBlock(
+                  marginLeftInches: 0,
+                  marginRightInches: 0,
+                  marginTopInches: 0,
+                  marginBottomInches: 0,
+                  verticalAlign: VsdxVertAlign.middle,
+                  textDirection: 1,
+                  backgroundColor: VsdxColor(0xFFFF00FF),
+                ),
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'MMMM',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.35,
+                      color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     var edgeLabelDocument = parser.parse(blank);
     final edgeLabelPage = edgeLabelDocument.pages.first;
     edgeLabelDocument = edgeLabelDocument.replacePage(
@@ -5189,6 +5232,10 @@ void main() {
       'auto_rotate': writer.write(
         originalBytes: blank,
         edited: autoRotateDocument,
+      ),
+      'text_direction_auto_rotate': writer.write(
+        originalBytes: blank,
+        edited: textDirectionAutoRotateDocument,
       ),
       'edge_label': writer.write(
         originalBytes: blank,
@@ -10726,6 +10773,84 @@ void main() {
             lessThan(tangentInk),
             reason: 'LibreOffice must not leave the label axis-aligned; '
                 'tangent=$tangentInk horizontal=$horizontalInk',
+          );
+        }
+        if (entry.key == 'text_direction_auto_rotate') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'TextDirectionAutoRotate');
+          expect(source.autoRotateLabel, isFalse);
+          expect(source.richText.textBlock.textDirection, 0);
+          expect(
+            source.richText.textBlock.angleRad,
+            closeTo(math.pi / 4, 1e-6),
+          );
+          expect(
+            source.richText.textBlock.heightInches,
+            greaterThan(source.richText.textBlock.widthInches! + 0.15),
+          );
+        }
+        if (entry.key == 'text_direction_auto_rotate' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '72',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          int countMagenta(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var n = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) n++;
+              }
+            }
+            return n;
+          }
+
+          // Midpoint of (2,3)-(6.5,7.5) is (4.25, 5.25). A tall plate
+          // rotated +45° (Y-up CCW) has its long axis along 135°.
+          final tangent = countMagenta(3.85, 5.35, 4.15, 5.65);
+          final vertical = countMagenta(4.10, 5.70, 4.40, 6.10);
+          expect(
+            tangent,
+            greaterThan(12),
+            reason: 'LibreOffice must tilt the vertical label with the route; '
+                'tangent=$tangent vertical=$vertical',
+          );
+          expect(
+            tangent,
+            greaterThan(vertical),
+            reason: 'Draw must not keep the swapped plate axis-aligned; '
+                'tangent=$tangent vertical=$vertical',
           );
         }
         if (entry.key == 'edge_label' && pdftoppm != null) {

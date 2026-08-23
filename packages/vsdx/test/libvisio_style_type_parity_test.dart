@@ -6965,6 +6965,80 @@ void main() {
     expect(savedPin.y, closeTo(7, 0.2));
   });
 
+  test('TextDirection=1 keeps Rotate with Edge TxtAngle for LibreOffice', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 2,
+      ay: 3,
+      bx: 6.5,
+      by: 7.5,
+      name: 'TextDirectionAutoRotate',
+      line: const VsdxLine(pattern: 0),
+    ).withAutoRotateLabel(true).copyWith(
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              marginLeftInches: 0,
+              marginRightInches: 0,
+              marginTopInches: 0,
+              marginBottomInches: 0,
+              verticalAlign: VsdxVertAlign.middle,
+              textDirection: 1,
+              backgroundColor: VsdxColor(0xFFFF00FF),
+            ),
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'MMMM',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.35,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioTextDirectionBake(shape), isTrue);
+    expect(shape.autoRotateLabel, isTrue);
+    // Isolated AutoRotate still skips vertical text; document write
+    // folds TextDirection first so the tangent bake sees TD=0.
+    expect(shapeNeedsLibvisioAutoRotateLabelBake(shape), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final block = source.richText.textBlock;
+    expect(block.textDirection, 0);
+    expect(source.autoRotateLabel, isFalse);
+    expect(block.angleRad, closeTo(math.pi / 4, 1e-6));
+    expect(block.heightInches, greaterThan(block.widthInches! + 0.15));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .textBlock
+          .angleRad,
+      closeTo(math.pi / 4, 1e-6),
+      reason: 'a second save must not stack another tangent',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.autoRotateLabel, isFalse);
+    expect(after.richText.textBlock.textDirection, 0);
+    expect(after.richText.textBlock.angleRad, closeTo(math.pi / 4, 1e-6));
+    expect(
+      after.richText.textBlock.heightInches,
+      greaterThan(after.richText.textBlock.widthInches! + 0.15),
+    );
+  });
+
   test('mixed Character Highlight follows baked TextDirection', () {
     final shape = VsdxShapeFactory.rectangle(
       id: 1,

@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Vertical connector labels now keep Rotate with Edge in LibreOffice.
+  `_flushText` never emits `style:writing-mode`, so a save already
+  swaps 1-D `TextDirection=1` into a tall plate, but that step used
+  to drop `User.veAutoRotateLabel` so Draw kept the bar upright while
+  canvas / SVG already follow the route tangent. A save now leaves
+  that User row through the swap, then writes the same `TxtAngle`
+  Rotate with Edge already bakes.
 - Paragraph `Bullet` lists now keep their marker in LibreOffice. The
   cells are tokens and libvisio resolves `text:bullet-char`, but Draw's
   drawing-text import keeps only the hanging inset, so a save writes

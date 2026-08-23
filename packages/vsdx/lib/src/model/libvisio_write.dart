@@ -252,7 +252,10 @@
 /// `TxtPin` / a tight `TxtWidth` so left-align cannot drift.
 /// draw.io Rotate with Edge is
 /// `User.veAutoRotateLabel` (not a token), so a save writes the route
-/// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
+/// tangent into `TxtAngle` Draw collects and drops the User row.
+/// Vertical connector labels keep that User row through the
+/// `TextDirection` swap so the tangent still lands on the tall plate.
+/// draw.io
 /// Word Wrap is `User.veWordWrap` (not a token), so a save expands TxtWidth
 /// to the unwrapped line plus margins (`svg:width` Draw wraps against),
 /// including tab fields pinned with `visioTabFieldStart`, and drops the
@@ -5429,7 +5432,8 @@ VsdxDocument bakeShapeInsideForLibvisioWrite(VsdxDocument document) {
 /// would restore the unswapped box. Glueable labels with no TxtPin are
 /// pinned to the route first, then that tight plate swaps the same way
 /// so Draw's TextBkgnd stands at the elbow (`TxtAngle` stays 0 so
-/// `librevenge:rotate` does not lay it back down). Curved text and
+/// `librevenge:rotate` does not lay it back down, unless Rotate with
+/// Edge later writes the route tangent). Curved text and
 /// Shape Inside stay native — their layout is not a swapped rectangle.
 bool shapeNeedsLibvisioTextDirectionBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
@@ -5499,17 +5503,12 @@ VsdxShape _sourceForLibvisioTextDirectionWrite(
       formulas.remove(key);
     }
   }
-  var userCells = shape.userCells;
-  if (shape.autoRotateLabel) {
-    userCells = <VsdxUserCell>[
-      for (final cell in shape.userCells)
-        if (cell.name != VsdxShape.userAutoRotateLabel) cell,
-    ];
-  }
+  // Keep `veAutoRotateLabel` so the later tangent bake can write TxtAngle
+  // onto this swapped plate. Dropping it here left Draw with a vertical
+  // bar and no route heading.
   return shape.copyWith(
     richText: shape.richText.copyWith(textBlock: nextBlock),
     formulas: formulas,
-    userCells: userCells,
   );
 }
 
@@ -5579,7 +5578,9 @@ VsdxDocument bakeTextDirectionForLibvisioWrite(VsdxDocument document) {
 /// rows, so `labelAutoRotate` never becomes ODF rotation. `TxtAngle` *is*
 /// collected (`m_txtxform->angle` → `transformAngle`), so a save writes the
 /// same upright route tangent canvas / SVG already paint and drops the
-/// User row. Vertices stay native.
+/// User row. Isolated vertical text still skips here; `TextDirection`
+/// folds first and leaves this User row so the tangent lands on the
+/// swapped plate. Vertices stay native.
 bool shapeNeedsLibvisioAutoRotateLabelBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (!shape.isGlueableConnector) return false;
