@@ -144,7 +144,7 @@
 /// User row, so a save writes `TxtAngle` and drops `veAutoRotateLabel`.
 /// Glueable 1-D labels with no `TxtPin` also write that route midpoint
 /// into `TxtPin` / a tight `TxtWidth` so Draw does not use the Begin–End
-/// box. draw.io Flow Animation is also a User row, so a save flattens the
+/// box or a TxtWidth-only `m_txtxform` whose pin defaults to 0. draw.io Flow Animation is also a User row, so a save flattens the
 /// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
 /// Begin/EndArrow as Geometry first so Draw does not hang a marker on
@@ -4615,6 +4615,19 @@ void main() {
       isFalse,
       reason: 'an authored TxtPin must stay native',
     );
+    final wide = elbow.copyWith(
+      richText: label.copyWith(
+        textBlock: const VsdxTextBlock(
+          widthInches: 6,
+          heightInches: 1.2,
+        ),
+      ),
+    );
+    expect(
+      shapeNeedsLibvisioLooseEdgeLabelBake(wide),
+      isTrue,
+      reason: 'TxtWidth without TxtPin still builds m_txtxform at pin 0',
+    );
 
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
@@ -4659,6 +4672,23 @@ void main() {
     );
     expect(savedPin.x, closeTo(7, 0.2));
     expect(savedPin.y, closeTo(7, 0.2));
+
+    var wideDoc = parser.parse(blank);
+    wideDoc = wideDoc.replacePage(0, wideDoc.pages.first.addShape(wide));
+    final wideBaked = documentForLibvisioWrite(wideDoc);
+    final wideSource = wideBaked.pages.first.findShapeById(1)!;
+    expect(wideSource.richText.textBlock.pinXInches, isNotNull);
+    expect(wideSource.richText.textBlock.widthInches, lessThan(2.5));
+    expect(wideSource.richText.textBlock.widthInches, greaterThan(0.5));
+    final widePin = wideBaked.pages.first.localToPageDeep(
+      wideSource.id,
+      Offset2D(
+        wideSource.richText.textBlock.pinXInches!,
+        wideSource.richText.textBlock.pinYInches!,
+      ),
+    );
+    expect(widePin.x, closeTo(7, 0.2));
+    expect(widePin.y, closeTo(7, 0.2));
 
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;

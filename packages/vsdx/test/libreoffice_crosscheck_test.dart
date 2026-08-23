@@ -3765,6 +3765,55 @@ void main() {
         ),
       ),
     );
+    var edgeLabelWideDocument = parser.parse(blank);
+    final edgeLabelWidePage = edgeLabelWideDocument.pages.first;
+    edgeLabelWideDocument = edgeLabelWideDocument.replacePage(
+      0,
+      edgeLabelWidePage.addShape(
+        VsdxShapeFactory.line(
+          id: edgeLabelWidePage.nextFreeShapeId(),
+          ax: 1,
+          ay: 7,
+          bx: 7,
+          by: 1,
+          name: 'EdgeLabelWide',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.02,
+          ),
+        ).copyWith(
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(6, 0),
+                LineTo(6, -6),
+              ],
+            ),
+          ],
+          richText: const VsdxRichText(
+            textBlock: VsdxTextBlock(
+              widthInches: 6,
+              heightInches: 1.2,
+            ),
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'MMM',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.left,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var customDashDocument = parser.parse(blank);
     final customDashPage = customDashDocument.pages.first;
     customDashDocument = customDashDocument.replacePage(
@@ -4426,6 +4475,10 @@ void main() {
       'edge_label': writer.write(
         originalBytes: blank,
         edited: edgeLabelDocument,
+      ),
+      'edge_label_wide': writer.write(
+        originalBytes: blank,
+        edited: edgeLabelWideDocument,
       ),
       'custom_dash': writer.write(
         originalBytes: blank,
@@ -9035,6 +9088,85 @@ void main() {
             greaterThan(8),
             reason: 'LibreOffice must paint the label on the route elbow; '
                 'elbow=$elbowInk box=$boxInk',
+          );
+          expect(
+            boxInk,
+            lessThan(3),
+            reason: 'LibreOffice must not park the label at the 1-D box '
+                'centre; elbow=$elbowInk box=$boxInk',
+          );
+        }
+        if (entry.key == 'edge_label_wide') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes.single;
+          expect(source.richText.textBlock.pinXInches, isNotNull);
+          expect(source.richText.textBlock.widthInches, lessThan(2.5));
+          final pin = reopened.pages.first.localToPageDeep(
+            source.id,
+            Offset2D(
+              source.richText.textBlock.pinXInches!,
+              source.richText.textBlock.pinYInches!,
+            ),
+          );
+          expect(pin.x, closeTo(7, 0.2));
+          expect(pin.y, closeTo(7, 0.2));
+        }
+        if (entry.key == 'edge_label_wide' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+
+          int darkCount(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < 180) count++;
+              }
+            }
+            return count;
+          }
+
+          // Tight plate on the elbow (7, 7). Missing TxtPin parks
+          // m_txtxform at pin 0 or the Begin–End centre (4, 4). The
+          // horizontal rail already occupies y=7, so leftover 6"
+          // left-align cannot be sampled there — TxtWidth is checked
+          // on the reopened model instead.
+          final elbowInk = darkCount(6.55, 6.55, 7.45, 7.45);
+          final boxInk = darkCount(3.55, 3.55, 4.45, 4.45);
+          expect(
+            elbowInk,
+            greaterThan(8),
+            reason: 'LibreOffice must paint the wide-TxtWidth label on the '
+                'route elbow; elbow=$elbowInk box=$boxInk',
           );
           expect(
             boxInk,

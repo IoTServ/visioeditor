@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Connector labels that have `TxtWidth` but no `TxtPin` now sit on the
+  route in LibreOffice. Canvas / SVG already centre a tight plate on
+  the polyline whenever `TxtPin` is missing. Draw constructs
+  `m_txtxform` as soon as `TxtWidth` exists, and `XForm` defaults the
+  pin to 0, so the label parked at the 1-D local origin (or the
+  Begin–End box when both cells are missing). A save now writes the
+  route midpoint into `TxtPin` and a tight `TxtWidth` so left-align
+  cannot drift a box-width away. Authored `TxtPin` stays native.
 - Theme-only FillForegndTrans now keeps the wash in LibreOffice.
   `FillForegndTrans` is a token, but `VSDXTheme::getThemeColour` only
   maps 0–8 and `VSDFillStyle::override` applies explicit FillForegnd

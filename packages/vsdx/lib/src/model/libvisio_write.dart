@@ -219,8 +219,11 @@
 /// extra-mirror. Open arrowheads no longer block Sketch jiggle: plates
 /// drop Begin/EndArrow and the source keeps filled arrow Geometry. Glueable
 /// 1-D labels with no `TxtPin` sit on the drawn-route midpoint on canvas /
-/// SVG; Draw uses the 1-D XForm box (`m_txtxform` falls back to `m_xform`),
-/// so a save writes that midpoint into `TxtPin` / a tight `TxtWidth`.
+/// SVG (TxtWidth is ignored there). Draw creates `m_txtxform` as soon as
+/// TxtWidth exists, and `XForm` defaults `pinX`/`pinY` to 0 — the label
+/// parks at the 1-D local origin, not the polyline. A missing `m_txtxform`
+/// falls back to the Begin–End box. A save writes the midpoint into
+/// `TxtPin` / a tight `TxtWidth` so left-align cannot drift.
 /// draw.io Rotate with Edge is
 /// `User.veAutoRotateLabel` (not a token), so a save writes the route
 /// tangent into `TxtAngle` Draw collects and drops the User row. draw.io
@@ -4964,12 +4967,13 @@ Offset2D _libvisioRouteMidpoint(List<Offset2D> route) {
   return route.last;
 }
 
-bool _autoRotateLabelDefaultFrame(VsdxShape shape) {
+/// Canvas / SVG treat a glueable label as loose whenever `TxtPin` is
+/// missing — authored `TxtWidth` is ignored and glyphs centre on the
+/// route. Draw is different: any TxtWidth cell constructs `m_txtxform`
+/// whose unset pin stays `XForm()`'s 0,0.
+bool _missingEdgeLabelPin(VsdxShape shape) {
   final block = shape.richText.textBlock;
-  return block.pinXInches == null &&
-      block.pinYInches == null &&
-      block.widthInches == null &&
-      block.heightInches == null;
+  return block.pinXInches == null && block.pinYInches == null;
 }
 
 bool _hasLooseEdgeLabelText(VsdxShape shape) {
@@ -4983,9 +4987,12 @@ bool _hasLooseEdgeLabelText(VsdxShape shape) {
 ///
 /// LibreOffice's collector falls back to the 1-D XForm (`m_xform.width/2`)
 /// when `m_txtxform` is missing, which is the Begin–End box — not the
-/// polyline. TxtPin / TxtWidth *are* collected.
+/// polyline. A lone TxtWidth still builds `m_txtxform` with pin 0,0.
+/// TxtPin / TxtWidth *are* collected. An authored wide TxtWidth is
+/// rewritten tight so left-align cannot sit a box-width away from the
+/// pin the way canvas glyph-centring does.
 VsdxShape _applyLooseEdgeLabelFrame(VsdxShape shape, VsdxPage page) {
-  if (!_autoRotateLabelDefaultFrame(shape)) return shape;
+  if (!_missingEdgeLabelPin(shape)) return shape;
   final previous = shape.richText.textBlock;
   final style = shape.richText.runs.isNotEmpty
       ? shape.richText.runs.first.charStyle
@@ -5136,13 +5143,15 @@ VsdxDocument bakeAutoRotateLabelForLibvisioWrite(VsdxDocument document) {
 /// tight `TxtPin` / `TxtWidth` box Draw will collect.
 ///
 /// LibreOffice only calls `VisioDocument::parse`. Missing `m_txtxform`
-/// falls back to the 1-D XForm centre (Begin–End box). Canvas / SVG pin
-/// a tight plate on the drawn-route midpoint. Rotate-with-Edge already
-/// writes that frame; this covers labels that are not auto-rotated.
+/// falls back to the 1-D XForm centre (Begin–End box). A TxtWidth
+/// without TxtPin still constructs `m_txtxform` (`XForm` pin defaults
+/// to 0). Canvas / SVG pin a tight plate on the drawn-route midpoint
+/// whenever TxtPin is missing. Rotate-with-Edge already writes that
+/// frame; this covers labels that are not auto-rotated.
 bool shapeNeedsLibvisioLooseEdgeLabelBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (!shape.isGlueableConnector) return false;
-  if (!_autoRotateLabelDefaultFrame(shape)) return false;
+  if (!_missingEdgeLabelPin(shape)) return false;
   return _hasLooseEdgeLabelText(shape);
 }
 
