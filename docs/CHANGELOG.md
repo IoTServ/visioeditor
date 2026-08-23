@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Connector Label Border now keeps its 1px frame in LibreOffice.
+  `User.veLabelBorderColor` is not a token, so a save already bakes a
+  locked NoFill sibling for 2-D text, but 1-D labels used to skip so
+  Draw dropped the stroke while canvas / SVG already paint it around
+  the route plate. A save now pins a missing TxtPin first, then places
+  that same hairline on the tight frame. Authored TextBkgnd stays
+  native.
 - Vertical `TextDirection` on connector labels now stays vertical in
   LibreOffice. `_flushText` never emits `style:writing-mode`, so a save
   already folds 2-D `TextDirection=1` into `TxtAngle`, but 1-D labels

@@ -219,7 +219,9 @@
 /// transparency / image Transparency Draw actually collects, then drops
 /// the User row. draw.io Label Border is `User.veLabelBorderColor`
 /// (not a token), so a save inserts a locked NoFill sibling whose LineColor
-/// Draw collects, then drops the User row. draw.io Label Padding is
+/// Draw collects, then drops the User row. Glueable labels pin TxtPin
+/// first so that stroke sits on the route plate, not the Begin–End box.
+/// draw.io Label Padding is
 /// `User.veLabelPadding` (not a token), so a save adds the pixel inset
 /// into Left/Right/Top/BottomMargin (`fo:padding-*`) Draw collects, then
 /// drops the User row. draw.io Curved Text is `User.veCurvedText`
@@ -2993,10 +2995,10 @@ VsdxDocument bakeFilledStrokeRibbonForLibvisioWrite(VsdxDocument document) {
 /// libvisio never reads User rows. The 1px text-frame stroke canvas / SVG
 /// paint from `User.veLabelBorderColor` is therefore a locked NoFill sibling
 /// whose LineColor Draw collects, then the User row is dropped. Glueable
-/// 1-D labels stay native — their loose plate depends on layout.
+/// labels need a TxtPin / TxtWidth first (loose bake pins the route) so
+/// the stroke sits on that plate, not the Begin–End box.
 bool shapeNeedsLibvisioLabelBorderBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.isGlueableConnector) return false;
   final color = shape.labelBorderColor;
   if (color == null || color.alpha == 0) return false;
   if (shape.richText.textBlock.hideText) return false;
@@ -3004,6 +3006,10 @@ bool shapeNeedsLibvisioLabelBorderBake(VsdxShape shape) {
       !shape.richText.isEmpty || (shape.text != null && shape.text!.isNotEmpty);
   if (!hasText) return false;
   final block = shape.richText.textBlock;
+  if (shape.is1D || shape.isGlueableConnector) {
+    if (block.pinXInches == null && block.pinYInches == null) return false;
+    if (block.widthInches == null) return false;
+  }
   final tw = (block.widthInches ?? shape.width).abs();
   final th = (block.heightInches ?? shape.height).abs();
   return tw > 1e-9 && th > 1e-9;

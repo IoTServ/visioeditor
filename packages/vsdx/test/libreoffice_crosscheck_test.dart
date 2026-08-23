@@ -2130,6 +2130,51 @@ void main() {
             .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
       ),
     );
+    var labelBorderEdgeDocument = parser.parse(blank);
+    final labelBorderEdgePage = labelBorderEdgeDocument.pages.first;
+    labelBorderEdgeDocument = labelBorderEdgeDocument.replacePage(
+      0,
+      labelBorderEdgePage.addShape(
+        VsdxShapeFactory.line(
+          id: labelBorderEdgePage.nextFreeShapeId(),
+          ax: 1,
+          ay: 7,
+          bx: 7,
+          by: 1,
+          name: 'LabelBorderEdge',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.02,
+          ),
+        ).copyWith(
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(6, 0),
+                LineTo(6, -6),
+              ],
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'MMMM',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.5,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        ).withLabelBorderColor(const VsdxColor(0xFF1565C0)),
+      ),
+    );
     var labelPaddingDocument = parser.parse(blank);
     final labelPaddingPage = labelPaddingDocument.pages.first;
     labelPaddingDocument = labelPaddingDocument.replacePage(
@@ -4637,6 +4682,10 @@ void main() {
         originalBytes: blank,
         edited: labelBorderDocument,
       ),
+      'label_border_edge': writer.write(
+        originalBytes: blank,
+        edited: labelBorderEdgeDocument,
+      ),
       'label_padding': writer.write(
         originalBytes: blank,
         edited: labelPaddingDocument,
@@ -5281,6 +5330,75 @@ void main() {
             greaterThan(interior * 2),
             reason: 'Label Border must be a frame, not a fill; '
                 'edge=$edge interior=$interior',
+          );
+        }
+        if (entry.key == 'label_border_edge') {
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          final source =
+              page.shapes.firstWhere((s) => s.name == 'LabelBorderEdge');
+          expect(source.labelBorderColor, isNull);
+          final plate = page.shapes.firstWhere(isLibvisioLabelBorderPlate);
+          expect(plate.line.color?.value, 0xFF1565C0);
+          expect(plate.pinX, closeTo(7, 0.35));
+          expect(plate.pinY, closeTo(7, 0.35));
+          expect(plate.width, lessThan(3));
+        }
+        if (entry.key == 'label_border_edge' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          bool isBlueStroke(raster.Pixel pixel) =>
+              pixel.b > pixel.r + 30 && pixel.b > pixel.g + 10 && pixel.r < 200;
+          int countBlue(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                if (isBlueStroke(rendered.getPixel(x, y))) count++;
+              }
+            }
+            return count;
+          }
+
+          final elbow = countBlue(6.35, 6.55, 7.65, 7.45);
+          final box = countBlue(3.55, 3.55, 4.45, 4.45);
+          expect(
+            elbow,
+            greaterThan(8),
+            reason: 'LibreOffice must stroke the Label Border on the route '
+                'plate; elbow=$elbow box=$box',
+          );
+          expect(
+            box,
+            lessThan(3),
+            reason: 'LibreOffice must not stroke the Begin–End box; '
+                'elbow=$elbow box=$box',
           );
         }
         if (entry.key == 'label_padding' && pdftoppm != null) {

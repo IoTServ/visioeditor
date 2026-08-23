@@ -111,7 +111,8 @@
 /// into FillForegndTrans / line transparency and drops `veOpacity`.
 /// draw.io Label Border is also a User row, so a save bakes a locked
 /// NoFill sibling whose LineColor Draw collects, then drops
-/// `veLabelBorderColor`. draw.io Label Padding is also a User row, so a
+/// `veLabelBorderColor`. Glueable labels pin TxtPin first so that
+/// stroke sits on the route plate. draw.io Label Padding is also a User row, so a
 /// save adds the pixel inset into Left/Right/Top/BottomMargin and drops
 /// `veLabelPadding`. draw.io Word Wrap is also a User row, so a save
 /// expands TxtWidth to the unwrapped line — including tab fields
@@ -1696,6 +1697,102 @@ void main() {
     _expectVsd2rawCollected(saved, const <String>[
       'svg:stroke-color: #1565c0',
     ]);
+  });
+
+  test('Label Border bakes a stroke sibling on connector labels', () {
+    const label = VsdxRichText(
+      runs: <VsdxTextRun>[
+        VsdxTextRun(
+          text: 'MMMM',
+          charStyle: VsdxCharStyle(
+            fontFamily: 'Arial',
+            fontSizeInches: 0.5,
+            color: VsdxColor(0xFF000000),
+          ),
+          paraStyle: VsdxParaStyle(
+            horizontalAlign: VsdxHorzAlign.center,
+          ),
+        ),
+      ],
+    );
+    final elbow = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 7,
+      bx: 7,
+      by: 1,
+      name: 'LabelBorderEdge',
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(6, 0),
+            LineTo(6, -6),
+          ],
+        ),
+      ],
+      richText: label,
+    ).withLabelBorderColor(const VsdxColor(0xFF1565C0));
+    expect(shapeNeedsLibvisioLabelBorderBake(elbow), isFalse);
+    expect(
+      shapeNeedsLibvisioLabelBorderBake(
+        VsdxShapeFactory.rectangle(
+          id: 9,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        )
+            .copyWith(richText: label)
+            .withLabelBorderColor(const VsdxColor(0xFF1565C0)),
+      ),
+      isTrue,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(elbow));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Label Border stroke',
+    );
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.labelBorderColor, isNull);
+    expect(source.richText.textBlock.pinXInches, isNotNull);
+    final plate =
+        baked.pages.first.shapes.firstWhere(isLibvisioLabelBorderPlate);
+    expect(plate.line.color?.value, 0xFF1565C0);
+    expect(plate.fill.pattern, 0);
+    expect(plate.locked, isTrue);
+    expect(plate.width, lessThan(3));
+    expect(plate.height, lessThan(1.2));
+    expect(plate.pinX, closeTo(7, 0.35));
+    expect(plate.pinY, closeTo(7, 0.35));
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.labelBorderColor, isNull);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioLabelBorderPlate),
+      hasLength(1),
+    );
+    final savedPlate =
+        savedDoc.pages.first.shapes.firstWhere(isLibvisioLabelBorderPlate);
+    expect(savedPlate.pinX, closeTo(7, 0.35));
+    expect(savedPlate.pinY, closeTo(7, 0.35));
+    expect(savedPlate.line.color?.value, 0xFF1565C0);
   });
 
   test('Label Padding bakes into Margin cells LibreOffice can collect', () {
