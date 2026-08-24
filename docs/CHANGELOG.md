@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Shape Inside text that also carries `<fld>` spans now keeps the
+  outline flow in LibreOffice. `tokens.txt` has no User rows, so a
+  save already writes per-line plates, but a Field section used to
+  skip that bake so Draw kept a rectangular field while canvas / SVG
+  already wrap the cached Value along the contour. A save now copies
+  those characters onto the plates and HideText on the source. A
+  second save does not stack another plate.
 - Character Overline and LangID RTL now keep their marks on `<fld>`
   runs in LibreOffice. `readCharIX` still skips `XML_OVERLINE` and
   never stores LangID, so a save already writes U+0305 / U+200F, but

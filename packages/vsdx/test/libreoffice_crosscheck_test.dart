@@ -4556,6 +4556,52 @@ void main() {
             ),
       ),
     );
+    var shapeInsideFieldDocument = parser.parse(blank);
+    shapeInsideFieldDocument = shapeInsideFieldDocument.replacePage(
+      0,
+      shapeInsideFieldDocument.pages.first.addShape(
+        VsdxShapeFactory.ellipse(
+          id: shapeInsideFieldDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 4,
+          name: 'ShapeInsideField',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeInside(true).copyWith(
+              text: '42 SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+              fields: const <VsdxFieldRow>[
+                VsdxFieldRow(
+                  ix: 0,
+                  value: '42',
+                  valueFormula: 'PAGENUMBER()',
+                ),
+              ],
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: '42 SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFFFF00FF),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                    fieldSpans: <VsdxFieldSpan>[
+                      VsdxFieldSpan(start: 0, length: 2, ix: 0),
+                    ],
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            ),
+      ),
+    );
     var bulletFieldDocument = parser.parse(blank);
     bulletFieldDocument = bulletFieldDocument.replacePage(
       0,
@@ -5543,6 +5589,10 @@ void main() {
       'shape_inside_highlight': writer.write(
         originalBytes: blank,
         edited: shapeInsideHighlightDocument,
+      ),
+      'shape_inside_field': writer.write(
+        originalBytes: blank,
+        edited: shapeInsideFieldDocument,
       ),
       'bullet_field': writer.write(
         originalBytes: blank,
@@ -11331,6 +11381,50 @@ void main() {
             greaterThan(10),
             reason: 'LibreOffice must paint lime Highlight on outline flow; '
                 'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+        }
+        if (entry.key == 'shape_inside_field') {
+          final reopened = parser.parse(entry.value);
+          final plates = reopened.pages.first.shapes
+              .where(isLibvisioShapeInsidePlate)
+              .toList();
+          expect(plates, isNotEmpty);
+          expect(
+            plates.map((p) => p.richText.plainText).join(),
+            contains('42'),
+            reason: 'Draw never paints a rectangular <fld>; the Value is on the plate',
+          );
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ShapeInsideField');
+          expect(source.shapeInside, isFalse);
+          expect(source.richText.textBlock.hideText, isTrue);
+        }
+        if (entry.key == 'shape_inside_field' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint the Shape Inside field Value; '
+                'magentaPixels=$magentaPixels',
           );
         }
         if (entry.key == 'bullet_field') {

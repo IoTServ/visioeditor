@@ -5173,7 +5173,9 @@ bool _shapeInsideDefaultTextBlock(VsdxShape shape) {
 /// FillForegnd on each band's plates so mixed markers follow the
 /// outline. Glueable 1-D labels, vertical text, curved text
 /// and TxtAngle stay native. FlipX / FlipY extra text mirrors about
-/// TxtPin are baked so Draw keeps the upright bands.
+/// TxtPin are baked so Draw keeps the upright bands. Field display
+/// caches stay in the run text — plates copy those characters, then
+/// HideText on the source so Draw does not keep a rectangular `<fld>`.
 bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.isGlueableConnector) return false;
@@ -5183,7 +5185,6 @@ bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
   if (shape.richText.textBlock.hideText) return false;
   if (shape.richText.textBlock.textDirection == 1) return false;
   if (shape.richText.textBlock.angleRad.abs() > 1e-12) return false;
-  if (shape.fields.isNotEmpty) return false;
   if (!_shapeInsideDefaultTextBlock(shape)) return false;
   final plain = _shapeInsidePlain(shape);
   if (plain.trim().isEmpty) return false;

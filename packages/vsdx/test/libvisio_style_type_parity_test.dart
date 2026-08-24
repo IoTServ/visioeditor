@@ -5783,6 +5783,86 @@ void main() {
     );
   });
 
+  test('Shape Inside bakes per-line siblings past field spans', () {
+    final shape = VsdxShapeFactory.ellipse(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 3,
+      height: 4,
+      name: 'OvalField',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withShapeInside(true).copyWith(
+          text: '42 SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+          fields: const <VsdxFieldRow>[
+            VsdxFieldRow(
+              ix: 0,
+              value: '42',
+              valueFormula: 'PAGENUMBER()',
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '42 SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.22,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+                fieldSpans: <VsdxFieldSpan>[
+                  VsdxFieldSpan(start: 0, length: 2, ix: 0),
+                ],
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        );
+    expect(shape.supportsShapeInside, isTrue);
+    expect(shapeNeedsLibvisioShapeInsideBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shapeInside, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioShapeInsidePlate).toList();
+    expect(plates, isNotEmpty);
+    expect(
+      plates.map((p) => p.richText.plainText).join(),
+      contains('42'),
+      reason: 'Draw never paints a rectangular <fld>; the Value is on the plate',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShapeInsidePlate)
+          .length,
+      plates.length,
+      reason: 'a second save must not stack another Shape Inside plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first;
+    expect(after.findShapeById(1)!.shapeInside, isFalse);
+    expect(after.findShapeById(1)!.richText.textBlock.hideText, isTrue);
+    expect(
+      after.shapes.where(isLibvisioShapeInsidePlate).map((p) => p.richText.plainText).join(),
+      contains('42'),
+    );
+  });
+
   test('Shape Inside bakes mixed Character Highlight onto line plates', () {
     final shape = VsdxShapeFactory.ellipse(
       id: 1,
