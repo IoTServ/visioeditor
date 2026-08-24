@@ -5100,7 +5100,8 @@ class VsdxToSvgSerializer {
     required VsdxVertAlign verticalAlign,
     required String indent,
   }) {
-    final paragraphs = _splitSvgParagraphs(runs);
+    final laidOut = libvisioBulletPrefixedRuns(runs);
+    final paragraphs = _splitSvgParagraphs(laidOut);
     final padding = shape.shapeInsidePaddingPx / pxPerInch;
     var top = marginTop;
     var textHeight = 0.0;
@@ -5697,7 +5698,8 @@ class VsdxToSvgSerializer {
     required String paintIdScope,
     required String indent,
   }) {
-    final plain = runs.map((r) => r.text).join().replaceAll('\n', ' ').trim();
+    final laidOut = libvisioBulletPrefixedRuns(runs);
+    final plain = laidOut.map((r) => r.text).join().replaceAll('\n', ' ').trim();
     if (plain.isEmpty) return;
 
     // Match canvas: TextDirection=1 rotates into a vertical band, then the
@@ -5725,16 +5727,16 @@ class VsdxToSvgSerializer {
     // Page/underlay-scoped — same as gradient/marker paint ids.
     final pathId = 'curved-$paintIdScope-${shape.id}';
     final style =
-        runs.isNotEmpty ? runs.first.charStyle : VsdxCharStyle.defaults;
+        laidOut.isNotEmpty ? laidOut.first.charStyle : VsdxCharStyle.defaults;
     final attrs = _charStyleSvgAttrs(
       style,
       theme,
       coordinateScale: _svgTextUnitScale,
     );
     final body = StringBuffer();
-    final mixed = runs.length > 1;
+    final mixed = laidOut.length > 1;
     if (mixed) {
-      for (final run in runs) {
+      for (final run in laidOut) {
         final raw = run.text
             .replaceAll('\n', ' ')
             .replaceAll('\r', ' ')

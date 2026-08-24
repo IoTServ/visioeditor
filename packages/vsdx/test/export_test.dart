@@ -3632,6 +3632,38 @@ void main() {
     expect(svg, contains('Arc'));
   });
 
+  test('SVG CurvedText prefixes the bullet glyph canvas paints on the arc', () {
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'Arc',
+                    paraStyle: VsdxParaStyle(bullet: 3),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('textPath'));
+    expect(svg, contains('\u25a0'));
+    expect(svg, contains('Arc'));
+  });
+
   test('SVG CurvedText honours TextDirection vertical like canvas', () {
     final writer = VsdxWriter();
     final blank = writer.emptyDocument();

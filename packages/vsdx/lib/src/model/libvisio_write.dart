@@ -174,7 +174,9 @@
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
 /// paragraph text, shifts any `<fld>` spans past that prefix, and folds
-/// the label field into a hanging `IndLeft` / `IndFirst`. Glow*
+/// the label field into a hanging `IndLeft` / `IndFirst` on a rectangular
+/// label. Curved Text and Shape Inside skip that hanging indent — the
+/// glyph rides the existing arc / outline plates. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a
 /// Gaussian PNG plate sized to the glow ribbon (a Foreign picture cannot
 /// hang on a zero-height 1-D XForm, and a FillForegndTrans ribbon would
@@ -3845,11 +3847,12 @@ double libvisioBulletLabelWidth(VsdxParaStyle para, VsdxCharStyle body) {
 /// that prefix, folds the label field into `IndLeft` / `IndFirst` (a
 /// hanging indent Draw does collect as `fo:margin-left` /
 /// `fo:text-indent`), and drops the Bullet cells so reopening does not
-/// stack a second marker.
+/// stack a second marker. Curved Text / Shape Inside skip the hanging
+/// indent so outline wrap still runs; the glyph is already in the text
+/// those plates copy.
 bool shapeNeedsLibvisioBulletGlyphBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.richText.textBlock.hideText) return false;
-  if (shape.curvedText || shape.shapeInside) return false;
   for (final run in shape.richText.runs) {
     if (run.paraStyle.bullet != 0) return true;
   }
@@ -3945,16 +3948,14 @@ List<VsdxFieldSpan> _shiftFieldSpansAfterInserts(
   return next;
 }
 
-VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
-  final runs = shape.richText.runs;
+/// Prefix every paragraph start with the resolved bullet glyph.
+///
+/// Canvas / SVG arc and outline layout never paint `text:bullet-char`,
+/// so they reuse this string a save already bakes for Draw. Bullet cells
+/// stay set — callers that write for Draw flatten them separately.
+List<VsdxTextRun> libvisioBulletPrefixedRuns(List<VsdxTextRun> runs) {
+  if (runs.every((run) => run.paraStyle.bullet == 0)) return runs;
   final paraOf = _libvisioParagraphIndexPerRun(runs);
-  // The body font of a paragraph comes from its first non-empty run, the
-  // same run canvas / SVG size the glyph against.
-  final bodyStyle = <int, VsdxCharStyle>{};
-  for (var i = 0; i < runs.length; i++) {
-    if (runs[i].text.trim().isEmpty) continue;
-    bodyStyle.putIfAbsent(paraOf[i], () => runs[i].charStyle);
-  }
   final firstRunOfPara = <int, int>{};
   for (var i = 0; i < runs.length; i++) {
     firstRunOfPara.putIfAbsent(paraOf[i], () => i);
@@ -3967,19 +3968,6 @@ VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
       next.add(run);
       continue;
     }
-    final label = libvisioBulletLabelWidth(
-      para,
-      bodyStyle[paraOf[i]] ?? VsdxCharStyle.defaults,
-    );
-    final flattened = para.copyWith(
-      bullet: 0,
-      clearBulletStr: true,
-      clearBulletFont: true,
-      clearBulletFontSize: true,
-      textPosAfterBulletInches: 0,
-      indentLeftInches: para.indentLeftInches + label,
-      indentFirstInches: para.indentFirstInches - label,
-    );
     final opensParagraph = firstRunOfPara[paraOf[i]] == i;
     final glyph = para.resolvedBulletGlyph;
     final prefix = _libvisioBulletPrefix(glyph);
@@ -3989,7 +3977,6 @@ VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
         glyph,
         opensParagraph: opensParagraph,
       ),
-      paraStyle: flattened,
       fieldSpans: _shiftFieldSpansAfterInserts(
         run.fieldSpans,
         _libvisioBulletPrefixInserts(
@@ -3997,6 +3984,49 @@ VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
           opensParagraph: opensParagraph,
         ),
         prefix.length,
+      ),
+    ));
+  }
+  return next;
+}
+
+VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
+  final runs = shape.richText.runs;
+  final paraOf = _libvisioParagraphIndexPerRun(runs);
+  // The body font of a paragraph comes from its first non-empty run, the
+  // same run canvas / SVG size the glyph against.
+  final bodyStyle = <int, VsdxCharStyle>{};
+  for (var i = 0; i < runs.length; i++) {
+    if (runs[i].text.trim().isEmpty) continue;
+    bodyStyle.putIfAbsent(paraOf[i], () => runs[i].charStyle);
+  }
+  final prefixed = libvisioBulletPrefixedRuns(runs);
+  // Arc / outline wrap rejects a hanging indent; the glyph is already in
+  // the text those plates copy.
+  final hanging = !shape.curvedText && !shape.shapeInside;
+  final next = <VsdxTextRun>[];
+  for (var i = 0; i < prefixed.length; i++) {
+    final run = prefixed[i];
+    final para = runs[i].paraStyle;
+    if (para.bullet == 0) {
+      next.add(run);
+      continue;
+    }
+    final label = hanging
+        ? libvisioBulletLabelWidth(
+            para,
+            bodyStyle[paraOf[i]] ?? VsdxCharStyle.defaults,
+          )
+        : 0.0;
+    next.add(run.copyWith(
+      paraStyle: para.copyWith(
+        bullet: 0,
+        clearBulletStr: true,
+        clearBulletFont: true,
+        clearBulletFontSize: true,
+        textPosAfterBulletInches: 0,
+        indentLeftInches: para.indentLeftInches + label,
+        indentFirstInches: para.indentFirstInches - label,
       ),
     ));
   }

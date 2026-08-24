@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Curved Text and Shape Inside lists now keep their bullet marker in
+  LibreOffice. Draw's drawing-text import still drops
+  `text:bullet-char`, so a rectangular save already writes the glyph
+  into the paragraph, but an arc / outline used to skip that bake so
+  Draw kept only the hanging inset while canvas / SVG also skipped
+  the marker on the path. A save now prefixes the glyph without a
+  hanging indent so the existing plates copy it, and canvas / SVG
+  prefix the same string. A second save does not stack another marker.
 - Shape Inside text that also carries `<fld>` spans now keeps the
   outline flow in LibreOffice. `tokens.txt` has no User rows, so a
   save already writes per-line plates, but a Field section used to

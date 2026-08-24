@@ -4437,6 +4437,39 @@ void main() {
             ),
       ),
     );
+    var curvedTextBulletDocument = parser.parse(blank);
+    curvedTextBulletDocument = curvedTextBulletDocument.replacePage(
+      0,
+      curvedTextBulletDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: curvedTextBulletDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.0,
+          height: 3.0,
+          name: 'CurvedTextBullet',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'ARC',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFFFF00FF),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                      bullet: 3,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     var shapeInsideDocument = parser.parse(blank);
     final shapeInsidePage = shapeInsideDocument.pages.first;
     shapeInsideDocument = shapeInsideDocument.replacePage(
@@ -4593,6 +4626,42 @@ void main() {
                     fieldSpans: <VsdxFieldSpan>[
                       VsdxFieldSpan(start: 0, length: 2, ix: 0),
                     ],
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            ),
+      ),
+    );
+    var shapeInsideBulletDocument = parser.parse(blank);
+    shapeInsideBulletDocument = shapeInsideBulletDocument.replacePage(
+      0,
+      shapeInsideBulletDocument.pages.first.addShape(
+        VsdxShapeFactory.ellipse(
+          id: shapeInsideBulletDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 4,
+          name: 'ShapeInsideBullet',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeInside(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFFFF00FF),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                      bullet: 3,
+                    ),
                   ),
                 ],
                 textBlock: VsdxTextBlock(
@@ -5578,6 +5647,10 @@ void main() {
         originalBytes: blank,
         edited: curvedTextHighlightDocument,
       ),
+      'curved_text_bullet': writer.write(
+        originalBytes: blank,
+        edited: curvedTextBulletDocument,
+      ),
       'shape_inside': writer.write(
         originalBytes: blank,
         edited: shapeInsideDocument,
@@ -5593,6 +5666,10 @@ void main() {
       'shape_inside_field': writer.write(
         originalBytes: blank,
         edited: shapeInsideFieldDocument,
+      ),
+      'shape_inside_bullet': writer.write(
+        originalBytes: blank,
+        edited: shapeInsideBulletDocument,
       ),
       'bullet_field': writer.write(
         originalBytes: blank,
@@ -11326,6 +11403,53 @@ void main() {
                 'magentaPixels=$magentaPixels limePixels=$limePixels',
           );
         }
+        if (entry.key == 'curved_text_bullet') {
+          final reopened = parser.parse(entry.value);
+          final plates = reopened.pages.first.shapes
+              .where(isLibvisioCurvedTextPlate)
+              .toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(
+            plates.map((p) => p.richText.plainText).join(),
+            '\u25a0ARC',
+            reason: 'Draw never paints text:bullet-char; the glyph rides the arc',
+          );
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'CurvedTextBullet');
+          expect(source.richText.runs.single.paraStyle.bullet, 0);
+          expect(source.richText.runs.single.paraStyle.indentFirstInches, 0);
+        }
+        if (entry.key == 'curved_text_bullet' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint the Curved Text bullet glyph; '
+                'magentaPixels=$magentaPixels',
+          );
+        }
         if (entry.key == 'shape_inside_highlight') {
           final reopened = parser.parse(entry.value);
           final plates = reopened.pages.first.shapes
@@ -11424,6 +11548,51 @@ void main() {
             magentaPixels,
             greaterThan(10),
             reason: 'LibreOffice must paint the Shape Inside field Value; '
+                'magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'shape_inside_bullet') {
+          final reopened = parser.parse(entry.value);
+          final plates = reopened.pages.first.shapes
+              .where(isLibvisioShapeInsidePlate)
+              .toList();
+          expect(plates, isNotEmpty);
+          expect(
+            plates.map((p) => p.richText.plainText).join(),
+            contains('\u25a0'),
+            reason: 'Draw never paints text:bullet-char; the glyph is on the plate',
+          );
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'ShapeInsideBullet');
+          expect(source.shapeInside, isFalse);
+          expect(source.richText.textBlock.hideText, isTrue);
+          expect(source.richText.runs.single.paraStyle.bullet, 0);
+        }
+        if (entry.key == 'shape_inside_bullet' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint the Shape Inside bullet glyph; '
                 'magentaPixels=$magentaPixels',
           );
         }

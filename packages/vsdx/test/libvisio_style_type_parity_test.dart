@@ -5588,6 +5588,83 @@ void main() {
     );
   });
 
+  test('Curved Text bakes bullet glyphs onto glyph plates', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 1.0,
+      height: 3.0,
+      name: 'ArcBullet',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withCurvedText(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'ARC',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                  bullet: 3,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioBulletGlyphBake(shape), isTrue);
+    expect(shapeNeedsLibvisioCurvedTextBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.curvedText, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(source.richText.runs.single.paraStyle.bullet, 0);
+    expect(source.richText.runs.single.paraStyle.indentFirstInches, 0);
+    expect(source.richText.runs.single.paraStyle.indentLeftInches, 0);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(
+      plates.map((p) => p.richText.plainText).join(),
+      '\u25a0ARC',
+      reason: 'Draw never paints text:bullet-char; the glyph rides the arc',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioCurvedTextPlate)
+          .length,
+      plates.length,
+      reason: 'a second save must not stack another Curved Text plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser
+          .parse(saved)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioCurvedTextPlate)
+          .map((p) => p.richText.plainText)
+          .join(),
+      '\u25a0ARC',
+    );
+  });
+
   test('Shape Inside bakes per-line siblings for LibreOffice', () {
     VsdxShape oval({
       required int id,
@@ -5860,6 +5937,84 @@ void main() {
     expect(
       after.shapes.where(isLibvisioShapeInsidePlate).map((p) => p.richText.plainText).join(),
       contains('42'),
+    );
+  });
+
+  test('Shape Inside bakes bullet glyphs onto line plates', () {
+    final shape = VsdxShapeFactory.ellipse(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 3,
+      height: 4,
+      name: 'OvalBullet',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withShapeInside(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.22,
+                  color: VsdxColor(0xFF000000),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                  bullet: 3,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        );
+    expect(shapeNeedsLibvisioBulletGlyphBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shapeInside, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(source.richText.runs.single.paraStyle.bullet, 0);
+    expect(source.richText.runs.single.paraStyle.indentFirstInches, 0);
+    expect(source.richText.runs.single.paraStyle.indentLeftInches, 0);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioShapeInsidePlate).toList();
+    expect(plates, isNotEmpty);
+    expect(
+      plates.map((p) => p.richText.plainText).join(),
+      contains('\u25a0'),
+      reason: 'Draw never paints text:bullet-char; the glyph is on the plate',
+    );
+    expect(
+      plates.map((p) => p.richText.plainText).join().replaceAll(' ', ''),
+      contains('SHAPEINSIDEFLOW'),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShapeInsidePlate)
+          .length,
+      plates.length,
+      reason: 'a second save must not stack another Shape Inside plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first;
+    expect(after.findShapeById(1)!.shapeInside, isFalse);
+    expect(
+      after.shapes
+          .where(isLibvisioShapeInsidePlate)
+          .map((p) => p.richText.plainText)
+          .join(),
+      contains('\u25a0'),
     );
   });
 

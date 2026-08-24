@@ -2878,14 +2878,16 @@ class VsdxPainter extends CustomPainter {
     // Curved Text: place glyphs along a quadratic arc inside the text block.
     // Falls back to the rectangular layout when the shape is a 1-D edge label.
     if (shape.curvedText && !isEdgeLabel) {
+      final curvedRuns =
+          hasRich ? libvisioBulletPrefixedRuns(rich.runs) : null;
       _paintCurvedText(
         canvas,
         spans: spans,
-        plain: hasRich ? rich.plainText : label!,
-        charStyle: hasRich && rich.runs.isNotEmpty
-            ? rich.runs.first.charStyle
+        plain: curvedRuns?.map((r) => r.text).join() ?? label!,
+        charStyle: curvedRuns != null && curvedRuns.isNotEmpty
+            ? curvedRuns.first.charStyle
             : null,
-        runs: hasRich ? rich.runs : null,
+        runs: curvedRuns,
         scale: s,
         twPx: twPx,
         thPx: thPx,
@@ -2914,16 +2916,18 @@ class VsdxPainter extends CustomPainter {
       _paintShapeInsideText(
         canvas,
         shape: shape,
-        runs: hasRich
-            ? rich.runs
-            : <VsdxTextRun>[
-                VsdxTextRun(
-                  text: label!,
-                  charStyle: VsdxCharStyle(
-                    fontSizeInches: math.min(th, tw) * 0.18,
+        runs: libvisioBulletPrefixedRuns(
+          hasRich
+              ? rich.runs
+              : <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: label!,
+                    charStyle: VsdxCharStyle(
+                      fontSizeInches: math.min(th, tw) * 0.18,
+                    ),
                   ),
-                ),
-              ],
+                ],
+        ),
         align: align,
         verticalAlign: block.verticalAlign,
         twPx: twPx,
