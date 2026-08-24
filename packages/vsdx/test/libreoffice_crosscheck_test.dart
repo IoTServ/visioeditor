@@ -2723,6 +2723,37 @@ void main() {
         ),
       ),
     );
+    var solidSpLineDocument = parser.parse(blank);
+    solidSpLineDocument = solidSpLineDocument.replacePage(
+      0,
+      solidSpLineDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: solidSpLineDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 2.4,
+          name: 'SolidSpLine',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'AAA\nBBB\nCCC',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'AAA\nBBB\nCCC',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(lineSpacingSolid: true),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var geometrySoftDocument = parser.parse(blank);
     final geometrySoftPage = geometrySoftDocument.pages.first;
     geometrySoftDocument = geometrySoftDocument.replacePage(
@@ -5645,6 +5676,10 @@ void main() {
         originalBytes: blank,
         edited: langIdRtlFieldDocument,
       ),
+      'solid_spline': writer.write(
+        originalBytes: blank,
+        edited: solidSpLineDocument,
+      ),
       'geometry_soft': writer.write(
         originalBytes: blank,
         edited: geometrySoftDocument,
@@ -7022,6 +7057,55 @@ void main() {
             greaterThan(12),
             reason: 'LibreOffice must paint the LangID RTL field Value; '
                 'magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'solid_spline') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SolidSpLine');
+          expect(
+              shape.richText.runs.single.paraStyle.lineSpacingSolid, isFalse);
+          expect(
+            shape.richText.runs.single.paraStyle.lineSpacingAbsoluteInches,
+            closeTo(0.4, 1e-9),
+          );
+        }
+        if (entry.key == 'solid_spline' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var minY = rendered.height;
+          var maxY = 0;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+              if (pixel.y < minY) minY = pixel.y;
+              if (pixel.y > maxY) maxY = pixel.y;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(40),
+            reason: 'LibreOffice must paint solid-spaced lines; '
+                'magentaPixels=$magentaPixels',
+          );
+          expect(
+            maxY - minY,
+            greaterThan(55),
+            reason: 'LibreOffice must keep 1× Size leading for SpLine=0; '
+                'bboxH=${maxY - minY} magentaPixels=$magentaPixels',
           );
         }
         if (entry.key == 'geometry_soft' && pdftoppm != null) {
@@ -11959,7 +12043,8 @@ void main() {
           expect(
             plates.map((p) => p.richText.plainText).join(),
             '\u25a0ARC',
-            reason: 'Draw never paints text:bullet-char; the glyph rides the arc',
+            reason:
+                'Draw never paints text:bullet-char; the glyph rides the arc',
           );
           final source = reopened.pages.first.shapes
               .firstWhere((s) => s.name == 'CurvedTextBullet');
@@ -12060,7 +12145,8 @@ void main() {
           expect(
             plates.map((p) => p.richText.plainText).join(),
             contains('42'),
-            reason: 'Draw never paints a rectangular <fld>; the Value is on the plate',
+            reason:
+                'Draw never paints a rectangular <fld>; the Value is on the plate',
           );
           final source = reopened.pages.first.shapes
               .firstWhere((s) => s.name == 'ShapeInsideField');
@@ -12104,7 +12190,8 @@ void main() {
           expect(
             plates.map((p) => p.richText.plainText).join(),
             contains('\u25a0'),
-            reason: 'Draw never paints text:bullet-char; the glyph is on the plate',
+            reason:
+                'Draw never paints text:bullet-char; the glyph is on the plate',
           );
           final source = reopened.pages.first.shapes
               .firstWhere((s) => s.name == 'ShapeInsideBullet');
@@ -12148,7 +12235,8 @@ void main() {
           expect(
             shape.richText.plainText,
             startsWith('\u25a0 42'),
-            reason: 'Draw never paints text:bullet-char; the glyph is in the text',
+            reason:
+                'Draw never paints text:bullet-char; the glyph is in the text',
           );
           expect(
             shape.richText.runs.single.fieldSpans.single,

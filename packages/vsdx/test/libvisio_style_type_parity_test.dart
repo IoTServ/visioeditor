@@ -605,7 +605,8 @@ void main() {
     final source = baked.pages.first.findShapeById(1)!;
     final run = source.richText.runs.single;
     expect(run.charStyle.overline, isFalse);
-    expect(run.text, 'X${kLibvisioCombiningOverline}4${kLibvisioCombiningOverline}2${kLibvisioCombiningOverline}');
+    expect(run.text,
+        'X${kLibvisioCombiningOverline}4${kLibvisioCombiningOverline}2${kLibvisioCombiningOverline}');
     expect(
       run.fieldSpans.single,
       const VsdxFieldSpan(start: 2, length: 4, ix: 0),
@@ -684,6 +685,62 @@ void main() {
       contains(kLibvisioCombiningLongStroke),
     );
     expect(baked.text, contains(kLibvisioCombiningLongStroke));
+  });
+
+  test('Paragraph SpLine=0 bakes the run Size so LibreOffice keeps leading',
+      () {
+    const size = 0.4;
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 3,
+      height: 2,
+      name: 'SolidSpLine',
+    ).copyWith(
+      text: 'AAA\nBBB\nCCC',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'AAA\nBBB\nCCC',
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: size,
+            ),
+            paraStyle: VsdxParaStyle(lineSpacingSolid: true),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioSolidLineSpacingBake(shape), isTrue);
+    final baked = bakeSolidLineSpacingShapeForLibvisioWrite(shape);
+    expect(baked.richText.runs.single.paraStyle.lineSpacingSolid, isFalse);
+    expect(
+      baked.richText.runs.single.paraStyle.lineSpacingAbsoluteInches,
+      closeTo(size, 1e-12),
+    );
+    expect(
+      shapeNeedsLibvisioSolidLineSpacingBake(baked),
+      isFalse,
+      reason: 'a second save must not rewrite the absolute SpLine again',
+    );
+
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final once = documentForLibvisioWrite(doc);
+    final twice = documentForLibvisioWrite(once);
+    expect(
+      twice.pages.first.shapes.single.richText.runs.single.paraStyle
+          .lineSpacingAbsoluteInches,
+      closeTo(size, 1e-12),
+    );
+    expect(
+      twice.pages.first.shapes.single.richText.runs.single.paraStyle
+          .lineSpacingSolid,
+      isFalse,
+    );
   });
 
   test('Character DoubleStrikethrough bakes combining marks past field spans',
@@ -962,7 +1019,9 @@ void main() {
     final baked = documentForLibvisioWrite(doc);
     final source = baked.pages.first.findShapeById(1)!;
     final run = source.richText.runs.single;
-    expect(run.text, '$kLibvisioRtlMark'
+    expect(
+        run.text,
+        '$kLibvisioRtlMark'
         '42');
     expect(
       run.fieldSpans.single,
@@ -6126,7 +6185,8 @@ void main() {
     expect(
       plates.map((p) => p.richText.plainText).join(),
       contains('42'),
-      reason: 'Draw never paints a rectangular <fld>; the Value is on the plate',
+      reason:
+          'Draw never paints a rectangular <fld>; the Value is on the plate',
     );
     expect(
       documentForLibvisioWrite(baked)
@@ -6144,7 +6204,10 @@ void main() {
     expect(after.findShapeById(1)!.shapeInside, isFalse);
     expect(after.findShapeById(1)!.richText.textBlock.hideText, isTrue);
     expect(
-      after.shapes.where(isLibvisioShapeInsidePlate).map((p) => p.richText.plainText).join(),
+      after.shapes
+          .where(isLibvisioShapeInsidePlate)
+          .map((p) => p.richText.plainText)
+          .join(),
       contains('42'),
     );
   });
@@ -6294,10 +6357,7 @@ void main() {
       isTrue,
     );
     expect(
-      plates
-          .map((p) => p.richText.plainText)
-          .join()
-          .replaceAll(' ', ''),
+      plates.map((p) => p.richText.plainText).join().replaceAll(' ', ''),
       'HISHAPEINSIDEFLOWALONGTHEELLIPSE',
     );
     expect(
@@ -6731,7 +6791,8 @@ void main() {
     expect(after.foreignType, 'Bitmap');
     expect(after.foreignCompressionType, 'PNG');
     expect(after.imagePartName, isNot(part));
-    final savedPng = parser.parse(saved).images.findByPart(after.imagePartName!);
+    final savedPng =
+        parser.parse(saved).images.findByPart(after.imagePartName!);
     expect(savedPng, isNotNull);
     expect(raster.decodePng(savedPng!.bytes), isNotNull);
   });
@@ -6788,7 +6849,8 @@ void main() {
     final after = parser.parse(saved).pages.first.findShapeById(1)!;
     expect(after.foreignType, 'MetaFile');
     expect(after.imagePartName, isNot(part));
-    final savedWmf = parser.parse(saved).images.findByPart(after.imagePartName!);
+    final savedWmf =
+        parser.parse(saved).images.findByPart(after.imagePartName!);
     expect(savedWmf, isNotNull);
     expect(looksLikeWmf(savedWmf!.bytes), isTrue);
   });

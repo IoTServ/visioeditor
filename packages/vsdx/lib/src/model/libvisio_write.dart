@@ -196,6 +196,13 @@
 /// combining long-stroke overlays, keeps `Strikethrough` so Draw still
 /// paints one bar, and clears DoubleStrikethrough — tabs keep their
 /// `tabIndices` stop and `<fld>` UTF-16 spans grow around each mark.
+/// Paragraph `SpLine=0` ("set solid") *is* a token, but
+/// `_fillParagraphProperties` takes the percent branch whenever
+/// `spLine <= 0` and emits `fo:line-height="0%"`. Draw then stacks every
+/// wrapped line on one baseline, while canvas / SVG already treat 0 as
+/// 1× Size. A save writes the run's Size as a positive SpLine so
+/// libvisio takes the length branch. A second save does not change that
+/// absolute cell.
 /// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
@@ -350,34 +357,37 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakeThemeRgbCacheForLibvisioWrite(
     bakePageColorForLibvisioWrite(
-    bakeCoveredForLibvisioWrite(
-      bakeCollapsedForLibvisioWrite(
-        bakeShapeInsideForLibvisioWrite(
-          bakeWordWrapForLibvisioWrite(
-            bakeLabelBorderForLibvisioWrite(
-              bakeLabelPaddingForLibvisioWrite(
-                bakeFilledStrokeRibbonForLibvisioWrite(
-                  bakeGeometrySoftEdgesForLibvisioWrite(
-                    bakeReflectionForLibvisioWrite(
-                      bakeImageAdjustmentsForLibvisioWrite(
-                        bakeGlowPlateForLibvisioWrite(
-                          bakeGlassForLibvisioWrite(
-                            bakeSketchForLibvisioWrite(
-                              bakePageShadowForLibvisioWrite(
-                                bakeShadowForLibvisioWrite(
-                                  bakeCurvedTextForLibvisioWrite(
-                                    bakeShapeOpacityForLibvisioWrite(
-                                      bakeLangIdRtlForLibvisioWrite(
-                                        bakeDoubleStrikethroughForLibvisioWrite(
-                                          bakeOverlineForLibvisioWrite(
-                                            bakeMixedHighlightForLibvisioWrite(
-                                              bakeLooseEdgeLabelForLibvisioWrite(
-                                                bakeAutoRotateLabelForLibvisioWrite(
-                                                  bakeTextDirectionForLibvisioWrite(
-                                                    bakeBulletGlyphForLibvisioWrite(
-                                                      bakeMetafileBitmapsForLibvisioWrite(
-                                                        bakeOlePreviewsForLibvisioWrite(
-                                                          hopped,
+      bakeCoveredForLibvisioWrite(
+        bakeCollapsedForLibvisioWrite(
+          bakeShapeInsideForLibvisioWrite(
+            bakeWordWrapForLibvisioWrite(
+              bakeLabelBorderForLibvisioWrite(
+                bakeLabelPaddingForLibvisioWrite(
+                  bakeFilledStrokeRibbonForLibvisioWrite(
+                    bakeGeometrySoftEdgesForLibvisioWrite(
+                      bakeReflectionForLibvisioWrite(
+                        bakeImageAdjustmentsForLibvisioWrite(
+                          bakeGlowPlateForLibvisioWrite(
+                            bakeGlassForLibvisioWrite(
+                              bakeSketchForLibvisioWrite(
+                                bakePageShadowForLibvisioWrite(
+                                  bakeShadowForLibvisioWrite(
+                                    bakeCurvedTextForLibvisioWrite(
+                                      bakeShapeOpacityForLibvisioWrite(
+                                        bakeSolidLineSpacingForLibvisioWrite(
+                                          bakeLangIdRtlForLibvisioWrite(
+                                            bakeDoubleStrikethroughForLibvisioWrite(
+                                              bakeOverlineForLibvisioWrite(
+                                                bakeMixedHighlightForLibvisioWrite(
+                                                  bakeLooseEdgeLabelForLibvisioWrite(
+                                                    bakeAutoRotateLabelForLibvisioWrite(
+                                                      bakeTextDirectionForLibvisioWrite(
+                                                        bakeBulletGlyphForLibvisioWrite(
+                                                          bakeMetafileBitmapsForLibvisioWrite(
+                                                            bakeOlePreviewsForLibvisioWrite(
+                                                              hopped,
+                                                            ),
+                                                          ),
                                                         ),
                                                       ),
                                                     ),
@@ -404,7 +414,6 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
           ),
         ),
       ),
-    ),
     ),
   );
 }
@@ -4353,6 +4362,96 @@ VsdxDocument bakeDoubleStrikethroughForLibvisioWrite(VsdxDocument document) {
   return document.copyWith(pages: pages);
 }
 
+/// `true` when Paragraph `SpLine=0` would collapse wrapped lines in Draw.
+///
+/// libvisio `_fillParagraphProperties` emits `fo:line-height` as a
+/// percentage whenever `spLine <= 0`. Solid spacing is stored as 0, so
+/// Draw receives `0%` and stacks every line on one baseline. Canvas /
+/// SVG already treat that cell as 1× Size.
+bool shapeNeedsLibvisioSolidLineSpacingBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (_paraNeedsLibvisioSolidLineSpacingBake(run.paraStyle)) return true;
+  }
+  return false;
+}
+
+bool _paraNeedsLibvisioSolidLineSpacingBake(VsdxParaStyle para) =>
+    para.lineSpacingSolid && para.lineSpacingAbsoluteInches <= 1e-9;
+
+double _solidLineSpacingInchesForLibvisioWrite(VsdxTextRun run) {
+  final size = run.charStyle.effectiveFontSizeInchesForText(run.text);
+  if (size > 1e-9) return size;
+  return VsdxCharStyle.defaults.fontSizeInches;
+}
+
+VsdxShape bakeSolidLineSpacingShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeSolidLineSpacingShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioSolidLineSpacingBake(shape)) {
+    final runs = <VsdxTextRun>[
+      for (final run in shape.richText.runs)
+        if (_paraNeedsLibvisioSolidLineSpacingBake(run.paraStyle))
+          run.copyWith(
+            paraStyle: run.paraStyle.copyWith(
+              lineSpacingSolid: false,
+              lineSpacingAbsoluteInches:
+                  _solidLineSpacingInchesForLibvisioWrite(run),
+            ),
+          )
+        else
+          run,
+    ];
+    next = shape.copyWith(richText: shape.richText.copyWith(runs: runs));
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Rewrite `SpLine=0` into a positive length Draw will not collapse.
+VsdxDocument bakeSolidLineSpacingForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeSolidLineSpacingShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
 /// `true` when mixed Character Highlight must become per-run plates for Draw.
 ///
 /// `readCharIX` has `case XML_HIGHLIGHT: break;`. A uniform marker already
@@ -5415,10 +5514,8 @@ bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
 String _shapeInsidePlain(VsdxShape shape) {
   final raw =
       shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
-  final text = raw
-      .replaceAll('\r\n', '\n')
-      .replaceAll('\r', '\n')
-      .replaceAll('\t', ' ');
+  final text =
+      raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n').replaceAll('\t', ' ');
   final style = shape.richText.runs.isNotEmpty
       ? shape.richText.runs.first.charStyle
       : VsdxCharStyle.defaults;
@@ -6817,7 +6914,8 @@ VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
     ];
     var next = shape;
     if (shapeNeedsLibvisioMetafileBitmapBake(shape)) {
-      final source = _imageForLibvisioWrite(document.images, shape.imagePartName);
+      final source =
+          _imageForLibvisioWrite(document.images, shape.imagePartName);
       if (source != null) {
         var bakedPart = cache[source.partName];
         if (bakedPart == null) {
@@ -6957,7 +7055,8 @@ VsdxDocument bakeOlePreviewsForLibvisioWrite(VsdxDocument document) {
     ];
     var next = shape;
     if (shapeNeedsLibvisioOlePreviewBake(shape)) {
-      final source = _imageForLibvisioWrite(document.images, shape.imagePartName);
+      final source =
+          _imageForLibvisioWrite(document.images, shape.imagePartName);
       if (source != null) {
         var bakedPart = cache[source.partName];
         if (bakedPart == null) {

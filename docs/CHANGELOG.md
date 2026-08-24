@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Paragraph `SpLine=0` ("set solid") now keeps wrapped leading in
+  LibreOffice. libvisio emits `fo:line-height="0%"` whenever that cell
+  is ≤ 0, so Draw stacked every line on one baseline while canvas /
+  SVG already treat 0 as 1× Size. A save writes the run Size as a
+  positive SpLine so Draw takes the length branch. A second save does
+  not change that absolute cell.
 - Double strikethrough now keeps two bars in LibreOffice. libvisio
   emits `style:text-line-through-type="double"`, but Draw's drawing-text
   import paints a single strike while canvas / SVG already draw two

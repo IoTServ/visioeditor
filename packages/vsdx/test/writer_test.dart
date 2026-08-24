@@ -7687,10 +7687,11 @@ void main() {
     expect(fill.gradient!.dir, 35);
   });
 
-  test('SpLine=0 solid writes V="0" not omitted', () {
+  test('SpLine=0 solid bakes the run Size so LibreOffice keeps leading', () {
     final blank = writer.emptyDocument();
     var outDoc = parser.parse(blank);
     final id = outDoc.pages.first.nextFreeShapeId();
+    const size = 12.0 / 72.0;
     final shape = VsdxShapeFactory.rectangle(
       id: id,
       pinX: 1,
@@ -7715,9 +7716,14 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('N="SpLine" V="0"'), isTrue);
+    expect(pageXml.contains('N="SpLine" V="0"'), isFalse);
+    expect(pageXml.contains('N="SpLine"'), isTrue);
     final after = parser.parse(saved).pages.first.findShapeById(id)!;
-    expect(after.richText.runs.first.paraStyle.lineSpacingSolid, isTrue);
+    expect(after.richText.runs.first.paraStyle.lineSpacingSolid, isFalse);
+    expect(
+      after.richText.runs.first.paraStyle.lineSpacingAbsoluteInches,
+      closeTo(size, 1e-6),
+    );
   });
 
   test('Txt* SETATREF / TEXTWIDTH formulas survive group rebuild', () {
