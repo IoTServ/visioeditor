@@ -172,8 +172,8 @@
 /// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
-/// paragraph text and folds the label field into a hanging
-/// `IndLeft` / `IndFirst`. Glow*
+/// paragraph text, shifts any `<fld>` spans past that prefix, and folds
+/// the label field into a hanging `IndLeft` / `IndFirst`. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a
 /// Gaussian PNG plate sized to the glow ribbon (a Foreign picture cannot
 /// hang on a zero-height 1-D XForm, and a FillForegndTrans ribbon would
@@ -3811,18 +3811,15 @@ double libvisioBulletLabelWidth(VsdxParaStyle para, VsdxCharStyle body) {
 /// `addOpenUnorderedListLevel`'s `text:bullet-char`, but Draw's drawing-text
 /// import keeps only the `text:min-label-width` inset — the glyph itself is
 /// never painted. Canvas / SVG do paint it, so a save writes the resolved
-/// character into the paragraph text, folds the label field into
-/// `IndLeft` / `IndFirst` (a hanging indent Draw does collect as
-/// `fo:margin-left` / `fo:text-indent`), and drops the Bullet cells so
-/// reopening does not stack a second marker. Field runs stay native — a
-/// prefix would move every `<fld>` span.
+/// character into the paragraph text, shifts `<fld>` UTF-16 starts past
+/// that prefix, folds the label field into `IndLeft` / `IndFirst` (a
+/// hanging indent Draw does collect as `fo:margin-left` /
+/// `fo:text-indent`), and drops the Bullet cells so reopening does not
+/// stack a second marker.
 bool shapeNeedsLibvisioBulletGlyphBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.richText.textBlock.hideText) return false;
   if (shape.curvedText || shape.shapeInside) return false;
-  for (final run in shape.richText.runs) {
-    if (run.fieldSpans.isNotEmpty) return false;
-  }
   for (final run in shape.richText.runs) {
     if (run.paraStyle.bullet != 0) return true;
   }
@@ -3840,6 +3837,8 @@ List<int> _libvisioParagraphIndexPerRun(List<VsdxTextRun> runs) {
   return out;
 }
 
+String _libvisioBulletPrefix(String glyph) => '$glyph ';
+
 /// Prefix every paragraph [run] *starts* with the resolved bullet glyph.
 ///
 /// [opensParagraph] is false when an earlier run already carries this
@@ -3851,14 +3850,69 @@ String _libvisioBulletPrefixedText(
 }) {
   final parts = text.split('\n');
   final buf = StringBuffer();
+  final prefix = _libvisioBulletPrefix(glyph);
   for (var i = 0; i < parts.length; i++) {
     if (i > 0) buf.write('\n');
     final lead = i > 0 || opensParagraph;
     // An empty trailing paragraph would only contribute an orphan glyph.
-    if (lead && parts[i].isNotEmpty) buf.write('$glyph ');
+    if (lead && parts[i].isNotEmpty) buf.write(prefix);
     buf.write(parts[i]);
   }
   return buf.toString();
+}
+
+/// Original UTF-16 indices where [_libvisioBulletPrefixedText] inserts.
+List<int> _libvisioBulletPrefixInserts(
+  String text, {
+  required bool opensParagraph,
+}) {
+  final parts = text.split('\n');
+  final inserts = <int>[];
+  var offset = 0;
+  for (var i = 0; i < parts.length; i++) {
+    if (i > 0) offset += 1;
+    final lead = i > 0 || opensParagraph;
+    if (lead && parts[i].isNotEmpty) inserts.add(offset);
+    offset += parts[i].length;
+  }
+  return inserts;
+}
+
+/// Shift `<fld>` spans after inserting [insertedLength] at each [insertAt].
+///
+/// [insertAt] is in the pre-insert string; later indices are applied first
+/// so earlier original offsets stay valid. A span that starts at the
+/// insert moves after the prefix; a span that strictly contains it grows.
+List<VsdxFieldSpan> _shiftFieldSpansAfterInserts(
+  List<VsdxFieldSpan> spans,
+  List<int> insertAt,
+  int insertedLength,
+) {
+  if (spans.isEmpty || insertAt.isEmpty || insertedLength <= 0) {
+    return spans;
+  }
+  final points = [...insertAt]..sort((a, b) => b.compareTo(a));
+  var next = spans;
+  for (final at in points) {
+    next = <VsdxFieldSpan>[
+      for (final span in next)
+        if (span.start >= at)
+          VsdxFieldSpan(
+            start: span.start + insertedLength,
+            length: span.length,
+            ix: span.ix,
+          )
+        else if (span.start + span.length > at)
+          VsdxFieldSpan(
+            start: span.start,
+            length: span.length + insertedLength,
+            ix: span.ix,
+          )
+        else
+          span,
+    ];
+  }
+  return next;
 }
 
 VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
@@ -3896,13 +3950,24 @@ VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
       indentLeftInches: para.indentLeftInches + label,
       indentFirstInches: para.indentFirstInches - label,
     );
+    final opensParagraph = firstRunOfPara[paraOf[i]] == i;
+    final glyph = para.resolvedBulletGlyph;
+    final prefix = _libvisioBulletPrefix(glyph);
     next.add(run.copyWith(
       text: _libvisioBulletPrefixedText(
         run.text,
-        para.resolvedBulletGlyph,
-        opensParagraph: firstRunOfPara[paraOf[i]] == i,
+        glyph,
+        opensParagraph: opensParagraph,
       ),
       paraStyle: flattened,
+      fieldSpans: _shiftFieldSpansAfterInserts(
+        run.fieldSpans,
+        _libvisioBulletPrefixInserts(
+          run.text,
+          opensParagraph: opensParagraph,
+        ),
+        prefix.length,
+      ),
     ));
   }
   final rich = shape.richText.copyWith(runs: next);

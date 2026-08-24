@@ -2229,6 +2229,149 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('Bullet lists bake the glyph past field spans LibreOffice never paints',
+      () {
+    const para = VsdxParaStyle(
+      bullet: 3,
+      textPosAfterBulletInches: 0.25,
+      indentLeftInches: 0.1,
+    );
+    const body = VsdxCharStyle(
+      fontFamily: 'Arial',
+      fontSizeInches: 0.3,
+      color: VsdxColor(0xFF000000),
+    );
+    const prefix = '\u25a0 ';
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'BulletFieldBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: '42\n99',
+      fields: const <VsdxFieldRow>[
+        VsdxFieldRow(
+          ix: 0,
+          value: '42',
+          valueFormula: 'PAGENUMBER()',
+        ),
+        VsdxFieldRow(
+          ix: 1,
+          value: '99',
+          valueFormula: 'PAGECOUNT()',
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: '42\n99',
+            charStyle: body,
+            paraStyle: para,
+            fieldSpans: <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 0, length: 2, ix: 0),
+              VsdxFieldSpan(start: 3, length: 2, ix: 1),
+            ],
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioBulletGlyphBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final run = source.richText.runs.single;
+    expect(run.text, '${prefix}42\n${prefix}99');
+    expect(source.text, '${prefix}42\n${prefix}99');
+    expect(run.paraStyle.bullet, 0);
+    expect(
+      run.fieldSpans,
+      <VsdxFieldSpan>[
+        VsdxFieldSpan(start: prefix.length, length: 2, ix: 0),
+        VsdxFieldSpan(start: 3 + 2 * prefix.length, length: 2, ix: 1),
+      ],
+    );
+    expect(source.fields, hasLength(2));
+    expect(source.fields.first.valueFormula, 'PAGENUMBER()');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      '${prefix}42\n${prefix}99',
+      reason: 'a second save must not stack another glyph',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .fieldSpans,
+      run.fieldSpans,
+      reason: 'a second save must not shift <fld> again',
+    );
+
+    final wide = shape.copyWith(
+      richText: VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: '42',
+            charStyle: body,
+            paraStyle: para.copyWith(bulletStr: '>>'),
+            fieldSpans: const <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 0, length: 2, ix: 0),
+            ],
+          ),
+        ],
+      ),
+    );
+    final wideBaked = documentForLibvisioWrite(
+      parser.parse(blank).replacePage(
+            0,
+            parser.parse(blank).pages.first.addShape(wide),
+          ),
+    );
+    final wideRun =
+        wideBaked.pages.first.findShapeById(1)!.richText.runs.single;
+    expect(wideRun.text, '>> 42');
+    expect(
+      wideRun.fieldSpans.single,
+      const VsdxFieldSpan(start: 3, length: 2, ix: 0),
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.first.paraStyle.bullet, 0);
+    expect(after.richText.plainText, '${prefix}42\n${prefix}99');
+    expect(
+      after.richText.runs.first.fieldSpans,
+      <VsdxFieldSpan>[
+        VsdxFieldSpan(start: prefix.length, length: 2, ix: 0),
+        VsdxFieldSpan(start: 3 + 2 * prefix.length, length: 2, ix: 1),
+      ],
+    );
+    expect(after.fields.map((f) => f.valueFormula).toList(),
+        <String?>['PAGENUMBER()', 'PAGECOUNT()']);
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', contains('\u25a0'));
+    expect(oracle.svgPages(saved)?.join() ?? '', contains('42'));
+  });
+
   test('Word Wrap off bakes TxtWidth LibreOffice wraps against', () {
     const label = 'NO WRAP NO WRAP NO WRAP';
     final shape = VsdxShapeFactory.rectangle(

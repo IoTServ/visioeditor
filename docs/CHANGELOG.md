@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Paragraph `Bullet` lists that also carry `<fld>` spans now keep their
+  marker in LibreOffice. Draw's drawing-text import still drops
+  `text:bullet-char`, so a save already writes the resolved glyph into
+  the paragraph and folds `TextPosAfterBullet` into a hanging indent,
+  but a field used to skip that bake so Draw kept only the inset while
+  canvas / SVG already paint the glyph beside the field. A save now
+  prefixes the glyph and shifts those UTF-16 field starts so the cached
+  `Value` stays on the same characters. A second save does not stack
+  another marker.
 - Mixed Character Highlight now follows Curved Text and Shape Inside
   in LibreOffice. `readCharIX` still skips `XML_HIGHLIGHT`, so mixed
   markers already bake to FillForegnd plates on a rectangular label,
@@ -617,7 +626,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   the resolved glyph into the paragraph text, folds
   `TextPosAfterBullet` into `IndLeft` / `IndFirst`, and drops the
   Bullet cells so a second save does not stack another marker. Field
-  runs stay native.
+  spans shift past that prefix so `<fld>` stays on the cached Value.
 - Mixed Character Highlight now wraps to `TxtWidth` in LibreOffice.
   `XML_HIGHLIGHT` is still an empty `readCharIX` case, so a save
   already bakes per-run plates for mixed colours, but a wrapped line

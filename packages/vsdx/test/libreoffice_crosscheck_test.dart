@@ -4474,6 +4474,50 @@ void main() {
             ),
       ),
     );
+    var bulletFieldDocument = parser.parse(blank);
+    bulletFieldDocument = bulletFieldDocument.replacePage(
+      0,
+      bulletFieldDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: bulletFieldDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 1.6,
+          name: 'BulletField',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: '42',
+          fields: const <VsdxFieldRow>[
+            VsdxFieldRow(
+              ix: 0,
+              value: '42',
+              valueFormula: 'PAGENUMBER()',
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '42',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.45,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  bullet: 3,
+                  textPosAfterBulletInches: 0.55,
+                ),
+                fieldSpans: <VsdxFieldSpan>[
+                  VsdxFieldSpan(start: 0, length: 2, ix: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var autoRotateDocument = parser.parse(blank);
     final autoRotatePage = autoRotateDocument.pages.first;
     autoRotateDocument = autoRotateDocument.replacePage(
@@ -5409,6 +5453,10 @@ void main() {
       'shape_inside_highlight': writer.write(
         originalBytes: blank,
         edited: shapeInsideHighlightDocument,
+      ),
+      'bullet_field': writer.write(
+        originalBytes: blank,
+        edited: bulletFieldDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -11109,6 +11157,88 @@ void main() {
             greaterThan(10),
             reason: 'LibreOffice must paint lime Highlight on outline flow; '
                 'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+        }
+        if (entry.key == 'bullet_field') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'BulletField');
+          expect(shape.richText.runs.single.paraStyle.bullet, 0);
+          expect(
+            shape.richText.plainText,
+            startsWith('\u25a0 42'),
+            reason: 'Draw never paints text:bullet-char; the glyph is in the text',
+          );
+          expect(
+            shape.richText.runs.single.fieldSpans.single,
+            const VsdxFieldSpan(start: 2, length: 2, ix: 0),
+          );
+          expect(shape.fields, isNotEmpty);
+          expect(shape.fields.first.valueFormula, 'PAGENUMBER()');
+        }
+        if (entry.key == 'bullet_field' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          int magentaCount(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+                  count++;
+                }
+              }
+            }
+            return count;
+          }
+
+          // Hanging indent holds the baked ■; the field "42" sits to its right.
+          final glyphInk = magentaCount(2.30, 5.05, 2.85, 5.95);
+          final fieldInk = magentaCount(3.05, 5.05, 5.40, 5.95);
+          expect(
+            glyphInk,
+            greaterThan(12),
+            reason: 'LibreOffice must paint the baked bullet beside the field; '
+                'glyphInk=$glyphInk fieldInk=$fieldInk',
+          );
+          expect(
+            fieldInk,
+            greaterThan(12),
+            reason: 'LibreOffice must still paint the field Value; '
+                'glyphInk=$glyphInk fieldInk=$fieldInk',
           );
         }
         if ((entry.key == 'shape_inside' ||
