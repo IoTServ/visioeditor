@@ -6674,6 +6674,88 @@ void main() {
     expect(savedCenter.b, greaterThan(savedCenter.r + 40));
   });
 
+  test('cropped picture composites into the frame for LibreOffice', () {
+    final rasterImage = raster.Image(width: 32, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 32; x++) {
+        if (x < 16) {
+          rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+        } else {
+          rasterImage.setPixelRgba(x, y, 0, 0, 255, 255);
+        }
+      }
+    }
+    final bytes = Uint8List.fromList(raster.encodePng(rasterImage));
+    const part = '/visio/media/crop.png';
+    final source =
+        VsdxImage(partName: part, bytes: bytes, mimeType: 'image/png');
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 3,
+      pinY: 3,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+      name: 'Crop',
+    ).copyWith(
+      imgOffsetXInches: -1.2,
+      imgOffsetYInches: 0,
+      imgWidthInches: 2.4,
+      imgHeightInches: 0.8,
+    );
+    expect(shapeNeedsLibvisioImageCropBake(pic), isTrue);
+    expect(shapeNeedsLibvisioCroppedSoftEdgesBake(pic), isFalse);
+    final baked = bakeVisioImageAdjustmentsPng(
+      image: source,
+      transparency: 0,
+      blur: 0,
+      brightness: 0.5,
+      contrast: 0.5,
+      displayWidthInches: 1.2,
+      frameWidthInches: 1.2,
+      frameHeightInches: 0.8,
+      imgOffsetXInches: -1.2,
+      imgOffsetYInches: 0,
+      imgWidthInches: 2.4,
+      imgHeightInches: 0.8,
+    );
+    expect(baked, isNotNull);
+    final decoded = raster.decodePng(baked!)!;
+    final center = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    expect(center.b, greaterThan(center.r + 40),
+        reason: 'the visible window is the right (blue) half');
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    expect(
+        shapeNeedsLibvisioImageCropBake(
+            documentForLibvisioWrite(doc).pages.first.findShapeById(1)!),
+        isFalse);
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.imgOffsetXInches, closeTo(0, 1e-9));
+    expect(after.imgOffsetYInches, closeTo(0, 1e-9));
+    expect(after.effectiveImgWidth, closeTo(after.width, 1e-6));
+    expect(after.effectiveImgHeight, closeTo(after.height, 1e-6));
+    expect(after.imagePartName, isNot(part));
+    expect(
+      shapeNeedsLibvisioImageCropBake(after),
+      isFalse,
+      reason: 'a second save must not stack another crop PNG',
+    );
+    final frame = raster.decodePng(
+      savedDoc.images.findByPart(after.imagePartName!)!.bytes,
+    )!;
+    final savedCenter = frame.getPixel(frame.width ~/ 2, frame.height ~/ 2);
+    expect(savedCenter.b, greaterThan(savedCenter.r + 40));
+  });
+
   test('PageColor bakes a full-page plate LibreOffice can collect', () {
     const colour = VsdxColor(0xFF336699);
     final blank = writer.emptyDocument();
@@ -7531,8 +7613,8 @@ void main() {
     final savedDoc = parser.parse(saved);
     final source = savedDoc.pages.first.findShapeById(1)!;
     expect(source.reflection.enabled, isFalse);
-    expect(source.imgOffsetXInches, closeTo(-1.2, 1e-9));
-    expect(source.effectiveImgWidth, closeTo(2.4, 1e-9));
+    expect(source.imgOffsetXInches, closeTo(0, 1e-9));
+    expect(source.effectiveImgWidth, closeTo(source.width, 1e-6));
     final savedPlate = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == '${kLibvisioReflectionShapeNamePrefix}1');
     expect(savedPlate.hasImage, isTrue);

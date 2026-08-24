@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Cropped pictures now keep that window in LibreOffice. Draw paints
+  libvisio's `svg:width` from `ImgWidth` and does not clip to the Foreign
+  box, so a save composites the Img* window into a frame-sized PNG and
+  resets ImgOffset / ImgWidth / ImgHeight. Canvas / SVG already clip.
+  Cropped SoftEdges still composite first so the halo sits on the visible
+  window. A second save does not stack another PNG.
 - OLE pictures that carry an OlePres WMF/EMF preview now keep that drawing
   in LibreOffice. Draw paints the default Blue 2 graphic style for
   `ForeignType=Object` / `object/ole`, so a save unwraps `\x02OlePres000`

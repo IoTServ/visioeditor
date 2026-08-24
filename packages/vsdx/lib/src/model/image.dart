@@ -287,9 +287,11 @@ bool visioImageAdjustmentsNeedBake({
 
 /// `true` when ImgOffset / ImgWidth / ImgHeight do not fill the Foreign frame.
 ///
-/// libvisio collects those cells, so an uncropped SoftEdges bake can feather
-/// the PNG in place. A cropped frame has to be composited first or Draw
-/// would crop a halo that lives on the wrong edges.
+/// libvisio emits `svg:width` / `svg:height` from those cells, so Draw paints
+/// the unclipped bitmap (it does not clip to the Foreign box). Canvas / SVG
+/// already clip. A save composites that window into a frame-sized PNG.
+/// Cropped SoftEdges still composite first so the halo sits on the visible
+/// window rather than the hidden bitmap edge.
 bool visioPictureFrameIsCropped({
   required double frameWidthInches,
   required double frameHeightInches,
@@ -316,10 +318,10 @@ bool visioPictureFrameIsCropped({
 /// bitmap. Returns `null` when the blob cannot be decoded or nothing
 /// changes.
 ///
-/// Pass the Foreign frame size together with Img* crop cells when SoftEdges
-/// has to survive a crop: the PNG is then the clipped, feathered frame and
-/// the caller must reset ImgOffset / ImgWidth / ImgHeight so Draw does not
-/// crop it a second time.
+/// Pass the Foreign frame size together with Img* crop cells when the bitmap
+/// is cropped (or SoftEdges has to survive a crop): the PNG is then the
+/// clipped frame and the caller must reset ImgOffset / ImgWidth / ImgHeight
+/// so Draw does not paint the overflow a second time.
 Uint8List? bakeVisioImageAdjustmentsPng({
   required VsdxImage image,
   required double transparency,
@@ -335,13 +337,24 @@ Uint8List? bakeVisioImageAdjustmentsPng({
   double? imgWidthInches,
   double? imgHeightInches,
 }) {
+  final cropIntoFrame = frameWidthInches.abs() > 1e-6 &&
+      frameHeightInches.abs() > 1e-6 &&
+      visioPictureFrameIsCropped(
+        frameWidthInches: frameWidthInches,
+        frameHeightInches: frameHeightInches,
+        imgOffsetXInches: imgOffsetXInches,
+        imgOffsetYInches: imgOffsetYInches,
+        imgWidthInches: imgWidthInches,
+        imgHeightInches: imgHeightInches,
+      );
   if (!visioImageAdjustmentsNeedBake(
-    transparency: transparency,
-    blur: blur,
-    brightness: brightness,
-    contrast: contrast,
-    softEdgesInches: softEdgesInches,
-  )) {
+        transparency: transparency,
+        blur: blur,
+        brightness: brightness,
+        contrast: contrast,
+        softEdgesInches: softEdgesInches,
+      ) &&
+      !cropIntoFrame) {
     return null;
   }
   final payload = image.rasterForRendering();
@@ -375,16 +388,6 @@ Uint8List? bakeVisioImageAdjustmentsPng({
     var featherTop = 0;
     var featherRight = work.width - 1;
     var featherBottom = work.height - 1;
-    final cropIntoFrame = frameWidthInches.abs() > 1e-6 &&
-        frameHeightInches.abs() > 1e-6 &&
-        visioPictureFrameIsCropped(
-          frameWidthInches: frameWidthInches,
-          frameHeightInches: frameHeightInches,
-          imgOffsetXInches: imgOffsetXInches,
-          imgOffsetYInches: imgOffsetYInches,
-          imgWidthInches: imgWidthInches,
-          imgHeightInches: imgHeightInches,
-        );
     if (cropIntoFrame) {
       final composited = _compositeVisioPictureIntoFrame(
         source: work,
