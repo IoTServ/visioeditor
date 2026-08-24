@@ -190,6 +190,12 @@
 /// save inserts U+0305 combining overlines and clears the cell, including
 /// tabbed runs (U+0009 keeps its `tabIndices` stop) and field runs
 /// (UTF-16 `<fld>` spans grow around each mark).
+/// Character DoubleStrikethrough *is* collected (`style:text-line-through-type`
+/// double) but Draw's drawing-text import paints it as a single strike,
+/// while canvas / SVG already draw two bars. A save inserts U+0336
+/// combining long-stroke overlays, keeps `Strikethrough` so Draw still
+/// paints one bar, and clears DoubleStrikethrough — tabs keep their
+/// `tabIndices` stop and `<fld>` UTF-16 spans grow around each mark.
 /// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
@@ -362,15 +368,17 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                   bakeCurvedTextForLibvisioWrite(
                                     bakeShapeOpacityForLibvisioWrite(
                                       bakeLangIdRtlForLibvisioWrite(
-                                        bakeOverlineForLibvisioWrite(
-                                          bakeMixedHighlightForLibvisioWrite(
-                                            bakeLooseEdgeLabelForLibvisioWrite(
-                                              bakeAutoRotateLabelForLibvisioWrite(
-                                                bakeTextDirectionForLibvisioWrite(
-                                                  bakeBulletGlyphForLibvisioWrite(
-                                                    bakeMetafileBitmapsForLibvisioWrite(
-                                                      bakeOlePreviewsForLibvisioWrite(
-                                                        hopped,
+                                        bakeDoubleStrikethroughForLibvisioWrite(
+                                          bakeOverlineForLibvisioWrite(
+                                            bakeMixedHighlightForLibvisioWrite(
+                                              bakeLooseEdgeLabelForLibvisioWrite(
+                                                bakeAutoRotateLabelForLibvisioWrite(
+                                                  bakeTextDirectionForLibvisioWrite(
+                                                    bakeBulletGlyphForLibvisioWrite(
+                                                      bakeMetafileBitmapsForLibvisioWrite(
+                                                        bakeOlePreviewsForLibvisioWrite(
+                                                          hopped,
+                                                        ),
                                                       ),
                                                     ),
                                                   ),
@@ -4176,6 +4184,154 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
   for (final page in document.pages) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes) bakeOverlineShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// Combining long stroke Draw needs because double line-through collapses
+/// to a single bar.
+const kLibvisioCombiningLongStroke = '\u0336';
+
+bool _runeTakesCombiningLongStroke(int rune) {
+  if (rune == 0x0336) return false;
+  if (rune == 0x09 || rune == 0x0A || rune == 0x0D) return false;
+  if (rune == 0x20 || rune == 0xA0) return false;
+  if (_isCombiningMarkRune(rune)) return false;
+  return true;
+}
+
+/// Insert U+0336 after each visible glyph so Draw's single strike plus
+/// this overlay reads as two bars.
+String textWithCombiningLongStroke(String text) {
+  if (text.contains(kLibvisioCombiningLongStroke)) return text;
+  final buf = StringBuffer();
+  for (final rune in text.runes) {
+    buf.writeCharCode(rune);
+    if (_runeTakesCombiningLongStroke(rune)) {
+      buf.write(kLibvisioCombiningLongStroke);
+    }
+  }
+  return buf.toString();
+}
+
+bool _runNeedsLibvisioDoubleStrikethroughBake(VsdxTextRun run) {
+  if (!run.charStyle.doubleStrikethrough) return false;
+  if (run.text.isEmpty) return false;
+  if (run.text.contains(kLibvisioCombiningLongStroke)) return false;
+  for (final rune in run.text.runes) {
+    if (_runeTakesCombiningLongStroke(rune)) return true;
+  }
+  return false;
+}
+
+int _combiningLongStrokeMarksBefore(String text, int utf16Index) {
+  var n = 0;
+  var i = 0;
+  for (final rune in text.runes) {
+    if (i >= utf16Index) break;
+    if (_runeTakesCombiningLongStroke(rune)) n++;
+    i += rune > 0xFFFF ? 2 : 1;
+  }
+  return n;
+}
+
+List<VsdxFieldSpan> _shiftFieldSpansForCombiningLongStroke(
+  String text,
+  List<VsdxFieldSpan> spans,
+) {
+  if (spans.isEmpty) return spans;
+  return <VsdxFieldSpan>[
+    for (final span in spans)
+      VsdxFieldSpan(
+        start: span.start + _combiningLongStrokeMarksBefore(text, span.start),
+        length: span.length +
+            _combiningLongStrokeMarksBefore(text, span.start + span.length) -
+            _combiningLongStrokeMarksBefore(text, span.start),
+        ix: span.ix,
+      ),
+  ];
+}
+
+/// `true` when Character DoubleStrikethrough must become a combining overlay.
+bool shapeNeedsLibvisioDoubleStrikethroughBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (_runNeedsLibvisioDoubleStrikethroughBake(run)) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeDoubleStrikethroughShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeDoubleStrikethroughShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioDoubleStrikethroughBake(shape)) {
+    final runs = <VsdxTextRun>[
+      for (final run in shape.richText.runs)
+        if (_runNeedsLibvisioDoubleStrikethroughBake(run))
+          run.copyWith(
+            text: textWithCombiningLongStroke(run.text),
+            charStyle: run.charStyle.copyWith(
+              strikethrough: true,
+              doubleStrikethrough: false,
+            ),
+            fieldSpans: _shiftFieldSpansForCombiningLongStroke(
+              run.text,
+              run.fieldSpans,
+            ),
+          )
+        else
+          run,
+    ];
+    next = shape.copyWith(
+      text: VsdxRichText(runs: runs, textBlock: shape.richText.textBlock)
+          .plainText,
+      richText: shape.richText.copyWith(runs: runs),
+    );
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Rewrite DoubleStrikethrough into a combining overlay Draw will paint.
+VsdxDocument bakeDoubleStrikethroughForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeDoubleStrikethroughShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

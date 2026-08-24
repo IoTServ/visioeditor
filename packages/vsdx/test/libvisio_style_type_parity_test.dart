@@ -655,6 +655,141 @@ void main() {
     );
   });
 
+  test('Character DoubleStrikethrough bakes combining U+0336 for LibreOffice',
+      () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'DStrike',
+    ).copyWith(
+      text: 'AB',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'AB',
+            charStyle: VsdxCharStyle(doubleStrikethrough: true),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioDoubleStrikethroughBake(shape), isTrue);
+    final baked = bakeDoubleStrikethroughShapeForLibvisioWrite(shape);
+    expect(baked.richText.runs.single.charStyle.doubleStrikethrough, isFalse);
+    expect(baked.richText.runs.single.charStyle.strikethrough, isTrue);
+    expect(
+      baked.richText.runs.single.text,
+      contains(kLibvisioCombiningLongStroke),
+    );
+    expect(baked.text, contains(kLibvisioCombiningLongStroke));
+  });
+
+  test('Character DoubleStrikethrough bakes combining marks past field spans',
+      () {
+    const para = VsdxParaStyle();
+    const body = VsdxCharStyle(
+      fontFamily: 'Arial',
+      fontSizeInches: 0.3,
+      doubleStrikethrough: true,
+      color: VsdxColor(0xFF000000),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1,
+      name: 'DStrikeFieldBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'X42',
+      fields: const <VsdxFieldRow>[
+        VsdxFieldRow(
+          ix: 0,
+          value: '42',
+          valueFormula: 'PAGENUMBER()',
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'X42',
+            charStyle: body,
+            paraStyle: para,
+            fieldSpans: <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 1, length: 2, ix: 0),
+            ],
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioDoubleStrikethroughBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final run = source.richText.runs.single;
+    expect(run.charStyle.doubleStrikethrough, isFalse);
+    expect(run.charStyle.strikethrough, isTrue);
+    expect(
+      run.text,
+      'X${kLibvisioCombiningLongStroke}4${kLibvisioCombiningLongStroke}2${kLibvisioCombiningLongStroke}',
+    );
+    expect(
+      run.fieldSpans.single,
+      const VsdxFieldSpan(start: 2, length: 4, ix: 0),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      run.text,
+      reason: 'a second save must not stack another long-stroke overlay',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .fieldSpans,
+      run.fieldSpans,
+      reason: 'a second save must not grow <fld> again',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.first.charStyle.doubleStrikethrough, isFalse);
+    expect(after.richText.runs.first.charStyle.strikethrough, isTrue);
+    expect(
+      after.richText.runs.first.text,
+      contains(kLibvisioCombiningLongStroke),
+    );
+    expect(
+      after.richText.runs.first.fieldSpans.single,
+      const VsdxFieldSpan(start: 2, length: 4, ix: 0),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(
+      oracle.svgPages(saved)?.join() ?? '',
+      contains(kLibvisioCombiningLongStroke),
+    );
+  });
+
   test('Character LangID RTL bakes a leading U+200F for LibreOffice', () {
     VsdxShape box(String name, String text, {String? langId}) =>
         VsdxShapeFactory.rectangle(

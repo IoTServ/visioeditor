@@ -2610,6 +2610,78 @@ void main() {
         ),
       ),
     );
+    var doubleStrikeDocument = parser.parse(blank);
+    doubleStrikeDocument = doubleStrikeDocument.replacePage(
+      0,
+      doubleStrikeDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: doubleStrikeDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 1.4,
+          name: 'DoubleStrike',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'IIII',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'IIII',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.5,
+                  doubleStrikethrough: true,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    var doubleStrikeFieldDocument = parser.parse(blank);
+    doubleStrikeFieldDocument = doubleStrikeFieldDocument.replacePage(
+      0,
+      doubleStrikeFieldDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: doubleStrikeFieldDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 1.4,
+          name: 'DoubleStrikeField',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: '42',
+          fields: const <VsdxFieldRow>[
+            VsdxFieldRow(
+              ix: 0,
+              value: '42',
+              valueFormula: 'PAGENUMBER()',
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '42',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.5,
+                  doubleStrikethrough: true,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+                fieldSpans: <VsdxFieldSpan>[
+                  VsdxFieldSpan(start: 0, length: 2, ix: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var langIdRtlFieldDocument = parser.parse(blank);
     langIdRtlFieldDocument = langIdRtlFieldDocument.replacePage(
       0,
@@ -5561,6 +5633,14 @@ void main() {
         originalBytes: blank,
         edited: overlineFieldDocument,
       ),
+      'double_strike': writer.write(
+        originalBytes: blank,
+        edited: doubleStrikeDocument,
+      ),
+      'double_strike_field': writer.write(
+        originalBytes: blank,
+        edited: doubleStrikeFieldDocument,
+      ),
       'lang_id_rtl_field': writer.write(
         originalBytes: blank,
         edited: langIdRtlFieldDocument,
@@ -6815,6 +6895,90 @@ void main() {
             magentaPixels,
             greaterThan(12),
             reason: 'LibreOffice must paint the overlined field Value; '
+                'magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'double_strike') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'DoubleStrike');
+          expect(shape.richText.runs.single.charStyle.doubleStrikethrough,
+              isFalse);
+          expect(shape.richText.runs.single.charStyle.strikethrough, isTrue);
+          expect(
+            shape.richText.plainText,
+            contains(kLibvisioCombiningLongStroke),
+          );
+        }
+        if (entry.key == 'double_strike' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(20),
+            reason: 'LibreOffice must paint the double-strikethrough overlay; '
+                'magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'double_strike_field') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'DoubleStrikeField');
+          expect(shape.richText.runs.single.charStyle.doubleStrikethrough,
+              isFalse);
+          expect(shape.richText.runs.single.charStyle.strikethrough, isTrue);
+          expect(
+            shape.richText.plainText,
+            contains(kLibvisioCombiningLongStroke),
+          );
+          expect(
+            shape.richText.runs.single.fieldSpans.single,
+            const VsdxFieldSpan(start: 0, length: 4, ix: 0),
+          );
+        }
+        if (entry.key == 'double_strike_field' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(12),
+            reason: 'LibreOffice must paint the double-strikethrough field; '
                 'magentaPixels=$magentaPixels',
           );
         }

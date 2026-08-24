@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Double strikethrough now keeps two bars in LibreOffice. libvisio
+  emits `style:text-line-through-type="double"`, but Draw's drawing-text
+  import paints a single strike while canvas / SVG already draw two
+  bars. A save inserts U+0336 combining overlays, keeps `Strikethrough`
+  so Draw still paints one bar, and clears DoubleStrikethrough. Field
+  spans grow around those marks so `<fld>` stays on the cached Value.
+  A second save does not stack another overlay.
 - Theme-only hatch SoftEdges now keep the feathered strokes in
   LibreOffice. `SoftEdgesSize` is not a token; a save already bakes RGB
   hatch and theme-only FillBkgnd into a feathered PNG, but a theme-only
