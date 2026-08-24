@@ -139,7 +139,9 @@
 /// (resolved-RGB and theme-only FillGradient / classic 25–40 washes and
 /// FillPattern 2–24 hatches are painted into that PNG so Draw does not
 /// keep a hard fill, including an RGB hatch whose FillBkgnd is
-/// theme-only). Theme-only FillForegnd / LineColor / gradient
+/// theme-only and a theme-only FillForegnd hatch whose strokes freeze
+/// through the document theme, then Office). Theme-only FillForegnd /
+/// LineColor / gradient
 /// stops resolve through the document theme, then Office, into that PNG
 /// so Draw keeps the feather. Then
 /// SoftEdgesSize is written 0 and the source fill is dropped so the
@@ -7080,10 +7082,14 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
       return false;
     }
   } else if (libvisioHatchSpec(shape.fill.pattern) != null) {
-    // Theme-only FillForegnd still skips: a bake drops the hatch cells
-    // (audit_probe keeps theme FG/BG + SoftEdgesSize). RGB FG + theme
-    // FillBkgnd is safe — the PNG sampler already freezes that slot.
-    if (shape.fill.foreground == null) return false;
+    // Theme-only FillForegnd used to skip so THEMEVAL hatch cells
+    // survived, but Draw then painted a hard hatch (SoftEdgesSize is
+    // not a token). RGB hatch already bakes to PNG; freeze theme FG
+    // the same way theme FillBkgnd already freezes into that sampler.
+    if (shape.fill.foreground == null &&
+        shape.fill.themeForegroundIndex == null) {
+      return false;
+    }
   } else {
     if (shape.fill.pattern != 1) return false;
     if (shape.fill.foreground == null &&

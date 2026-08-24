@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Theme-only hatch SoftEdges now keep the feathered strokes in
+  LibreOffice. `SoftEdgesSize` is not a token; a save already bakes RGB
+  hatch and theme-only FillBkgnd into a feathered PNG, but a theme-only
+  FillForegnd used to skip so Draw painted a hard hatch while canvas
+  already feathers `_colourOrTheme`. A save now resolves the slot
+  (document theme, then Office) into that same PNG. A second save does
+  not stack another plate.
 - Opaque theme fills now keep their colour in LibreOffice. libvisio's
   `VSDFillStyle::override` applies explicit FillForegnd after the theme,
   so `THEMEVAL()` plus `V="0"` painted palette black, while canvas / SVG

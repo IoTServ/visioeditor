@@ -3359,6 +3359,73 @@ void main() {
     );
   });
 
+  test('hatch SoftEdges freezes theme-only FillForegnd for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'HatchSoftThemeFg',
+      fill: const VsdxFill(
+        themeForegroundIndex: ThemeSlot.accent2,
+        background: VsdxColor(0xFF0000FF),
+        pattern: 6,
+      ),
+      line: const VsdxLine(pattern: 0, softEdgesInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+    expect(shape.fill.foreground, isNull);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.line.softEdgesInches, closeTo(0, 1e-9));
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final expected = VsdxTheme.office.resolve(ThemeSlot.accent2)!;
+    var themeInk = 0;
+    var blueInk = 0;
+    final x = decoded.width ~/ 2;
+    for (var y = decoded.height ~/ 4; y < decoded.height * 3 ~/ 4; y++) {
+      final p = decoded.getPixel(x, y);
+      if (p.a < 80) continue;
+      if (p.b > p.r + 40) blueInk++;
+      if (p.r > p.b + 20 &&
+          (p.r - expected.red).abs() < 40 &&
+          (p.g - expected.green).abs() < 40) {
+        themeInk++;
+      }
+    }
+    expect(
+      themeInk,
+      greaterThan(2),
+      reason: 'SoftEdges PNG must freeze theme FillForegnd strokes; '
+          'themeInk=$themeInk blueInk=$blueInk',
+    );
+    expect(
+      blueInk,
+      greaterThan(themeInk),
+      reason: 'SoftEdges PNG must keep the blue hatch background; '
+          'themeInk=$themeInk blueInk=$blueInk',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another SoftEdges plate',
+    );
+  });
+
   test('theme-only LineColorTrans freezes when a ribbon cannot bake', () {
     final shape = VsdxShape(
       id: 1,
