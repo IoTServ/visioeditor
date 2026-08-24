@@ -5171,6 +5171,91 @@ void main() {
     );
   });
 
+  test('Curved Text bakes mixed Character Highlight onto glyph plates', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 1.0,
+      height: 3.0,
+      name: 'ArcHighlight',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withCurvedText(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFF000000),
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'RC',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFF000000),
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+          ),
+        );
+    expect(shapeNeedsLibvisioCurvedTextBake(shape), isTrue);
+    expect(shapeNeedsLibvisioMixedHighlightBake(shape), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.curvedText, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(baked.pages.first.shapes.where(isLibvisioHighlightPlate), isEmpty);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioCurvedTextPlate).toList()
+          ..sort(
+            (a, b) => int.parse(a.name.split('.')[1])
+                .compareTo(int.parse(b.name.split('.')[1])),
+          );
+    expect(plates, hasLength(3));
+    expect(plates.map((p) => p.richText.plainText).join(), 'ARC');
+    expect(plates[0].fill.pattern, 1);
+    expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+    expect(plates[1].fill.pattern, 1);
+    expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+    expect(plates[2].fill.foreground?.value, 0xFF00FF00);
+    expect(
+      plates.every((p) => p.richText.runs.single.charStyle.highlight == null),
+      isTrue,
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioCurvedTextPlate),
+      hasLength(3),
+      reason: 'a second save must not stack another Curved Text plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    expect(
+      parser.parse(saved).pages.first.shapes.where(isLibvisioCurvedTextPlate),
+      hasLength(3),
+    );
+  });
+
   test('Shape Inside bakes per-line siblings for LibreOffice', () {
     VsdxShape oval({
       required int id,
@@ -5363,6 +5448,95 @@ void main() {
     expect(
       parser.parse(saved).pages.first.shapes.where(isLibvisioShapeInsidePlate),
       hasLength(plates.length),
+    );
+  });
+
+  test('Shape Inside bakes mixed Character Highlight onto line plates', () {
+    final shape = VsdxShapeFactory.ellipse(
+      id: 1,
+      pinX: 4,
+      pinY: 5,
+      width: 3,
+      height: 4,
+      name: 'OvalHighlight',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    ).withShapeInside(true).copyWith(
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'HI ',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.22,
+                  color: VsdxColor(0xFF000000),
+                  highlight: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+              VsdxTextRun(
+                text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.22,
+                  color: VsdxColor(0xFF000000),
+                  highlight: VsdxColor(0xFF00FF00),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.center,
+                ),
+              ),
+            ],
+            textBlock: VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        );
+    expect(shape.supportsShapeInside, isTrue);
+    expect(shapeNeedsLibvisioShapeInsideBake(shape), isTrue);
+    expect(shapeNeedsLibvisioMixedHighlightBake(shape), isFalse);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shapeInside, isFalse);
+    expect(source.richText.textBlock.hideText, isTrue);
+    expect(baked.pages.first.shapes.where(isLibvisioHighlightPlate), isEmpty);
+    final plates =
+        baked.pages.first.shapes.where(isLibvisioShapeInsidePlate).toList();
+    expect(plates, isNotEmpty);
+    expect(
+      plates.any((p) => p.fill.foreground?.value == 0xFFFF00FF),
+      isTrue,
+    );
+    expect(
+      plates.any((p) => p.fill.foreground?.value == 0xFF00FF00),
+      isTrue,
+    );
+    expect(
+      plates
+          .map((p) => p.richText.plainText)
+          .join()
+          .replaceAll(' ', ''),
+      'HISHAPEINSIDEFLOWALONGTHEELLIPSE',
+    );
+    expect(
+      plates.every((p) => p.richText.runs.single.charStyle.highlight == null),
+      isTrue,
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShapeInsidePlate)
+          .length,
+      plates.length,
+      reason: 'a second save must not stack another Shape Inside plate',
     );
   });
 

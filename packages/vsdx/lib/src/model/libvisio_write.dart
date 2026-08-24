@@ -4052,7 +4052,9 @@ VsdxDocument bakeOverlineForLibvisioWrite(VsdxDocument document) {
 /// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`).
 /// Vertical text is folded into `TxtAngle` first so plate centres
 /// follow TxtPin. Glueable labels get a route TxtPin first, then the
-/// same plates; authored TextBkgnd stays native.
+/// same plates; authored TextBkgnd stays native. Curved Text and
+/// Shape Inside skip these siblings — those bakes put Highlight on
+/// their own FillForegnd plates so Draw follows the arc / outline.
 bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.curvedText || shape.shapeInside) return false;
@@ -4640,6 +4642,8 @@ const _kLibvisioCurvedTextMaxGlyphs = 64;
 /// canvas / SVG already paint `\t` as a gap on the arc, not a stop.
 /// Combining marks (Overline's U+0305) and bidi marks stay on the
 /// preceding glyph so Draw does not park an orphan plate on the arc.
+/// Character Highlight (`readCharIX` is an empty case) becomes
+/// FillForegnd on each glyph plate so mixed markers follow the arc.
 /// Glueable 1-D labels, vertical text and TxtAngle stay native. FlipX /
 /// FlipY extra text mirrors about TxtPin are baked so Draw keeps the
 /// upright arc.
@@ -4677,23 +4681,49 @@ String _libvisioInitialCaps(String text) {
   return buf.toString();
 }
 
-String _curvedTextPlain(VsdxShape shape) {
-  final raw =
-      shape.richText.isEmpty ? (shape.text ?? '') : shape.richText.plainText;
-  var text = raw
-      .replaceAll('\n', ' ')
-      .replaceAll('\r', ' ')
-      .replaceAll('\t', ' ')
-      .trim();
-  final style = shape.richText.runs.isNotEmpty
-      ? shape.richText.runs.first.charStyle
-      : VsdxCharStyle.defaults;
-  return switch (style.textCase) {
-    VsdxTextCase.allCaps => text.toUpperCase(),
-    VsdxTextCase.initialCaps => _libvisioInitialCaps(text),
-    VsdxTextCase.normal => text,
-  };
+String _libvisioApplyTextCase(String text, VsdxTextCase textCase) =>
+    switch (textCase) {
+      VsdxTextCase.allCaps => text.toUpperCase(),
+      VsdxTextCase.initialCaps => _libvisioInitialCaps(text),
+      VsdxTextCase.normal => text,
+    };
+
+/// Per-glyph style on the arc. Combining marks keep the preceding
+/// glyph's style when [_curvedTextPlatesForLibvisioWrite] clusters them.
+List<({int rune, VsdxCharStyle style})> _curvedTextStyledRunes(
+  VsdxShape shape,
+) {
+  final out = <({int rune, VsdxCharStyle style})>[];
+  void addText(String raw, VsdxCharStyle style) {
+    final text = _libvisioApplyTextCase(
+      raw.replaceAll('\n', ' ').replaceAll('\r', ' ').replaceAll('\t', ' '),
+      style.textCase,
+    );
+    final normalized = style.copyWith(textCase: VsdxTextCase.normal);
+    for (final r in text.runes) {
+      out.add((rune: r, style: normalized));
+    }
+  }
+
+  if (shape.richText.runs.isNotEmpty) {
+    for (final run in shape.richText.runs) {
+      addText(run.text, run.charStyle);
+    }
+  } else {
+    addText(shape.text ?? '', _curvedTextStyle(shape));
+  }
+  while (out.isNotEmpty && out.first.rune == 0x20) {
+    out.removeAt(0);
+  }
+  while (out.isNotEmpty && out.last.rune == 0x20) {
+    out.removeLast();
+  }
+  return out;
 }
+
+String _curvedTextPlain(VsdxShape shape) => String.fromCharCodes(
+      _curvedTextStyledRunes(shape).map((g) => g.rune),
+    );
 
 VsdxCharStyle _curvedTextStyle(VsdxShape shape) {
   final style = shape.richText.runs.isNotEmpty
@@ -4742,8 +4772,7 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
   required List<int> plateIds,
   required int Function() nextId,
 }) {
-  final style = _curvedTextStyle(source);
-  final plain = _curvedTextPlain(source);
+  final glyphs = _curvedTextStyledRunes(source);
   final block = source.richText.textBlock;
   final tw = (block.widthInches ?? source.width).abs();
   final th = (block.heightInches ?? source.height).abs();
@@ -4772,12 +4801,11 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
   }
   final arcLen = cum.last;
   if (arcLen <= 1e-9) return const <VsdxShape>[];
-  final runes = plain.runes.toList(growable: false);
   final widths = <double>[
-    for (final r in runes)
-      _curvedTextClusterMark(r)
+    for (final g in glyphs)
+      _curvedTextClusterMark(g.rune)
           ? 0.0
-          : nowrapTextAdvanceInches(String.fromCharCode(r), style),
+          : nowrapTextAdvanceInches(String.fromCharCode(g.rune), g.style),
   ];
   var totalW = 0.0;
   for (final w in widths) {
@@ -4788,10 +4816,10 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
   var cursor = pad;
   var glyph = 0;
   var pendingMarks = '';
-  for (var i = 0; i < runes.length; i++) {
+  for (var i = 0; i < glyphs.length; i++) {
     final w = widths[i];
-    final ch = String.fromCharCode(runes[i]);
-    if (_curvedTextClusterMark(runes[i])) {
+    final ch = String.fromCharCode(glyphs[i].rune);
+    if (_curvedTextClusterMark(glyphs[i].rune)) {
       if (out.isNotEmpty) {
         final last = out.removeLast();
         final next = '${last.text ?? ''}$ch';
@@ -4809,9 +4837,12 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
       }
       continue;
     }
-    if (runes[i] != 0x20 && ch.trim().isNotEmpty) {
+    if (glyphs[i].rune != 0x20 && ch.trim().isNotEmpty) {
       final cluster = '$pendingMarks$ch';
       pendingMarks = '';
+      final glyphStyle = glyphs[i].style;
+      final highlight = glyphStyle.highlight;
+      final plateStyle = glyphStyle.copyWith(clearHighlight: true);
       final centerDist = (cursor + w / 2).clamp(0.0, arcLen);
       final t = _arcTForDistance(cum, centerDist);
       final pos = _quadBezPoint(p0, p1, p2, t);
@@ -4822,7 +4853,7 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
         Offset2D(originX + pos.x, originY + th - pos.y),
       );
       final page = _parentFromLocal(source, local);
-      final fs = math.max(style.effectiveFontSizeInchesForText(ch), 0.04);
+      final fs = math.max(glyphStyle.effectiveFontSizeInchesForText(ch), 0.04);
       // Wider / taller than the advance so Draw's wrap-at-svg:width and
       // baseline padding cannot clip a single rotated glyph.
       final gw = math.max(w, fs) * 1.2;
@@ -4835,7 +4866,9 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
           pinY: page.y,
           width: gw,
           height: gh,
-          fill: const VsdxFill(pattern: 0),
+          fill: highlight != null
+              ? VsdxFill(foreground: highlight, pattern: 1)
+              : const VsdxFill(pattern: 0),
           line: const VsdxLine(pattern: 0),
           name: '$kLibvisioCurvedTextShapeNamePrefix$glyph.${source.id}',
         ).copyWith(
@@ -4849,7 +4882,7 @@ List<VsdxShape> _curvedTextPlatesForLibvisioWrite(
             runs: <VsdxTextRun>[
               VsdxTextRun(
                 text: cluster,
-                charStyle: style,
+                charStyle: plateStyle,
                 paraStyle: const VsdxParaStyle(
                   horizontalAlign: VsdxHorzAlign.center,
                 ),
@@ -5032,7 +5065,9 @@ bool _shapeInsideDefaultTextBlock(VsdxShape shape) {
 /// wrapped band canvas / SVG already paint, then hides the source and
 /// drops the User row. Tab fields become spaces — canvas wrap units
 /// already treat `\t` as a blank, and SVG skips outline flow when a
-/// tab is present. Glueable 1-D labels, vertical text, curved text
+/// tab is present. Character Highlight (`readCharIX` is empty) becomes
+/// FillForegnd on each band's plates so mixed markers follow the
+/// outline. Glueable 1-D labels, vertical text, curved text
 /// and TxtAngle stay native. FlipX / FlipY extra text mirrors about
 /// TxtPin are baked so Draw keeps the upright bands.
 bool shapeNeedsLibvisioShapeInsideBake(VsdxShape shape) {
@@ -5184,11 +5219,303 @@ List<String> _wrapShapeInsideParagraph(
   return (left: left, right: math.max(left + 0.01, right));
 }
 
+typedef _InsideUnit = ({
+  String text,
+  VsdxCharStyle style,
+  VsdxParaStyle para,
+  double width,
+});
+
+bool _shapeInsideHasHighlight(VsdxShape shape) {
+  for (final run in shape.richText.runs) {
+    if (run.text.trim().isEmpty) continue;
+    if (run.charStyle.highlight != null) return true;
+  }
+  return false;
+}
+
+bool _sameInsidePaintStyle(VsdxCharStyle a, VsdxCharStyle b) =>
+    a.highlight?.value == b.highlight?.value &&
+    a.color?.value == b.color?.value &&
+    a.fontFamily == b.fontFamily &&
+    a.fontSizeInches == b.fontSizeInches;
+
+List<_InsideUnit> _mergeInsideUnits(List<_InsideUnit> units) {
+  if (units.isEmpty) return units;
+  final out = <_InsideUnit>[];
+  for (final u in units) {
+    if (out.isNotEmpty &&
+        _sameInsidePaintStyle(out.last.style, u.style) &&
+        out.last.para.effectiveHorizontalAlign ==
+            u.para.effectiveHorizontalAlign) {
+      final last = out.removeLast();
+      out.add((
+        text: last.text + u.text,
+        style: last.style,
+        para: last.para,
+        width: last.width + u.width,
+      ));
+    } else {
+      out.add(u);
+    }
+  }
+  return out;
+}
+
+List<List<_InsideUnit>> _shapeInsideHighlightParagraphs(VsdxShape shape) {
+  final paragraphs = <List<_InsideUnit>>[<_InsideUnit>[]];
+  for (final run in shape.richText.runs) {
+    final style = run.charStyle.copyWith(textCase: VsdxTextCase.normal);
+    final cased = _libvisioApplyTextCase(run.text, run.charStyle.textCase)
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .replaceAll('\t', ' ');
+    final parts = cased.split('\n');
+    for (var i = 0; i < parts.length; i++) {
+      if (parts[i].isNotEmpty) {
+        for (final unit in _libvisioWrapUnits(parts[i])) {
+          paragraphs.last.add((
+            text: unit,
+            style: style,
+            para: run.paraStyle,
+            width: nowrapTextAdvanceInches(unit, style),
+          ));
+        }
+      }
+      if (i != parts.length - 1) paragraphs.add(<_InsideUnit>[]);
+    }
+  }
+  return paragraphs;
+}
+
+List<List<_InsideUnit>> _wrapShapeInsideStyledParagraph(
+  List<_InsideUnit> units,
+  double Function(int lineIndex) widthFor,
+) {
+  if (units.isEmpty) return <List<_InsideUnit>>[<_InsideUnit>[]];
+  final lines = <List<_InsideUnit>>[];
+  var cur = <_InsideUnit>[];
+  var curW = 0.0;
+  var lineMax = widthFor(0);
+
+  void flush() {
+    lines.add(cur);
+    cur = <_InsideUnit>[];
+    curW = 0.0;
+    lineMax = widthFor(lines.length);
+  }
+
+  for (final unit in units) {
+    final isBlank = unit.text.trim().isEmpty;
+    if (curW > 1e-9 && curW + unit.width > lineMax && !isBlank) {
+      flush();
+    }
+    if (cur.isEmpty && isBlank) continue;
+    if (unit.width > lineMax && unit.text.length > 1 && !isBlank) {
+      for (final r in unit.text.runes) {
+        final ch = String.fromCharCode(r);
+        final cw = nowrapTextAdvanceInches(ch, unit.style);
+        if (curW > 1e-9 && curW + cw > lineMax) flush();
+        cur.add((
+          text: ch,
+          style: unit.style,
+          para: unit.para,
+          width: cw,
+        ));
+        curW += cw;
+      }
+      continue;
+    }
+    cur.add(unit);
+    curW += unit.width;
+  }
+  if (cur.isNotEmpty || lines.isEmpty) flush();
+  return lines;
+}
+
+List<VsdxShape> _shapeInsideHighlightPlatesForLibvisioWrite(
+  VsdxShape source, {
+  required List<int> plateIds,
+  required int Function() nextId,
+}) {
+  final block = source.richText.textBlock;
+  final tw = (block.widthInches ?? source.width).abs();
+  final th = (block.heightInches ?? source.height).abs();
+  final ml = block.marginLeftInches;
+  final mr = block.marginRightInches;
+  final mt = block.marginTopInches;
+  final mb = block.marginBottomInches;
+  final padding = source.shapeInsidePaddingPx / kLibvisioShapeInsidePxPerInch;
+  final lineHeight = _shapeInsideLineHeight(source);
+  if (tw <= 1e-9 || th <= 1e-9 || lineHeight <= 1e-9) {
+    return const <VsdxShape>[];
+  }
+  final paragraphs = _shapeInsideHighlightParagraphs(source);
+  var top = mt;
+  var lines = <List<_InsideUnit>>[];
+  for (var pass = 0; pass < 3; pass++) {
+    lines = <List<_InsideUnit>>[];
+    var index = 0;
+    for (final paraUnits in paragraphs) {
+      final wrapped = _wrapShapeInsideStyledParagraph(
+        paraUnits,
+        (i) {
+          final y0 = top + (index + i) * lineHeight;
+          return _shapeInsideBandInches(
+                source,
+                y0: y0,
+                y1: y0 + lineHeight,
+                tw: tw,
+                th: th,
+                ml: ml,
+                mr: mr,
+                padding: padding,
+              ).right -
+              _shapeInsideBandInches(
+                source,
+                y0: y0,
+                y1: y0 + lineHeight,
+                tw: tw,
+                th: th,
+                ml: ml,
+                mr: mr,
+                padding: padding,
+              ).left;
+        },
+      );
+      lines.addAll(wrapped);
+      index += wrapped.length;
+    }
+    final total = lines.length * lineHeight;
+    top = switch (block.verticalAlign) {
+      VsdxVertAlign.top => mt,
+      VsdxVertAlign.bottom => th - mb - total,
+      VsdxVertAlign.middle => mt + (th - mt - mb - total) / 2,
+    };
+  }
+  var visible = 0;
+  for (final line in lines) {
+    if (line.any((u) => u.text.trim().isNotEmpty)) visible++;
+  }
+  if (visible == 0 || visible > _kLibvisioShapeInsideMaxLines) {
+    return const <VsdxShape>[];
+  }
+
+  final pinX = block.pinXInches ?? source.width / 2;
+  final pinY = block.pinYInches ?? source.height / 2;
+  final locX = block.locPinXInches ?? tw / 2;
+  final locY = block.locPinYInches ?? th / 2;
+  final originX = pinX - locX;
+  final originY = pinY - locY;
+  final out = <VsdxShape>[];
+  var glyph = 0;
+  for (var i = 0; i < lines.length; i++) {
+    final merged = _mergeInsideUnits(lines[i]);
+    if (merged.every((u) => u.text.trim().isEmpty)) continue;
+    final y0 = top + i * lineHeight;
+    final band = _shapeInsideBandInches(
+      source,
+      y0: y0,
+      y1: y0 + lineHeight,
+      tw: tw,
+      th: th,
+      ml: ml,
+      mr: mr,
+      padding: padding,
+    );
+    final bw = band.right - band.left;
+    var totalW = 0.0;
+    for (final u in merged) {
+      totalW += u.width;
+    }
+    final align = merged.isNotEmpty
+        ? merged.first.para.effectiveHorizontalAlign
+        : VsdxHorzAlign.left;
+    var origin = band.left;
+    switch (align) {
+      case VsdxHorzAlign.center:
+        origin += math.max(0.0, (bw - totalW) / 2);
+      case VsdxHorzAlign.right:
+        origin += math.max(0.0, bw - totalW);
+      case VsdxHorzAlign.left:
+      case VsdxHorzAlign.justify:
+      case VsdxHorzAlign.full:
+        break;
+    }
+    var x = origin;
+    final midYDown = y0 + lineHeight / 2;
+    for (final u in merged) {
+      final text = u.text;
+      if (text.trim().isNotEmpty) {
+        final highlight = u.style.highlight;
+        final plateStyle = u.style.copyWith(clearHighlight: true);
+        final pw = math.max(u.width, lineHeight) * 1.2;
+        final ph = lineHeight;
+        final local = _textFlipAboutPin(
+          source,
+          Offset2D(originX + x + u.width / 2, originY + th - midYDown),
+        );
+        final page = _parentFromLocal(source, local);
+        final id = glyph < plateIds.length ? plateIds[glyph] : nextId();
+        out.add(
+          VsdxShapeFactory.rectangle(
+            id: id,
+            pinX: page.x,
+            pinY: page.y,
+            width: pw,
+            height: ph,
+            fill: highlight != null
+                ? VsdxFill(foreground: highlight, pattern: 1)
+                : const VsdxFill(pattern: 0),
+            line: const VsdxLine(pattern: 0),
+            name: '$kLibvisioShapeInsideShapeNamePrefix$glyph.${source.id}',
+          ).copyWith(
+            locPinXInches: pw / 2,
+            locPinYInches: ph / 2,
+            angleRad: source.angleRad,
+            locked: true,
+            layerMemberIds: source.layerMemberIds,
+            text: text,
+            richText: VsdxRichText(
+              runs: <VsdxTextRun>[
+                VsdxTextRun(
+                  text: text,
+                  charStyle: plateStyle,
+                  paraStyle: const VsdxParaStyle(
+                    horizontalAlign: VsdxHorzAlign.center,
+                  ),
+                ),
+              ],
+              textBlock: VsdxTextBlock(
+                widthInches: pw,
+                heightInches: ph,
+                locPinXInches: pw / 2,
+                locPinYInches: ph / 2,
+                verticalAlign: VsdxVertAlign.middle,
+              ),
+            ),
+          ),
+        );
+        glyph++;
+      }
+      x += u.width;
+    }
+  }
+  return out;
+}
+
 List<VsdxShape> _shapeInsidePlatesForLibvisioWrite(
   VsdxShape source, {
   required List<int> plateIds,
   required int Function() nextId,
 }) {
+  if (_shapeInsideHasHighlight(source)) {
+    return _shapeInsideHighlightPlatesForLibvisioWrite(
+      source,
+      plateIds: plateIds,
+      nextId: nextId,
+    );
+  }
   final style = _shapeInsideStyle(source);
   final para = _shapeInsidePara(source);
   final plain = _shapeInsidePlain(source);

@@ -4310,6 +4310,51 @@ void main() {
             ),
       ),
     );
+    var curvedTextHighlightDocument = parser.parse(blank);
+    curvedTextHighlightDocument = curvedTextHighlightDocument.replacePage(
+      0,
+      curvedTextHighlightDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: curvedTextHighlightDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 1.0,
+          height: 3.0,
+          name: 'CurvedTextHighlight',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withCurvedText(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'A',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                      highlight: VsdxColor(0xFFFF00FF),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                  VsdxTextRun(
+                    text: 'RC',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.4,
+                      color: VsdxColor(0xFF000000),
+                      highlight: VsdxColor(0xFF00FF00),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+      ),
+    );
     var shapeInsideDocument = parser.parse(blank);
     final shapeInsidePage = shapeInsideDocument.pages.first;
     shapeInsideDocument = shapeInsideDocument.replacePage(
@@ -4368,6 +4413,54 @@ void main() {
                       fontFamily: 'Arial',
                       fontSizeInches: 0.22,
                       color: VsdxColor(0xFF000000),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                ],
+                textBlock: VsdxTextBlock(
+                  verticalAlign: VsdxVertAlign.top,
+                ),
+              ),
+            ),
+      ),
+    );
+    var shapeInsideHighlightDocument = parser.parse(blank);
+    shapeInsideHighlightDocument = shapeInsideHighlightDocument.replacePage(
+      0,
+      shapeInsideHighlightDocument.pages.first.addShape(
+        VsdxShapeFactory.ellipse(
+          id: shapeInsideHighlightDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 4,
+          name: 'ShapeInsideHighlight',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).withShapeInside(true).copyWith(
+              richText: const VsdxRichText(
+                runs: <VsdxTextRun>[
+                  VsdxTextRun(
+                    text: 'HI ',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFF000000),
+                      highlight: VsdxColor(0xFFFF00FF),
+                    ),
+                    paraStyle: VsdxParaStyle(
+                      horizontalAlign: VsdxHorzAlign.center,
+                    ),
+                  ),
+                  VsdxTextRun(
+                    text: 'SHAPE INSIDE FLOW ALONG THE ELLIPSE',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.22,
+                      color: VsdxColor(0xFF000000),
+                      highlight: VsdxColor(0xFF00FF00),
                     ),
                     paraStyle: VsdxParaStyle(
                       horizontalAlign: VsdxHorzAlign.center,
@@ -5301,6 +5394,10 @@ void main() {
         originalBytes: blank,
         edited: curvedTextOverlineDocument,
       ),
+      'curved_text_highlight': writer.write(
+        originalBytes: blank,
+        edited: curvedTextHighlightDocument,
+      ),
       'shape_inside': writer.write(
         originalBytes: blank,
         edited: shapeInsideDocument,
@@ -5308,6 +5405,10 @@ void main() {
       'shape_inside_flipy': writer.write(
         originalBytes: blank,
         edited: shapeInsideFlipDocument,
+      ),
+      'shape_inside_highlight': writer.write(
+        originalBytes: blank,
+        edited: shapeInsideHighlightDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -10895,6 +10996,119 @@ void main() {
             reason: 'LibreOffice must paint overlined C on the arc; '
                 'a=${inkAt(plates[0])} r=${inkAt(plates[1])} '
                 'c=${inkAt(plates[2])}',
+          );
+        }
+        if (entry.key == 'curved_text_highlight') {
+          final reopened = parser.parse(entry.value);
+          final plates = reopened.pages.first.shapes
+              .where(isLibvisioCurvedTextPlate)
+              .toList()
+            ..sort(
+              (a, b) => int.parse(a.name.split('.')[1])
+                  .compareTo(int.parse(b.name.split('.')[1])),
+            );
+          expect(plates, hasLength(3));
+          expect(plates[0].fill.foreground?.value, 0xFFFF00FF);
+          expect(plates[1].fill.foreground?.value, 0xFF00FF00);
+          expect(plates[2].fill.foreground?.value, 0xFF00FF00);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioHighlightPlate),
+            isEmpty,
+          );
+        }
+        if (entry.key == 'curved_text_highlight' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          var limePixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+              magentaPixels++;
+            }
+            if (pixel.g > 200 && pixel.r < 40) {
+              limePixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint magenta Highlight on arc A; '
+                'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+          expect(
+            limePixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint lime Highlight on arc R/C; '
+                'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+        }
+        if (entry.key == 'shape_inside_highlight') {
+          final reopened = parser.parse(entry.value);
+          final plates = reopened.pages.first.shapes
+              .where(isLibvisioShapeInsidePlate)
+              .toList();
+          expect(plates, isNotEmpty);
+          expect(
+            plates.any((p) => p.fill.foreground?.value == 0xFFFF00FF),
+            isTrue,
+          );
+          expect(
+            plates.any((p) => p.fill.foreground?.value == 0xFF00FF00),
+            isTrue,
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioHighlightPlate),
+            isEmpty,
+          );
+        }
+        if (entry.key == 'shape_inside_highlight' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          var limePixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 200 && pixel.g < 40 && pixel.b > 200) {
+              magentaPixels++;
+            }
+            if (pixel.g > 200 && pixel.r < 40) {
+              limePixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint magenta Highlight on outline HI; '
+                'magentaPixels=$magentaPixels limePixels=$limePixels',
+          );
+          expect(
+            limePixels,
+            greaterThan(10),
+            reason: 'LibreOffice must paint lime Highlight on outline flow; '
+                'magentaPixels=$magentaPixels limePixels=$limePixels',
           );
         }
         if ((entry.key == 'shape_inside' ||

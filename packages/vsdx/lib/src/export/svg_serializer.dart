@@ -5732,13 +5732,31 @@ class VsdxToSvgSerializer {
       coordinateScale: _svgTextUnitScale,
     );
     final body = StringBuffer();
-    _writeStyledTspans(
-      body,
-      raw: plain,
-      style: style,
-      theme: theme,
-      coordinateScale: _svgTextUnitScale,
-    );
+    final mixed = runs.length > 1;
+    if (mixed) {
+      for (final run in runs) {
+        final raw = run.text
+            .replaceAll('\n', ' ')
+            .replaceAll('\r', ' ')
+            .replaceAll('\t', ' ');
+        if (raw.isEmpty) continue;
+        _writeStyledTspans(
+          body,
+          raw: raw,
+          style: run.charStyle,
+          theme: theme,
+          coordinateScale: _svgTextUnitScale,
+        );
+      }
+    } else {
+      _writeStyledTspans(
+        body,
+        raw: plain,
+        style: style,
+        theme: theme,
+        coordinateScale: _svgTextUnitScale,
+      );
+    }
 
     final xf = StringBuffer('translate(${_n(pinX)} ${_n(pinY)})');
     if (angleRad != 0) {

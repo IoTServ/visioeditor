@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mixed Character Highlight now follows Curved Text and Shape Inside
+  in LibreOffice. `readCharIX` still skips `XML_HIGHLIGHT`, so mixed
+  markers already bake to FillForegnd plates on a rectangular label,
+  but an arc / outline used to skip that bake and paint every glyph
+  with the first run's style. Canvas / SVG now keep per-run markers
+  on the path, and a save puts each run's Highlight on the existing
+  Curved Text glyph plates and Shape Inside line plates so Draw
+  keeps the magenta / lime bands.
 - Curved Text now keeps Overline and LangID RTL marks on each glyph
   in LibreOffice. `readCharIX` still skips `XML_OVERLINE` and never
   stores LangID, so a save already inserts U+0305 / U+200F, but the

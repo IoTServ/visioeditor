@@ -2885,6 +2885,7 @@ class VsdxPainter extends CustomPainter {
         charStyle: hasRich && rich.runs.isNotEmpty
             ? rich.runs.first.charStyle
             : null,
+        runs: hasRich ? rich.runs : null,
         scale: s,
         twPx: twPx,
         thPx: thPx,
@@ -4369,12 +4370,14 @@ class VsdxPainter extends CustomPainter {
   }
 
   /// Place [plain] glyphs along a quadratic arc bowing upward inside the text
-  /// block (draw.io Curved Text). Uses the style from the first [spans] entry.
+  /// block (draw.io Curved Text). Mixed runs keep per-glyph Character
+  /// Highlight / colour from [runs]; otherwise the first [spans] style.
   void _paintCurvedText(
     Canvas canvas, {
     required List<TextSpan> spans,
     required String plain,
     required VsdxCharStyle? charStyle,
+    List<VsdxTextRun>? runs,
     required double scale,
     required double twPx,
     required double thPx,
@@ -4391,37 +4394,23 @@ class VsdxPainter extends CustomPainter {
     final baseStyle = spans.isNotEmpty && spans.first.style != null
         ? spans.first.style!
         : const TextStyle(color: Colors.black87, fontSize: 14);
-    VsdxCharStyle? glyphStyle;
-    if (charStyle != null) {
-      text = switch (charStyle.textCase) {
-        VsdxTextCase.allCaps => text.toUpperCase(),
-        VsdxTextCase.initialCaps => _initialCaps(text),
-        VsdxTextCase.normal => text,
-      };
-      glyphStyle = charStyle.copyWith(textCase: VsdxTextCase.normal);
-    }
 
     // Measure each character for arc-length placement.
     final chars = <String>[];
     final widths = <double>[];
     final painters = <TextPainter>[];
     var totalW = 0.0;
-    final textRunes = text.runes.toList();
-    if (visioTextDirection(text, langId: charStyle?.langId) ==
-        TextDirection.rtl) {
-      textRunes.setAll(0, textRunes.reversed);
-    }
-    for (final r in textRunes) {
-      final ch = String.fromCharCode(r);
+
+    void addGlyph(String ch, VsdxCharStyle? style) {
       final tp = TextPainter(
-        text: glyphStyle == null
+        text: style == null
             ? TextSpan(text: ch, style: baseStyle)
             : _runToSpan(
-                VsdxTextRun(text: ch, charStyle: glyphStyle),
+                VsdxTextRun(text: ch, charStyle: style),
                 scale,
                 backgroundColor: backgroundColor,
               ),
-        textDirection: visioTextDirection(ch, langId: glyphStyle?.langId),
+        textDirection: visioTextDirection(ch, langId: style?.langId),
         maxLines: 1,
       )..layout();
       chars.add(ch);
@@ -4429,7 +4418,63 @@ class VsdxPainter extends CustomPainter {
       painters.add(tp);
       totalW += tp.width;
     }
-    if (totalW <= 0) return;
+
+    if (runs != null && runs.isNotEmpty) {
+      for (final run in runs) {
+        var t = run.text
+            .replaceAll('\n', ' ')
+            .replaceAll('\r', ' ')
+            .replaceAll('\t', ' ');
+        t = switch (run.charStyle.textCase) {
+          VsdxTextCase.allCaps => t.toUpperCase(),
+          VsdxTextCase.initialCaps => _initialCaps(t),
+          VsdxTextCase.normal => t,
+        };
+        final gs = run.charStyle.copyWith(textCase: VsdxTextCase.normal);
+        for (final r in t.runes) {
+          addGlyph(String.fromCharCode(r), gs);
+        }
+      }
+      while (chars.isNotEmpty && chars.first.trim().isEmpty) {
+        totalW -= widths.removeAt(0);
+        chars.removeAt(0);
+        painters.removeAt(0).dispose();
+      }
+      while (chars.isNotEmpty && chars.last.trim().isEmpty) {
+        totalW -= widths.removeLast();
+        chars.removeLast();
+        painters.removeLast().dispose();
+      }
+    } else {
+      VsdxCharStyle? glyphStyle;
+      if (charStyle != null) {
+        text = switch (charStyle.textCase) {
+          VsdxTextCase.allCaps => text.toUpperCase(),
+          VsdxTextCase.initialCaps => _initialCaps(text),
+          VsdxTextCase.normal => text,
+        };
+        glyphStyle = charStyle.copyWith(textCase: VsdxTextCase.normal);
+      }
+      for (final r in text.runes) {
+        addGlyph(String.fromCharCode(r), glyphStyle);
+      }
+    }
+    if (chars.isEmpty || totalW <= 0) return;
+    if (visioTextDirection(chars.join(), langId: charStyle?.langId) ==
+        TextDirection.rtl) {
+      final revChars = chars.reversed.toList();
+      final revWidths = widths.reversed.toList();
+      final revPainters = painters.reversed.toList();
+      chars
+        ..clear()
+        ..addAll(revChars);
+      widths
+        ..clear()
+        ..addAll(revWidths);
+      painters
+        ..clear()
+        ..addAll(revPainters);
+    }
 
     // Quadratic arc: left → right along the text block, bowing upward (Y-down).
     final midY = thPx * 0.58;
