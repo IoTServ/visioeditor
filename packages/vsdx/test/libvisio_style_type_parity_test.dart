@@ -40,7 +40,8 @@
 /// `TextBkgndTrans` and layer `ColorTrans` have no VSDX collector case, so
 /// a save premultiplies those into RGB toward white. Overline still paints
 /// here even though `readCharIX` skips it; a save inserts U+0305 combining
-/// marks, including tabbed runs whose `tabIndices` still name the stop.
+/// marks, including tabbed runs whose `tabIndices` still name the stop
+/// and field runs whose `<fld>` UTF-16 spans grow around each mark.
 /// Glow* is not a token: unfilled
 /// 1-D strokes with resolved RGB bake a Gaussian PNG plate, unfilled 2-D
 /// with resolved RGB bakes a Gaussian PNG ring, and filled NoLine shapes
@@ -549,6 +550,104 @@ void main() {
     );
   });
 
+  test('Character Overline bakes combining marks past field spans', () {
+    const para = VsdxParaStyle();
+    const body = VsdxCharStyle(
+      fontFamily: 'Arial',
+      fontSizeInches: 0.3,
+      overline: true,
+      color: VsdxColor(0xFF000000),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1,
+      name: 'OverlineFieldBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'X42',
+      fields: const <VsdxFieldRow>[
+        VsdxFieldRow(
+          ix: 0,
+          value: '42',
+          valueFormula: 'PAGENUMBER()',
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'X42',
+            charStyle: body,
+            paraStyle: para,
+            fieldSpans: <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 1, length: 2, ix: 0),
+            ],
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioOverlineBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final run = source.richText.runs.single;
+    expect(run.charStyle.overline, isFalse);
+    expect(run.text, 'X${kLibvisioCombiningOverline}4${kLibvisioCombiningOverline}2${kLibvisioCombiningOverline}');
+    expect(
+      run.fieldSpans.single,
+      const VsdxFieldSpan(start: 2, length: 4, ix: 0),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      run.text,
+      reason: 'a second save must not stack another overline',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .fieldSpans,
+      run.fieldSpans,
+      reason: 'a second save must not grow <fld> again',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.first.charStyle.overline, isFalse);
+    expect(
+      after.richText.runs.first.text,
+      contains(kLibvisioCombiningOverline),
+    );
+    expect(
+      after.richText.runs.first.fieldSpans.single,
+      const VsdxFieldSpan(start: 2, length: 4, ix: 0),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(
+      oracle.svgPages(saved)?.join() ?? '',
+      contains(kLibvisioCombiningOverline),
+    );
+  });
+
   test('Character LangID RTL bakes a leading U+200F for LibreOffice', () {
     VsdxShape box(String name, String text, {String? langId}) =>
         VsdxShapeFactory.rectangle(
@@ -674,6 +773,96 @@ void main() {
     final after = parser.parse(saved).pages.first.findShapeById(1)!;
     expect(after.richText.runs.single.text, startsWith(kLibvisioRtlMark));
     expect(after.richText.runs.single.text, contains('\t'));
+  });
+
+  test('Character LangID RTL bakes a leading U+200F past field spans', () {
+    const body = VsdxCharStyle(
+      fontFamily: 'Arial',
+      fontSizeInches: 0.3,
+      color: VsdxColor(0xFF000000),
+      langId: 'ar-SA',
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1,
+      name: 'LangIdRtlFieldBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: '42',
+      fields: const <VsdxFieldRow>[
+        VsdxFieldRow(
+          ix: 0,
+          value: '42',
+          valueFormula: 'PAGENUMBER()',
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: '42',
+            charStyle: body,
+            fieldSpans: <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 0, length: 2, ix: 0),
+            ],
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioLangIdRtlBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final run = source.richText.runs.single;
+    expect(run.text, '$kLibvisioRtlMark'
+        '42');
+    expect(
+      run.fieldSpans.single,
+      const VsdxFieldSpan(start: 1, length: 2, ix: 0),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .text,
+      run.text,
+      reason: 'a second save must not stack another U+200F',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs
+          .single
+          .fieldSpans,
+      run.fieldSpans,
+      reason: 'a second save must not shift <fld> again',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.first.text, startsWith(kLibvisioRtlMark));
+    expect(
+      after.richText.runs.first.fieldSpans.single,
+      const VsdxFieldSpan(start: 1, length: 2, ix: 0),
+    );
+    expect(after.fields.first.valueFormula, 'PAGENUMBER()');
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', contains('42'));
   });
 
   test('Glow bakes a halo Draw can collect', () {

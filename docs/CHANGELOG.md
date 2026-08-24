@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Character Overline and LangID RTL now keep their marks on `<fld>`
+  runs in LibreOffice. `readCharIX` still skips `XML_OVERLINE` and
+  never stores LangID, so a save already writes U+0305 / U+200F, but
+  a field used to skip that bake so Draw dropped the line and laid
+  digit fields out LTR while canvas / SVG already paint them. A save
+  now inserts those marks and shifts the UTF-16 field starts so the
+  cached Value stays on the same characters.
 - Paragraph `Bullet` lists that also carry `<fld>` spans now keep their
   marker in LibreOffice. Draw's drawing-text import still drops
   `text:bullet-char`, so a save already writes the resolved glyph into
@@ -639,7 +646,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   U+0305 combining marks, but tabbed runs used to stay native so Draw
   dropped the line while canvas / SVG already paint it past the tab
   field. A save now writes those marks around U+0009 and keeps
-  `tabIndices` on the same stop. Field runs stay native.
+  `tabIndices` on the same stop. Field spans grow around those marks
+  so `<fld>` stays on the cached Value.
 - Word Wrap off on connector labels now keeps the run on one line in
   LibreOffice. `User.veWordWrap` is not a token, so a save already
   expands TxtWidth for a 2-D unwrapped label, but 1-D labels used to

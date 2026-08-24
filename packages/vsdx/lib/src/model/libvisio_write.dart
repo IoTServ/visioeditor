@@ -168,7 +168,8 @@
 /// bounding box.
 /// Character Overline is a token whose `readCharIX` case is empty, so a
 /// save inserts U+0305 combining overlines and clears the cell, including
-/// tabbed runs (U+0009 keeps its `tabIndices` stop).
+/// tabbed runs (U+0009 keeps its `tabIndices` stop) and field runs
+/// (UTF-16 `<fld>` spans grow around each mark).
 /// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
@@ -3775,14 +3776,43 @@ bool _runNeedsLibvisioOverlineBake(VsdxTextRun run) {
   if (!run.charStyle.overline) return false;
   if (run.text.isEmpty) return false;
   // Tabs stay in the string; U+0305 is skipped on U+0009 so tabIndices
-  // still name the same stops. Field runs stay native — their spans
-  // are character offsets a prefix would shift.
-  if (run.fieldSpans.isNotEmpty) return false;
+  // still name the same stops. Field spans grow around each mark so
+  // `<fld>` still covers the cached Value.
   if (run.text.contains(kLibvisioCombiningOverline)) return false;
   for (final rune in run.text.runes) {
     if (_runeTakesCombiningOverline(rune)) return true;
   }
   return false;
+}
+
+/// How many U+0305 marks [textWithCombiningOverline] inserts before [utf16Index].
+int _combiningOverlineMarksBefore(String text, int utf16Index) {
+  var n = 0;
+  var i = 0;
+  for (final rune in text.runes) {
+    if (i >= utf16Index) break;
+    if (_runeTakesCombiningOverline(rune)) n++;
+    i += rune > 0xFFFF ? 2 : 1;
+  }
+  return n;
+}
+
+/// Grow `<fld>` UTF-16 ranges so they still cover each overlined glyph.
+List<VsdxFieldSpan> _shiftFieldSpansForCombiningOverline(
+  String text,
+  List<VsdxFieldSpan> spans,
+) {
+  if (spans.isEmpty) return spans;
+  return <VsdxFieldSpan>[
+    for (final span in spans)
+      VsdxFieldSpan(
+        start: span.start + _combiningOverlineMarksBefore(text, span.start),
+        length: span.length +
+            _combiningOverlineMarksBefore(text, span.start + span.length) -
+            _combiningOverlineMarksBefore(text, span.start),
+        ix: span.ix,
+      ),
+  ];
 }
 
 /// Gap canvas / SVG leave between the bullet glyph and the body text.
@@ -4031,7 +4061,6 @@ VsdxDocument bakeBulletGlyphForLibvisioWrite(VsdxDocument document) {
 /// `true` when Character Overline must become combining marks for Draw.
 bool shapeNeedsLibvisioOverlineBake(VsdxShape shape) {
   if (shape.richText.textBlock.hideText) return false;
-  if (shape.fields.isNotEmpty) return false;
   for (final run in shape.richText.runs) {
     if (_runNeedsLibvisioOverlineBake(run)) return true;
   }
@@ -4060,6 +4089,10 @@ VsdxShape bakeOverlineShapeForLibvisioWrite(VsdxShape shape) {
           run.copyWith(
             text: textWithCombiningOverline(run.text),
             charStyle: run.charStyle.copyWith(overline: false),
+            fieldSpans: _shiftFieldSpansForCombiningOverline(
+              run.text,
+              run.fieldSpans,
+            ),
           )
         else
           run,
@@ -4609,9 +4642,8 @@ bool _runNeedsLibvisioLangIdRtlBake(VsdxTextRun run) {
   if (text.trim().isEmpty) return false;
   if (text.startsWith(kLibvisioRtlMark)) return false;
   // Tabs stay in the string; U+200F is a prefix so tabIndices still
-  // name the same stops. Field runs stay native — their spans are
-  // character offsets a prefix would shift.
-  if (run.fieldSpans.isNotEmpty) return false;
+  // name the same stops. Field spans shift past that prefix so `<fld>`
+  // still covers the cached Value.
   if (_textHasStrongRightToLeft(text)) return false;
   return isVisioRightToLeftText(text, langId: run.charStyle.langId);
 }
@@ -4649,7 +4681,14 @@ VsdxShape bakeLangIdRtlShapeForLibvisioWrite(VsdxShape shape) {
     final runs = <VsdxTextRun>[
       for (final run in shape.richText.runs)
         if (_runNeedsLibvisioLangIdRtlBake(run))
-          run.copyWith(text: textWithLibvisioRtlMark(run.text))
+          run.copyWith(
+            text: textWithLibvisioRtlMark(run.text),
+            fieldSpans: _shiftFieldSpansAfterInserts(
+              run.fieldSpans,
+              const <int>[0],
+              kLibvisioRtlMark.length,
+            ),
+          )
         else
           run,
     ];

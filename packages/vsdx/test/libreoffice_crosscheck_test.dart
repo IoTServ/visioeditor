@@ -2506,6 +2506,88 @@ void main() {
         ),
       ),
     );
+    var overlineFieldDocument = parser.parse(blank);
+    overlineFieldDocument = overlineFieldDocument.replacePage(
+      0,
+      overlineFieldDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: overlineFieldDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 1.4,
+          name: 'OverlineField',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: '42',
+          fields: const <VsdxFieldRow>[
+            VsdxFieldRow(
+              ix: 0,
+              value: '42',
+              valueFormula: 'PAGENUMBER()',
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '42',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.5,
+                  overline: true,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+                fieldSpans: <VsdxFieldSpan>[
+                  VsdxFieldSpan(start: 0, length: 2, ix: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    var langIdRtlFieldDocument = parser.parse(blank);
+    langIdRtlFieldDocument = langIdRtlFieldDocument.replacePage(
+      0,
+      langIdRtlFieldDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: langIdRtlFieldDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 1.4,
+          name: 'LangIdRtlField',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: '42',
+          fields: const <VsdxFieldRow>[
+            VsdxFieldRow(
+              ix: 0,
+              value: '42',
+              valueFormula: 'PAGENUMBER()',
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: '42',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.5,
+                  color: VsdxColor(0xFFFF00FF),
+                  langId: 'ar-SA',
+                ),
+                fieldSpans: <VsdxFieldSpan>[
+                  VsdxFieldSpan(start: 0, length: 2, ix: 0),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
     var geometrySoftDocument = parser.parse(blank);
     final geometrySoftPage = geometrySoftDocument.pages.first;
     geometrySoftDocument = geometrySoftDocument.replacePage(
@@ -5214,6 +5296,14 @@ void main() {
         originalBytes: blank,
         edited: overlineTabDocument,
       ),
+      'overline_field': writer.write(
+        originalBytes: blank,
+        edited: overlineFieldDocument,
+      ),
+      'lang_id_rtl_field': writer.write(
+        originalBytes: blank,
+        edited: langIdRtlFieldDocument,
+      ),
       'geometry_soft': writer.write(
         originalBytes: blank,
         edited: geometrySoftDocument,
@@ -6397,6 +6487,90 @@ void main() {
             greaterThan(wrapped.lime),
             reason: 'Draw must not wrap the overlined tab field under A; '
                 'lineL=${sameLine.lime} wrapL=${wrapped.lime}',
+          );
+        }
+        if (entry.key == 'overline_field') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'OverlineField');
+          expect(shape.richText.runs.single.charStyle.overline, isFalse);
+          expect(
+            shape.richText.plainText,
+            contains(kLibvisioCombiningOverline),
+          );
+          expect(
+            shape.richText.runs.single.fieldSpans.single,
+            const VsdxFieldSpan(start: 0, length: 4, ix: 0),
+          );
+        }
+        if (entry.key == 'overline_field' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(12),
+            reason: 'LibreOffice must paint the overlined field Value; '
+                'magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'lang_id_rtl_field') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LangIdRtlField');
+          expect(
+            shape.richText.runs.single.text,
+            startsWith(kLibvisioRtlMark),
+          );
+          expect(
+            shape.richText.runs.single.fieldSpans.single,
+            const VsdxFieldSpan(start: 1, length: 2, ix: 0),
+          );
+          expect(shape.fields, isNotEmpty);
+        }
+        if (entry.key == 'lang_id_rtl_field' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(12),
+            reason: 'LibreOffice must paint the LangID RTL field Value; '
+                'magentaPixels=$magentaPixels',
           );
         }
         if (entry.key == 'geometry_soft' && pdftoppm != null) {
