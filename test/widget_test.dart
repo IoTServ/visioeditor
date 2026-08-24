@@ -26,7 +26,9 @@ void main() {
   testWidgets('shows the empty state with an open action', (tester) async {
     await pumpApp(tester);
 
-    expect(find.text('Editor for Visio Diagrams'), findsWidgets);
+    // Widget tests default to TargetPlatform.android, whose launcher name
+    // is "Visio Vsdx Editor".
+    expect(find.text('Visio Vsdx Editor'), findsWidgets);
     expect(find.text('Open Visio drawing'), findsOneWidget);
     expect(find.byIcon(Icons.folder_open_outlined), findsWidgets);
     expect(find.byIcon(Icons.settings_outlined), findsOneWidget);

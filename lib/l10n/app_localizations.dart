@@ -108,11 +108,15 @@ class AppLocalizations {
   }
 
   // --- Shell ---
-  /// Windows Store product name is "Flowcharts Editor"; other platforms keep
-  /// the cross-platform "Editor for Visio Diagrams" brand.
+  /// Windows Store product name is "Flowcharts Editor"; Android launcher
+  /// name is "Visio Vsdx Editor"; other platforms keep the cross-platform
+  /// "Editor for Visio Diagrams" brand.
   String get appTitle {
     if (!kIsWeb && defaultTargetPlatform == TargetPlatform.windows) {
       return 'Flowcharts Editor';
+    }
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return 'Visio Vsdx Editor';
     }
     return _t('appTitle');
   }

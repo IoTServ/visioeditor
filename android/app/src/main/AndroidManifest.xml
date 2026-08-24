@@ -5,7 +5,7 @@
          Flutter tooling (hot reload / observatory). -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <application
-        android:label="Editor for Visio Diagrams"
+        android:label="Visio Vsdx Editor"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

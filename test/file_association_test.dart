@@ -135,4 +135,20 @@ void main() {
     expect(runnerRc, contains('Flowcharts Editor'));
     expect(mainCpp, contains('Flowcharts Editor'));
   });
+
+  test('Android launcher name is Visio Vsdx Editor; other shells keep the brand',
+      () {
+    final android = _read('android/app/src/main/AndroidManifest.xml');
+    final ios = _read('ios/Runner/Info.plist');
+    final macos = _read('macos/Runner/Info.plist');
+    final linuxDesktop = _read('linux/packaging/visioeditor.desktop');
+    expect(android, contains('android:label="Visio Vsdx Editor"'));
+    expect(
+      _read('store/google-play/en-US/title.txt').trim(),
+      'Visio Vsdx Editor',
+    );
+    expect(ios, contains('<string>Editor for Visio Diagrams</string>'));
+    expect(macos, contains('<key>CFBundleDisplayName</key>'));
+    expect(linuxDesktop, contains('Name=Editor for Visio Diagrams'));
+  });
 }
