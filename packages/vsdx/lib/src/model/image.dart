@@ -15,6 +15,8 @@ import 'dart:typed_data';
 import 'package:image/image.dart' as raster;
 import 'package:meta/meta.dart';
 
+import '../parser/metafile.dart';
+
 /// A bitmap payload that common Flutter and browser codecs can display.
 @immutable
 class VsdxRenderableRaster {
@@ -104,6 +106,8 @@ class VsdxImage {
   /// librevenge/LibreOffice. Flutter and browsers do not consistently decode
   /// TIFF, so convert its first page to PNG in pure Dart while retaining the
   /// original TIFF bytes in the document model for lossless round-tripping.
+  /// Thin EMF/WMF wrappers around a DIB are the same story for Flutter: pull
+  /// the embedded BMP and encode PNG. Pure-vector metafiles stay `null`.
   /// Malformed or unsupported input is reported as `null`; callers can keep
   /// their normal placeholder fallback instead of failing the whole page.
   VsdxRenderableRaster? rasterForRendering() {
@@ -113,9 +117,28 @@ class VsdxImage {
         mimeType: _effectiveRasterMimeType,
       );
     }
-    if (!_isTiff) return null;
+    if (_isTiff) {
+      try {
+        final decoded = raster.decodeTiff(bytes, frame: 0);
+        if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+          return null;
+        }
+        return VsdxRenderableRaster(
+          bytes: raster.encodePng(decoded),
+          mimeType: 'image/png',
+        );
+      } catch (_) {
+        return null;
+      }
+    }
+    return _rasterFromWrappedMetafile();
+  }
+
+  VsdxRenderableRaster? _rasterFromWrappedMetafile() {
     try {
-      final decoded = raster.decodeTiff(bytes, frame: 0);
+      final bmp = extractMetafileRaster(bytes, mimeType: mimeType);
+      if (bmp == null || bmp.isEmpty) return null;
+      final decoded = raster.decodeBmp(bmp) ?? raster.decodeImage(bmp);
       if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
         return null;
       }

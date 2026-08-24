@@ -1905,6 +1905,41 @@ void main() {
             ),
           ),
         );
+    var emfDocument = parser.parse(blank);
+    final emfPage = emfDocument.pages.first;
+    const emfPart = '/visio/media/libreoffice-crosscheck.emf';
+    final emfBytes = _rgbDibEmf(width: 32, height: 16);
+    expect(
+      VsdxImage(
+        partName: emfPart,
+        bytes: emfBytes,
+        mimeType: 'image/x-emf',
+      ).rasterForRendering(),
+      isNotNull,
+    );
+    emfDocument = emfDocument
+        .copyWith(
+          images: emfDocument.images.withImage(
+            VsdxImage(
+              partName: emfPart,
+              bytes: emfBytes,
+              mimeType: 'image/x-emf',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          emfPage.addShape(
+            VsdxShapeFactory.picture(
+              id: emfPage.nextFreeShapeId(),
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: emfPart,
+            ),
+          ),
+        );
     var flipDocument = parser.parse(blank);
     final flipPage = flipDocument.pages.first;
     const flipPart = '/visio/media/libreoffice-flipy.png';
@@ -5359,6 +5394,10 @@ void main() {
         originalBytes: blank,
         edited: gifDocument,
       ),
+      'emf_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: emfDocument,
+      ),
       'flipy_foreign_data': writer.write(
         originalBytes: blank,
         edited: flipDocument,
@@ -5806,6 +5845,7 @@ void main() {
         expect(pdf.lengthSync(), greaterThan(100));
         if (entry.key == 'tiff_foreign_data' ||
             entry.key == 'gif_foreign_data' ||
+            entry.key == 'emf_foreign_data' ||
             entry.key == 'flipy_foreign_data' ||
             entry.key == 'geometry_foreign_data') {
           if (pdftoppm == null) {
@@ -13522,6 +13562,59 @@ Uint8List _uncompressedRgbTiff({required int width, required int height}) {
     }
   }
   return out.takeBytes();
+}
+
+/// Minimal EMF whose STRETCHDIBITS record wraps a 24bpp DIB (left red, right blue).
+Uint8List _rgbDibEmf({required int width, required int height}) {
+  final row = ((width * 3 + 3) ~/ 4) * 4;
+  final dib = Uint8List(40 + row * height);
+  dib[0] = 40;
+  dib[4] = width & 0xff;
+  dib[5] = (width >> 8) & 0xff;
+  dib[8] = height & 0xff;
+  dib[9] = (height >> 8) & 0xff;
+  dib[12] = 1;
+  dib[14] = 24;
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final o = 40 + y * row + x * 3;
+      if (x < width ~/ 2) {
+        dib[o] = 0x00;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0xff;
+      } else {
+        dib[o] = 0xff;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0x00;
+      }
+    }
+  }
+  final stretchBody = BytesBuilder()
+    ..add(Uint8List(40))
+    ..add(dib);
+  final stretchPayload = stretchBody.toBytes();
+  final stretchSize = 8 + stretchPayload.length;
+  final stretchPad = (4 - (stretchSize % 4)) % 4;
+  final out = BytesBuilder();
+  final header = Uint8List(88);
+  header[0] = 1;
+  header[4] = 88;
+  header[0x28] = 0x20;
+  header[0x29] = 0x45;
+  header[0x2A] = 0x4D;
+  header[0x2B] = 0x46;
+  out.add(header);
+  final stretch = Uint8List(stretchSize + stretchPad);
+  stretch[0] = 0x51;
+  stretch[4] = stretch.length & 0xff;
+  stretch[5] = (stretch.length >> 8) & 0xff;
+  stretch.setRange(8, 8 + stretchPayload.length, stretchPayload);
+  out.add(stretch);
+  final eof = Uint8List(20);
+  eof[0] = 0x0e;
+  eof[4] = 20;
+  out.add(eof);
+  return out.toBytes();
 }
 
 String? _resolveSoffice() {

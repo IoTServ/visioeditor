@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EMF / WMF pictures that wrap a DIB now keep that bitmap in LibreOffice.
+  Draw does not paint `ForeignType=EnhMetaFile` / `MetaFile`, so a save
+  extracts the embedded DIB and writes PNG `ForeignType=Bitmap`. Canvas /
+  SVG already show that raster. Pure-vector metafiles stay native. A
+  second save does not stack another PNG.
 - Curved Text and Shape Inside lists now keep their bullet marker in
   LibreOffice. Draw's drawing-text import still drops
   `text:bullet-char`, so a rectangular save already writes the glyph

@@ -77,7 +77,11 @@
 /// Letterspace 0. Picture `SoftEdgesSize` is not a token; a 2-D Foreign
 /// bitmap bakes the same SourceAlpha feather canvas / SVG use into PNG
 /// alpha (cropped frames composite into the box first so ImgOffset still
-/// matches Draw), then SoftEdgesSize is written 0. Marker ids whose
+/// matches Draw), then SoftEdgesSize is written 0. Foreign
+/// `EnhMetaFile` / `MetaFile` DIB wrappers are not a bitmap Draw paints
+/// — libvisio emits a metafile — so a save extracts that DIB as PNG
+/// `ForeignType=Bitmap`. Pure-vector metafiles stay native. A second
+/// save does not stack another PNG. Marker ids whose
 /// `_linePropertiesMarkerPath` is still a TODO stub bake as Geometry so
 /// Draw does not reuse a sibling silhouette. Unknown
 /// `FillPattern` ids above 40 snap to solid `1`.
@@ -6461,6 +6465,72 @@ void main() {
     expect(after.imagePartName, isNot(part));
   });
 
+  test('EnhMetaFile DIB bakes to PNG Bitmap for LibreOffice', () {
+    const part = '/visio/media/probe.emf';
+    final emf = _rgbDibEmf(width: 32, height: 16);
+    final source = VsdxImage(
+      partName: part,
+      bytes: emf,
+      mimeType: 'image/x-emf',
+    );
+    expect(source.foreignType, 'EnhMetaFile');
+    expect(source.rasterForRendering(), isNotNull);
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioMetafileBitmapBake(pic), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioMetafileBitmapBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    expect(bakedShape.imagePartName, isNot(part));
+    final png = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    expect(decoded!.width, 32);
+    expect(decoded.height, 16);
+    final left = decoded.getPixel(4, 8);
+    final right = decoded.getPixel(28, 8);
+    expect(left.r, greaterThan(200));
+    expect(left.b, lessThan(40));
+    expect(right.b, greaterThan(200));
+    expect(right.r, lessThan(40));
+
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another metafile PNG',
+    );
+
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.foreignType, 'Bitmap');
+    expect(after.foreignCompressionType, 'PNG');
+    expect(after.imagePartName, isNot(part));
+    final savedPng = parser.parse(saved).images.findByPart(after.imagePartName!);
+    expect(savedPng, isNotNull);
+    expect(raster.decodePng(savedPng!.bytes), isNotNull);
+  });
+
   test('cropped picture SoftEdges composites into the frame for LibreOffice',
       () {
     final rasterImage = raster.Image(width: 32, height: 16);
@@ -11181,4 +11251,57 @@ void _expectVsd2rawCollected(Uint8List saved, List<String> snippets) {
       reason: 'libvisio must collect $snippet for Draw',
     );
   }
+}
+
+/// Minimal EMF whose STRETCHDIBITS record wraps a 24bpp DIB (left red, right blue).
+Uint8List _rgbDibEmf({required int width, required int height}) {
+  final row = ((width * 3 + 3) ~/ 4) * 4;
+  final dib = Uint8List(40 + row * height);
+  dib[0] = 40;
+  dib[4] = width & 0xff;
+  dib[5] = (width >> 8) & 0xff;
+  dib[8] = height & 0xff;
+  dib[9] = (height >> 8) & 0xff;
+  dib[12] = 1;
+  dib[14] = 24;
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final o = 40 + y * row + x * 3;
+      if (x < width ~/ 2) {
+        dib[o] = 0x00;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0xff;
+      } else {
+        dib[o] = 0xff;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0x00;
+      }
+    }
+  }
+  final stretchBody = BytesBuilder()
+    ..add(Uint8List(40))
+    ..add(dib);
+  final stretchPayload = stretchBody.toBytes();
+  final stretchSize = 8 + stretchPayload.length;
+  final stretchPad = (4 - (stretchSize % 4)) % 4;
+  final out = BytesBuilder();
+  final header = Uint8List(88);
+  header[0] = 1;
+  header[4] = 88;
+  header[0x28] = 0x20;
+  header[0x29] = 0x45;
+  header[0x2A] = 0x4D;
+  header[0x2B] = 0x46;
+  out.add(header);
+  final stretch = Uint8List(stretchSize + stretchPad);
+  stretch[0] = 0x51;
+  stretch[4] = stretch.length & 0xff;
+  stretch[5] = (stretch.length >> 8) & 0xff;
+  stretch.setRange(8, 8 + stretchPayload.length, stretchPayload);
+  out.add(stretch);
+  final eof = Uint8List(20);
+  eof[0] = 0x0e;
+  eof[4] = 20;
+  out.add(eof);
+  return out.toBytes();
 }

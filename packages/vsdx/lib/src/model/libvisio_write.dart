@@ -110,7 +110,12 @@
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
 /// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
-/// a save bakes them into a PNG and zeros the cells. Picture `SoftEdgesSize`
+/// a save bakes them into a PNG and zeros the cells. Foreign
+/// `EnhMetaFile` / `MetaFile` payloads that are a thin DIB wrapper are
+/// not a bitmap Draw paints — libvisio emits them as a metafile — so a
+/// save extracts that DIB and writes `ForeignType=Bitmap` PNG. Pure-vector
+/// metafiles stay native. A second save does not stack another PNG.
+/// Picture `SoftEdgesSize`
 /// is not a token either: a 2-D Foreign bitmap bakes the same SourceAlpha
 /// feather canvas / SVG use, then SoftEdgesSize is written 0. A cropped
 /// picture is composited into the Foreign frame first so the halo sits on
@@ -344,7 +349,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                               bakeAutoRotateLabelForLibvisioWrite(
                                                 bakeTextDirectionForLibvisioWrite(
                                                   bakeBulletGlyphForLibvisioWrite(
-                                                    hopped,
+                                                    bakeMetafileBitmapsForLibvisioWrite(
+                                                      hopped,
+                                                    ),
                                                   ),
                                                 ),
                                               ),
@@ -6565,6 +6572,131 @@ bool shapeNeedsLibvisioCroppedSoftEdgesBake(VsdxShape shape) {
     imgOffsetYInches: shape.imgOffsetYInches,
     imgWidthInches: shape.imgWidthInches,
     imgHeightInches: shape.imgHeightInches,
+  );
+}
+
+/// `true` when Foreign EnhMetaFile / MetaFile must become a Bitmap PNG for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. A thin EMF/WMF wrapper
+/// around a DIB is still `ForeignType=EnhMetaFile` / `MetaFile`, and
+/// libvisio emits that as a metafile Draw does not paint, while canvas /
+/// SVG already extract the bitmap. A save writes PNG `ForeignType=Bitmap`.
+/// Pure-vector metafiles (no embedded DIB) stay native. A second save
+/// does not stack another PNG.
+bool shapeNeedsLibvisioMetafileBitmapBake(VsdxShape shape) {
+  if (!shape.hasImage) return false;
+  final type = shape.foreignType ??
+      VsdxImage.foreignTypeFor(
+        mimeType: '',
+        partName: shape.imagePartName ?? '',
+      );
+  return type == 'EnhMetaFile' || type == 'MetaFile';
+}
+
+/// Extract a wrapped EMF/WMF DIB as PNG Bitmap ForeignData Draw can paint.
+VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  final cache = <String, String>{};
+  var changed = false;
+
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_emf_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_emf_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
+  VsdxShape rewrite(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) rewrite(child),
+    ];
+    var next = shape;
+    if (shapeNeedsLibvisioMetafileBitmapBake(shape)) {
+      final source = _imageForLibvisioWrite(document.images, shape.imagePartName);
+      if (source != null) {
+        var bakedPart = cache[source.partName];
+        if (bakedPart == null) {
+          final payload = source.rasterForRendering();
+          if (payload != null && payload.bytes.isNotEmpty) {
+            bakedPart = allocatePart(shape.id);
+            cache[source.partName] = bakedPart;
+            registry = registry.withImage(
+              VsdxImage(
+                partName: bakedPart,
+                bytes: payload.bytes,
+                mimeType: 'image/png',
+              ),
+            );
+          }
+        }
+        if (bakedPart != null) {
+          next = shape.copyWith(
+            imagePartName: bakedPart,
+            foreignType: VsdxImage.foreignTypeFor(
+              mimeType: 'image/png',
+              partName: bakedPart,
+            ),
+            foreignCompressionType: VsdxImage.compressionTypeFor(
+              mimeType: 'image/png',
+              partName: bakedPart,
+            ),
+          );
+          changed = true;
+        }
+      }
+    }
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) {
+      next = next.copyWith(children: children);
+      changed = true;
+    }
+    return next;
+  }
+
+  if (document.pages.isEmpty && document.images.length == 0) {
+    return document;
+  }
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) rewrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!changed && !pagesChanged) return document;
+  return document.copyWith(
+    pages: pagesChanged ? pages : document.pages,
+    images: registry,
   );
 }
 
