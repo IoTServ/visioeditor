@@ -114,7 +114,13 @@
 /// `EnhMetaFile` / `MetaFile` payloads that are a thin DIB wrapper are
 /// not a bitmap Draw paints — libvisio emits them as a metafile — so a
 /// save extracts that DIB and writes `ForeignType=Bitmap` PNG. Pure-vector
-/// metafiles stay native. A second save does not stack another PNG.
+/// metafiles stay native. Foreign `Object` OLE packages are the same
+/// missing paint: libvisio emits `object/ole` and Draw fills the
+/// default Blue 2 graphic style, while canvas / SVG already replay the
+/// `\x02OlePres000` WMF/EMF preview. A save unwraps that preview as
+/// `ForeignType=MetaFile` / `EnhMetaFile` so Draw paints it (and a
+/// wrapped DIB still becomes PNG through the metafile bake). A second
+/// save does not stack another preview.
 /// Picture `SoftEdgesSize`
 /// is not a token either: a 2-D Foreign bitmap bakes the same SourceAlpha
 /// feather canvas / SVG use, then SoftEdgesSize is written 0. A cropped
@@ -291,6 +297,9 @@ import 'dart:typed_data';
 
 import '../export/compound_stroke.dart';
 import '../export/line_jumps.dart';
+import '../parser/emf_vector_parser.dart';
+import '../parser/ole_preview.dart';
+import '../parser/wmf_parser.dart';
 import '../utils/color.dart';
 import '../utils/gradient_math.dart';
 import 'dash_pattern.dart';
@@ -350,7 +359,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                                 bakeTextDirectionForLibvisioWrite(
                                                   bakeBulletGlyphForLibvisioWrite(
                                                     bakeMetafileBitmapsForLibvisioWrite(
-                                                      hopped,
+                                                      bakeOlePreviewsForLibvisioWrite(
+                                                        hopped,
+                                                      ),
                                                     ),
                                                   ),
                                                 ),
@@ -6645,6 +6656,147 @@ VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
             ),
             foreignCompressionType: VsdxImage.compressionTypeFor(
               mimeType: 'image/png',
+              partName: bakedPart,
+            ),
+          );
+          changed = true;
+        }
+      }
+    }
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) {
+      next = next.copyWith(children: children);
+      changed = true;
+    }
+    return next;
+  }
+
+  if (document.pages.isEmpty && document.images.length == 0) {
+    return document;
+  }
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) rewrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!changed && !pagesChanged) return document;
+  return document.copyWith(
+    pages: pagesChanged ? pages : document.pages,
+    images: registry,
+  );
+}
+
+({Uint8List bytes, String mime, String ext})? _olePreviewForLibvisioWrite(
+  VsdxImage source,
+) {
+  final preview = extractOlePresentationMetafile(source.bytes);
+  if (preview == null || preview.isEmpty) return null;
+  if (looksLikeWmf(preview)) {
+    return (bytes: preview, mime: 'image/x-wmf', ext: 'wmf');
+  }
+  if (looksLikeEmf(preview)) {
+    return (bytes: preview, mime: 'image/x-emf', ext: 'emf');
+  }
+  return null;
+}
+
+/// `true` when Foreign Object must unwrap its OlePres preview for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. libvisio emits
+/// `object/ole` for `ForeignType=Object`, and Draw paints the default
+/// Blue 2 graphic style instead of the `\x02OlePres000` WMF/EMF canvas /
+/// SVG already replay. A save writes that preview as `MetaFile` /
+/// `EnhMetaFile`. Objects without a presentation stay native. A second
+/// save does not unwrap again.
+bool shapeNeedsLibvisioOlePreviewBake(VsdxShape shape) {
+  if (!shape.hasImage) return false;
+  final type = shape.foreignType ??
+      VsdxImage.foreignTypeFor(
+        mimeType: '',
+        partName: shape.imagePartName ?? '',
+      );
+  if (type == 'Object') return true;
+  return false;
+}
+
+/// Unwrap OLE OlePres WMF/EMF so Draw paints the preview ForeignData.
+VsdxDocument bakeOlePreviewsForLibvisioWrite(VsdxDocument document) {
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  final cache = <String, String>{};
+  var changed = false;
+
+  String allocatePart(int shapeId, String ext) {
+    var name = '/visio/media/image_lo_ole_$shapeId.$ext';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_ole_${shapeId}_$n.$ext';
+    }
+    used.add(name);
+    return name;
+  }
+
+  VsdxShape rewrite(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) rewrite(child),
+    ];
+    var next = shape;
+    if (shapeNeedsLibvisioOlePreviewBake(shape)) {
+      final source = _imageForLibvisioWrite(document.images, shape.imagePartName);
+      if (source != null) {
+        var bakedPart = cache[source.partName];
+        if (bakedPart == null) {
+          final preview = _olePreviewForLibvisioWrite(source);
+          if (preview != null) {
+            bakedPart = allocatePart(shape.id, preview.ext);
+            cache[source.partName] = bakedPart;
+            registry = registry.withImage(
+              VsdxImage(
+                partName: bakedPart,
+                bytes: preview.bytes,
+                mimeType: preview.mime,
+              ),
+            );
+          }
+        }
+        if (bakedPart != null) {
+          final bakedImage = registry.findByPart(bakedPart)!;
+          next = shape.copyWith(
+            imagePartName: bakedPart,
+            foreignType: VsdxImage.foreignTypeFor(
+              mimeType: bakedImage.mimeType,
+              partName: bakedPart,
+            ),
+            foreignCompressionType: VsdxImage.compressionTypeFor(
+              mimeType: bakedImage.mimeType,
               partName: bakedPart,
             ),
           );

@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- OLE pictures that carry an OlePres WMF/EMF preview now keep that drawing
+  in LibreOffice. Draw paints the default Blue 2 graphic style for
+  `ForeignType=Object` / `object/ole`, so a save unwraps `\x02OlePres000`
+  as `ForeignType=MetaFile` / `EnhMetaFile`. Canvas / SVG already replay
+  that preview. A wrapped DIB still becomes PNG through the existing
+  metafile bake. A second save does not stack another preview.
 - EMF / WMF pictures that wrap a DIB now keep that bitmap in LibreOffice.
   Draw does not paint `ForeignType=EnhMetaFile` / `MetaFile`, so a save
   extracts the embedded DIB and writes PNG `ForeignType=Bitmap`. Canvas /

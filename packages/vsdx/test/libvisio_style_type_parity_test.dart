@@ -80,7 +80,10 @@
 /// matches Draw), then SoftEdgesSize is written 0. Foreign
 /// `EnhMetaFile` / `MetaFile` DIB wrappers are not a bitmap Draw paints
 /// — libvisio emits a metafile — so a save extracts that DIB as PNG
-/// `ForeignType=Bitmap`. Pure-vector metafiles stay native. A second
+/// `ForeignType=Bitmap`. Pure-vector metafiles stay native. Foreign
+/// `Object` OLE packages are the same missing paint: Draw fills Blue 2
+/// for `object/ole`, so a save unwraps `\x02OlePres000` as `MetaFile` /
+/// `EnhMetaFile`. A second
 /// save does not stack another PNG. Marker ids whose
 /// `_linePropertiesMarkerPath` is still a TODO stub bake as Geometry so
 /// Draw does not reuse a sibling silhouette. Unknown
@@ -6531,6 +6534,63 @@ void main() {
     expect(raster.decodePng(savedPng!.bytes), isNotNull);
   });
 
+  test('Object OLE preview bakes to MetaFile for LibreOffice', () {
+    const part = '/visio/media/probe.bin';
+    final wmf = _rgbDibWmf(width: 32, height: 16);
+    expect(looksLikeWmf(wmf), isTrue);
+    expect(extractOlePresentationMetafile(wrapOlePresentation(wmf)), wmf);
+    final source = VsdxImage(
+      partName: part,
+      bytes: wrapOlePresentation(wmf),
+      mimeType: 'object/ole',
+    );
+    expect(source.foreignType, 'Object');
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+      imagePartName: part,
+    ).copyWith(foreignType: 'Object');
+    expect(shapeNeedsLibvisioOlePreviewBake(pic), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioOlePreviewBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'MetaFile');
+    expect(bakedShape.imagePartName, isNot(part));
+    final preview = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(preview, isNotNull);
+    expect(looksLikeWmf(preview!.bytes), isTrue);
+    expect(extractOlePresentationMetafile(preview.bytes), isNull);
+
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another OLE preview',
+    );
+
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.foreignType, 'MetaFile');
+    expect(after.imagePartName, isNot(part));
+    final savedWmf = parser.parse(saved).images.findByPart(after.imagePartName!);
+    expect(savedWmf, isNotNull);
+    expect(looksLikeWmf(savedWmf!.bytes), isTrue);
+  });
+
   test('cropped picture SoftEdges composites into the frame for LibreOffice',
       () {
     final rasterImage = raster.Image(width: 32, height: 16);
@@ -11304,4 +11364,102 @@ Uint8List _rgbDibEmf({required int width, required int height}) {
   eof[4] = 20;
   out.add(eof);
   return out.toBytes();
+}
+
+/// Placeable WMF whose STRETCHDIB record wraps a 24bpp DIB (left red, right blue).
+Uint8List _rgbDibWmf({required int width, required int height}) {
+  final row = ((width * 3 + 3) ~/ 4) * 4;
+  final dib = Uint8List(40 + row * height);
+  ByteData.sublistView(dib)
+    ..setUint32(0, 40, Endian.little)
+    ..setInt32(4, width, Endian.little)
+    ..setInt32(8, height, Endian.little)
+    ..setUint16(12, 1, Endian.little)
+    ..setUint16(14, 24, Endian.little);
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final o = 40 + y * row + x * 3;
+      if (x < width ~/ 2) {
+        dib[o] = 0x00;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0xff;
+      } else {
+        dib[o] = 0xff;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0x00;
+      }
+    }
+  }
+
+  Uint8List rec(int func, List<int> words) {
+    final sizeWords = 3 + words.length;
+    final out = Uint8List(sizeWords * 2);
+    final data = ByteData.sublistView(out)
+      ..setUint32(0, sizeWords, Endian.little)
+      ..setUint16(4, func, Endian.little);
+    for (var i = 0; i < words.length; i++) {
+      data.setInt16(6 + i * 2, words[i], Endian.little);
+    }
+    return out;
+  }
+
+  final stretchBytes = 6 + 22 + dib.length;
+  final stretchPadded = (stretchBytes + 1) & ~1;
+  final stretch = Uint8List(stretchPadded);
+  ByteData.sublistView(stretch)
+    ..setUint32(0, stretchPadded ~/ 2, Endian.little)
+    ..setUint16(4, 0x0F43, Endian.little)
+    ..setUint32(6, 0x00CC0020, Endian.little)
+    ..setUint16(10, 0, Endian.little)
+    ..setInt16(12, height, Endian.little)
+    ..setInt16(14, width, Endian.little)
+    ..setInt16(16, 0, Endian.little)
+    ..setInt16(18, 0, Endian.little)
+    ..setInt16(20, height, Endian.little)
+    ..setInt16(22, width, Endian.little)
+    ..setInt16(24, 0, Endian.little)
+    ..setInt16(26, 0, Endian.little);
+  stretch.setRange(28, 28 + dib.length, dib);
+
+  final records = <Uint8List>[
+    rec(0x020B, <int>[0, 0]),
+    rec(0x020C, <int>[height, width]),
+    stretch,
+  ];
+  final size =
+      18 + records.fold<int>(0, (sum, record) => sum + record.length) + 6;
+  final wmf = Uint8List(size);
+  ByteData.sublistView(wmf)
+    ..setUint16(0, 1, Endian.little)
+    ..setUint16(2, 9, Endian.little)
+    ..setUint16(4, 0x0300, Endian.little)
+    ..setUint32(6, size ~/ 2, Endian.little)
+    ..setUint16(10, 1, Endian.little)
+    ..setUint32(12, stretchPadded ~/ 2, Endian.little);
+  var offset = 18;
+  for (final record in records) {
+    wmf.setRange(offset, offset + record.length, record);
+    offset += record.length;
+  }
+  ByteData.sublistView(wmf)
+    ..setUint32(offset, 3, Endian.little)
+    ..setUint16(offset + 4, 0, Endian.little);
+
+  final out = Uint8List(22 + wmf.length);
+  final placeable = ByteData.sublistView(out)
+    ..setUint32(0, 0x9AC6CDD7, Endian.little)
+    ..setUint16(4, 0, Endian.little)
+    ..setInt16(6, 0, Endian.little)
+    ..setInt16(8, 0, Endian.little)
+    ..setInt16(10, width, Endian.little)
+    ..setInt16(12, height, Endian.little)
+    ..setUint16(14, 1440, Endian.little)
+    ..setUint32(16, 0, Endian.little);
+  var checksum = 0;
+  for (var i = 0; i < 10; i++) {
+    checksum ^= placeable.getUint16(i * 2, Endian.little);
+  }
+  placeable.setUint16(20, checksum, Endian.little);
+  out.setRange(22, out.length, wmf);
+  return out;
 }

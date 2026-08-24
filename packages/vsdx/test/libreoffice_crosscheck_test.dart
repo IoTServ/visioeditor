@@ -1940,6 +1940,34 @@ void main() {
             ),
           ),
         );
+    var oleDocument = parser.parse(blank);
+    final olePage = oleDocument.pages.first;
+    const olePart = '/visio/media/libreoffice-crosscheck.bin';
+    final oleBytes = wrapOlePresentation(_rgbDibWmf(width: 32, height: 16));
+    expect(extractOlePresentationMetafile(oleBytes), isNotNull);
+    oleDocument = oleDocument
+        .copyWith(
+          images: oleDocument.images.withImage(
+            VsdxImage(
+              partName: olePart,
+              bytes: oleBytes,
+              mimeType: 'object/ole',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          olePage.addShape(
+            VsdxShapeFactory.picture(
+              id: olePage.nextFreeShapeId(),
+              pinX: 2,
+              pinY: 2,
+              width: 2,
+              height: 2,
+              imagePartName: olePart,
+            ).copyWith(foreignType: 'Object'),
+          ),
+        );
     var flipDocument = parser.parse(blank);
     final flipPage = flipDocument.pages.first;
     const flipPart = '/visio/media/libreoffice-flipy.png';
@@ -5398,6 +5426,10 @@ void main() {
         originalBytes: blank,
         edited: emfDocument,
       ),
+      'ole_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: oleDocument,
+      ),
       'flipy_foreign_data': writer.write(
         originalBytes: blank,
         edited: flipDocument,
@@ -5846,6 +5878,7 @@ void main() {
         if (entry.key == 'tiff_foreign_data' ||
             entry.key == 'gif_foreign_data' ||
             entry.key == 'emf_foreign_data' ||
+            entry.key == 'ole_foreign_data' ||
             entry.key == 'flipy_foreign_data' ||
             entry.key == 'geometry_foreign_data') {
           if (pdftoppm == null) {
@@ -13615,6 +13648,104 @@ Uint8List _rgbDibEmf({required int width, required int height}) {
   eof[4] = 20;
   out.add(eof);
   return out.toBytes();
+}
+
+/// Placeable WMF whose STRETCHDIB record wraps a 24bpp DIB (left red, right blue).
+Uint8List _rgbDibWmf({required int width, required int height}) {
+  final row = ((width * 3 + 3) ~/ 4) * 4;
+  final dib = Uint8List(40 + row * height);
+  ByteData.sublistView(dib)
+    ..setUint32(0, 40, Endian.little)
+    ..setInt32(4, width, Endian.little)
+    ..setInt32(8, height, Endian.little)
+    ..setUint16(12, 1, Endian.little)
+    ..setUint16(14, 24, Endian.little);
+  for (var y = 0; y < height; y++) {
+    for (var x = 0; x < width; x++) {
+      final o = 40 + y * row + x * 3;
+      if (x < width ~/ 2) {
+        dib[o] = 0x00;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0xff;
+      } else {
+        dib[o] = 0xff;
+        dib[o + 1] = 0x00;
+        dib[o + 2] = 0x00;
+      }
+    }
+  }
+
+  Uint8List rec(int func, List<int> words) {
+    final sizeWords = 3 + words.length;
+    final out = Uint8List(sizeWords * 2);
+    final data = ByteData.sublistView(out)
+      ..setUint32(0, sizeWords, Endian.little)
+      ..setUint16(4, func, Endian.little);
+    for (var i = 0; i < words.length; i++) {
+      data.setInt16(6 + i * 2, words[i], Endian.little);
+    }
+    return out;
+  }
+
+  final stretchBytes = 6 + 22 + dib.length;
+  final stretchPadded = (stretchBytes + 1) & ~1;
+  final stretch = Uint8List(stretchPadded);
+  ByteData.sublistView(stretch)
+    ..setUint32(0, stretchPadded ~/ 2, Endian.little)
+    ..setUint16(4, 0x0F43, Endian.little)
+    ..setUint32(6, 0x00CC0020, Endian.little)
+    ..setUint16(10, 0, Endian.little)
+    ..setInt16(12, height, Endian.little)
+    ..setInt16(14, width, Endian.little)
+    ..setInt16(16, 0, Endian.little)
+    ..setInt16(18, 0, Endian.little)
+    ..setInt16(20, height, Endian.little)
+    ..setInt16(22, width, Endian.little)
+    ..setInt16(24, 0, Endian.little)
+    ..setInt16(26, 0, Endian.little);
+  stretch.setRange(28, 28 + dib.length, dib);
+
+  final records = <Uint8List>[
+    rec(0x020B, <int>[0, 0]),
+    rec(0x020C, <int>[height, width]),
+    stretch,
+  ];
+  final size =
+      18 + records.fold<int>(0, (sum, record) => sum + record.length) + 6;
+  final wmf = Uint8List(size);
+  ByteData.sublistView(wmf)
+    ..setUint16(0, 1, Endian.little)
+    ..setUint16(2, 9, Endian.little)
+    ..setUint16(4, 0x0300, Endian.little)
+    ..setUint32(6, size ~/ 2, Endian.little)
+    ..setUint16(10, 1, Endian.little)
+    ..setUint32(12, stretchPadded ~/ 2, Endian.little);
+  var offset = 18;
+  for (final record in records) {
+    wmf.setRange(offset, offset + record.length, record);
+    offset += record.length;
+  }
+  ByteData.sublistView(wmf)
+    ..setUint32(offset, 3, Endian.little)
+    ..setUint16(offset + 4, 0, Endian.little);
+
+  final out = Uint8List(22 + wmf.length);
+  final placeable = ByteData.sublistView(out)
+    ..setUint32(0, 0x9AC6CDD7, Endian.little)
+    ..setUint16(4, 0, Endian.little)
+    ..setInt16(6, 0, Endian.little)
+    ..setInt16(8, 0, Endian.little)
+    ..setInt16(10, width, Endian.little)
+    ..setInt16(12, height, Endian.little)
+    ..setUint16(14, 1440, Endian.little)
+    ..setUint32(16, 0, Endian.little);
+  var checksum = 0;
+  for (var i = 0; i < 10; i++) {
+    checksum ^= placeable.getUint16(i * 2, Endian.little);
+  }
+  placeable.setUint16(20, checksum, Endian.little);
+  out.setRange(22, out.length, wmf);
+  return out;
 }
 
 String? _resolveSoffice() {
