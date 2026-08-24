@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Opaque theme fills now keep their colour in LibreOffice. libvisio's
+  `VSDFillStyle::override` applies explicit FillForegnd after the theme,
+  so `THEMEVAL()` plus `V="0"` painted palette black, while canvas / SVG
+  already resolve the QuickStyle slot. A save caches the resolved RGB in
+  `V=` and keeps `F="THEMEVAL()"` so Draw paints Office accent colours
+  and reopen still round-trips the slot. A second save does not stack
+  another colour.
 - Cropped pictures now keep that window in LibreOffice. Draw paints
   libvisio's `svg:width` from `ImgWidth` and does not clip to the Foreign
   box, so a save composites the Img* window into a frame-sized PNG and

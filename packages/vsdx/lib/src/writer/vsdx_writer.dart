@@ -3340,8 +3340,9 @@ class VsdxWriter {
   /// Also clears `F=` (and inert trigger `V`) for keys removed from [edited].
   ///
   /// Stale `THEMEVAL` entries left on [edited.formulas] after a solid-colour
-  /// override are stripped — otherwise a second save (same in-memory model)
-  /// rewrites `F="THEMEVAL()"` over an explicit `V="#…"`.
+  /// override (slot cleared) are stripped — otherwise a second save rewrites
+  /// `F="THEMEVAL()"` over a true solid `V="#…"`. Cached RGB with a live
+  /// QuickStyle slot is kept so LibreOffice still paints the hex.
   bool _patchFormulas(XmlElement el, VsdxShape base, VsdxShape edited) {
     if (_mapEqual(base.formulas, edited.formulas)) {
       // Still scrub stale theme formulas that match base-for-base (both dirty).
@@ -3396,20 +3397,21 @@ class VsdxWriter {
       return u == 'INH' || u.startsWith('INH(');
     }
 
+    // Cached RGB in V= with a live QuickStyle slot is the LibreOffice write
+    // format (libvisio paints V= after the theme). Only THEMEVAL without a
+    // slot is leftover from theme → solid.
     if ((isThemeVal(s.formulas['FillForegnd']) &&
-            (s.fill.foreground != null ||
-                s.fill.themeForegroundIndex == null)) ||
+            s.fill.themeForegroundIndex == null) ||
         isInh(s.formulas['FillForegnd'])) {
       out.add('FillForegnd');
     }
     if ((isThemeVal(s.formulas['FillBkgnd']) &&
-            (s.fill.background != null ||
-                s.fill.themeBackgroundIndex == null)) ||
+            s.fill.themeBackgroundIndex == null) ||
         isInh(s.formulas['FillBkgnd'])) {
       out.add('FillBkgnd');
     }
     if ((isThemeVal(s.formulas['LineColor']) &&
-            (s.line.color != null || s.line.themeColorIndex == null)) ||
+            s.line.themeColorIndex == null) ||
         isInh(s.formulas['LineColor'])) {
       out.add('LineColor');
     }
@@ -5573,6 +5575,42 @@ class VsdxWriter {
     bool writeQuickStyle = true,
     String? themeValFormula,
   }) {
+    if (editedTheme != null) {
+      // Theme slot is the binding. Cached RGB in V= is what libvisio paints
+      // after VSDFillStyle::override; keep F=THEMEVAL so reopen still
+      // round-trips the QuickStyle slot. V="0" would otherwise become
+      // palette black.
+      final wantF = themeValFormula ?? 'THEMEVAL()';
+      final wantV = editedColor != null ? _hex(editedColor) : '0';
+      final curF = _cellFormula(shape, cell);
+      final formulaOk = curF == wantF ||
+          (themeValFormula == null &&
+              (curF == null ||
+                  RegExp(r'^THEMEVAL\s*\(\s*\)$', caseSensitive: false)
+                      .hasMatch(curF)));
+      final curV = _findCell(shape, cell)?.getAttribute('V');
+      final colorUnchanged = (baseColor == null && editedColor == null) ||
+          (baseColor != null &&
+              editedColor != null &&
+              baseColor.value == editedColor.value);
+      if (baseTheme == editedTheme &&
+          colorUnchanged &&
+          formulaOk &&
+          _hasCell(shape, cell) &&
+          curV == wantV) {
+        if (writeQuickStyle) {
+          return _ensureLiteralInt(shape, quickStyleCell, editedTheme);
+        }
+        return false;
+      }
+      final c = _ensureCell(shape, cell);
+      _writeValue(c, wantV, preserveFormula: true);
+      c.setAttribute('F', wantF);
+      if (writeQuickStyle) {
+        _writeValue(_ensureCell(shape, quickStyleCell), editedTheme.toString());
+      }
+      return true;
+    }
     if (editedColor != null) {
       // Explicit colour: _writeValue drops THEMEVAL / Inh so the chosen colour
       // is honoured (the parser then ignores QuickStyle*).
@@ -5599,32 +5637,6 @@ class VsdxWriter {
         if (_removeNamedCells(shape, [quickStyleCell])) changed = true;
       }
       return changed;
-    }
-    if (editedTheme != null) {
-      final wantF = themeValFormula ?? 'THEMEVAL()';
-      final curF = _cellFormula(shape, cell);
-      final formulaOk = curF == wantF ||
-          (themeValFormula == null &&
-              (curF == null ||
-                  RegExp(r'^THEMEVAL\s*\(\s*\)$', caseSensitive: false)
-                      .hasMatch(curF)));
-      if (baseTheme == editedTheme &&
-          baseColor == null &&
-          formulaOk &&
-          _hasCell(shape, cell)) {
-        // Colour binding unchanged — still scrub QuickStyle* F=Inh.
-        if (writeQuickStyle) {
-          return _ensureLiteralInt(shape, quickStyleCell, editedTheme);
-        }
-        return false;
-      }
-      final c = _ensureCell(shape, cell);
-      _writeValue(c, '0', preserveFormula: true);
-      c.setAttribute('F', wantF);
-      if (writeQuickStyle) {
-        _writeValue(_ensureCell(shape, quickStyleCell), editedTheme.toString());
-      }
-      return true;
     }
     // Theme cleared with no replacement colour (e.g. FillBkgnd after solid).
     if (baseTheme != null ||
@@ -7491,14 +7503,17 @@ class VsdxWriter {
       }
     }
     // --- Fill ----------------------------------------------------------------
-    if (fill.foreground != null) {
-      children.add(_cell('FillForegnd', _hex(fill.foreground!),
-          formula: formulaOf('FillForegnd')));
-    } else if (fill.themeForegroundIndex != null) {
-      children.add(_cell('FillForegnd', '0',
-          formula: formulaOf('FillForegnd') ?? 'THEMEVAL()'));
+    if (fill.themeForegroundIndex != null) {
+      children.add(_cell(
+        'FillForegnd',
+        fill.foreground != null ? _hex(fill.foreground!) : '0',
+        formula: formulaOf('FillForegnd') ?? 'THEMEVAL()',
+      ));
       children.add(
           _cell('QuickStyleFillColor', fill.themeForegroundIndex!.toString()));
+    } else if (fill.foreground != null) {
+      children.add(_cell('FillForegnd', _hex(fill.foreground!),
+          formula: formulaOf('FillForegnd')));
     } else if (formulaOf('FillForegnd') != null) {
       children
           .add(_cell('FillForegnd', '0', formula: formulaOf('FillForegnd')));
@@ -7509,10 +7524,7 @@ class VsdxWriter {
       // inventing a fill on a container paints a phantom rectangle after reopen.
       children.add(_cell('FillForegnd', '#FFFFFF'));
     }
-    if (fill.background != null) {
-      children.add(_cell('FillBkgnd', _hex(fill.background!),
-          formula: formulaOf('FillBkgnd')));
-    } else if (fill.themeBackgroundIndex != null) {
+    if (fill.themeBackgroundIndex != null) {
       final bgSlot = fill.themeBackgroundIndex!;
       final fgSlot = fill.themeForegroundIndex;
       // When fg and bg use different theme slots they cannot share one
@@ -7522,12 +7534,19 @@ class VsdxWriter {
           : null;
       final bgFormula = formulaOf('FillBkgnd') ??
           (named != null ? 'THEMEVAL("$named")' : 'THEMEVAL()');
-      children.add(_cell('FillBkgnd', '0', formula: bgFormula));
+      children.add(_cell(
+        'FillBkgnd',
+        fill.background != null ? _hex(fill.background!) : '0',
+        formula: bgFormula,
+      ));
       // When only the background is theme-bound, emit QuickStyleFillColor so
       // parseFill can recover themeBackgroundIndex (libvisio / Visio).
       if (fgSlot == null) {
         children.add(_cell('QuickStyleFillColor', bgSlot.toString()));
       }
+    } else if (fill.background != null) {
+      children.add(_cell('FillBkgnd', _hex(fill.background!),
+          formula: formulaOf('FillBkgnd')));
     } else if (formulaOf('FillBkgnd') != null) {
       children.add(_cell('FillBkgnd', '0', formula: formulaOf('FillBkgnd')));
     }
@@ -7544,14 +7563,17 @@ class VsdxWriter {
       ..add(_cell('FillForegndTrans', _fmt(fill.foregroundTransparency)))
       ..add(_cell('FillBkgndTrans', _fmt(fill.backgroundTransparency)));
     // --- Line ----------------------------------------------------------------
-    if (write.line.color != null) {
-      children.add(_cell('LineColor', _hex(write.line.color!),
-          formula: formulaOf('LineColor')));
-    } else if (write.line.themeColorIndex != null) {
-      children.add(_cell('LineColor', '0',
-          formula: formulaOf('LineColor') ?? 'THEMEVAL()'));
+    if (write.line.themeColorIndex != null) {
+      children.add(_cell(
+        'LineColor',
+        write.line.color != null ? _hex(write.line.color!) : '0',
+        formula: formulaOf('LineColor') ?? 'THEMEVAL()',
+      ));
       children.add(
           _cell('QuickStyleLineColor', write.line.themeColorIndex!.toString()));
+    } else if (write.line.color != null) {
+      children.add(_cell('LineColor', _hex(write.line.color!),
+          formula: formulaOf('LineColor')));
     } else if (formulaOf('LineColor') != null) {
       children.add(_cell('LineColor', '0', formula: formulaOf('LineColor')));
     }
@@ -8206,33 +8228,38 @@ class VsdxWriter {
       // Pictures are typically fill-less / stroke-less; emit the zero patterns
       // explicitly so reopen doesn't fall back to Visio's solid defaults.
       _cell('FillPattern', fillPatternForLibvisioWrite(fill).toString()),
-      if (fill.foreground != null)
-        _cell('FillForegnd', _hex(fill.foreground!))
-      else if (fill.themeForegroundIndex != null) ...[
-        _cell('FillForegnd', '0', formula: 'THEMEVAL()'),
+      if (fill.themeForegroundIndex != null) ...[
+        _cell(
+          'FillForegnd',
+          fill.foreground != null ? _hex(fill.foreground!) : '0',
+          formula: 'THEMEVAL()',
+        ),
         _cell('QuickStyleFillColor', fill.themeForegroundIndex!.toString()),
-      ],
-      if (fill.background != null)
-        _cell('FillBkgnd', _hex(fill.background!))
-      else if (bgSlot != null) ...[
+      ] else if (fill.foreground != null)
+        _cell('FillForegnd', _hex(fill.foreground!)),
+      if (bgSlot != null) ...[
         _cell(
           'FillBkgnd',
-          '0',
+          fill.background != null ? _hex(fill.background!) : '0',
           formula: namedBg != null ? 'THEMEVAL("$namedBg")' : 'THEMEVAL()',
         ),
         if (fgSlot == null) _cell('QuickStyleFillColor', bgSlot.toString()),
-      ],
+      ] else if (fill.background != null)
+        _cell('FillBkgnd', _hex(fill.background!)),
       _cell('FillForegndTrans', _fmt(fill.foregroundTransparency)),
       _cell('FillBkgndTrans', _fmt(fill.backgroundTransparency)),
       _cell('LinePattern', write.line.pattern.toString()),
       _cell('LineWeight', _fmt(write.line.weightInches)),
       _cell('LineCap', _lineCapInt(write.line.cap).toString()),
-      if (write.line.color != null)
-        _cell('LineColor', _hex(write.line.color!))
-      else if (write.line.themeColorIndex != null) ...[
-        _cell('LineColor', '0', formula: 'THEMEVAL()'),
+      if (write.line.themeColorIndex != null) ...[
+        _cell(
+          'LineColor',
+          write.line.color != null ? _hex(write.line.color!) : '0',
+          formula: 'THEMEVAL()',
+        ),
         _cell('QuickStyleLineColor', write.line.themeColorIndex!.toString()),
-      ],
+      ] else if (write.line.color != null)
+        _cell('LineColor', _hex(write.line.color!)),
       _cell('LineColorTrans', _fmt(write.line.transparency)),
       // Always emit arrows (incl. 0) — modeled cells, opaque cannot preserve.
       _cell('BeginArrow', write.line.beginArrow.toString()),

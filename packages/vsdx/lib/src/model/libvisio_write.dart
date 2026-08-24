@@ -89,7 +89,10 @@
 /// Color (canvas `_colourOrTheme`) is resolved through the document
 /// theme, then Office, into that same blend — `ColorTrans` is not a
 /// token, so leaving THEMEVAL() would paint the slot fully opaque.
-/// Theme-bound colours with no transparency still keep THEMEVAL().
+/// Theme-bound colours with no transparency still keep THEMEVAL(), but
+/// a save caches the resolved RGB in `V=` — libvisio's
+/// `VSDFillStyle::override` applies that `V` after the theme, and
+/// `V="0"` (palette black) is what Draw would otherwise paint.
 /// Theme-only FillForegnd / FillBkgnd with FillForegndTrans /
 /// FillBkgndTrans freeze into RGB and *keep* Trans — those cells *are*
 /// tokens, so Draw still composites the wash, while THEMEVAL() plus
@@ -337,7 +340,8 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     pages.add(next);
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
-  return bakePageColorForLibvisioWrite(
+  return bakeThemeRgbCacheForLibvisioWrite(
+    bakePageColorForLibvisioWrite(
     bakeCoveredForLibvisioWrite(
       bakeCollapsedForLibvisioWrite(
         bakeShapeInsideForLibvisioWrite(
@@ -390,6 +394,7 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
           ),
         ),
       ),
+    ),
     ),
   );
 }
@@ -8789,6 +8794,10 @@ LibvisioShapeWrite libvisioShapeWrite(
       transparency: 0,
       clearThemeColorIndex: true,
     );
+  } else if (line.color == null && line.themeColorIndex != null) {
+    // Cache RGB in LineColor V= so libvisio's override does not paint
+    // palette 0 black. Keep the slot — the writer still emits THEMEVAL().
+    line = line.copyWith(color: _lineRgbForLibvisioWrite(line, theme));
   }
 
   final glow = bakeGlowForLibvisio(
@@ -8806,7 +8815,11 @@ LibvisioShapeWrite libvisioShapeWrite(
   }
 
   fill = _fillWithoutStaleLibvisioPattern(fill, geometries);
-  fill = fillThemeTransForLibvisioWrite(fill, theme);
+  fill = fillThemeTransForLibvisioWrite(
+    fill,
+    theme,
+    shape.quickStyleFillMatrix,
+  );
 
   return LibvisioShapeWrite(
     geometries: geometries,
@@ -10761,22 +10774,30 @@ VsdxTextBlock textBlockForPaint(VsdxShape shape) {
 /// and `VSDFillStyle::override` applies explicit FillForegnd after the
 /// theme — THEMEVAL() plus `QuickStyleFillColor=9` paints faded black,
 /// while canvas already multiplies `_colourOrTheme` by
-/// (1 − FillForegndTrans). Theme-bound colours with no transparency
-/// still keep THEMEVAL().
+/// (1 − FillForegndTrans). Opaque theme-bound colours keep THEMEVAL()
+/// *and* cache the resolved RGB in `V=` so Draw does not paint palette
+/// 0 black (`V="0"` is libvisio's explicit FillForegnd after the theme).
 VsdxFill fillThemeTransForLibvisioWrite(
   VsdxFill fill, [
   VsdxTheme theme = VsdxTheme.empty,
+  int? fillMatrix,
 ]) {
   final fgTrans = fill.foregroundTransparency > 1e-9;
   final bgTrans = fill.backgroundTransparency > 1e-9;
-  if (!fgTrans && !bgTrans) return fill;
+  if (!fgTrans && !bgTrans) {
+    return fillThemeRgbCacheForLibvisioWrite(fill, theme, fillMatrix);
+  }
 
   var foreground = fill.foreground;
   var background = fill.background;
   var clearFg = false;
   var clearBg = false;
   if (fgTrans && foreground == null && fill.themeForegroundIndex != null) {
-    foreground = _fillRgbForLibvisioWrite(fill, theme);
+    foreground = _fillRgbForLibvisioWrite(
+      fill,
+      theme,
+      fillMatrix: fillMatrix,
+    );
     clearFg = true;
   }
   if (bgTrans && background == null && fill.themeBackgroundIndex != null) {
@@ -10792,6 +10813,64 @@ VsdxFill fillThemeTransForLibvisioWrite(
     background: background,
     clearThemeForegroundIndex: clearFg,
     clearThemeBackgroundIndex: clearBg,
+  );
+}
+
+/// Cache resolved theme RGB on [fill] without dropping QuickStyle slots.
+/// Writer still emits `F="THEMEVAL()"`; `V=` becomes the hex Draw paints.
+VsdxFill fillThemeRgbCacheForLibvisioWrite(
+  VsdxFill fill, [
+  VsdxTheme theme = VsdxTheme.empty,
+  int? fillMatrix,
+]) {
+  var foreground = fill.foreground;
+  var background = fill.background;
+  if (foreground == null && fill.themeForegroundIndex != null) {
+    foreground = _fillRgbForLibvisioWrite(
+      fill,
+      theme,
+      fillMatrix: fillMatrix,
+    );
+  }
+  if (background == null && fill.themeBackgroundIndex != null) {
+    background = _fillBackgroundRgbForLibvisioWrite(fill, theme);
+  }
+  if (identical(foreground, fill.foreground) &&
+      identical(background, fill.background)) {
+    return fill;
+  }
+  return fill.copyWith(foreground: foreground, background: background);
+}
+
+/// Cache theme RGB on every shape so the writer can emit hex `V=` even
+/// when [libvisioShapeWrite] is called without a theme (the writer path).
+VsdxDocument bakeThemeRgbCacheForLibvisioWrite(VsdxDocument document) {
+  final theme = document.theme;
+  if (theme.isEmpty) return document;
+  VsdxShape bakeShape(VsdxShape shape) {
+    var fill = fillThemeTransForLibvisioWrite(
+      shape.fill,
+      theme,
+      shape.quickStyleFillMatrix,
+    );
+    var line = shape.line;
+    if (line.color == null && line.themeColorIndex != null) {
+      line = line.copyWith(color: _lineRgbForLibvisioWrite(line, theme));
+    }
+    return shape.copyWith(
+      fill: fill,
+      line: line,
+      children: shape.children.map(bakeShape).toList(growable: false),
+    );
+  }
+
+  return document.copyWith(
+    pages: [
+      for (final page in document.pages)
+        page.copyWith(
+          shapes: page.shapes.map(bakeShape).toList(growable: false),
+        ),
+    ],
   );
 }
 

@@ -8645,6 +8645,14 @@ void main() {
       slot,
       reason: 'opaque theme FillForegnd still keeps THEMEVAL',
     );
+    expect(
+      fillThemeTransForLibvisioWrite(
+        const VsdxFill(themeForegroundIndex: slot, pattern: 1),
+        VsdxTheme.office,
+      ).foreground?.value,
+      expected.value,
+      reason: 'opaque theme FillForegnd caches RGB in V= so Draw is not black',
+    );
 
     const hatch = VsdxFill(
       foreground: VsdxColor(0xFFFF0000),
@@ -8700,6 +8708,76 @@ void main() {
     expect(after.fill.foreground?.value, expected.value);
     expect(after.fill.themeForegroundIndex, isNull);
     expect(after.fill.foregroundTransparency, closeTo(trans, 1e-9));
+  });
+
+  test('opaque theme FillForegnd caches RGB in V= for LibreOffice', () {
+    const slot = ThemeSlot.accent6;
+    final expected = VsdxTheme.office.resolve(slot)!;
+    const fill = VsdxFill(
+      themeForegroundIndex: slot,
+      pattern: 1,
+    );
+    final cached = fillThemeTransForLibvisioWrite(fill, VsdxTheme.office);
+    expect(cached.themeForegroundIndex, slot);
+    expect(cached.foreground?.value, expected.value);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'FillThemeOpaque',
+      fill: fill,
+      line: const VsdxLine(pattern: 0),
+    );
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    final hex = (expected.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(
+      RegExp('N="FillForegnd"[^>]*V="#$hex"').hasMatch(xml) ||
+          RegExp('V="#$hex"[^>]*N="FillForegnd"').hasMatch(xml),
+      isTrue,
+      reason: 'opaque theme FillForegnd must cache RGB in V=; expected=#$hex',
+    );
+    expect(
+      xml.contains('F="THEMEVAL()"'),
+      isTrue,
+      reason: 'opaque theme FillForegnd must keep THEMEVAL for round-trip',
+    );
+    expect(
+      xml.contains('N="QuickStyleFillColor" V="$slot"'),
+      isTrue,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.fill.themeForegroundIndex, slot);
+    expect(after.fill.foreground, isNull);
+
+    final saved2 = writer.write(
+      originalBytes: saved,
+      edited: parser.parse(saved),
+    );
+    final xml2 = VsdxPackage.open(saved2)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(
+      RegExp('N="FillForegnd"[^>]*V="#$hex"').hasMatch(xml2) ||
+          RegExp('V="#$hex"[^>]*N="FillForegnd"').hasMatch(xml2),
+      isTrue,
+      reason: 'second save must keep the same RGB cache, not stack',
+    );
+    expect(xml2.contains('F="THEMEVAL()"'), isTrue);
+    final after2 = parser.parse(saved2).pages.first.findShapeById(1)!;
+    expect(after2.fill.themeForegroundIndex, slot);
+    expect(after2.fill.foreground, isNull);
   });
 
   test('Asian/complex Character Font and Size bake for LibreOffice', () {

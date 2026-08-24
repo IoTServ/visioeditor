@@ -31,11 +31,28 @@ void main() {
     doc = doc
         .copyWith(theme: VsdxTheme.office)
         .replacePage(0, doc.pages.first.addShape(rect));
-    final after = parser
-        .parse(writer.write(originalBytes: blank, edited: doc))
-        .pages
-        .first
-        .findShapeById(id)!;
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final pageXml = utf8.decode(
+      ZipDecoder()
+          .decodeBytes(saved)
+          .firstWhere((f) => f.name.contains('pages/page1.xml'))
+          .content as List<int>,
+    );
+    final hex = (VsdxTheme.office.resolve(ThemeSlot.accent1)!.value & 0xFFFFFF)
+        .toRadixString(16)
+        .padLeft(6, '0')
+        .toUpperCase();
+    expect(
+      RegExp('N="FillForegnd"[^>]*V="#$hex"').hasMatch(pageXml) ||
+          RegExp('V="#$hex"[^>]*N="FillForegnd"').hasMatch(pageXml),
+      isTrue,
+      reason: 'THEMEVAL FillForegnd must cache Office RGB in V= for Draw',
+    );
+    expect(
+      RegExp(r'N="FillForegnd"[^>]*F="THEMEVAL').hasMatch(pageXml),
+      isTrue,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(id)!;
     expect(after.fill.themeForegroundIndex, ThemeSlot.accent1);
     expect(after.fill.foreground, isNull);
   });
