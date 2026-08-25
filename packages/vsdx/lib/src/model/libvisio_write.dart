@@ -20,7 +20,9 @@
 /// and FillForegndTrans / FillBkgndTrans on a 25–40 wash are the same
 /// missing paint: `_fillAndShadowProperties` drops `draw:opacity` and
 /// Draw ignores `librevenge:start-opacity` / `end-opacity`, so a save
-/// bakes that PNG too. Two-colour opaque washes stay 25–40. Curve
+/// bakes that PNG too — including a fully transparent stop that 25–40
+/// would skip, stretching the remaining opaque colours from the box
+/// edge. Two-colour opaque washes stay 25–40. Curve
 /// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
 /// sampled so that plate follows the painted path — endpoint-only
 /// polygons used to wash a pie as a triangle and a rounded rectangle as
@@ -8238,7 +8240,9 @@ double _fillGradientCellTransparency(VsdxFill fill) =>
 /// gradient stops with more than two unique colours cannot survive that
 /// collapse, so the SoftEdges PNG is used even at sigma 0. Per-stop
 /// alpha is the same missing paint: those two Trans cells become
-/// `librevenge:*-opacity`, which Draw does not honour.
+/// `librevenge:*-opacity`, which Draw does not honour — including a
+/// fully transparent stop, which 25–40 would replace with the next
+/// opaque colour at the box edge.
 bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
   final keys = <int>{};
@@ -8257,9 +8261,7 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   }
   if (keys.length > 2) return true;
   for (final stop in gradient.stops) {
-    if (stop.transparency > 1e-9 && stop.transparency <= 1 - 1e-9) {
-      return true;
-    }
+    if (stop.transparency > 1e-9) return true;
   }
   return false;
 }

@@ -15498,9 +15498,12 @@ void main() {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
               .firstWhere((s) => s.name == 'GradientNoPattern');
-          expect(source.fill.hasFill, isTrue);
-          expect(source.fill.pattern, inInclusiveRange(25, 40));
-          expect(source.fill.paintGradient, isNotNull);
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
         }
         if (entry.key == 'fill_gradient_pattern0' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
@@ -15562,13 +15565,60 @@ void main() {
             reason: 'LibreOffice must keep the blue wash, not a hollow box; '
                 'b=${centre.b} luma=${centre.luma}',
           );
+          // pin (4.25, 5.5), 2"×1.2"; angle 225° puts t=0 at local (2, 1.2).
+          // A fully transparent first stop composites onto white there.
+          // FillPattern 25–40 would skip it and top out around ACCFFF
+          // (luma ~202). Stay 0.03" inside the fill so page white cannot
+          // inflate the max.
+          final holeLeft =
+              (3.28 / page.widthInches * rendered.width).round();
+          final holeRight =
+              (5.22 / page.widthInches * rendered.width).round();
+          final holeTop = ((page.heightInches - 6.07) /
+                  page.heightInches *
+                  rendered.height)
+              .round();
+          final holeBottom = ((page.heightInches - 4.93) /
+                  page.heightInches *
+                  rendered.height)
+              .round();
+          var holeMax = 0.0;
+          for (var y = holeTop; y < holeBottom; y++) {
+            for (var x = holeLeft; x < holeRight; x++) {
+              if (x < 0 ||
+                  y < 0 ||
+                  x >= rendered.width ||
+                  y >= rendered.height) {
+                continue;
+              }
+              final pixel = rendered.getPixel(x, y);
+              final luma =
+                  0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+              if (luma > holeMax) holeMax = luma;
+            }
+          }
+          expect(
+            holeMax,
+            greaterThan(210),
+            reason: 'LibreOffice must keep the transparent stop as a hole, '
+                'not stretch ACCFFF from the box edge; max=$holeMax',
+          );
         }
         if (entry.key == 'zh_data') {
           final reopened = parser.parse(entry.value);
           final arrow = reopened.pages.first.findShapeById(147)!;
-          expect(arrow.fill.hasFill, isTrue);
-          expect(arrow.fill.pattern, isNot(0));
-          expect(arrow.fill.paintGradient, isNotNull);
+          expect(arrow.fill.pattern, 0);
+          expect(arrow.fill.hasGradient, isFalse);
+          expect(arrow.fill.hasFill, isFalse,
+              reason: 'a fully transparent stop bakes a PNG, not 25–40');
+          expect(
+            reopened.pages.first.shapes.where(
+              (s) =>
+                  isLibvisioSoftEdgesPlate(s) &&
+                  libvisioSoftEdgesSourceId(s) == arrow.id,
+            ),
+            hasLength(1),
+          );
         }
         if (entry.key == 'zh_data' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';

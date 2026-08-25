@@ -9,7 +9,8 @@
 /// disappears or goes fully opaque in Draw. The writer rewrites those to
 /// classic FillPattern 25–40 (a FillGradient with more than two unique
 /// opaque colours, or per-stop / Fill*Trans alpha Draw would paint
-/// opaque, bakes a PNG plate instead; EllipticalArcTo silhouettes
+/// opaque — including a fully transparent stop 25–40 would replace
+/// with the next opaque colour — bakes a PNG plate instead; EllipticalArcTo silhouettes
 /// are sampled so a pie is not a triangle and a rounded rectangle is not
 /// the Width×Height box; multiple NoFill=0 Geometry sections punch
 /// even-odd holes so a frame is not a solid plate), baked RelQuadBezTo corners, parallel Geometry
@@ -3937,8 +3938,59 @@ void main() {
           line: const VsdxLine(pattern: 0),
         ),
       ),
-      isFalse,
-      reason: 'a transparent first stop leaves two colours for 25–40',
+      isTrue,
+      reason: 'a fully transparent stop is not two opaque 25–40 colours',
+    );
+    var skippedDoc = parser.parse(blank);
+    skippedDoc = skippedDoc.replacePage(
+      0,
+      skippedDoc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: 3,
+          pinX: 2,
+          pinY: 5,
+          width: 1.2,
+          height: 0.8,
+          name: 'GradClearStop',
+          fill: skipped,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
+    final skippedBaked = documentForLibvisioWrite(skippedDoc);
+    expect(skippedBaked.pages.first.findShapeById(3)!.fill.pattern, 0);
+    final skippedPlate =
+        skippedBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final skippedPng = raster.decodePng(
+      skippedBaked.images.findByPart(skippedPlate.imagePartName!)!.bytes,
+    )!;
+    var skippedMax = 0.0;
+    var skippedMin = 255.0;
+    for (final pixel in skippedPng) {
+      if (pixel.a < 200) continue;
+      final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+      if (luma > skippedMax) skippedMax = luma;
+      if (luma < skippedMin) skippedMin = luma;
+    }
+    expect(
+      skippedMax,
+      greaterThan(240),
+      reason: 'fully transparent stop must composite onto white; '
+          'max=$skippedMax min=$skippedMin',
+    );
+    expect(
+      skippedMin,
+      lessThan(180),
+      reason: 'opaque blue stop must remain; max=$skippedMax min=$skippedMin',
+    );
+    expect(
+      documentForLibvisioWrite(skippedBaked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another clear-stop plate',
     );
   });
 
@@ -4700,6 +4752,53 @@ void main() {
           .where(isLibvisioSoftEdgesPlate),
       hasLength(1),
       reason: 'a second save must not stack another faded LineGradient plate',
+    );
+
+    const clearLineStops = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(
+          position: 0,
+          color: VsdxColor(0xFFFF00FF),
+          transparency: 1,
+        ),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final clearLine = VsdxShapeFactory.rectangle(
+      id: 7,
+      pinX: 5,
+      pinY: 5,
+      width: 2,
+      height: 1.2,
+      name: 'LineGradClearStop',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        pattern: 1,
+        weightInches: 0.16,
+        gradient: clearLineStops,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(clearLine), isTrue,
+        reason: 'a fully transparent LineGradient stop is not two 25–40 colours');
+    var clearLineDoc = parser.parse(blank);
+    clearLineDoc = clearLineDoc.replacePage(
+      0,
+      clearLineDoc.pages.first.addShape(clearLine),
+    );
+    final clearLineBaked = documentForLibvisioWrite(clearLineDoc);
+    expect(clearLineBaked.pages.first.findShapeById(7)!.line.pattern, 0);
+    expect(
+      clearLineBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(clearLineBaked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another clear-stop LineGradient plate',
     );
 
     final connector = VsdxShapeFactory.line(
@@ -13882,11 +13981,19 @@ void main() {
     );
     final gradientNoPattern = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'FillGradientNoPattern');
-    expect(gradientNoPattern.fill.hasFill, isTrue);
-    expect(gradientNoPattern.fill.pattern, inInclusiveRange(25, 40),
-        reason: 'omitted FillPattern must bake classic 25–40 for Draw');
-    expect(gradientNoPattern.fill.paintGradient, isNotNull);
-    expect(gradientNoPattern.fill.foreground, isNotNull);
+    expect(gradientNoPattern.fill.pattern, 0,
+        reason: 'a fully transparent stop bakes a PNG, not 25–40');
+    expect(gradientNoPattern.fill.hasGradient, isFalse);
+    expect(gradientNoPattern.fill.hasFill, isFalse,
+        reason: 'the leftover must drop fill so the PNG plate is the body');
+    expect(
+      savedDoc.pages.first.shapes.where(
+        (s) =>
+            isLibvisioSoftEdgesPlate(s) &&
+            libvisioSoftEdgesSourceId(s) == gradientNoPattern.id,
+      ),
+      hasLength(1),
+    );
     final roundJoin =
         savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'RoundJoin');
     expect(roundJoin.line.roundingInches, closeTo(0, 1e-12),
@@ -14021,6 +14128,8 @@ void main() {
       reason:
           'must not steal the chevron body as an unfilled LineGradient ribbon',
     );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(arrow), isTrue,
+        reason: 'a fully transparent stop is not two opaque 25–40 colours');
     expect(fillPatternForLibvisioWrite(arrow.fill), inInclusiveRange(25, 40));
     final write = libvisioShapeWrite(arrow);
     expect(write.fill.pattern, inInclusiveRange(25, 40));
@@ -14031,10 +14140,20 @@ void main() {
     expect(svg, contains('linearGradient'));
 
     final saved = writer.write(originalBytes: bytes, edited: doc);
-    final after = parser.parse(saved).pages.first.findShapeById(147)!;
-    expect(after.fill.hasFill, isTrue);
-    expect(after.fill.paintGradient, isNotNull);
-    expect(after.fill.pattern, isNot(0));
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(147)!;
+    expect(after.fill.pattern, 0);
+    expect(after.fill.hasGradient, isFalse);
+    expect(after.fill.hasFill, isFalse,
+        reason: 'the leftover must drop fill so the PNG plate is the body');
+    expect(
+      savedDoc.pages.first.shapes.where(
+        (s) =>
+            isLibvisioSoftEdgesPlate(s) &&
+            libvisioSoftEdgesSourceId(s) == after.id,
+      ),
+      hasLength(1),
+    );
   });
 }
 

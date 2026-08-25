@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient / LineGradient washes with a fully transparent stop now
+  keep that hole in LibreOffice. FillPattern 25–40 would skip the
+  invisible colour and stretch the remaining opaque stops from the box
+  edge. A save bakes the same SoftEdges PNG per-stop alpha already
+  uses. Opaque two-colour washes stay 25–40. A second save does not
+  stack another plate.
 - Two-colour FillGradient / LineGradient washes with per-stop or cell
   transparency now keep that fade in LibreOffice. FillPattern 25–40
   drop `draw:opacity` and Draw ignores `librevenge:start-opacity` /
