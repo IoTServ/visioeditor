@@ -22,7 +22,8 @@
 /// white so Draw does not fill that box with Blue 2. Multiple NoFill=0
 /// Geometry sections punch even-odd holes (libvisio's
 /// `svg:fill-rule=evenodd`); a two-ring frame must not bake as a solid
-/// Width×Height plate. For an
+/// Width×Height plate, including when a multi-stop LineGradient joins
+/// that same fill PNG. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
@@ -8890,8 +8891,18 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   int? holeAlpha,
   bool holeFromFill = false,
 }) {
-  final ribbons = _softEdgesStrokeRibbonPolygons(shape);
-  final kind = _softEdgesStrokeSilhouetteKind(shape);
+  final ribbons0 = _softEdgesStrokeRibbonPolygons(shape);
+  final fillRings = _softEdgesFillPolygonsInches(shape);
+  final evenOddFill = fillRings != null && fillRings.length > 1;
+  // libvisio concatenates every NoFill=0 Geometry with even-odd. A
+  // Width×Height outer box would otherwise bake as a solid rectangle and
+  // fill the hole; stroke both rings as ribbons instead.
+  final ribbons = ribbons0.isNotEmpty
+      ? ribbons0
+      : (evenOddFill ? _solidStrokeRibbonPolygons(shape) : ribbons0);
+  final kind = evenOddFill
+      ? SoftEdgesSilhouetteKind.polygon
+      : _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
   final color = _lineRgbForLibvisioWrite(shape.line, theme);
   final trans = shape.line.transparency.clamp(0.0, 1.0);
@@ -8928,11 +8939,20 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   var outer = const <({double x, double y})>[];
   var inner = const <({double x, double y})>[];
   var ribbonPx = const <List<({double x, double y})>>[];
+  var holePolygons = const <List<({double x, double y})>>[];
   ({double x, double y}) toPx(Offset2D p) => (
         x: padPx + p.x / w * (innerWidthPx - 1),
         y: padPx + (1 - p.y / h) * (innerHeightPx - 1),
       );
   final needsHole = (holeAlpha != null && holeAlpha > 0) || holeColorAt != null;
+  if (needsHole && fillRings != null && fillRings.isNotEmpty) {
+    holePolygons = <List<({double x, double y})>>[
+      for (final ring in fillRings)
+        if (ring.length >= 3)
+          <({double x, double y})>[for (final p in ring) toPx(p)],
+    ];
+    if (holePolygons.isNotEmpty) inner = holePolygons.first;
+  }
   if (ribbons.isNotEmpty) {
     ribbonPx = <List<({double x, double y})>>[
       for (final ribbon in ribbons)
@@ -8942,19 +8962,6 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
           ],
     ];
     if (ribbonPx.isEmpty) return null;
-    if (needsHole &&
-        _softEdgesSilhouetteKind(shape) == SoftEdgesSilhouetteKind.polygon) {
-      VsdxGeometry? geom;
-      for (final candidate in shape.geometries) {
-        if (candidate.noShow || candidate.noFill) continue;
-        geom = candidate;
-        break;
-      }
-      final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
-      if (inches != null && inches.length >= 3) {
-        inner = <({double x, double y})>[for (final p in inches) toPx(p)];
-      }
-    }
   } else if (kind == SoftEdgesSilhouetteKind.polygon) {
     final geom = _softEdgesStrokeGeometry(shape);
     final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
@@ -8980,6 +8987,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     outer: outer,
     inner: inner,
     ribbons: ribbonPx,
+    holePolygons: holePolygons,
     holeRed: holeRed,
     holeGreen: holeGreen,
     holeBlue: holeBlue,

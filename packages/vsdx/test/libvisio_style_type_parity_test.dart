@@ -4090,7 +4090,12 @@ void main() {
         return img.getPixel(ix, iy);
       }
 
-      VsdxShape frame(int id, VsdxFill fill) => VsdxShape(
+      VsdxShape frame(
+        int id,
+        VsdxFill fill, {
+        VsdxLine line = const VsdxLine(pattern: 0),
+      }) =>
+          VsdxShape(
             id: id,
             name: 'EvenOdd',
             pinX: 4,
@@ -4098,7 +4103,7 @@ void main() {
             width: 3.2,
             height: 3.2,
             fill: fill,
-            line: const VsdxLine(pattern: 0),
+            line: line,
             geometries: const <VsdxGeometry>[
               VsdxGeometry(
                 commands: <VsdxPathCommand>[
@@ -4201,6 +4206,49 @@ void main() {
         isEmpty,
         reason:
             'two-colour even-odd FillGradient must stay classic FillPattern 25–40',
+      );
+
+      final both = frame(
+        3,
+        const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(pattern: 1, weightInches: 0.12, gradient: wash),
+      );
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(both), isTrue);
+      var bothDoc = parser.parse(blank);
+      bothDoc = bothDoc.replacePage(0, bothDoc.pages.first.addShape(both));
+      final bothBaked = documentForLibvisioWrite(bothDoc);
+      expect(bothBaked.pages.first.findShapeById(3)!.fill.pattern, 0);
+      expect(bothBaked.pages.first.findShapeById(3)!.line.pattern, 0);
+      final bothPlate =
+          bothBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+      final bothPng = bothBaked.images.findByPart(bothPlate.imagePartName!);
+      final bothDecoded = raster.decodePng(bothPng!.bytes)!;
+      final bothHole = bothDecoded.getPixel(
+        bothDecoded.width ~/ 2,
+        bothDecoded.height ~/ 2,
+      );
+      expect(
+        bothHole.r,
+        greaterThan(240),
+        reason:
+            'even-odd FillGradient+LineGradient PNG must keep the hole; '
+            'hole=$bothHole',
+      );
+      expect(
+        bothHole.g,
+        greaterThan(240),
+        reason:
+            'even-odd FillGradient+LineGradient PNG must keep the hole; '
+            'hole=$bothHole',
+      );
+      expect(
+        documentForLibvisioWrite(bothBaked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another even-odd fill+stroke plate',
       );
     },
   );

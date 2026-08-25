@@ -2533,6 +2533,42 @@ void main() {
         ),
       ),
     );
+    var evenoddGrad3LineDocument = parser.parse(blank);
+    evenoddGrad3LineDocument = evenoddGrad3LineDocument.replacePage(
+      0,
+      evenoddGrad3LineDocument.pages.first.addShape(
+        VsdxShape(
+          id: evenoddGrad3LineDocument.pages.first.nextFreeShapeId(),
+          name: 'EvenOdd3Line',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3.2,
+          height: 3.2,
+          fill: const VsdxFill(pattern: 1, gradient: wash3),
+          line: const VsdxLine(pattern: 1, weightInches: 0.12, gradient: wash3),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(3.2, 0),
+                LineTo(3.2, 3.2),
+                LineTo(0, 3.2),
+                LineTo(0, 0),
+              ],
+            ),
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0.7, 0.7),
+                LineTo(2.5, 0.7),
+                LineTo(2.5, 2.5),
+                LineTo(0.7, 2.5),
+                LineTo(0.7, 0.7),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -6195,6 +6231,10 @@ void main() {
       'evenodd_grad3': writer.write(
         originalBytes: blank,
         edited: evenoddGrad3Document,
+      ),
+      'evenodd_grad3_line': writer.write(
+        originalBytes: blank,
+        edited: evenoddGrad3LineDocument,
       ),
       'linegrad3': writer.write(
         originalBytes: blank,
@@ -13356,6 +13396,19 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'evenodd_grad3_line') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'EvenOdd3Line');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
         if (entry.key == 'linegrad3') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13394,6 +13447,7 @@ void main() {
         if ((entry.key == 'grad3_fill_gradient' ||
                 entry.key == 'grad3_arc_fill' ||
                 entry.key == 'evenodd_grad3' ||
+                entry.key == 'evenodd_grad3_line' ||
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
@@ -13452,10 +13506,12 @@ void main() {
                   'blue2=$blue2 green=$green',
             );
           }
-          if (entry.key == 'evenodd_grad3') {
+          if (entry.key == 'evenodd_grad3' ||
+              entry.key == 'evenodd_grad3_line') {
             final page = parser.parse(entry.value).pages.first;
-            final shape =
-                page.shapes.firstWhere((s) => s.name == 'EvenOdd3');
+            final shape = page.shapes.firstWhere(
+              (s) => s.name == 'EvenOdd3' || s.name == 'EvenOdd3Line',
+            );
             final cx = ((shape.pinX / page.widthInches) * rendered.width)
                 .round()
                 .clamp(0, rendered.width - 1);

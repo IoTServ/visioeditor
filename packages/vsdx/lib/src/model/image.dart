@@ -964,6 +964,8 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
   List<({double x, double y})> inner = const <({double x, double y})>[],
   List<List<({double x, double y})>> ribbons =
       const <List<({double x, double y})>>[],
+  List<List<({double x, double y})>> holePolygons =
+      const <List<({double x, double y})>>[],
   int? holeRed,
   int? holeGreen,
   int? holeBlue,
@@ -1005,6 +1007,7 @@ Uint8List? bakeStrokedSilhouetteSoftEdgesPng({
           padPx: padPx,
           kind: kind,
           fill: inner,
+          evenOddFill: holePolygons,
           color: hole ?? raster.ColorRgba8(0, 0, 0, 0),
           colorAt: holeColorAt,
         );
@@ -1292,6 +1295,20 @@ bool _paintStrokedRing(
   return true;
 }
 
+bool _evenOddPointInRings(
+  List<List<({double x, double y})>> rings,
+  double x,
+  double y,
+) {
+  var inside = false;
+  for (final ring in rings) {
+    if (ring.length >= 3 && _softEdgesPointInPolygon(ring, x, y)) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
 bool _paintInnerFill(
   raster.Image work, {
   required int innerWidthPx,
@@ -1299,13 +1316,21 @@ bool _paintInnerFill(
   required int padPx,
   required SoftEdgesSilhouetteKind kind,
   required List<({double x, double y})> fill,
+  List<List<({double x, double y})>> evenOddFill =
+      const <List<({double x, double y})>>[],
   required raster.ColorRgba8 color,
   ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
       colorAt,
 }) {
   final widthPx = work.width;
   final heightPx = work.height;
-  if (colorAt == null && kind == SoftEdgesSilhouetteKind.rectangle) {
+  final rings = <List<({double x, double y})>>[
+    for (final ring in evenOddFill)
+      if (ring.length >= 3) ring,
+  ];
+  if (rings.isEmpty &&
+      colorAt == null &&
+      kind == SoftEdgesSilhouetteKind.rectangle) {
     raster.fillRect(
       work,
       x1: padPx.clamp(0, widthPx - 1),
@@ -1317,7 +1342,9 @@ bool _paintInnerFill(
     );
     return true;
   }
-  if (kind == SoftEdgesSilhouetteKind.polygon && fill.length < 3) {
+  if (rings.isEmpty &&
+      kind == SoftEdgesSilhouetteKind.polygon &&
+      fill.length < 3) {
     return false;
   }
   var painted = false;
@@ -1325,23 +1352,25 @@ bool _paintInnerFill(
     for (var x = 0; x < widthPx; x++) {
       final px = x + 0.5;
       final py = y + 0.5;
-      final inside = switch (kind) {
-        SoftEdgesSilhouetteKind.rectangle => px >= padPx &&
-            py >= padPx &&
-            px < padPx + innerWidthPx &&
-            py < padPx + innerHeightPx,
-        SoftEdgesSilhouetteKind.ellipse => () {
-            final cx = padPx + (innerWidthPx - 1) / 2;
-            final cy = padPx + (innerHeightPx - 1) / 2;
-            final rx = math.max((innerWidthPx - 1) / 2, 0.5);
-            final ry = math.max((innerHeightPx - 1) / 2, 0.5);
-            final nx = (px - cx) / rx;
-            final ny = (py - cy) / ry;
-            return nx * nx + ny * ny <= 1;
-          }(),
-        SoftEdgesSilhouetteKind.polygon =>
-          _softEdgesPointInPolygon(fill, px, py),
-      };
+      final inside = rings.isNotEmpty
+          ? _evenOddPointInRings(rings, px, py)
+          : switch (kind) {
+              SoftEdgesSilhouetteKind.rectangle => px >= padPx &&
+                  py >= padPx &&
+                  px < padPx + innerWidthPx &&
+                  py < padPx + innerHeightPx,
+              SoftEdgesSilhouetteKind.ellipse => () {
+                  final cx = padPx + (innerWidthPx - 1) / 2;
+                  final cy = padPx + (innerHeightPx - 1) / 2;
+                  final rx = math.max((innerWidthPx - 1) / 2, 0.5);
+                  final ry = math.max((innerHeightPx - 1) / 2, 0.5);
+                  final nx = (px - cx) / rx;
+                  final ny = (py - cy) / ry;
+                  return nx * nx + ny * ny <= 1;
+                }(),
+              SoftEdgesSilhouetteKind.polygon =>
+                _softEdgesPointInPolygon(fill, px, py),
+            };
       if (!inside) continue;
       if (colorAt != null) {
         final sampled = colorAt(px - padPx, py - padPx);

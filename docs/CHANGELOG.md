@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient + LineGradient washes with more than two unique opaque
+  colours on a compound even-odd fill now keep the hole in LibreOffice.
+  A save that baked both into one SoftEdges PNG classified the outer
+  Width×Height box as a rectangle and filled the interior, while
+  libvisio concatenates every `NoFill=0` Geometry with
+  `svg:fill-rule=evenodd`. The plate now even-odd-fills every fillable
+  ring and strokes both paths. Two-colour washes stay 25–40. A second
+  save does not stack another plate.
 - FillGradient washes with more than two unique opaque colours on a
   compound even-odd fill now keep the hole in LibreOffice. libvisio
   concatenates every `NoFill=0` Geometry into one `svg:fill-rule=evenodd`
