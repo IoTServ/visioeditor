@@ -212,6 +212,12 @@
 /// SVG already map that cell to justify (Flutter has no last-line
 /// stretch). A save writes `HorzAlign=3` so libvisio emits `justify`.
 /// A second save does not change that cell.
+/// Text-block `DefaultTabStop` *is* a token and the collector emits
+/// `style:tab-stop-distance`, but Draw's drawing-text import ignores
+/// that property and jumps 0.5" (ODF's default) while canvas / SVG
+/// already use `visioTabFieldStart`. A save writes explicit Tabs stops
+/// on that interval so Draw collects `style:tab-stops`. Authored
+/// off-grid stops stay; a second save does not stack another grid.
 /// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
@@ -388,19 +394,21 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                     bakeCurvedTextForLibvisioWrite(
                                       bakeShapeOpacityForLibvisioWrite(
                                         bakeSolidLineSpacingForLibvisioWrite(
-                                          bakeHorzAlignFullForLibvisioWrite(
-                                            bakeMixedScriptFontForLibvisioWrite(
-                                              bakeLangIdRtlForLibvisioWrite(
-                                                bakeDoubleStrikethroughForLibvisioWrite(
-                                                  bakeOverlineForLibvisioWrite(
-                                                    bakeMixedHighlightForLibvisioWrite(
-                                                      bakeLooseEdgeLabelForLibvisioWrite(
-                                                        bakeAutoRotateLabelForLibvisioWrite(
-                                                          bakeTextDirectionForLibvisioWrite(
-                                                            bakeBulletGlyphForLibvisioWrite(
-                                                              bakeMetafileBitmapsForLibvisioWrite(
-                                                                bakeOlePreviewsForLibvisioWrite(
-                                                                  hopped,
+                                          bakeDefaultTabStopForLibvisioWrite(
+                                            bakeHorzAlignFullForLibvisioWrite(
+                                              bakeMixedScriptFontForLibvisioWrite(
+                                                bakeLangIdRtlForLibvisioWrite(
+                                                  bakeDoubleStrikethroughForLibvisioWrite(
+                                                    bakeOverlineForLibvisioWrite(
+                                                      bakeMixedHighlightForLibvisioWrite(
+                                                        bakeLooseEdgeLabelForLibvisioWrite(
+                                                          bakeAutoRotateLabelForLibvisioWrite(
+                                                            bakeTextDirectionForLibvisioWrite(
+                                                              bakeBulletGlyphForLibvisioWrite(
+                                                                bakeMetafileBitmapsForLibvisioWrite(
+                                                                  bakeOlePreviewsForLibvisioWrite(
+                                                                    hopped,
+                                                                  ),
                                                                 ),
                                                               ),
                                                             ),
@@ -4576,6 +4584,202 @@ VsdxDocument bakeHorzAlignFullForLibvisioWrite(VsdxDocument document) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
         bakeHorzAlignFullShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// Draw's drawing-text import ignores `style:tab-stop-distance` and jumps
+/// 0.5" — the ODF default, which matches Visio's DefaultTabStop when the
+/// cell is omitted or 0.
+const _kLibvisioDrawDefaultTabStopInches = 0.5;
+
+double _libvisioTabIntervalInches(VsdxTextBlock block) {
+  final stop = block.defaultTabStopInches;
+  return stop > 1e-9 ? stop : _kLibvisioDrawDefaultTabStopInches;
+}
+
+bool _libvisioDefaultTabIntervalNeedsBake(double interval) =>
+    (interval - _kLibvisioDrawDefaultTabStopInches).abs() > 1e-6;
+
+bool _shapeHasTabChar(VsdxShape shape) {
+  for (final run in shape.richText.runs) {
+    if (run.text.contains('\t')) return true;
+  }
+  return false;
+}
+
+Set<int> _libvisioReferencedTabSetIndexes(VsdxShape shape) {
+  final ix = <int>{};
+  for (final run in shape.richText.runs) {
+    var tabs = 0;
+    for (final unit in run.text.codeUnits) {
+      if (unit == 0x09) tabs++;
+    }
+    if (tabs == 0) continue;
+    for (var i = 0; i < tabs; i++) {
+      ix.add(i < run.tabIndices.length ? run.tabIndices[i] : 0);
+    }
+  }
+  return ix;
+}
+
+int _libvisioTabCharCount(VsdxShape shape) {
+  var tabs = 0;
+  for (final run in shape.richText.runs) {
+    for (final unit in run.text.codeUnits) {
+      if (unit == 0x09) tabs++;
+    }
+  }
+  return tabs;
+}
+
+double _libvisioDefaultTabGridEndInches(VsdxShape shape) {
+  final block = shape.richText.textBlock;
+  final width = (block.widthInches ?? shape.width).abs();
+  final inner = math.max(
+    0.0,
+    width - block.marginLeftInches - block.marginRightInches,
+  );
+  final interval = _libvisioTabIntervalInches(block);
+  final needed = interval * math.max(_libvisioTabCharCount(shape), 1);
+  return math.max(inner, needed);
+}
+
+bool _libvisioTabOnDefaultGrid(double position, double interval) {
+  if (interval <= 1e-9 || position <= 1e-9) return false;
+  final n = (position / interval).round();
+  if (n < 1) return false;
+  return (n * interval - position).abs() < 1e-6;
+}
+
+VsdxTabSet _libvisioTabSetWithDefaultGrid(
+  VsdxTabSet set,
+  double interval,
+  double end,
+) {
+  final stops = [...set.stops];
+  var offGridMax = 0.0;
+  var hasOffGrid = false;
+  for (final stop in stops) {
+    if (_libvisioTabOnDefaultGrid(stop.positionInches, interval)) continue;
+    hasOffGrid = true;
+    if (stop.positionInches > offGridMax) offGridMax = stop.positionInches;
+  }
+  final threshold = hasOffGrid ? offGridMax : 0.0;
+  var added = 0;
+  for (var n = 1; n <= 40; n++) {
+    final p = n * interval;
+    if (p > end + 1e-9) break;
+    if (p <= threshold + 1e-9) continue;
+    var exists = false;
+    for (final stop in stops) {
+      if ((stop.positionInches - p).abs() < 1e-6) {
+        exists = true;
+        break;
+      }
+    }
+    if (exists) continue;
+    stops.add(VsdxTabStop(positionInches: p));
+    added++;
+    if (stops.length >= 40) break;
+  }
+  if (added == 0) return set;
+  stops.sort((a, b) => a.positionInches.compareTo(b.positionInches));
+  return VsdxTabSet(ix: set.ix, stops: stops);
+}
+
+List<VsdxTabSet> _libvisioTabSetsWithDefaultGrid(VsdxShape shape) {
+  final interval = _libvisioTabIntervalInches(shape.richText.textBlock);
+  final end = _libvisioDefaultTabGridEndInches(shape);
+  final byIx = <int, VsdxTabSet>{
+    for (final set in shape.richText.tabSets) set.ix: set,
+  };
+  for (final ix in _libvisioReferencedTabSetIndexes(shape)) {
+    byIx[ix] = _libvisioTabSetWithDefaultGrid(
+      byIx[ix] ?? VsdxTabSet(ix: ix),
+      interval,
+      end,
+    );
+  }
+  final keys = byIx.keys.toList()..sort();
+  return [for (final k in keys) byIx[k]!];
+}
+
+/// `true` when `DefaultTabStop` would jump 0.5" in Draw instead of the cell.
+///
+/// LibreOffice only calls `VisioDocument::parse`. The collector emits
+/// `style:tab-stop-distance` from that cell, but Draw's drawing-text
+/// import ignores it and uses ODF's 0.5" default. Canvas / SVG already
+/// advance with `visioTabFieldStart`. A save writes explicit Tabs stops
+/// on the authored interval. Authored off-grid stops stay so a 3" left
+/// tab is not stolen by a 2" grid. A second save does not stack more.
+bool shapeNeedsLibvisioDefaultTabStopBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  if (!_shapeHasTabChar(shape)) return false;
+  final interval = _libvisioTabIntervalInches(shape.richText.textBlock);
+  if (!_libvisioDefaultTabIntervalNeedsBake(interval)) return false;
+  final next = _libvisioTabSetsWithDefaultGrid(shape);
+  if (next.length != shape.richText.tabSets.length) return true;
+  for (var i = 0; i < next.length; i++) {
+    if (next[i] != shape.richText.tabSets[i]) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeDefaultTabStopShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeDefaultTabStopShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioDefaultTabStopBake(shape)) {
+    next = shape.copyWith(
+      richText: shape.richText.copyWith(
+        tabSets: _libvisioTabSetsWithDefaultGrid(shape),
+      ),
+    );
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Rewrite `DefaultTabStop` into Tabs stops Draw will actually jump.
+VsdxDocument bakeDefaultTabStopForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeDefaultTabStopShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {

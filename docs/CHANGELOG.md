@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Text-block `DefaultTabStop` now keeps its interval in LibreOffice.
+  libvisio still emits `style:tab-stop-distance`, but Draw's
+  drawing-text import ignores it and jumps 0.5" (ODF's default) while
+  canvas / SVG already advance with `visioTabFieldStart`. A save writes
+  explicit Tabs stops on that interval so Draw collects `style:tab-stops`.
+  Authored off-grid stops stay so a 3" tab is not stolen by a 2" grid.
+  A second save does not stack another grid.
 - Paragraph `HorzAlign=4` ("full") now keeps wrapped justification in
   LibreOffice. libvisio still emits illegal ODF `fo:text-align="full"`,
   so Draw's drawing-text import fell back to left while canvas / SVG

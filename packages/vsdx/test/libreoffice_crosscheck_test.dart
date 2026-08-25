@@ -5030,6 +5030,40 @@ void main() {
         ),
       ),
     );
+    var defaultTabStopDocument = parser.parse(blank);
+    defaultTabStopDocument = defaultTabStopDocument.replacePage(
+      0,
+      defaultTabStopDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: defaultTabStopDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 6.0,
+          height: 1.4,
+          name: 'DefaultTabStop',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'A\tB',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A\tB',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+              ),
+            ],
+            textBlock: const VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+              defaultTabStopInches: 2.0,
+            ),
+          ),
+        ),
+      ),
+    );
     var mixedScriptDocument = parser.parse(blank);
     mixedScriptDocument = mixedScriptDocument.replacePage(
       0,
@@ -6067,6 +6101,10 @@ void main() {
       'horz_align_full': writer.write(
         originalBytes: blank,
         edited: horzAlignFullDocument,
+      ),
+      'default_tab_stop': writer.write(
+        originalBytes: blank,
+        edited: defaultTabStopDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -12616,6 +12654,94 @@ void main() {
             reason: 'Draw must collect HorzAlign=3 (justify), not fall back '
                 'to left from fo:text-align=full; '
                 'left=${left.magenta} right=${right.magenta}',
+          );
+        }
+        if (entry.key == 'default_tab_stop') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'DefaultTabStop');
+          expect(shape.richText.runs.single.text, contains('\t'));
+          expect(
+            shape.richText.textBlock.defaultTabStopInches,
+            closeTo(2.0, 1e-9),
+          );
+          expect(shape.richText.tabSets, isNotEmpty);
+          expect(
+            shape.richText.tabSets.single.stops
+                .any((s) => (s.positionInches - 2.0).abs() < 1e-6),
+            isTrue,
+          );
+        }
+        if (entry.key == 'default_tab_stop' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int magenta}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var magenta = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+                  magenta++;
+                }
+              }
+            }
+            return (magenta: magenta);
+          }
+
+          // Draw ignores style:tab-stop-distance and jumps 0.5". Explicit
+          // Tabs stops park B at +2" from the text-band origin.
+          final glyph = countWindow(1.22, 5.55, 1.72, 6.18);
+          final half = countWindow(1.78, 5.55, 2.35, 6.18);
+          final two = countWindow(3.15, 5.55, 3.85, 6.18);
+          expect(
+            glyph.magenta,
+            greaterThan(8),
+            reason: 'LibreOffice must paint A before the tab; '
+                'A=${glyph.magenta} half=${half.magenta} two=${two.magenta}',
+          );
+          expect(
+            two.magenta,
+            greaterThan(8),
+            reason: 'Draw must collect baked 2" Tabs stops, not jump 0.5"; '
+                'A=${glyph.magenta} half=${half.magenta} two=${two.magenta}',
+          );
+          expect(
+            half.magenta,
+            lessThan(glyph.magenta),
+            reason: 'B must not land on Draw\'s 0.5" default tab; '
+                'A=${glyph.magenta} half=${half.magenta} two=${two.magenta}',
           );
         }
         if ((entry.key == 'shape_inside' ||

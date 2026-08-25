@@ -73,7 +73,10 @@
 /// script collects that face; a single `Font` would keep Arial on 世界.
 /// Paragraph `HorzAlign=4` emits illegal ODF `fo:text-align="full"`;
 /// Draw falls back to left, so a save writes `justify` (canvas / SVG
-/// already map `full` that way). Character `LangID` is
+/// already map `full` that way). Text-block `DefaultTabStop` emits
+/// `style:tab-stop-distance`, but Draw ignores it and jumps 0.5", so
+/// a save writes explicit Tabs stops on that interval (canvas / SVG
+/// already use `visioTabFieldStart`). Character `LangID` is
 /// not a token; digit-only Arabic / Hebrew runs prefix U+200F so Draw's
 /// Unicode bidi matches canvas / SVG. Character `Letterspace`
 /// is not a token; canvas / SVG already fold FontScale into tracking at
@@ -812,6 +815,106 @@ void main() {
       twice.pages.first.shapes.single.richText.runs.single.paraStyle
           .horizontalAlign,
       VsdxHorzAlign.justify,
+    );
+  });
+
+  test('Text-block DefaultTabStop bakes Tabs so LibreOffice keeps interval',
+      () {
+    const body = 'A\tB';
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 6.0,
+      height: 1.4,
+      name: 'DefaultTabStop',
+    ).copyWith(
+      text: body,
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: body,
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 0.4,
+            ),
+          ),
+        ],
+        textBlock: VsdxTextBlock(defaultTabStopInches: 2.0),
+      ),
+    );
+    expect(shapeNeedsLibvisioDefaultTabStopBake(shape), isTrue);
+    final baked = bakeDefaultTabStopShapeForLibvisioWrite(shape);
+    expect(baked.richText.runs.single.text, contains('\t'));
+    expect(baked.richText.tabSets, isNotEmpty);
+    final positions = baked.richText.tabSets.single.stops
+        .map((s) => s.positionInches)
+        .toList();
+    expect(positions, contains(closeTo(2.0, 1e-9)));
+    expect(positions, contains(closeTo(4.0, 1e-9)));
+    expect(
+      shapeNeedsLibvisioDefaultTabStopBake(baked),
+      isFalse,
+      reason: 'a second save must not stack another DefaultTabStop grid',
+    );
+
+    final half = bakeDefaultTabStopShapeForLibvisioWrite(
+      shape.copyWith(
+        richText: shape.richText.copyWith(
+          textBlock: const VsdxTextBlock(defaultTabStopInches: 0.5),
+        ),
+      ),
+    );
+    expect(half.richText.tabSets, isEmpty);
+
+    final noTab = bakeDefaultTabStopShapeForLibvisioWrite(
+      shape.copyWith(
+        text: 'AB',
+        richText: shape.richText.copyWith(
+          runs: [
+            shape.richText.runs.single.copyWith(text: 'AB'),
+          ],
+        ),
+      ),
+    );
+    expect(noTab.richText.tabSets, isEmpty);
+
+    final authored = bakeDefaultTabStopShapeForLibvisioWrite(
+      shape.copyWith(
+        richText: shape.richText.copyWith(
+          tabSets: const [
+            VsdxTabSet(
+              ix: 0,
+              stops: [VsdxTabStop(positionInches: 3.0)],
+            ),
+          ],
+        ),
+      ),
+    );
+    final authoredPos = authored.richText.tabSets.single.stops
+        .map((s) => s.positionInches)
+        .toList();
+    expect(authoredPos, contains(closeTo(3.0, 1e-9)));
+    expect(
+      authoredPos.any((p) => (p - 2.0).abs() < 1e-6),
+      isFalse,
+      reason: 'an off-grid 3" stop must not be stolen by a 2" grid point',
+    );
+    expect(authoredPos, contains(closeTo(4.0, 1e-9)));
+
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final once = documentForLibvisioWrite(doc);
+    final twice = documentForLibvisioWrite(once);
+    expect(
+      twice.pages.first.shapes.single.richText.tabSets.single.stops.length,
+      once.pages.first.shapes.single.richText.tabSets.single.stops.length,
+    );
+    expect(
+      twice.pages.first.shapes.single.richText.runs.single.text,
+      contains('\t'),
     );
   });
 
