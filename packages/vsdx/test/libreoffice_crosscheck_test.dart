@@ -4494,6 +4494,43 @@ void main() {
             ),
           ),
         );
+    var hardShadowPictureDocument = parser.parse(blank);
+    final hardShadowPicturePage = hardShadowPictureDocument.pages.first;
+    const hardShadowPicturePart = '/visio/media/hard_shadow_picture.png';
+    hardShadowPictureDocument = hardShadowPictureDocument
+        .copyWith(
+          images: hardShadowPictureDocument.images.withImage(
+            VsdxImage(
+              partName: hardShadowPicturePart,
+              bytes: _solidPng(),
+              mimeType: 'image/png',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          hardShadowPicturePage.addShape(
+            VsdxShapeFactory.picture(
+              id: hardShadowPicturePage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              imagePartName: hardShadowPicturePart,
+              name: 'HardShadowPicturePng',
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.4,
+                offsetYInches: -0.35,
+                blurInches: 0,
+                transparency: 0.35,
+                pattern: 1,
+              ),
+            ),
+          ),
+        );
     var reflectionStrokeDocument = parser.parse(blank);
     final reflectionStrokePage = reflectionStrokeDocument.pages.first;
     reflectionStrokeDocument = reflectionStrokeDocument.replacePage(
@@ -6546,6 +6583,10 @@ void main() {
       'shadow_picture': writer.write(
         originalBytes: blank,
         edited: shadowPictureDocument,
+      ),
+      'hard_shadow_picture': writer.write(
+        originalBytes: blank,
+        edited: hardShadowPictureDocument,
       ),
       'reflection_picture': writer.write(
         originalBytes: blank,
@@ -11132,6 +11173,89 @@ void main() {
             lessThan(220),
             reason: 'LibreOffice must paint the Gaussian picture shadow halo; '
                 'body=$body halo=$halo',
+          );
+        }
+        if (entry.key == 'hard_shadow_picture') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'HardShadowPicturePng');
+          expect(source.shadow.enabled, isFalse);
+          expect(source.hasImage, isTrue);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioShadowPlate).single;
+          expect(plate.hasImage, isTrue);
+        }
+        if (entry.key == 'hard_shadow_picture' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          double meanRed(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                sum += rendered.getPixel(x, y).r;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          final body = meanRed(3.9, 5.2, 4.6, 5.8);
+          final hang = meanLuma(5.85, 5.0, 6.10, 5.5);
+          expect(
+            body,
+            greaterThan(180),
+            reason: 'LibreOffice must still paint the source picture; '
+                'body=$body hang=$hang',
+          );
+          expect(
+            hang,
+            lessThan(180),
+            reason: 'LibreOffice must paint the hard picture shadow; '
+                'body=$body hang=$hang',
           );
         }
         if (entry.key == 'reflection_picture') {

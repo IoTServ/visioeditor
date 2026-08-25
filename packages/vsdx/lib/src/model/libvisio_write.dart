@@ -9348,18 +9348,19 @@ const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 ///
 /// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has
 /// ShdwPattern / ShdwOffset* / ShdwForegnd but no ShadowBlur, so Draw
-/// paints a hard `draw:shadow`. A filled 2-D vector bakes the same
-/// Gaussian silhouette canvas and SVG already paint into a locked
-/// Foreign sibling, then ShdwPattern and ShadowBlur go to 0 so Draw
-/// does not add a second copy. Theme-only colour resolves through the
-/// document theme then Office into that PNG — Draw never sees
-/// THEMEVAL() on ShadowBlur. A Foreign picture with blur bakes the
-/// same filled image-frame silhouette canvas `_drawShadow` uses.
-/// A FillGradient whose opaque stops use more than two unique colours
-/// (or any other fill that already bakes a SoftEdges PNG) also bakes
-/// that silhouette at sigma 0: `_flushCurrentForeignData` emits an
-/// empty graphic style, so `draw:shadow` never lands on the fill plate.
-/// 1-D, groups, and unrecognised geometry stay native.
+/// paints a hard `draw:shadow` on vector fill. A filled 2-D vector
+/// with blur bakes the same Gaussian silhouette canvas and SVG already
+/// paint into a locked Foreign sibling, then ShdwPattern and ShadowBlur
+/// go to 0 so Draw does not add a second copy. Theme-only colour
+/// resolves through the document theme then Office into that PNG —
+/// Draw never sees THEMEVAL() on ShadowBlur. A Foreign picture bakes
+/// the same filled image-frame silhouette canvas `_drawShadow` uses,
+/// hard or blurred: `_flushCurrentForeignData` emits an empty graphic
+/// style, so `draw:shadow` never lands on the bitmap. A FillGradient
+/// whose opaque stops use more than two unique colours (or any other
+/// fill that already bakes a SoftEdges PNG) also bakes that silhouette
+/// at sigma 0 for the same empty-style reason. 1-D, groups, and
+/// unrecognised geometry stay native.
 bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
@@ -9367,7 +9368,6 @@ bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (!shape.shadow.enabled) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
   if (shape.hasImage) {
-    if (shape.shadow.blurInches <= 1e-6) return false;
     return _foreignFrameSilhouetteKind(shape) != null;
   }
   if (!_shapePaintsFill(shape, shape.geometries)) return false;

@@ -6822,6 +6822,94 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
   });
 
+  test('picture hard shadow bakes a silhouette PNG sibling for LibreOffice',
+      () {
+    const part = '/visio/media/hard_shadow.png';
+    final rasterImage = raster.Image(width: 16, height: 16);
+    for (var y = 0; y < 16; y++) {
+      for (var x = 0; x < 16; x++) {
+        rasterImage.setPixelRgba(x, y, 255, 0, 0, 255);
+      }
+    }
+    final sourceImage = VsdxImage(
+      partName: part,
+      bytes: Uint8List.fromList(raster.encodePng(rasterImage)),
+      mimeType: 'image/png',
+    );
+    final shape = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      imagePartName: part,
+      name: 'HardShadowPicture',
+    ).copyWith(
+      shadow: const VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.2,
+        offsetYInches: -0.15,
+        blurInches: 0,
+        transparency: 0.4,
+        pattern: 1,
+      ),
+    );
+    expect(shapeNeedsLibvisioShadowBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.copyWith(images: doc.images.withImage(sourceImage));
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.shadow.enabled, isFalse,
+        reason: 'Foreign pictures cannot collect draw:shadow');
+    expect(source.shadow.blurInches, closeTo(0, 1e-9));
+    expect(source.hasImage, isTrue);
+    expect(source.imagePartName, part);
+    final plates = baked.pages.first.shapes.where(isLibvisioShadowPlate);
+    expect(plates, hasLength(1));
+    final plate = plates.single;
+    expect(plate.locked, isTrue);
+    expect(plate.hasImage, isTrue);
+    expect(plate.pinX, closeTo(2.2, 1e-9));
+    expect(plate.pinY, closeTo(1.85, 1e-9));
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    final cx = decoded!.width ~/ 2;
+    final cy = decoded.height ~/ 2;
+    expect(decoded.getPixel(cx, cy).a, greaterThan(80));
+    expect(
+      decoded.getPixel(0, cy).a,
+      lessThan(10),
+      reason: 'hard picture shadow must not Gaussian-spread into the pad',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioShadowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Shadow plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.shadow.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
+      hasLength(1),
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
   test('Curved Text bakes per-glyph siblings for LibreOffice', () {
     VsdxShape arcBox({
       required int id,
