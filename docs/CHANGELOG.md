@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Unfilled LineGradient washes with more than two unique opaque colours
+  now keep a hard drop shadow in LibreOffice. SoftEdges used to drop
+  the stroke onto a Foreign PNG while `ShdwPattern` stayed on the
+  hollow leftover. libvisio's `_flushCurrentForeignData` emits an
+  empty graphic style, so Draw's `draw:shadow` never lands on that
+  plate. A save bakes the stroke-ring silhouette PNG ShadowBlur uses,
+  at sigma 0. Two-colour washes stay a filled 25–40 ribbon plus
+  native `draw:shadow`. A second save does not stack another plate.
 - FillGradient / LineGradient washes with a fully transparent stop now
   keep that hole in LibreOffice. FillPattern 25–40 would skip the
   invisible colour and stretch the remaining opaque stops from the box

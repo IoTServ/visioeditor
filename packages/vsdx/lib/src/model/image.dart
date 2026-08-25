@@ -1586,6 +1586,8 @@ Uint8List? bakeSilhouetteDropShadowPng({
   List<({double x, double y})> polygon = const <({double x, double y})>[],
   List<List<({double x, double y})>> evenOddPolygons =
       const <List<({double x, double y})>>[],
+  List<List<({double x, double y})>> ribbons =
+      const <List<({double x, double y})>>[],
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
   if (padPx < 0) return null;
@@ -1604,46 +1606,57 @@ Uint8List? bakeSilhouetteDropShadowPng({
       blue.clamp(0, 255),
       alpha.clamp(0, 255),
     );
-    switch (kind) {
-      case SoftEdgesSilhouetteKind.rectangle:
-        raster.fillRect(
-          work,
-          x1: padPx,
-          y1: padPx,
-          x2: padPx + innerWidthPx - 1,
-          y2: padPx + innerHeightPx - 1,
-          color: color,
-          radius: 0,
-          alphaBlend: false,
-        );
-      case SoftEdgesSilhouetteKind.ellipse:
-        final cx = padPx + (innerWidthPx - 1) / 2;
-        final cy = padPx + (innerHeightPx - 1) / 2;
-        final rx = math.max((innerWidthPx - 1) / 2, 0.5);
-        final ry = math.max((innerHeightPx - 1) / 2, 0.5);
-        for (var y = padPx; y < padPx + innerHeightPx; y++) {
-          for (var x = padPx; x < padPx + innerWidthPx; x++) {
-            final nx = (x + 0.5 - cx) / rx;
-            final ny = (y + 0.5 - cy) / ry;
-            if (nx * nx + ny * ny <= 1) {
-              work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
-                  color.b.toInt(), color.a.toInt());
-            }
-          }
-        }
-      case SoftEdgesSilhouetteKind.polygon:
-        final rings = evenOddPolygons.isNotEmpty
-            ? evenOddPolygons
-            : <List<({double x, double y})>>[polygon];
-        final shifted = <List<({double x, double y})>>[
-          for (final ring in rings)
+    if (ribbons.isNotEmpty) {
+      final shifted = <List<({double x, double y})>>[
+        for (final ring in ribbons)
+          if (ring.length >= 3)
             <({double x, double y})>[
               for (final p in ring) (x: p.x + padPx, y: p.y + padPx),
             ],
-        ];
-        if (!_fillEvenOddSilhouette(work, rings: shifted, color: color)) {
-          return null;
-        }
+      ];
+      if (!_paintFilledPolygons(work, shifted, color)) return null;
+    } else {
+      switch (kind) {
+        case SoftEdgesSilhouetteKind.rectangle:
+          raster.fillRect(
+            work,
+            x1: padPx,
+            y1: padPx,
+            x2: padPx + innerWidthPx - 1,
+            y2: padPx + innerHeightPx - 1,
+            color: color,
+            radius: 0,
+            alphaBlend: false,
+          );
+        case SoftEdgesSilhouetteKind.ellipse:
+          final cx = padPx + (innerWidthPx - 1) / 2;
+          final cy = padPx + (innerHeightPx - 1) / 2;
+          final rx = math.max((innerWidthPx - 1) / 2, 0.5);
+          final ry = math.max((innerHeightPx - 1) / 2, 0.5);
+          for (var y = padPx; y < padPx + innerHeightPx; y++) {
+            for (var x = padPx; x < padPx + innerWidthPx; x++) {
+              final nx = (x + 0.5 - cx) / rx;
+              final ny = (y + 0.5 - cy) / ry;
+              if (nx * nx + ny * ny <= 1) {
+                work.setPixelRgba(x, y, color.r.toInt(), color.g.toInt(),
+                    color.b.toInt(), color.a.toInt());
+              }
+            }
+          }
+        case SoftEdgesSilhouetteKind.polygon:
+          final rings = evenOddPolygons.isNotEmpty
+              ? evenOddPolygons
+              : <List<({double x, double y})>>[polygon];
+          final shifted = <List<({double x, double y})>>[
+            for (final ring in rings)
+              <({double x, double y})>[
+                for (final p in ring) (x: p.x + padPx, y: p.y + padPx),
+              ],
+          ];
+          if (!_fillEvenOddSilhouette(work, rings: shifted, color: color)) {
+            return null;
+          }
+      }
     }
     final blur = blurSigmaPx.clamp(0.0, 256.0);
     if (blur > 1e-6) {

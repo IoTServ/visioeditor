@@ -192,10 +192,12 @@
 /// so Draw keeps the feather. Then
 /// SoftEdgesSize is written 0 and the source fill is dropped so the
 /// plate is the body Draw paints. A hard-edged shadow on that fill
-/// (`ShdwPattern` / `draw:shadow`) cannot ride the Foreign plate —
-/// `_flushCurrentForeignData` emits an empty graphic style — so a save
-/// bakes the same silhouette PNG ShadowBlur uses, at sigma 0, then
-/// ShdwPattern goes to 0. Two-colour washes keep native `draw:shadow`.
+/// or on a LineGradient stroke PNG (`ShdwPattern` / `draw:shadow`)
+/// cannot ride the Foreign plate — `_flushCurrentForeignData` emits
+/// an empty graphic style — so a save bakes the same silhouette PNG
+/// ShadowBlur uses, at sigma 0 (the stroke ring, not a filled box),
+/// then ShdwPattern goes to 0. Two-colour washes keep native
+/// `draw:shadow` on the filled 25–40 ribbon.
 /// An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
@@ -9393,8 +9395,11 @@ const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 /// style, so `draw:shadow` never lands on the bitmap. A FillGradient
 /// whose opaque stops use more than two unique colours (or any other
 /// fill that already bakes a SoftEdges PNG) also bakes that silhouette
-/// at sigma 0 for the same empty-style reason. 1-D, groups, and
-/// unrecognised geometry stay native.
+/// at sigma 0 for the same empty-style reason. An unfilled LineGradient
+/// that already bakes a stroke PNG uses the stroke-ring silhouette —
+/// two-colour LineGradient stays a filled 25–40 ribbon whose
+/// `draw:shadow` Draw still honours. 1-D, groups, and unrecognised
+/// geometry stay native.
 bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
@@ -9404,7 +9409,9 @@ bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (shape.hasImage) {
     return _foreignFrameSilhouetteKind(shape) != null;
   }
-  if (!_shapePaintsFill(shape, shape.geometries)) return false;
+  if (!_shapePaintsFill(shape, shape.geometries)) {
+    return _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
+  }
   if (_softEdgesSilhouetteKind(shape) == null) return false;
   if (shape.shadow.blurInches > 1e-6) return true;
   return _shapeNeedsLibvisioFillSoftEdgesBake(shape);
@@ -9425,12 +9432,25 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
   VsdxShape shape,
   VsdxTheme theme,
 ) {
-  final kind =
-      _softEdgesSilhouetteKind(shape) ?? _foreignFrameSilhouetteKind(shape);
-  if (kind == null) return null;
+  // Geometry NoFill=0 is not "paints fill" — factory rectangles keep that
+  // flag with FillPattern 0. Using the fill silhouette here would bake a
+  // solid box shadow under a LineGradient stroke PNG.
+  final SoftEdgesSilhouetteKind? kind;
+  if (shape.hasImage) {
+    kind = _foreignFrameSilhouetteKind(shape);
+  } else if (_shapePaintsFill(shape, shape.geometries)) {
+    kind = _softEdgesSilhouetteKind(shape);
+  } else {
+    kind = null;
+  }
+  final strokeRings = kind == null
+      ? _lineGradientStrokePolygons(shape)
+      : const <List<Offset2D>>[];
+  if (kind == null && strokeRings.isEmpty) return null;
   final color = _shadowRgbForLibvisioWrite(shape.shadow, theme);
   final trans = shape.shadow.transparency.clamp(0.0, 1.0);
-  final fillTrans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final fillTrans =
+      kind == null ? 0.0 : shape.fill.foregroundTransparency.clamp(0.0, 1.0);
   final alpha =
       (color.alpha * (1 - trans) * (1 - fillTrans)).round().clamp(0, 255);
   final w = shape.width.abs();
@@ -9445,10 +9465,36 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
     innerHeightPx = math.max(8, (innerHeightPx * scale).round());
   }
   final sigmaPx = shape.shadow.blurInches / w * innerWidthPx;
-  final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
+  var padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
+  if (kind == null) {
+    final aabb = _polygonsAabb(strokeRings);
+    if (aabb != null) {
+      final overflow = math.max(
+        0.0,
+        math.max(
+          math.max(-aabb.minX, aabb.maxX - w),
+          math.max(-aabb.minY, aabb.maxY - h),
+        ),
+      );
+      padPx = math.max(
+        padPx,
+        (overflow / w * innerWidthPx).ceil() + 1,
+      );
+    }
+  }
   final polygon = <({double x, double y})>[];
   var evenOddPolygons = const <List<({double x, double y})>>[];
-  if (kind == SoftEdgesSilhouetteKind.polygon) {
+  if (kind == null) {
+    evenOddPolygons = _softEdgesRingsToPx(
+      strokeRings,
+      w: w,
+      h: h,
+      widthPx: innerWidthPx,
+      heightPx: innerHeightPx,
+    );
+    if (evenOddPolygons.isEmpty) return null;
+    polygon.addAll(evenOddPolygons.first);
+  } else if (kind == SoftEdgesSilhouetteKind.polygon) {
     final rings = _softEdgesFillPolygonsInches(shape);
     if (rings == null) return null;
     evenOddPolygons = _softEdgesRingsToPx(
@@ -9469,9 +9515,12 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
     blue: color.blue,
     alpha: alpha,
     blurSigmaPx: sigmaPx,
-    kind: kind,
+    kind: kind ?? SoftEdgesSilhouetteKind.polygon,
     polygon: polygon,
-    evenOddPolygons: evenOddPolygons,
+    evenOddPolygons:
+        kind == null ? const <List<({double x, double y})>>[] : evenOddPolygons,
+    ribbons:
+        kind == null ? evenOddPolygons : const <List<({double x, double y})>>[],
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);

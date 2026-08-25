@@ -2367,6 +2367,42 @@ void main() {
         ),
       ),
     );
+    var lineGrad3HardShadowDocument = parser.parse(blank);
+    lineGrad3HardShadowDocument = lineGrad3HardShadowDocument.replacePage(
+      0,
+      lineGrad3HardShadowDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: lineGrad3HardShadowDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.0,
+          height: 1.4,
+          name: 'LineGrad3HardShadow',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.18,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            color: VsdxColor(0xFF000000),
+            offsetXInches: 0.45,
+            offsetYInches: -0.45,
+            blurInches: 0,
+            transparency: 0.2,
+            pattern: 1,
+          ),
+        ),
+      ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6430,6 +6466,10 @@ void main() {
       'linegrad3': writer.write(
         originalBytes: blank,
         edited: lineGrad3Document,
+      ),
+      'linegrad3_hard_shadow': writer.write(
+        originalBytes: blank,
+        edited: lineGrad3HardShadowDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -13777,6 +13817,22 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'linegrad3_hard_shadow') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3HardShadow');
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(source.shadow.enabled, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioShadowPlate),
+            hasLength(1),
+          );
+        }
         if (entry.key == 'linegrad3_arrow') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13864,6 +13920,7 @@ void main() {
                 entry.key == 'grad3_reflection' ||
                 entry.key == 'grad3_hard_shadow' ||
                 entry.key == 'linegrad3' ||
+                entry.key == 'linegrad3_hard_shadow' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
             pdftoppm != null) {
@@ -13926,6 +13983,14 @@ void main() {
               gray,
               greaterThan(200),
               reason: 'Draw must keep draw:shadow on the FillGradient PNG; '
+                  'gray=$gray green=$green',
+            );
+          }
+          if (entry.key == 'linegrad3_hard_shadow') {
+            expect(
+              gray,
+              greaterThan(80),
+              reason: 'Draw must keep draw:shadow on the LineGradient PNG; '
                   'gray=$gray green=$green',
             );
           }
