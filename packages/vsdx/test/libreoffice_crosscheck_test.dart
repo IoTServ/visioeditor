@@ -2497,6 +2497,42 @@ void main() {
         ),
       ),
     );
+    var evenoddGrad3Document = parser.parse(blank);
+    evenoddGrad3Document = evenoddGrad3Document.replacePage(
+      0,
+      evenoddGrad3Document.pages.first.addShape(
+        VsdxShape(
+          id: evenoddGrad3Document.pages.first.nextFreeShapeId(),
+          name: 'EvenOdd3',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3.2,
+          height: 3.2,
+          fill: const VsdxFill(pattern: 1, gradient: wash3),
+          line: const VsdxLine(pattern: 0),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                LineTo(3.2, 0),
+                LineTo(3.2, 3.2),
+                LineTo(0, 3.2),
+                LineTo(0, 0),
+              ],
+            ),
+            VsdxGeometry(
+              commands: <VsdxPathCommand>[
+                MoveTo(0.7, 0.7),
+                LineTo(2.5, 0.7),
+                LineTo(2.5, 2.5),
+                LineTo(0.7, 2.5),
+                LineTo(0.7, 0.7),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -6155,6 +6191,10 @@ void main() {
       'grad3_arc_fill': writer.write(
         originalBytes: blank,
         edited: grad3ArcDocument,
+      ),
+      'evenodd_grad3': writer.write(
+        originalBytes: blank,
+        edited: evenoddGrad3Document,
       ),
       'linegrad3': writer.write(
         originalBytes: blank,
@@ -13305,6 +13345,17 @@ void main() {
             hasLength(2),
           );
         }
+        if (entry.key == 'evenodd_grad3') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'EvenOdd3');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
         if (entry.key == 'linegrad3') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13342,6 +13393,7 @@ void main() {
         }
         if ((entry.key == 'grad3_fill_gradient' ||
                 entry.key == 'grad3_arc_fill' ||
+                entry.key == 'evenodd_grad3' ||
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
@@ -13398,6 +13450,35 @@ void main() {
               lessThan(80),
               reason: 'Draw must not fill the pie / rounded-rect box with Blue 2; '
                   'blue2=$blue2 green=$green',
+            );
+          }
+          if (entry.key == 'evenodd_grad3') {
+            final page = parser.parse(entry.value).pages.first;
+            final shape =
+                page.shapes.firstWhere((s) => s.name == 'EvenOdd3');
+            final cx = ((shape.pinX / page.widthInches) * rendered.width)
+                .round()
+                .clamp(0, rendered.width - 1);
+            final cy = (((page.heightInches - shape.pinY) /
+                        page.heightInches) *
+                    rendered.height)
+                .round()
+                .clamp(0, rendered.height - 1);
+            var centerDark = 0;
+            for (var y = cy - 12; y <= cy + 12; y++) {
+              if (y < 0 || y >= rendered.height) continue;
+              for (var x = cx - 12; x <= cx + 12; x++) {
+                if (x < 0 || x >= rendered.width) continue;
+                final p = rendered.getPixel(x, y);
+                final luma = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+                if (luma < 200) centerDark++;
+              }
+            }
+            expect(
+              centerDark,
+              lessThan(40),
+              reason: 'Draw must keep the even-odd hole, not fill it with the wash; '
+                  'centerDark=$centerDark green=$green',
             );
           }
         }

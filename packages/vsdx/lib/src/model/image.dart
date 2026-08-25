@@ -719,7 +719,9 @@ enum SoftEdgesSilhouetteKind {
 /// feather the painted alpha (ellipse / polygon), then Draw can show the PNG
 /// because `SoftEdgesSize` is not a token. Sigma 0 (FillGradient plates)
 /// composites onto opaque white so Draw does not paint Blue 2 through
-/// unpainted pie / rounded-rect pixels.
+/// unpainted pie / rounded-rect pixels. Multiple fill Geometry sections
+/// use even-odd ([evenOddPolygons]) so a frame keeps its hole — libvisio
+/// emits `svg:fill-rule=evenodd`.
 Uint8List? bakeSilhouetteSoftEdgesPng({
   required int widthPx,
   required int heightPx,
@@ -730,6 +732,8 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
   required double softSigmaPx,
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> polygon = const <({double x, double y})>[],
+  List<List<({double x, double y})>> evenOddPolygons =
+      const <List<({double x, double y})>>[],
   double roundingPx = 0,
   ({int r, int g, int b, int a}) Function(double xPx, double yPx)? colorAt,
 }) {
@@ -777,14 +781,12 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
           }
         }
       case SoftEdgesSilhouetteKind.polygon:
-        if (polygon.length < 3) return null;
-        raster.fillPolygon(
-          work,
-          vertices: <raster.Point>[
-            for (final p in polygon) raster.Point(p.x, p.y),
-          ],
-          color: color,
-        );
+        final rings = evenOddPolygons.isNotEmpty
+            ? evenOddPolygons
+            : <List<({double x, double y})>>[polygon];
+        if (!_fillEvenOddSilhouette(work, rings: rings, color: color)) {
+          return null;
+        }
     }
     if (colorAt != null) {
       for (var y = 0; y < heightPx; y++) {
@@ -839,6 +841,51 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
   } catch (_) {
     return null;
   }
+}
+
+/// Even-odd fill of one or more closed rings. A single ring uses
+/// `fillPolygon`; nested rings XOR so a frame keeps its hole — libvisio
+/// emits `svg:fill-rule=evenodd` for every NoFill=0 Geometry.
+bool _fillEvenOddSilhouette(
+  raster.Image work, {
+  required List<List<({double x, double y})>> rings,
+  required raster.ColorRgba8 color,
+}) {
+  final usable = <List<({double x, double y})>>[
+    for (final ring in rings)
+      if (ring.length >= 3) ring,
+  ];
+  if (usable.isEmpty) return false;
+  if (usable.length == 1) {
+    raster.fillPolygon(
+      work,
+      vertices: <raster.Point>[
+        for (final p in usable.first) raster.Point(p.x, p.y),
+      ],
+      color: color,
+    );
+    return true;
+  }
+  for (var y = 0; y < work.height; y++) {
+    for (var x = 0; x < work.width; x++) {
+      var inside = false;
+      for (final ring in usable) {
+        if (_softEdgesPointInPolygon(ring, x + 0.5, y + 0.5)) {
+          inside = !inside;
+        }
+      }
+      if (!inside) continue;
+      work.setPixelRgba(
+        x,
+        y,
+        color.r.toInt(),
+        color.g.toInt(),
+        color.b.toInt(),
+        color.a.toInt(),
+      );
+    }
+  }
+  return true;
 }
 
 bool _softEdgesPointInPolygon(
@@ -1508,6 +1555,8 @@ Uint8List? bakeSilhouetteDropShadowPng({
   required double blurSigmaPx,
   SoftEdgesSilhouetteKind kind = SoftEdgesSilhouetteKind.rectangle,
   List<({double x, double y})> polygon = const <({double x, double y})>[],
+  List<List<({double x, double y})>> evenOddPolygons =
+      const <List<({double x, double y})>>[],
 }) {
   if (innerWidthPx < 2 || innerHeightPx < 2) return null;
   if (padPx < 0) return null;
@@ -1554,14 +1603,18 @@ Uint8List? bakeSilhouetteDropShadowPng({
           }
         }
       case SoftEdgesSilhouetteKind.polygon:
-        if (polygon.length < 3) return null;
-        raster.fillPolygon(
-          work,
-          vertices: <raster.Point>[
-            for (final p in polygon) raster.Point(p.x + padPx, p.y + padPx),
-          ],
-          color: color,
-        );
+        final rings = evenOddPolygons.isNotEmpty
+            ? evenOddPolygons
+            : <List<({double x, double y})>>[polygon];
+        final shifted = <List<({double x, double y})>>[
+          for (final ring in rings)
+            <({double x, double y})>[
+              for (final p in ring) (x: p.x + padPx, y: p.y + padPx),
+            ],
+        ];
+        if (!_fillEvenOddSilhouette(work, rings: shifted, color: color)) {
+          return null;
+        }
     }
     final blur = blurSigmaPx.clamp(0.0, 256.0);
     if (blur > 1e-6) {

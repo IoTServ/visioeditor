@@ -19,7 +19,10 @@
 /// sampled so that plate follows the painted path — endpoint-only
 /// polygons used to wash a pie as a triangle and a rounded rectangle as
 /// the Width×Height box — and unpainted pixels composite onto opaque
-/// white so Draw does not fill that box with Blue 2. For an
+/// white so Draw does not fill that box with Blue 2. Multiple NoFill=0
+/// Geometry sections punch even-odd holes (libvisio's
+/// `svg:fill-rule=evenodd`); a two-ring frame must not bake as a solid
+/// Width×Height plate. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
@@ -1491,21 +1494,18 @@ VsdxColor? _gradientStopRgbForLibvisioWrite(
   final sigmaPx = shape.glow.sizeInches / w * innerWidthPx;
   final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
   final polygon = <({double x, double y})>[];
+  var evenOddPolygons = const <List<({double x, double y})>>[];
   if (kind == SoftEdgesSilhouetteKind.polygon) {
-    VsdxGeometry? geom;
-    for (final candidate in shape.geometries) {
-      if (candidate.noShow || candidate.noFill) continue;
-      geom = candidate;
-      break;
-    }
-    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
-    if (inches == null) return null;
-    for (final p in inches) {
-      polygon.add((
-        x: p.x / w * (innerWidthPx - 1),
-        y: (1 - p.y / h) * (innerHeightPx - 1),
-      ));
-    }
+    final rings = _softEdgesFillPolygonsInches(shape);
+    if (rings == null) return null;
+    evenOddPolygons = _softEdgesRingsToPx(
+      rings,
+      w: w,
+      h: h,
+      widthPx: innerWidthPx,
+      heightPx: innerHeightPx,
+    );
+    polygon.addAll(evenOddPolygons.first);
   }
   final png = bakeSilhouetteDropShadowPng(
     innerWidthPx: innerWidthPx,
@@ -1518,6 +1518,7 @@ VsdxColor? _gradientStopRgbForLibvisioWrite(
     blurSigmaPx: sigmaPx,
     kind: kind,
     polygon: polygon,
+    evenOddPolygons: evenOddPolygons,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
@@ -7729,8 +7730,7 @@ VsdxDocument bakeUnsupportedBitmapsForLibvisioWrite(VsdxDocument document) {
       for (final child in shape.children) rewrite(child),
     ];
     var next = shape;
-    final source =
-        _imageForLibvisioWrite(document.images, shape.imagePartName);
+    final source = _imageForLibvisioWrite(document.images, shape.imagePartName);
     if (shapeNeedsLibvisioUnsupportedBitmapBake(shape, source) &&
         source != null) {
       var bakedPart = cache[source.partName];
@@ -8127,6 +8127,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// then Office, into that PNG so Draw keeps the feather. A FillGradient
 /// whose opaque stops use more than two unique colours uses that same
 /// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
+/// Multiple NoFill=0 Geometry sections punch even-odd holes in that
+/// plate — libvisio emits `svg:fill-rule=evenodd`, so a two-ring frame
+/// must not bake as a solid Width×Height rectangle.
 /// A LineGradient whose opaque stops use more than two unique colours
 /// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
@@ -8255,19 +8258,59 @@ bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     (shape.line.softEdgesInches > 1e-6 ||
         _lineHasLibvisioUnrepresentableGradient(shape.line));
 
-SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
-  VsdxGeometry? geom;
-  for (final candidate in shape.geometries) {
-    if (candidate.noShow || candidate.noFill) continue;
-    geom = candidate;
-    break;
+List<VsdxGeometry> _softEdgesFillGeometries(VsdxShape shape) {
+  return <VsdxGeometry>[
+    for (final candidate in shape.geometries)
+      if (!candidate.noShow && !candidate.noFill) candidate,
+  ];
+}
+
+/// Every fillable Geometry as a closed ring. libvisio concatenates those
+/// into one even-odd path (`svg:fill-rule=evenodd`); a PNG plate must
+/// punch the same holes instead of filling only the first section.
+List<List<Offset2D>>? _softEdgesFillPolygonsInches(VsdxShape shape) {
+  final out = <List<Offset2D>>[];
+  for (final geom in _softEdgesFillGeometries(shape)) {
+    final inches = _softEdgesPolygonInches(shape, geom);
+    if (inches == null || inches.length < 3) return null;
+    out.add(inches);
   }
-  if (geom == null) return null;
-  if (geom.commands.length == 1 && geom.commands.first is EllipseCmd) {
+  return out.isEmpty ? null : out;
+}
+
+List<List<({double x, double y})>> _softEdgesRingsToPx(
+  List<List<Offset2D>> rings, {
+  required double w,
+  required double h,
+  required int widthPx,
+  required int heightPx,
+}) {
+  return <List<({double x, double y})>>[
+    for (final ring in rings)
+      <({double x, double y})>[
+        for (final p in ring)
+          (
+            x: p.x / w * (widthPx - 1),
+            y: (1 - p.y / h) * (heightPx - 1),
+          ),
+      ],
+  ];
+}
+
+SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
+  final geoms = _softEdgesFillGeometries(shape);
+  if (geoms.isEmpty) return null;
+  if (geoms.length == 1 &&
+      geoms.first.commands.length == 1 &&
+      geoms.first.commands.first is EllipseCmd) {
     return SoftEdgesSilhouetteKind.ellipse;
   }
-  final points = _softEdgesPolygonInches(shape, geom);
-  if (points == null || points.length < 3) return null;
+  final rings = _softEdgesFillPolygonsInches(shape);
+  if (rings == null || rings.isEmpty) return null;
+  // A second fillable section is a hole (or island). The outer ring is
+  // often the Width×Height box — that must not collapse to a rectangle.
+  if (geoms.length > 1) return SoftEdgesSilhouetteKind.polygon;
+  final points = rings.first;
   if (shape.line.roundingInches > 1e-12) {
     return SoftEdgesSilhouetteKind.polygon;
   }
@@ -8472,21 +8515,18 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
     heightPx = math.max(8, (heightPx * scale).round());
   }
   final polygon = <({double x, double y})>[];
+  var evenOddPolygons = const <List<({double x, double y})>>[];
   if (kind == SoftEdgesSilhouetteKind.polygon) {
-    VsdxGeometry? geom;
-    for (final candidate in shape.geometries) {
-      if (candidate.noShow || candidate.noFill) continue;
-      geom = candidate;
-      break;
-    }
-    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
-    if (inches == null) return null;
-    for (final p in inches) {
-      polygon.add((
-        x: p.x / w * (widthPx - 1),
-        y: (1 - p.y / h) * (heightPx - 1),
-      ));
-    }
+    final rings = _softEdgesFillPolygonsInches(shape);
+    if (rings == null) return null;
+    evenOddPolygons = _softEdgesRingsToPx(
+      rings,
+      w: w,
+      h: h,
+      widthPx: widthPx,
+      heightPx: heightPx,
+    );
+    polygon.addAll(evenOddPolygons.first);
   }
   return bakeSilhouetteSoftEdgesPng(
     widthPx: widthPx,
@@ -8498,6 +8538,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
     softSigmaPx: shape.line.softEdgesInches / w * widthPx,
     kind: kind,
     polygon: polygon,
+    evenOddPolygons: evenOddPolygons,
     roundingPx: 0,
     colorAt: colorAt == null
         ? null
@@ -9282,21 +9323,18 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
   final sigmaPx = shape.shadow.blurInches / w * innerWidthPx;
   final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
   final polygon = <({double x, double y})>[];
+  var evenOddPolygons = const <List<({double x, double y})>>[];
   if (kind == SoftEdgesSilhouetteKind.polygon) {
-    VsdxGeometry? geom;
-    for (final candidate in shape.geometries) {
-      if (candidate.noShow || candidate.noFill) continue;
-      geom = candidate;
-      break;
-    }
-    final inches = geom == null ? null : _softEdgesPolygonInches(shape, geom);
-    if (inches == null) return null;
-    for (final p in inches) {
-      polygon.add((
-        x: p.x / w * (innerWidthPx - 1),
-        y: (1 - p.y / h) * (innerHeightPx - 1),
-      ));
-    }
+    final rings = _softEdgesFillPolygonsInches(shape);
+    if (rings == null) return null;
+    evenOddPolygons = _softEdgesRingsToPx(
+      rings,
+      w: w,
+      h: h,
+      widthPx: innerWidthPx,
+      heightPx: innerHeightPx,
+    );
+    polygon.addAll(evenOddPolygons.first);
   }
   final png = bakeSilhouetteDropShadowPng(
     innerWidthPx: innerWidthPx,
@@ -9309,6 +9347,7 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
     blurSigmaPx: sigmaPx,
     kind: kind,
     polygon: polygon,
+    evenOddPolygons: evenOddPolygons,
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
@@ -9334,17 +9373,25 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
 ) {
   final rings = _pageShadowRingsForLibvisioWrite(shape, page);
   if (rings.isEmpty) return null;
-  final ring = rings.first;
-  if (ring.length < 3) return null;
-  var minX = ring.first.x;
+  Offset2D? first;
+  for (final ring in rings) {
+    if (ring.length >= 3) {
+      first = ring.first;
+      break;
+    }
+  }
+  if (first == null) return null;
+  var minX = first.x;
   var maxX = minX;
-  var minY = ring.first.y;
+  var minY = first.y;
   var maxY = minY;
-  for (final p in ring) {
-    if (p.x < minX) minX = p.x;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.y > maxY) maxY = p.y;
+  for (final ring in rings) {
+    for (final p in ring) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
   }
   final w = maxX - minX;
   final h = maxY - minY;
@@ -9365,13 +9412,18 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
   }
   final sigmaPx = shape.shadow.blurInches / w * innerWidthPx;
   final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
-  final polygon = <({double x, double y})>[
-    for (final p in ring)
-      (
-        x: (p.x - minX) / w * (innerWidthPx - 1),
-        y: (1 - (p.y - minY) / h) * (innerHeightPx - 1),
-      ),
+  final evenOddPolygons = <List<({double x, double y})>>[
+    for (final ring in rings)
+      if (ring.length >= 3)
+        <({double x, double y})>[
+          for (final p in ring)
+            (
+              x: (p.x - minX) / w * (innerWidthPx - 1),
+              y: (1 - (p.y - minY) / h) * (innerHeightPx - 1),
+            ),
+        ],
   ];
+  if (evenOddPolygons.isEmpty) return null;
   final png = bakeSilhouetteDropShadowPng(
     innerWidthPx: innerWidthPx,
     innerHeightPx: innerHeightPx,
@@ -9382,7 +9434,8 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
     alpha: alpha,
     blurSigmaPx: sigmaPx,
     kind: SoftEdgesSilhouetteKind.polygon,
-    polygon: polygon,
+    polygon: evenOddPolygons.first,
+    evenOddPolygons: evenOddPolygons,
   );
   if (png == null) return null;
   return (

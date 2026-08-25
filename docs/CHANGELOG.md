@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient washes with more than two unique opaque colours on a
+  compound even-odd fill now keep the hole in LibreOffice. libvisio
+  concatenates every `NoFill=0` Geometry into one `svg:fill-rule=evenodd`
+  path; the previous PNG bake classified the outer Width×Height box as a
+  rectangle and filled the interior. A save samples every fillable ring
+  and punches even-odd holes, then composites unpainted pixels onto
+  opaque white so Draw does not fill the window with Blue 2. Two-colour
+  washes stay 25–40 so Draw's own even-odd still punches the hole. A
+  second save does not stack another plate.
 - FillGradient washes with more than two unique opaque colours on
   EllipticalArcTo / RelEllipticalArcTo geometry now keep the painted
   silhouette in LibreOffice. The previous PNG bake walked only command

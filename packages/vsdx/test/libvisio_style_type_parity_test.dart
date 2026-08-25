@@ -10,7 +10,8 @@
 /// classic FillPattern 25–40 (a FillGradient with more than two unique
 /// opaque colours bakes a PNG plate instead; EllipticalArcTo silhouettes
 /// are sampled so a pie is not a triangle and a rounded rectangle is not
-/// the Width×Height box), baked RelQuadBezTo corners, parallel Geometry
+/// the Width×Height box; multiple NoFill=0 Geometry sections punch
+/// even-odd holes so a frame is not a solid plate), baked RelQuadBezTo corners, parallel Geometry
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. A LineGradient with more than two unique opaque colours
@@ -4060,6 +4061,146 @@ void main() {
         isEmpty,
         reason:
             'two-colour pie FillGradient must stay classic FillPattern 25–40',
+      );
+    },
+  );
+
+  test(
+    'multi-stop FillGradient even-odd compound keeps the hole for LibreOffice',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      raster.Pixel pxAt(
+        raster.Image img, {
+        required double x,
+        required double y,
+        required double width,
+        required double height,
+      }) {
+        final ix =
+            (x / width * (img.width - 1)).round().clamp(0, img.width - 1);
+        final iy = ((1 - y / height) * (img.height - 1))
+            .round()
+            .clamp(0, img.height - 1);
+        return img.getPixel(ix, iy);
+      }
+
+      VsdxShape frame(int id, VsdxFill fill) => VsdxShape(
+            id: id,
+            name: 'EvenOdd',
+            pinX: 4,
+            pinY: 4,
+            width: 3.2,
+            height: 3.2,
+            fill: fill,
+            line: const VsdxLine(pattern: 0),
+            geometries: const <VsdxGeometry>[
+              VsdxGeometry(
+                commands: <VsdxPathCommand>[
+                  MoveTo(0, 0),
+                  LineTo(3.2, 0),
+                  LineTo(3.2, 3.2),
+                  LineTo(0, 3.2),
+                  LineTo(0, 0),
+                ],
+              ),
+              VsdxGeometry(
+                commands: <VsdxPathCommand>[
+                  MoveTo(0.7, 0.7),
+                  LineTo(2.5, 0.7),
+                  LineTo(2.5, 2.5),
+                  LineTo(0.7, 2.5),
+                  LineTo(0.7, 0.7),
+                ],
+              ),
+            ],
+          );
+
+      final shape = frame(1, const VsdxFill(pattern: 1, gradient: wash));
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final baked = documentForLibvisioWrite(doc);
+      expect(baked.pages.first.findShapeById(1)!.fill.pattern, 0);
+      final plate =
+          baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+      final png = baked.images.findByPart(plate.imagePartName!);
+      final decoded = raster.decodePng(png!.bytes)!;
+      final hole = pxAt(decoded, x: 1.6, y: 1.6, width: 3.2, height: 3.2);
+      final left = pxAt(decoded, x: 0.2, y: 1.6, width: 3.2, height: 3.2);
+      final right = pxAt(decoded, x: 3.0, y: 1.6, width: 3.2, height: 3.2);
+      final top = pxAt(decoded, x: 1.6, y: 3.0, width: 3.2, height: 3.2);
+      expect(
+        hole.r,
+        greaterThan(240),
+        reason: 'even-odd hole must stay white, not the outer wash; hole=$hole',
+      );
+      expect(
+        hole.g,
+        greaterThan(240),
+        reason: 'even-odd hole must stay white, not the outer wash; hole=$hole',
+      );
+      expect(
+        hole.b,
+        greaterThan(240),
+        reason: 'even-odd hole must stay white, not the outer wash; hole=$hole',
+      );
+      expect(
+        left.r,
+        greaterThan(left.g + 80),
+        reason: 'left frame must keep magenta; left=$left',
+      );
+      expect(
+        left.b,
+        greaterThan(left.g + 80),
+        reason: 'left frame must keep magenta; left=$left',
+      );
+      expect(
+        right.b,
+        greaterThan(right.r + 80),
+        reason: 'right frame must keep blue; right=$right',
+      );
+      expect(
+        top.g,
+        greaterThan(top.r + 80),
+        reason: 'top frame mid-stop must stay green; top=$top',
+      );
+      expect(
+        documentForLibvisioWrite(baked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another even-odd FillGradient plate',
+      );
+
+      const twoStop = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final two = frame(2, const VsdxFill(pattern: 1, gradient: twoStop));
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(two), isFalse);
+      var twoDoc = parser.parse(blank);
+      twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+      expect(
+        documentForLibvisioWrite(twoDoc)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason:
+            'two-colour even-odd FillGradient must stay classic FillPattern 25–40',
       );
     },
   );
