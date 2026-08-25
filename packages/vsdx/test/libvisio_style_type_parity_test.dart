@@ -52,7 +52,9 @@
 /// Glow* is not a token: unfilled
 /// 1-D strokes with resolved RGB bake a Gaussian PNG plate, unfilled 2-D
 /// with resolved RGB bakes a Gaussian PNG ring, and filled NoLine shapes
-/// bake a Gaussian PNG sibling. Theme-only Glow resolves the slot
+/// bake a Gaussian PNG sibling. Sketch jiggle copies Glow / Reflection
+/// onto those plates so leftover NoLine Geometry does not drop the
+/// effect. Theme-only Glow resolves the slot
 /// (document theme, then Office) into that same PNG so Draw keeps the
 /// blur canvas `_colourOrTheme` already paints. Character ColorTrans and ShdwForegndTrans
 /// cannot carry alpha through `xmlStringToColour`, so a save premultiplies
@@ -2307,6 +2309,259 @@ void main() {
       expect(oneSoft.every((s) => !s.is1D && s.height.abs() > 0.1), isTrue);
     },
   );
+
+  test('Sketch jiggle strokes keep Glow for LibreOffice', () {
+    const colour = VsdxColor(0xFFFF00FF);
+    const glow = VsdxGlow(
+      color: colour,
+      sizeInches: 0.12,
+      transparency: 0.25,
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 6.2,
+      width: 3.0,
+      height: 1.4,
+      name: 'SketchGlow',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.04,
+      ),
+    ).withSketchEffect(true).withSketchJiggle(3.5).copyWith(glow: glow);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioGlowPlateBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(2),
+      reason: 'each Sketch jiggle must become a Glow PNG',
+    );
+    final glowNames =
+        baked.pages.first.shapes.map((s) => s.name).toList(growable: false);
+    expect(
+      glowNames.lastIndexWhere((n) => n.startsWith(kLibvisioGlowShapeNamePrefix)),
+      lessThan(
+        glowNames.indexWhere((n) => n.startsWith(kLibvisioSketchShapeNamePrefix)),
+      ),
+      reason: 'opaque Glow PNGs must sit under both jiggle strokes',
+    );
+    expect(
+      baked.pages.first.findShapeById(1)!.glow.enabled,
+      isFalse,
+      reason: 'hollow leftover Geometry is NoLine; Glow lives on the jiggle',
+    );
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate).every(
+            (s) => s.line.hasLine && s.fill.pattern == 0,
+          ),
+      isTrue,
+    );
+    var magenta = 0;
+    for (final plate in baked.pages.first.shapes.where(isLibvisioGlowPlate)) {
+      expect(plate.hasImage, isTrue);
+      expect(plate.is1D, isFalse);
+      expect(plate.height, greaterThan(0.1));
+      final png = raster.decodePng(
+        baked.images.findByPart(plate.imagePartName!)!.bytes,
+      )!;
+      for (final pixel in png) {
+        if (pixel.r > pixel.g + 15 && pixel.b > pixel.g + 15 && pixel.a > 20) {
+          magenta++;
+        }
+      }
+    }
+    expect(
+      magenta,
+      greaterThan(40),
+      reason: 'Sketch Glow PNG must carry magenta halo ink; magenta=$magenta',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlowPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Sketch Glow PNG',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.glow.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioGlowPlate),
+      hasLength(2),
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 1.5,
+      ay: 6.2,
+      bx: 6.5,
+      by: 6.2,
+      name: 'SketchGlow_1D',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.06,
+      ),
+    ).withSketchEffect(true).withSketchJiggle(3.5).copyWith(glow: glow);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    expect(
+      oneBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    final oneGlow = oneBaked.pages.first.shapes.where(isLibvisioGlowPlate);
+    expect(oneGlow, hasLength(2));
+    expect(oneGlow.every((s) => !s.is1D && s.height.abs() > 0.1), isTrue);
+  });
+
+  test('Sketch jiggle strokes keep Reflection for LibreOffice', () {
+    const colour = VsdxColor(0xFF1565C0);
+    const reflection = VsdxReflection(
+      enabled: true,
+      sizeInches: 0.6,
+      distanceInches: 0.08,
+      transparency: 0.2,
+      blurInches: 0,
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 6.2,
+      width: 3.0,
+      height: 1.4,
+      name: 'SketchReflection',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: colour,
+        pattern: 1,
+        weightInches: 0.06,
+      ),
+    )
+        .withSketchEffect(true)
+        .withSketchJiggle(3.5)
+        .copyWith(reflection: reflection);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(2),
+      reason: 'each Sketch jiggle must become a Reflection PNG',
+    );
+    final reflectionNames =
+        baked.pages.first.shapes.map((s) => s.name).toList(growable: false);
+    expect(
+      reflectionNames.lastIndexWhere(
+        (n) => n.startsWith(kLibvisioReflectionShapeNamePrefix),
+      ),
+      lessThan(
+        reflectionNames.indexWhere(
+          (n) => n.startsWith(kLibvisioSketchShapeNamePrefix),
+        ),
+      ),
+      reason: 'opaque Reflection PNGs must sit under both jiggle strokes',
+    );
+    expect(
+      baked.pages.first.findShapeById(1)!.reflection.enabled,
+      isFalse,
+      reason: 'hollow leftover Geometry is NoLine; Reflection lives on the '
+          'jiggle',
+    );
+    var ink = 0;
+    for (final plate
+        in baked.pages.first.shapes.where(isLibvisioReflectionPlate)) {
+      expect(plate.hasImage, isTrue);
+      expect(plate.is1D, isFalse);
+      expect(plate.height, greaterThan(0.05));
+      final png = raster.decodePng(
+        baked.images.findByPart(plate.imagePartName!)!.bytes,
+      )!;
+      for (final pixel in png) {
+        if (pixel.b > pixel.r + 15 && pixel.a > 20) ink++;
+      }
+    }
+    expect(
+      ink,
+      greaterThan(8),
+      reason: 'Sketch Reflection PNG must carry stroke ink; ink=$ink',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioReflectionPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Sketch Reflection PNG',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(savedDoc.pages.first.findShapeById(1)!.reflection.enabled, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioReflectionPlate),
+      hasLength(2),
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 1.5,
+      ay: 6.2,
+      bx: 6.5,
+      by: 6.2,
+      name: 'SketchReflection_1D',
+      line: const VsdxLine(
+        color: colour,
+        pattern: 1,
+        weightInches: 0.12,
+      ),
+    )
+        .withSketchEffect(true)
+        .withSketchJiggle(3.5)
+        .copyWith(reflection: reflection);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    expect(
+      oneBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    final onePlate =
+        oneBaked.pages.first.shapes.where(isLibvisioReflectionPlate);
+    expect(onePlate, hasLength(2));
+    expect(onePlate.every((s) => !s.is1D && s.height.abs() > 0.05), isTrue);
+  });
 
   test('Glass bakes a top-light sibling LibreOffice can collect', () {
     final shape = VsdxShapeFactory.rectangle(

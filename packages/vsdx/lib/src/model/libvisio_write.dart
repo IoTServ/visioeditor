@@ -334,6 +334,9 @@
 /// Those copies keep LineGradient, which is not a token — FillPattern
 /// 25–40 would drop a middle colour — so a later SoftEdges pass bakes
 /// each jiggle into a stroke PNG. Two-colour washes stay a filled ribbon.
+/// Glow* / Reflection* are not tokens either, so those copies also take
+/// the stroke PNG halo / mirror the unfilled path already uses — otherwise
+/// leftover Geometry is NoLine and Draw drops the effect.
 /// draw.io Glass is likewise `User.veGlass` (not a token), so a save inserts
 /// a locked white top-light sibling whose FillForegndTrans Draw collects,
 /// then writes `veGlass=0`. draw.io Shape Opacity is `User.veOpacity`
@@ -697,9 +700,12 @@ List<Offset2D> _aabbRing(VsdxShape shape) => <Offset2D>[
       const Offset2D(0, 0),
     ];
 
-/// Stroke-inflated AABB for 1-D reflection plates; 2-D keeps the XForm box.
+/// Stroke-inflated AABB for 1-D and Sketch-jiggle reflection plates;
+/// other 2-D keeps the XForm box. Sketch copies of a 1-D source are
+/// `is1D=false` with Height=0, so the XForm box cannot hang a Foreign
+/// picture.
 List<Offset2D> _reflectionSourceAabbRing(VsdxShape shape) {
-  if (!shape.is1D) return _aabbRing(shape);
+  if (!shape.is1D && !isLibvisioSketchPlate(shape)) return _aabbRing(shape);
   final aabb = _polygonsAabb(_libvisioStrokeSilhouettePolygons(shape));
   if (aabb == null) return _aabbRing(shape);
   return <Offset2D>[
@@ -805,18 +811,24 @@ List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
 /// Filled 1-D stays native — its FillPattern is already the body and a
 /// zero-height plate cannot carry a fill mirror.
 bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
   if (reflection.transparency >= 1 - 1e-9) return false;
-  if (shape.is1D) {
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
     if (shape.width.abs() <= 1e-9 && shape.height.abs() <= 1e-9) {
       return false;
     }
   } else if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) {
     return false;
   }
-  if (!shape.is1D && _shapePaintsFill(shape, shape.geometries)) return true;
+  if (!shape.is1D &&
+      !isLibvisioSketchPlate(shape) &&
+      _shapePaintsFill(shape, shape.geometries)) {
+    return true;
+  }
   if (_shapeCanLibvisioStrokeReflectionPng(shape)) return true;
   return _shapeCanLibvisioPictureReflectionPng(shape);
 }
@@ -846,7 +858,9 @@ bool _shapeNeedsLibvisioFillReflectionPng(VsdxShape shape) {
 /// — copying FlipY onto the PNG would mirror the already-placed band
 /// twice.
 bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   if (shape.children.isNotEmpty) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
@@ -856,7 +870,7 @@ bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   final reflection = shape.reflection;
   if (!reflection.enabled || reflection.sizeInches <= 1e-12) return false;
   if (reflection.transparency >= 1 - 1e-9) return false;
-  if (shape.is1D) {
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
     if (shape.width.abs() <= 1e-9 && shape.height.abs() <= 1e-9) {
       return false;
     }
@@ -869,7 +883,9 @@ bool _shapeCanLibvisioStrokeReflectionPng(VsdxShape shape) {
   if (_shapeHasSoftEdgesDashes(shape)) {
     return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
   }
-  if (shape.is1D) return _solidStrokeRibbonPolygons(shape).isNotEmpty;
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
+    return _solidStrokeRibbonPolygons(shape).isNotEmpty;
+  }
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
 
@@ -1043,10 +1059,12 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   VsdxTheme theme,
 ) {
   var ribbons = _softEdgesStrokeRibbonPolygons(shape);
-  if (ribbons.isEmpty && shape.is1D) {
+  if (ribbons.isEmpty && (shape.is1D || isLibvisioSketchPlate(shape))) {
     ribbons = _solidStrokeRibbonPolygons(shape);
   }
-  final kind = shape.is1D ? null : _softEdgesStrokeSilhouetteKind(shape);
+  final kind = (shape.is1D || isLibvisioSketchPlate(shape))
+      ? null
+      : _softEdgesStrokeSilhouetteKind(shape);
   if (kind == null && ribbons.isEmpty) return null;
   final trans = _combinedTransparency(
     shape.line.transparency,
@@ -1071,7 +1089,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
   var originY = 0.0;
   var w = shape.width.abs();
   var h = shape.height.abs();
-  if (shape.is1D) {
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
     final aabb = _polygonsAabb(ribbons);
     if (aabb == null) return null;
     originX = aabb.minX;
@@ -1080,7 +1098,7 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     h = math.max(aabb.maxY - aabb.minY, 1e-6);
   }
   if (w <= 1e-9 || h <= 1e-9) return null;
-  final minPx = shape.is1D ? 16 : 8;
+  final minPx = (shape.is1D || isLibvisioSketchPlate(shape)) ? 16 : 8;
   var innerWidthPx = math.max(minPx, (w * kLibvisioSoftEdgesPxPerInch).round());
   var innerHeightPx =
       math.max(minPx, (h * kLibvisioSoftEdgesPxPerInch).round());
@@ -1237,7 +1255,17 @@ List<VsdxShape> _bakeReflectionTree(
   required VsdxTheme theme,
 }) {
   final out = <VsdxShape>[];
+  final delayedReflection = <VsdxShape>[];
+  final delayedSketch = <VsdxShape>[];
   var changed = false;
+  void flushSketchGroup() {
+    if (delayedReflection.isEmpty && delayedSketch.isEmpty) return;
+    out.addAll(delayedReflection);
+    out.addAll(delayedSketch);
+    delayedReflection.clear();
+    delayedSketch.clear();
+  }
+
   for (final shape in shapes) {
     if (isLibvisioReflectionPlate(shape)) {
       changed = true;
@@ -1259,8 +1287,8 @@ List<VsdxShape> _bakeReflectionTree(
         changed = true;
       }
     }
+    VsdxShape? plate;
     if (shapeNeedsLibvisioReflectionBake(next)) {
-      VsdxShape? plate;
       ({Uint8List png, double padInches})? payload;
       var pngPlateFlipY = false;
       if (_shapeCanLibvisioStrokeReflectionPng(next)) {
@@ -1304,7 +1332,6 @@ List<VsdxShape> _bakeReflectionTree(
         );
       }
       if (plate != null) {
-        out.add(plate);
         changed = true;
         // SoftEdges runs after this pass and may drop the fill that
         // `shapeNeedsLibvisioReflectionBake` keys off. Freeze Size=0 on
@@ -1322,25 +1349,33 @@ List<VsdxShape> _bakeReflectionTree(
     } else {
       final existingId = plateIds[next.id];
       if (existingId != null) {
-        VsdxShape? kept;
         for (final candidate in shapes) {
           if (candidate.id == existingId) {
-            kept = candidate;
+            plate = candidate;
             break;
           }
         }
-        if (kept != null) {
-          out.add(kept);
-        }
       }
     }
+    if (isLibvisioSketchPlate(next)) {
+      if (plate != null) delayedReflection.add(plate);
+      delayedSketch.add(next);
+      if (!identical(next, shape)) changed = true;
+      continue;
+    }
+    flushSketchGroup();
+    if (plate != null) out.add(plate);
     out.add(next);
     if (!identical(next, shape)) changed = true;
   }
+  flushSketchGroup();
   return changed ? out : shapes;
 }
 
 /// Insert (or strip) the sibling plates Draw uses in place of `Reflection*`.
+/// Sketch jiggle copies Reflection* onto those plates; Foreign PNGs
+/// composite onto opaque white, so a save hangs every Sketch mirror
+/// under both jiggle strokes.
 VsdxDocument bakeReflectionForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
   var registry = document.images;
@@ -1411,11 +1446,13 @@ int? libvisioGlowSourceId(VsdxShape plate) {
 }
 
 bool _libvisioGlowEffectOn(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   final glow = shape.glow;
   if (!glow.enabled || glow.sizeInches <= 1e-12) return false;
   if (glow.transparency >= 1 - 1e-9) return false;
-  if (shape.is1D) {
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
     return shape.width.abs() > 1e-9 || shape.height.abs() > 1e-9;
   }
   return shape.width.abs() > 1e-9 && shape.height.abs() > 1e-9;
@@ -1434,10 +1471,15 @@ bool _libvisioGlowEffectOn(VsdxShape shape) {
 /// Unfilled 2-D uses a PNG ring so Draw does not keep a hard
 /// FillForegndTrans ribbon. An unfilled 1-D stroke uses a 2-D PNG plate
 /// sized to the glow ribbon (Foreign cannot hang on a zero-height 1-D
-/// XForm). A Foreign picture uses the same ring around the image frame.
+/// XForm). Sketch jiggle copies Glow* onto those plates — leftover
+/// Geometry is already NoLine — so the same ribbon PNG hangs on a
+/// 2-D AABB (1-D Sketch copies are `is1D=false` with Height=0). A
+/// Foreign picture uses the same ring around the image frame.
 bool shapeNeedsLibvisioGlowPlateBake(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
-  if (shape.is1D) return _shapeCanLibvisioGlowStrokePng(shape);
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
+    return _shapeCanLibvisioGlowStrokePng(shape);
+  }
   if (_shapeCanLibvisioGlowPng(shape)) return true;
   if (_shapeCanLibvisioGlowStrokePng(shape)) return true;
   if (_shapeCanLibvisioGlowPicturePng(shape)) return true;
@@ -1458,14 +1500,18 @@ bool _shapeCanLibvisioGlowPng(VsdxShape shape) {
 /// CompoundType rails are not a token, but the halo is still the path —
 /// skipping the bake would drop the glow. 1-D uses a 2-D plate sized to
 /// the glow ribbon (canvas inflates zero-area bounds by the glow stroke;
-/// a Foreign picture cannot hang on a zero-height 1-D XForm). Theme-only
-/// colour resolves into the PNG the same way canvas `_colourOrTheme` does.
+/// a Foreign picture cannot hang on a zero-height 1-D XForm). Sketch
+/// jiggle plates use the same ribbon (open LinePattern=1 has no
+/// `_softEdgesStrokeSilhouetteKind`). Theme-only colour resolves into
+/// the PNG the same way canvas `_colourOrTheme` does.
 bool _shapeCanLibvisioGlowStrokePng(VsdxShape shape) {
   if (!_libvisioGlowEffectOn(shape)) return false;
   if (shape.hasImage) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
   if (!shape.line.hasLine) return false;
-  if (shape.is1D) return _glowStrokeRibbonPolygons(shape).isNotEmpty;
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
+    return _glowStrokeRibbonPolygons(shape).isNotEmpty;
+  }
   return _softEdgesStrokeSilhouetteKind(shape) != null;
 }
 
@@ -1694,7 +1740,9 @@ List<List<Offset2D>> _glowStrokeRibbonPolygons(VsdxShape shape) {
   VsdxShape shape,
   VsdxTheme theme,
 ) {
-  if (shape.is1D) return _glow1dStrokePngForLibvisioWrite(shape, theme);
+  if (shape.is1D || isLibvisioSketchPlate(shape)) {
+    return _glow1dStrokePngForLibvisioWrite(shape, theme);
+  }
   final kind = _softEdgesStrokeSilhouetteKind(shape) ??
       _foreignFrameSilhouetteKind(shape);
   if (kind == null) return null;
@@ -1821,7 +1869,7 @@ VsdxShape _glowPngPlateForLibvisioWrite(
   required double padInches,
 }) {
   final pad = padInches < 0 ? 0.0 : padInches;
-  final box = source.is1D
+  final box = (source.is1D || isLibvisioSketchPlate(source))
       ? _glowStrokePlateLocalBox(source, pad)
       : (
           width: source.width.abs() + pad * 2,
@@ -1894,7 +1942,17 @@ List<VsdxShape> _bakeGlowPlateTree(
   required VsdxTheme theme,
 }) {
   final out = <VsdxShape>[];
+  final delayedGlow = <VsdxShape>[];
+  final delayedSketch = <VsdxShape>[];
   var changed = false;
+  void flushSketchGroup() {
+    if (delayedGlow.isEmpty && delayedSketch.isEmpty) return;
+    out.addAll(delayedGlow);
+    out.addAll(delayedSketch);
+    delayedGlow.clear();
+    delayedSketch.clear();
+  }
+
   for (final shape in shapes) {
     if (isLibvisioGlowPlate(shape)) {
       changed = true;
@@ -1915,8 +1973,8 @@ List<VsdxShape> _bakeGlowPlateTree(
         changed = true;
       }
     }
+    VsdxShape? plate;
     if (shapeNeedsLibvisioGlowPlateBake(next)) {
-      VsdxShape? plate;
       if (_shapeNeedsLibvisioGlowPngBake(next)) {
         final payload = _shapeCanLibvisioGlowPng(next)
             ? _glowPngForLibvisioWrite(next, theme)
@@ -1945,34 +2003,42 @@ List<VsdxShape> _bakeGlowPlateTree(
           theme: theme,
         );
       }
-      if (plate != null && (plate.geometries.isNotEmpty || plate.hasImage)) {
-        out.add(plate);
-        changed = true;
+      if (plate != null && plate.geometries.isEmpty && !plate.hasImage) {
+        plate = null;
       }
+      if (plate != null) changed = true;
     } else {
       final existingId = plateIds[next.id];
       if (existingId != null) {
-        VsdxShape? kept;
         for (final candidate in shapes) {
           if (candidate.id == existingId) {
-            kept = candidate;
+            plate = candidate;
             break;
           }
         }
-        if (kept != null) {
-          out.add(kept);
-        }
       }
     }
+    if (isLibvisioSketchPlate(next)) {
+      if (plate != null) delayedGlow.add(plate);
+      delayedSketch.add(next);
+      if (!identical(next, shape)) changed = true;
+      continue;
+    }
+    flushSketchGroup();
+    if (plate != null) out.add(plate);
     out.add(next);
     if (!identical(next, shape)) changed = true;
   }
+  flushSketchGroup();
   return changed ? out : shapes;
 }
 
 /// Insert (or keep) the sibling halos Draw uses when Glow cannot steal Line,
 /// including the Gaussian PNG a filled NoLine 2-D, unfilled 2-D stroke,
-/// or unfilled 1-D stroke uses.
+/// or unfilled 1-D stroke uses. Sketch jiggle copies Glow* onto those
+/// plates; their Foreign PNGs composite onto opaque white, so a save
+/// hangs every Sketch glow under both jiggle strokes instead of
+/// interleaving plates that would cover the first pass.
 VsdxDocument bakeGlowPlateForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
   var registry = document.images;
@@ -2492,6 +2558,8 @@ VsdxShape _sketchPlateForLibvisioWrite(
     geometries: _sketchStrokeGeometriesForLibvisioWrite(source, offset),
     fill: const VsdxFill(pattern: 0),
     line: source.line.copyWith(beginArrow: 0, endArrow: 0),
+    glow: source.glow,
+    reflection: source.reflection,
     layerMemberIds: source.layerMemberIds,
     locked: true,
     richText: const VsdxRichText(
@@ -2536,6 +2604,16 @@ VsdxShape _sourceForLibvisioSketchWrite(VsdxShape shape) {
         backgroundTransparency: 1,
         gradient: null,
       ),
+    );
+  }
+  // Stroke Glow / Reflection already live on the jiggle plates. Freeze
+  // them on a hollow leftover so the writer cannot resurrect Glow* /
+  // Reflection* (not tokens) after Geometry is NoLine. A leftover that
+  // still paints fill keeps the cells for the fill PNG pass.
+  if (!_shapePaintsFill(next, next.geometries)) {
+    next = next.copyWith(
+      glow: next.glow.copyWith(enabled: false, sizeInches: 0),
+      reflection: next.reflection.copyWith(enabled: false, sizeInches: 0),
     );
   }
   final others = <VsdxUserCell>[

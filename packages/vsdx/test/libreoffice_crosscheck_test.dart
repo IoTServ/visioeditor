@@ -2559,6 +2559,60 @@ void main() {
         ).withSketchEffect(true).withSketchJiggle(3.5),
       ),
     );
+    var sketchGlowDocument = parser.parse(blank);
+    sketchGlowDocument = sketchGlowDocument.replacePage(
+      0,
+      sketchGlowDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: sketchGlowDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.0,
+          height: 1.4,
+          name: 'SketchGlow',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            pattern: 1,
+            weightInches: 0.04,
+          ),
+        ).withSketchEffect(true).withSketchJiggle(3.5).copyWith(
+              glow: const VsdxGlow(
+                color: VsdxColor(0xFFFF00FF),
+                sizeInches: 0.16,
+                transparency: 0.2,
+              ),
+            ),
+      ),
+    );
+    var sketchReflectionDocument = parser.parse(blank);
+    sketchReflectionDocument = sketchReflectionDocument.replacePage(
+      0,
+      sketchReflectionDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: sketchReflectionDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.0,
+          height: 1.4,
+          name: 'SketchReflection',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF1565C0),
+            pattern: 1,
+            weightInches: 0.06,
+          ),
+        ).withSketchEffect(true).withSketchJiggle(3.5).copyWith(
+              reflection: const VsdxReflection(
+                enabled: true,
+                sizeInches: 0.6,
+                distanceInches: 0.08,
+                transparency: 0.2,
+                blurInches: 0,
+              ),
+            ),
+      ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6642,6 +6696,14 @@ void main() {
       'linegrad3_sketch': writer.write(
         originalBytes: blank,
         edited: lineGrad3SketchDocument,
+      ),
+      'sketch_glow': writer.write(
+        originalBytes: blank,
+        edited: sketchGlowDocument,
+      ),
+      'sketch_reflection': writer.write(
+        originalBytes: blank,
+        edited: sketchReflectionDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -14063,6 +14125,139 @@ void main() {
           expect(
             reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
             hasLength(2),
+          );
+        }
+        if (entry.key == 'sketch_glow') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchGlow');
+          expect(source.sketchEffect, isFalse);
+          expect(source.glow.enabled, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioGlowPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes
+                .where(isLibvisioGlowPlate)
+                .every((s) => !s.is1D && s.hasImage && s.height > 0.1),
+            isTrue,
+          );
+        }
+        if (entry.key == 'sketch_glow' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var pink = 0;
+          for (final pixel in rendered) {
+            final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+            if (pixel.r > pixel.g + 8 && pixel.b > pixel.g + 8 && luma < 250) {
+              pink++;
+            }
+          }
+          expect(
+            pink,
+            greaterThan(40),
+            reason: 'LibreOffice must paint the Sketch Glow halo; '
+                'pink=$pink',
+          );
+        }
+        if (entry.key == 'sketch_reflection') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchReflection');
+          expect(source.sketchEffect, isFalse);
+          expect(source.reflection.enabled, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioReflectionPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes
+                .where(isLibvisioReflectionPlate)
+                .every((s) => !s.is1D && s.hasImage && s.height > 0.05),
+            isTrue,
+          );
+        }
+        if (entry.key == 'sketch_reflection' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({double r, double b}) mean(
+              double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sumR = 0.0;
+            var sumB = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sumR += pixel.r;
+                sumB += pixel.b;
+                count++;
+              }
+            }
+            if (count == 0) return (r: 0.0, b: 0.0);
+            return (r: sumR / count, b: sumB / count);
+          }
+
+          final sourceRail = mean(2.71, 5.6, 2.81, 6.8);
+          final bandRail = mean(2.71, 4.7, 2.81, 5.1);
+          expect(
+            sourceRail.b,
+            greaterThan(sourceRail.r + 20),
+            reason: 'LibreOffice must still stroke the Sketch source; '
+                'sourceB=${sourceRail.b} sourceR=${sourceRail.r}',
+          );
+          expect(
+            bandRail.b,
+            greaterThan(bandRail.r + 8),
+            reason: 'LibreOffice must paint the Sketch mirrored stroke, not '
+                'drop it; bandB=${bandRail.b} bandR=${bandRail.r}',
           );
         }
         if (entry.key == 'linegrad3_arrow') {

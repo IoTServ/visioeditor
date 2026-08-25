@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Sketch jiggle strokes now keep Glow and Reflection in LibreOffice.
+  Glow* / Reflection* are not tokens, Sketch copies used to drop those
+  cells, leftover Geometry is already NoLine, and Glow / Reflection
+  bake skipped every bake plate, so the halo and mirror vanished. A
+  save copies the live effect onto each jiggle and bakes the same
+  stroke PNG unfilled paths already use, including 1-D copies whose
+  Foreign plate is sized to the ribbon AABB. Opaque Foreign PNGs sit
+  under both jiggle strokes so the second pass cannot cover the first.
+  A second save does not stack another plate.
 - Sketch jiggle strokes that carry a LineGradient with more than two
   unique opaque colours now keep those stops in LibreOffice. The two
   locked siblings used to copy the live wash, and SoftEdges skipped
