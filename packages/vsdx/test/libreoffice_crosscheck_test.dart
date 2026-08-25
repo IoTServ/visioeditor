@@ -2000,6 +2000,41 @@ void main() {
             ),
           ),
         );
+    var hatchEmfDocument = parser.parse(blank);
+    final hatchEmfPage = hatchEmfDocument.pages.first;
+    const hatchEmfPart = '/visio/media/libreoffice-crosscheck-hatch.emf';
+    final hatchEmfBytes = _hatchGreenEmf();
+    expect(extractEmfEmbeddedBitmap(hatchEmfBytes), isNull);
+    expect(
+      parseEmfDrawing(hatchEmfBytes)!
+          .ops
+          .whereType<MetafilePathOp>()
+          .any((op) => op.fillHatch == 4),
+      isTrue,
+    );
+    hatchEmfDocument = hatchEmfDocument
+        .copyWith(
+          images: hatchEmfDocument.images.withImage(
+            VsdxImage(
+              partName: hatchEmfPart,
+              bytes: hatchEmfBytes,
+              mimeType: 'image/x-emf',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          hatchEmfPage.addShape(
+            VsdxShapeFactory.picture(
+              id: hatchEmfPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 1.5,
+              imagePartName: hatchEmfPart,
+            ),
+          ),
+        );
     var oleDocument = parser.parse(blank);
     final olePage = oleDocument.pages.first;
     const olePart = '/visio/media/libreoffice-crosscheck.bin';
@@ -5813,6 +5848,10 @@ void main() {
       'text_emf_foreign_data': writer.write(
         originalBytes: blank,
         edited: textEmfDocument,
+      ),
+      'hatch_emf_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: hatchEmfDocument,
       ),
       'ole_foreign_data': writer.write(
         originalBytes: blank,
@@ -12813,7 +12852,8 @@ void main() {
           );
         }
         if (entry.key == 'vector_emf_foreign_data' ||
-            entry.key == 'text_emf_foreign_data') {
+            entry.key == 'text_emf_foreign_data' ||
+            entry.key == 'hatch_emf_foreign_data') {
           final reopened = parser.parse(entry.value);
           final shape = reopened.pages.first.shapes.single;
           expect(shape.foreignType, 'Bitmap');
@@ -12866,6 +12906,48 @@ void main() {
                   'magenta=$magenta blue2=$blue2',
             );
           }
+        }
+        if (entry.key == 'hatch_emf_foreign_data' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var green = 0;
+          var blue2 = 0;
+          for (final pixel in rendered) {
+            if (pixel.g > pixel.r + 20 &&
+                pixel.g > pixel.b + 20 &&
+                pixel.g > 80) {
+              green++;
+            }
+            if ((pixel.r - 114).abs() < 12 &&
+                (pixel.g - 159).abs() < 12 &&
+                (pixel.b - 207).abs() < 12) {
+              blue2++;
+            }
+          }
+          expect(
+            green,
+            greaterThan(40),
+            reason: 'Draw must paint baked HS_CROSS hatch, not Blue 2; '
+                'green=$green blue2=$blue2',
+          );
+          expect(
+            blue2,
+            lessThan(green),
+            reason: 'Blue 2 graphic style must not hide hatch EMF; '
+                'green=$green blue2=$blue2',
+          );
         }
         if ((entry.key == 'shape_inside' ||
                 entry.key == 'shape_inside_flipy') &&
@@ -14803,6 +14885,65 @@ Uint8List _vectorMagentaEmf() {
   u32(12);
   u32(1);
   u32(43);
+  u32(24);
+  i32(5);
+  i32(5);
+  i32(95);
+  i32(95);
+  u32(14);
+  u32(20);
+  u32(0);
+  u32(0);
+  u32(0);
+  return out.toBytes();
+}
+
+/// Minimal vector EMF: green HS_CROSS hatch, no embedded DIB.
+Uint8List _hatchGreenEmf() {
+  final out = BytesBuilder();
+  void u32(int value) {
+    final data = ByteData(4)..setUint32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  void i32(int value) {
+    final data = ByteData(4)..setInt32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add(const <int>[0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+  u32(18); // EMR_SETBKMODE
+  u32(12);
+  u32(2); // OPAQUE
+  u32(25); // EMR_SETBKCOLOR
+  u32(12);
+  u32(0x00FFFFFF);
+  u32(37); // EMR_SELECTOBJECT NULL_PEN
+  u32(12);
+  u32(0x80000008);
+  u32(39); // EMR_CREATEBRUSHINDIRECT
+  u32(24);
+  u32(1);
+  u32(2); // BS_HATCHED
+  u32(0x00008000); // green COLORREF
+  u32(4); // HS_CROSS
+  u32(37); // EMR_SELECTOBJECT
+  u32(12);
+  u32(1);
+  u32(43); // EMR_RECTANGLE
   u32(24);
   i32(5);
   i32(5);

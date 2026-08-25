@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Vector EMF / WMF hatch, pattern-brush and clip records now keep that
+  drawing in LibreOffice. Draw still fills Blue 2 for `image/emf` /
+  `image/wmf` instead of replaying those records, and a pure-vector PNG
+  bake used to fill only the hatch background (white rooms on white
+  paper) while canvas / SVG already paint `BS_HATCHED`, tiled DIB
+  patterns and GDI clips. A save now rasters those brushes and clips
+  into the same opaque PNG `ForeignType=Bitmap`. A second save does
+  not stack another PNG.
 - Vector EMF / WMF ExtTextOut labels now keep their glyphs in LibreOffice.
   Draw still fills Blue 2 for `image/emf` / `image/wmf` instead of
   replaying those records, and a pure-vector PNG bake used to fill only

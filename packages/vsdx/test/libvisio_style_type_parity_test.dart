@@ -89,7 +89,8 @@
 /// — libvisio emits a metafile — so a save extracts that DIB as PNG
 /// `ForeignType=Bitmap`. A thin DIB wrapper extracts that BMP; a
 /// pure-vector metafile replays the same display list canvas / SVG
-/// already paint onto an opaque PNG, including ExtTextOut glyphs. Foreign
+/// already paint onto an opaque PNG, including ExtTextOut glyphs, GDI
+/// hatch / pattern brushes and clips. Foreign
 /// `Object` OLE packages are the same missing paint: Draw fills Blue 2
 /// for `object/ole`, so a save unwraps `\x02OlePres000` as `MetaFile` /
 /// `EnhMetaFile` and the metafile bake writes PNG. A second
@@ -7340,6 +7341,216 @@ void main() {
     expect(dark, greaterThan(70000), reason: 'WMF labels must add ink');
   });
 
+  test('Metafile hatch strokes bake into PNG for LibreOffice', () {
+    const drawing = MetafileDrawing(
+      minX: 0,
+      minY: 0,
+      maxX: 32,
+      maxY: 32,
+      ops: <Object>[
+        MetafilePathOp(
+          points: <MetafilePoint>[
+            MetafilePoint(0, 0),
+            MetafilePoint(32, 0),
+            MetafilePoint(32, 32),
+            MetafilePoint(0, 32),
+          ],
+          closed: true,
+          fill: true,
+          stroke: false,
+          fillArgb: 0xFF008000,
+          strokeArgb: 0,
+          strokeWidth: 1,
+          fillHatch: 4,
+          fillBackgroundArgb: 0xFFFFFFFF,
+        ),
+      ],
+    );
+    final png = rasterizeMetafileDrawingToPng(drawing, maxEdge: 64)!;
+    final decoded = raster.decodePng(png)!;
+    var green = 0;
+    var white = 0;
+    var transparent = 0;
+    for (final pixel in decoded) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.g > pixel.r + 20 && pixel.g > pixel.b + 20) green++;
+      if (pixel.r > 240 && pixel.g > 240 && pixel.b > 240) white++;
+    }
+    expect(transparent, 0);
+    expect(green, greaterThan(50), reason: 'HS_CROSS hatch must ink green');
+    expect(white, greaterThan(500), reason: 'hatch background must stay white');
+  });
+
+  test('EnhMetaFile hatch bakes to PNG Bitmap for LibreOffice', () {
+    const part = '/visio/media/probe_hatch.emf';
+    final emf = _hatchGreenEmf();
+    expect(extractEmfEmbeddedBitmap(emf), isNull);
+    expect(
+      parseEmfDrawing(emf)!
+          .ops
+          .whereType<MetafilePathOp>()
+          .any((op) => op.fillHatch == 4),
+      isTrue,
+    );
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1.5,
+      imagePartName: part,
+    );
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(
+          images: doc.images.withImage(
+            VsdxImage(partName: part, bytes: emf, mimeType: 'image/x-emf'),
+          ),
+        )
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    final png = baked.images.findByPart(bakedShape.imagePartName!)!;
+    var green = 0;
+    var transparent = 0;
+    for (final pixel in raster.decodePng(png.bytes)!) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.g > pixel.r + 20 && pixel.g > pixel.b + 20) green++;
+    }
+    expect(transparent, 0);
+    expect(green, greaterThan(50), reason: 'baked hatch PNG must keep green strokes');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+    );
+  });
+
+  test('MetaFile floor-plan hatch bakes into PNG for LibreOffice', () {
+    final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
+        .readAsBytesSync();
+    expect(
+      parseWmfDrawing(wmf)!
+          .ops
+          .whereType<MetafilePathOp>()
+          .where((op) => op.fillHatch != null),
+      isNotEmpty,
+    );
+    final png = rasterizeVectorMetafileToPng(
+      wmf,
+      mimeType: 'image/x-wmf',
+      partName: '/visio/media/plan.wmf',
+    )!;
+    final decoded = raster.decodePng(png)!;
+    var green = 0;
+    var transparent = 0;
+    for (final pixel in decoded) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.g > pixel.r + 20 &&
+          pixel.g > pixel.b + 20 &&
+          pixel.g > 80) {
+        green++;
+      }
+    }
+    expect(transparent, 0);
+    expect(green, greaterThan(200), reason: 'Visio5 hatch rooms must stay green');
+  });
+
+  test('Metafile pattern brush tiles bake into PNG for LibreOffice', () {
+    final tile = raster.Image(width: 2, height: 2);
+    tile.setPixelRgba(0, 0, 0, 0, 0, 255);
+    tile.setPixelRgba(1, 0, 255, 255, 255, 255);
+    tile.setPixelRgba(0, 1, 255, 255, 255, 255);
+    tile.setPixelRgba(1, 1, 0, 0, 0, 255);
+    final bmp = Uint8List.fromList(raster.encodeBmp(tile));
+    final png = rasterizeMetafileDrawingToPng(
+      MetafileDrawing(
+        minX: 0,
+        minY: 0,
+        maxX: 16,
+        maxY: 16,
+        ops: <Object>[
+          MetafilePathOp(
+            points: const <MetafilePoint>[
+              MetafilePoint(0, 0),
+              MetafilePoint(16, 0),
+              MetafilePoint(16, 16),
+              MetafilePoint(0, 16),
+            ],
+            closed: true,
+            fill: true,
+            stroke: false,
+            fillArgb: 0xFF000000,
+            strokeArgb: 0,
+            strokeWidth: 1,
+            fillPatternBmpBytes: bmp,
+          ),
+        ],
+      ),
+      maxEdge: 32,
+    )!;
+    final decoded = raster.decodePng(png)!;
+    var black = 0;
+    var white = 0;
+    for (final pixel in decoded) {
+      if (pixel.r < 20 && pixel.g < 20 && pixel.b < 20) black++;
+      if (pixel.r > 240 && pixel.g > 240 && pixel.b > 240) white++;
+    }
+    expect(black, greaterThan(50), reason: 'checker pattern must keep black tiles');
+    expect(white, greaterThan(50), reason: 'checker pattern must keep white tiles');
+  });
+
+  test('Metafile clip keeps later fills inside the GDI region', () {
+    final png = rasterizeMetafileDrawingToPng(
+      const MetafileDrawing(
+        minX: 0,
+        minY: 0,
+        maxX: 32,
+        maxY: 32,
+        ops: <Object>[
+          MetafileClipRectOp(
+            rect: MetafileRect(0, 0, 16, 32),
+            mode: MetafileClipCombineMode.intersect,
+          ),
+          MetafilePathOp(
+            points: <MetafilePoint>[
+              MetafilePoint(0, 0),
+              MetafilePoint(32, 0),
+              MetafilePoint(32, 32),
+              MetafilePoint(0, 32),
+            ],
+            closed: true,
+            fill: true,
+            stroke: false,
+            fillArgb: 0xFFFF00FF,
+            strokeArgb: 0,
+            strokeWidth: 1,
+          ),
+        ],
+      ),
+      maxEdge: 32,
+    )!;
+    final decoded = raster.decodePng(png)!;
+    var leftMagenta = 0;
+    var rightMagenta = 0;
+    for (final pixel in decoded) {
+      final magenta = pixel.r > 160 && pixel.g < 100 && pixel.b > 160;
+      if (!magenta) continue;
+      if (pixel.x < decoded.width * 0.4) {
+        leftMagenta++;
+      } else if (pixel.x > decoded.width * 0.6) {
+        rightMagenta++;
+      }
+    }
+    expect(leftMagenta, greaterThan(50));
+    expect(rightMagenta, 0, reason: 'intersect clip must drop the right half');
+  });
+
   test('Object OLE preview bakes to MetaFile for LibreOffice', () {
     const part = '/visio/media/probe.bin';
     final wmf = _rgbDibWmf(width: 32, height: 16);
@@ -12427,6 +12638,65 @@ Uint8List _vectorMagentaEmf() {
   i32(95);
   i32(95);
   u32(14); // EMR_EOF
+  u32(20);
+  u32(0);
+  u32(0);
+  u32(0);
+  return out.toBytes();
+}
+
+/// Minimal vector EMF: green HS_CROSS hatch, no embedded DIB.
+Uint8List _hatchGreenEmf() {
+  final out = BytesBuilder();
+  void u32(int value) {
+    final data = ByteData(4)..setUint32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  void i32(int value) {
+    final data = ByteData(4)..setInt32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add(const <int>[0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+  u32(18);
+  u32(12);
+  u32(2);
+  u32(25);
+  u32(12);
+  u32(0x00FFFFFF);
+  u32(37);
+  u32(12);
+  u32(0x80000008);
+  u32(39);
+  u32(24);
+  u32(1);
+  u32(2);
+  u32(0x00008000);
+  u32(4);
+  u32(37);
+  u32(12);
+  u32(1);
+  u32(43);
+  u32(24);
+  i32(5);
+  i32(5);
+  i32(95);
+  i32(95);
+  u32(14);
   u32(20);
   u32(0);
   u32(0);
