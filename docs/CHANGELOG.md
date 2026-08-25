@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient washes with more than two unique opaque colours now
+  keep the middle stops in LibreOffice. libvisio has no FillGradient
+  token, so a save used to collapse those washes to classic
+  FillPattern 25–40 (FillForegnd / FillBkgnd only) while canvas / SVG
+  already sample every stop. A save bakes the same SoftEdges fill PNG
+  at sigma 0 and drops the source fill. Two-colour washes stay 25–40.
+  A second save does not stack another plate.
 - Headerless DIB and ICO Foreign bitmaps now keep that picture in
   LibreOffice and on the canvas. libvisio only prepends a
   BITMAPFILEHEADER for CompressionType format 0; a missing type is

@@ -2342,6 +2342,32 @@ void main() {
     );
     var glassDocument = parser.parse(blank);
     final glassPage = glassDocument.pages.first;
+    var grad3Document = parser.parse(blank);
+    final grad3Page = grad3Document.pages.first;
+    grad3Document = grad3Document.replacePage(
+      0,
+      grad3Page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: grad3Page.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 1.4,
+          name: 'Grad3',
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -5992,6 +6018,10 @@ void main() {
       'glass': writer.write(
         originalBytes: blank,
         edited: glassDocument,
+      ),
+      'grad3_fill_gradient': writer.write(
+        originalBytes: blank,
+        edited: grad3Document,
       ),
       'opacity': writer.write(
         originalBytes: blank,
@@ -13111,6 +13141,59 @@ void main() {
             lessThan(magenta),
             reason: 'Blue 2 graphic style must not hide ${entry.key}; '
                 'magenta=$magenta blue2=$blue2',
+          );
+        }
+        if (entry.key == 'grad3_fill_gradient') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'Grad3');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'grad3_fill_gradient' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magenta = 0;
+          var green = 0;
+          var blue = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+            if (pixel.g > 160 && pixel.r < 100 && pixel.b < 100) green++;
+            if (pixel.b > 160 && pixel.r < 100 && pixel.g < 100) blue++;
+          }
+          expect(
+            magenta,
+            greaterThan(40),
+            reason: 'Draw must paint the magenta stop, not FillForegnd/FillBkgnd; '
+                'magenta=$magenta green=$green blue=$blue',
+          );
+          expect(
+            green,
+            greaterThan(40),
+            reason: 'Draw must paint the middle green stop; '
+                'magenta=$magenta green=$green blue=$blue',
+          );
+          expect(
+            blue,
+            greaterThan(40),
+            reason: 'Draw must paint the blue stop; '
+                'magenta=$magenta green=$green blue=$blue',
           );
         }
         if ((entry.key == 'shape_inside' ||

@@ -12,7 +12,9 @@
 /// FillPattern was omitted (libvisio default 0) becomes classic FillPattern
 /// 25–40 plus FillForegnd/FillBkgnd from the stops (resolved RGB or the
 /// stop's theme slot) — otherwise Draw stays
-/// hollow and an unfilled LineGradient ribbon would steal the body. For an
+/// hollow and an unfilled LineGradient ribbon would steal the body.
+/// Opaque stops with more than two unique colours cannot use those two
+/// cells, so a save bakes the same SoftEdges fill PNG at sigma 0. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
 /// 2–23 (which `_lineProperties` *does* collect on a stroke) are flattened
@@ -154,7 +156,10 @@
 /// FillPattern 2–24 hatches are painted into that PNG so Draw does not
 /// keep a hard fill, including an RGB hatch whose FillBkgnd is
 /// theme-only and a theme-only FillForegnd hatch whose strokes freeze
-/// through the document theme, then Office). Theme-only FillForegnd /
+/// through the document theme, then Office). A FillGradient whose
+/// opaque stops use more than two unique colours uses that same plate
+/// at sigma 0 — FillPattern 25–40 only interpolates FillForegnd /
+/// FillBkgnd, so Draw would drop the middle colour. Theme-only FillForegnd /
 /// LineColor / gradient
 /// stops resolve through the document theme, then Office, into that PNG
 /// so Draw keeps the feather. Then
@@ -8086,7 +8091,10 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// Draw does not keep square corners after the fill is dropped.
 /// Theme-only FillForegnd / LineColor / gradient stops (canvas
 /// `_colourOrTheme` / `_fillColour`) resolve through the document theme,
-/// then Office, into that PNG so Draw keeps the feather. 1-D, pictures,
+/// then Office, into that PNG so Draw keeps the feather. A FillGradient
+/// whose opaque stops use more than two unique colours uses that same
+/// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
+/// 1-D, pictures,
 /// open-path arrows, and unrecognised geometry stay native. Closed 2-D
 /// arrow cells do not block the bake — libvisio suppresses markers on
 /// Z-closed subpaths, same as canvas.
@@ -8094,18 +8102,47 @@ bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
 
-bool _softEdgesCommonOk(VsdxShape shape) {
+bool _softEdgesGeometryOk(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D || shape.hasImage) return false;
   if (shape.children.isNotEmpty) return false;
-  if (shape.line.softEdgesInches <= 1e-6) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
   if (shape.sketchEffect) return false;
   return true;
 }
 
+bool _softEdgesCommonOk(VsdxShape shape) =>
+    _softEdgesGeometryOk(shape) && shape.line.softEdgesInches > 1e-6;
+
+/// Classic FillPattern 25–40 only store FillForegnd / FillBkgnd. Opaque
+/// FillGradient stops with more than two unique colours cannot survive
+/// that collapse, so the SoftEdges fill PNG is used even at sigma 0.
+bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
+  final gradient = fill.paintGradient;
+  if (gradient == null || gradient.stops.length < 2) return false;
+  final keys = <int>{};
+  for (final stop in gradient.stops) {
+    if (stop.transparency > 1 - 1e-9) continue;
+    final color = stop.color;
+    final int key;
+    if (color != null) {
+      key = color.value & 0x00FFFFFF;
+    } else {
+      final slot = stop.themeColorIndex;
+      if (slot == null) return false;
+      key = 0x1000000 | (slot & 0xFFFFFF);
+    }
+    keys.add(key);
+  }
+  return keys.length > 2;
+}
+
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
-  if (!_softEdgesCommonOk(shape)) return false;
+  if (!_softEdgesGeometryOk(shape)) return false;
+  if (shape.line.softEdgesInches <= 1e-6 &&
+      !_fillHasLibvisioUnrepresentableGradient(shape.fill)) {
+    return false;
+  }
   if (!shape.fill.hasFill) return false;
   final paintGradient = shape.fill.paintGradient;
   if (paintGradient != null) {
@@ -8162,7 +8199,8 @@ bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
 
 bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
-    _shapeHasBakeableSoftEdgesStroke(shape);
+    _shapeHasBakeableSoftEdgesStroke(shape) &&
+    shape.line.softEdgesInches > 1e-6;
 
 SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
   VsdxGeometry? geom;

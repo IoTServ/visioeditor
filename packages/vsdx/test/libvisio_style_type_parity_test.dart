@@ -7,7 +7,8 @@
 /// FillPattern=1 (or omitted FillPattern / 0, libvisio's shape default), a polyline with only a Rounding cell, a CompoundType>0
 /// stroke, an unfilled LineGradient, or a semi-transparent stroke
 /// disappears or goes fully opaque in Draw. The writer rewrites those to
-/// classic FillPattern 25–40, baked RelQuadBezTo corners, parallel Geometry
+/// classic FillPattern 25–40 (a FillGradient with more than two unique
+/// opaque colours bakes a PNG plate instead), baked RelQuadBezTo corners, parallel Geometry
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. Arrowed 1-D connectors that also need rails or a ribbon bake
@@ -146,6 +147,8 @@
 /// PNG sibling and drops the source fill. Resolved-RGB FillGradient,
 /// theme-only gradient stops, classic 25–40 washes and FillPattern 2–24
 /// hatches go into that PNG so Draw does not keep a hard fill.
+/// A FillGradient whose opaque stops use more than two unique colours
+/// uses that same plate at sigma 0 so Draw keeps the middle colour.
 /// Theme-only FillForegnd / LineColor / gradient stops resolve through
 /// the document theme then Office into that PNG. An
 /// unfilled 2-D stroke with
@@ -3701,6 +3704,149 @@ void main() {
     final oracle = LibvisioOracle.tryLoad();
     if (oracle == null) return;
     expect(oracle.svgPages(saved)?.join() ?? '', isNotEmpty);
+  });
+
+  test('multi-stop FillGradient bakes a PNG plate for LibreOffice', () {
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+        VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'Grad3',
+      fill: const VsdxFill(pattern: 1, gradient: wash),
+      line: const VsdxLine(pattern: 0),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 0);
+    expect(source.fill.hasGradient, isFalse);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final y = decoded.height ~/ 2;
+    final left = decoded.getPixel(1, y);
+    final mid = decoded.getPixel(decoded.width ~/ 2, y);
+    final right = decoded.getPixel(decoded.width - 2, y);
+    expect(
+      left.r,
+      greaterThan(mid.r + 80),
+      reason: 'left stop must stay magenta; left=$left mid=$mid right=$right',
+    );
+    expect(
+      left.b,
+      greaterThan(mid.b + 80),
+      reason: 'left stop must stay magenta; left=$left mid=$mid right=$right',
+    );
+    expect(
+      mid.g,
+      greaterThan(left.g + 80),
+      reason: 'middle stop must stay green; left=$left mid=$mid right=$right',
+    );
+    expect(
+      mid.g,
+      greaterThan(right.g + 80),
+      reason: 'middle stop must stay green; left=$left mid=$mid right=$right',
+    );
+    expect(
+      right.b,
+      greaterThan(mid.b + 80),
+      reason: 'right stop must stay blue; left=$left mid=$mid right=$right',
+    );
+    expect(
+      right.r,
+      lessThan(40),
+      reason: 'right stop must stay blue; left=$left mid=$mid right=$right',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another FillGradient plate',
+    );
+
+    const twoStop = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final two = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 1.2,
+      height: 0.8,
+      name: 'Grad2',
+      fill: const VsdxFill(pattern: 1, gradient: twoStop),
+      line: const VsdxLine(pattern: 0),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(two), isFalse);
+    var twoDoc = parser.parse(blank);
+    twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+    expect(
+      documentForLibvisioWrite(twoDoc)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      isEmpty,
+      reason: 'two-colour FillGradient must stay classic FillPattern 25–40',
+    );
+    final twoSaved =
+        parser.parse(writer.write(originalBytes: blank, edited: twoDoc));
+    expect(
+      twoSaved.pages.first.findShapeById(2)!.fill.pattern,
+      inInclusiveRange(25, 40),
+    );
+
+    const skipped = VsdxFill(
+      pattern: 0,
+      gradient: VsdxGradient(
+        angleRad: 3.92699,
+        stops: [
+          VsdxGradientStop(
+            position: 0,
+            color: VsdxColor(0xFF8DC0FF),
+            transparency: 1,
+          ),
+          VsdxGradientStop(position: 0.2, color: VsdxColor(0xFFACCFFF)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF467DFE)),
+        ],
+      ),
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 3,
+          pinX: 2,
+          pinY: 5,
+          width: 1.2,
+          height: 0.8,
+          fill: skipped,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isFalse,
+      reason: 'a transparent first stop leaves two colours for 25–40',
+    );
   });
 
   test(
