@@ -331,6 +331,9 @@
 /// `User.veSketch*` rows libvisio never reads, so a save maps hachure /
 /// cross-hatch / dots onto FillPattern 2–24 (`draw:fill=hatch`) and bakes
 /// the two jiggle strokes as locked siblings, then writes `veSketch=0`.
+/// Those copies keep LineGradient, which is not a token — FillPattern
+/// 25–40 would drop a middle colour — so a later SoftEdges pass bakes
+/// each jiggle into a stroke PNG. Two-colour washes stay a filled ribbon.
 /// draw.io Glass is likewise `User.veGlass` (not a token), so a save inserts
 /// a locked white top-light sibling whose FillForegndTrans Draw collects,
 /// then writes `veGlass=0`. draw.io Shape Opacity is `User.veOpacity`
@@ -8217,20 +8220,36 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// Pictures and unrecognised geometry stay native. Closed 2-D
 /// arrow cells do not block the bake — libvisio suppresses markers on
 /// Z-closed subpaths, same as canvas.
+/// Sketch jiggle siblings copy the live LineGradient; those plates are
+/// otherwise skipped as bake plates, so an unrepresentable wash would
+/// collapse to FillPattern 25–40. They take the same stroke PNG.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
 
 bool _softEdgesGeometryOk(VsdxShape shape, {bool allow1d = false}) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (isLibvisioSketchPlate(shape)) {
+    if (!_lineHasLibvisioUnrepresentableGradient(shape.line)) return false;
+  } else if (_isLibvisioBakePlate(shape)) {
+    return false;
+  } else {
+    if (shape.hasImage) return false;
+    if (shape.children.isNotEmpty) return false;
+    if (shape.sketchEffect) return false;
+  }
   if (shape.hasImage) return false;
   if (shape.children.isNotEmpty) return false;
-  if (shape.sketchEffect) return false;
   if (shape.is1D) {
     if (!allow1d) return false;
     return shape.width.abs() > 1e-9 || shape.height.abs() > 1e-9;
   }
-  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) {
+    // Sketch copies of 1-D connectors keep Height=0 and is1D=false.
+    if (isLibvisioSketchPlate(shape) && allow1d) {
+      return shape.width.abs() > 1e-9 || shape.height.abs() > 1e-9;
+    }
+    return false;
+  }
   return true;
 }
 
@@ -9145,6 +9164,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     return (png: png, padInches: 0);
   }
   if (shape.is1D ||
+      isLibvisioSketchPlate(shape) ||
       _openArrowheadsBlockStrokeBake(shape) ||
       _softEdgesStrokeSilhouetteKind(shape) == null) {
     return _lineGradientRibbonPngForLibvisioWrite(shape, theme);
@@ -9296,6 +9316,7 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
           imagePartName: part,
           padInches: payload.padInches,
           useStrokeRibbonAabb: next.is1D ||
+              isLibvisioSketchPlate(next) ||
               _openArrowheadsBlockStrokeBake(next) ||
               (_lineHasLibvisioUnrepresentableGradient(next.line) &&
                   next.line.softEdgesInches <= 1e-6 &&

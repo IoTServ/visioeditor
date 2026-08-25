@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Sketch jiggle strokes that carry a LineGradient with more than two
+  unique opaque colours now keep those stops in LibreOffice. The two
+  locked siblings used to copy the live wash, and SoftEdges skipped
+  every bake plate, so FillPattern 25–40 dropped the middle colour.
+  A save bakes each jiggle into the same stroke PNG unfilled washes
+  already use. Two-colour Sketch strokes stay a filled ribbon. A
+  second save does not stack another plate.
 - LineGradient PNG hard shadows now follow page `ShdwObliqueAngle` in
   LibreOffice. `ShdwObliqueAngle` is not a token, and factory rectangles
   keep Geometry NoFill=0 even when unfilled, so the sheared silhouette

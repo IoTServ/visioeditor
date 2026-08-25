@@ -2180,6 +2180,134 @@ void main() {
     expect(savedDoc.pages.first.findShapeById(1)!.line.endArrow, 0);
   });
 
+  test(
+    'Sketch LineGradient washes with more than two colours bake PNG for LibreOffice',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      const twoStop = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final shape = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4.25,
+        pinY: 6.2,
+        width: 3.0,
+        height: 1.4,
+        name: 'LineGrad3Sketch',
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 1, weightInches: 0.18, gradient: wash),
+      ).withSketchEffect(true).withSketchJiggle(3.5);
+      expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final baked = documentForLibvisioWrite(doc);
+      expect(
+        baked.pages.first.shapes.where(isLibvisioSketchPlate),
+        hasLength(2),
+      );
+      expect(
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+        hasLength(2),
+        reason: 'each Sketch jiggle must become a LineGradient PNG',
+      );
+      expect(
+        baked.pages.first.shapes.where(isLibvisioSketchPlate).every(
+              (s) => !s.line.hasLine && !s.line.hasGradient,
+            ),
+        isTrue,
+      );
+      var green = 0;
+      for (final plate in baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate)) {
+        final png = raster.decodePng(
+          baked.images.findByPart(plate.imagePartName!)!.bytes,
+        )!;
+        for (final pixel in png) {
+          if (pixel.g > 160 && pixel.r < 100 && pixel.b < 100) green++;
+        }
+      }
+      expect(
+        green,
+        greaterThan(40),
+        reason: 'Sketch LineGradient PNG must keep the middle green stop; '
+            'green=$green',
+      );
+      expect(
+        documentForLibvisioWrite(baked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        hasLength(2),
+        reason: 'a second save must not stack another Sketch LineGradient PNG',
+      );
+
+      final two = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 4.25,
+        pinY: 4.0,
+        width: 3.0,
+        height: 1.4,
+        name: 'LineGrad2Sketch',
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          pattern: 1,
+          weightInches: 0.18,
+          gradient: twoStop,
+        ),
+      ).withSketchEffect(true).withSketchJiggle(3.5);
+      var twoDoc = parser.parse(blank);
+      twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+      final twoBaked = documentForLibvisioWrite(twoDoc);
+      expect(
+        twoBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'two-colour Sketch LineGradient stays a filled ribbon',
+      );
+      expect(
+        twoBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+        hasLength(2),
+      );
+      expect(
+        twoBaked.pages.first.shapes
+            .where(isLibvisioSketchPlate)
+            .every((s) => s.line.hasLine),
+        isTrue,
+      );
+
+      final connector = VsdxShapeFactory.line(
+        id: 3,
+        ax: 1.5,
+        ay: 6.2,
+        bx: 6.5,
+        by: 6.2,
+        name: 'LineGrad3Sketch_1D',
+        line: const VsdxLine(pattern: 1, weightInches: 0.18, gradient: wash),
+      ).withSketchEffect(true).withSketchJiggle(3.5);
+      var oneDoc = parser.parse(blank);
+      oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+      final oneBaked = documentForLibvisioWrite(oneDoc);
+      expect(
+        oneBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+        hasLength(2),
+      );
+      final oneSoft =
+          oneBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate);
+      expect(oneSoft, hasLength(2));
+      expect(oneSoft.every((s) => !s.is1D && s.height.abs() > 0.1), isTrue);
+    },
+  );
+
   test('Glass bakes a top-light sibling LibreOffice can collect', () {
     final shape = VsdxShapeFactory.rectangle(
       id: 1,

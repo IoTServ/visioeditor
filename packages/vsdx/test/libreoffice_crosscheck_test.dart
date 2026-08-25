@@ -2533,6 +2533,32 @@ void main() {
             ),
           ),
     );
+    var lineGrad3SketchDocument = parser.parse(blank);
+    lineGrad3SketchDocument = lineGrad3SketchDocument.replacePage(
+      0,
+      lineGrad3SketchDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: lineGrad3SketchDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.0,
+          height: 1.4,
+          name: 'LineGrad3Sketch',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.18,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ).withSketchEffect(true).withSketchJiggle(3.5),
+      ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6612,6 +6638,10 @@ void main() {
       'linegrad3_1d_oblique_hard_shadow': writer.write(
         originalBytes: blank,
         edited: lineGrad31dObliqueHardShadowDocument,
+      ),
+      'linegrad3_sketch': writer.write(
+        originalBytes: blank,
+        edited: lineGrad3SketchDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -14021,6 +14051,20 @@ void main() {
           expect(shadowPlate.is1D, isFalse);
           expect(shadowPlate.width, greaterThan(5.1));
         }
+        if (entry.key == 'linegrad3_sketch') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3Sketch');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(2),
+          );
+        }
         if (entry.key == 'linegrad3_arrow') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -14112,6 +14156,7 @@ void main() {
                 entry.key == 'linegrad3_1d_hard_shadow' ||
                 entry.key == 'linegrad3_oblique_hard_shadow' ||
                 entry.key == 'linegrad3_1d_oblique_hard_shadow' ||
+                entry.key == 'linegrad3_sketch' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
             pdftoppm != null) {
