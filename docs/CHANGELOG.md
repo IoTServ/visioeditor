@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mixed Latin+CJK and Latin+Arabic Character runs now keep their
+  script faces in LibreOffice. `readCharIX` still stores only `Font` /
+  `Size`, so an Asian-only or complex-only run already rewrites those
+  cells, but a mixed run used to keep Arial on 世界 / سلام while
+  canvas / SVG already switch `AsianFont` / `ComplexScriptFont`. A save
+  splits the run so each script collects its face and size. Combining
+  marks stay on the preceding glyph. A second save does not split
+  again.
 - Paragraph `BulletFontSize` / `BulletFont` now keep their marker face
   in LibreOffice. Draw's drawing-text import still drops
   `text:bullet-char`, so a save already writes the glyph into the

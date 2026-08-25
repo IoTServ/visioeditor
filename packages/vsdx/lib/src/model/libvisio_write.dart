@@ -61,7 +61,10 @@
 /// `readCharIX` only stores `Font` and `Size` — so an Asian-only (or
 /// complex-script-only) run whose Latin `Font` would tofu in Draw is
 /// rewritten to the Asian / complex face, and a complex-only run writes
-/// `ComplexScriptSize` into `Size`. Character `LangID` is likewise absent
+/// `ComplexScriptSize` into `Size`. A mixed Latin+CJK or Latin+Arabic
+/// run is split so each script collects that face; leaving one `Font`
+/// would keep Arial on 世界 / سلام while canvas / SVG already switch.
+/// Character `LangID` is likewise absent
 /// (`readCharIX` has no case; `tokens.txt` has no LangID), so a digit or
 /// punctuation run that canvas / SVG already treat as RTL from LangID
 /// (including tabbed digit runs)
@@ -379,17 +382,19 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                     bakeCurvedTextForLibvisioWrite(
                                       bakeShapeOpacityForLibvisioWrite(
                                         bakeSolidLineSpacingForLibvisioWrite(
-                                          bakeLangIdRtlForLibvisioWrite(
-                                            bakeDoubleStrikethroughForLibvisioWrite(
-                                              bakeOverlineForLibvisioWrite(
-                                                bakeMixedHighlightForLibvisioWrite(
-                                                  bakeLooseEdgeLabelForLibvisioWrite(
-                                                    bakeAutoRotateLabelForLibvisioWrite(
-                                                      bakeTextDirectionForLibvisioWrite(
-                                                        bakeBulletGlyphForLibvisioWrite(
-                                                          bakeMetafileBitmapsForLibvisioWrite(
-                                                            bakeOlePreviewsForLibvisioWrite(
-                                                              hopped,
+                                          bakeMixedScriptFontForLibvisioWrite(
+                                            bakeLangIdRtlForLibvisioWrite(
+                                              bakeDoubleStrikethroughForLibvisioWrite(
+                                                bakeOverlineForLibvisioWrite(
+                                                  bakeMixedHighlightForLibvisioWrite(
+                                                    bakeLooseEdgeLabelForLibvisioWrite(
+                                                      bakeAutoRotateLabelForLibvisioWrite(
+                                                        bakeTextDirectionForLibvisioWrite(
+                                                          bakeBulletGlyphForLibvisioWrite(
+                                                            bakeMetafileBitmapsForLibvisioWrite(
+                                                              bakeOlePreviewsForLibvisioWrite(
+                                                                hopped,
+                                                              ),
                                                             ),
                                                           ),
                                                         ),
@@ -5167,6 +5172,173 @@ VsdxDocument bakeLangIdRtlForLibvisioWrite(VsdxDocument document) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
         bakeLangIdRtlShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// Script clusters canvas `_visioScriptChildren` would split a Character run
+/// into. Combining marks and LRM/RLM stay on the preceding glyph.
+List<({int start, String text})> _libvisioScriptFontChunks(String text) {
+  final out = <({int start, String text})>[];
+  final buf = StringBuffer();
+  var kind = -1;
+  var start = 0;
+  var utf16 = 0;
+
+  void flush() {
+    if (buf.isEmpty) return;
+    out.add((start: start, text: buf.toString()));
+    buf.clear();
+  }
+
+  for (final rune in text.runes) {
+    final units = rune > 0xFFFF ? 2 : 1;
+    if (kind >= 0 &&
+        (_isCombiningMarkRune(rune) || rune == 0x200E || rune == 0x200F)) {
+      buf.writeCharCode(rune);
+      utf16 += units;
+      continue;
+    }
+    final next = isVisioComplexScriptRune(rune)
+        ? 2
+        : isVisioAsianScriptRune(rune)
+            ? 1
+            : 0;
+    if (kind >= 0 && kind != next) {
+      flush();
+      start = utf16;
+    }
+    kind = next;
+    buf.writeCharCode(rune);
+    utf16 += units;
+  }
+  flush();
+  return out;
+}
+
+bool _runNeedsLibvisioMixedScriptFontBake(VsdxTextRun run) {
+  if (run.text.isEmpty) return false;
+  final chunks = _libvisioScriptFontChunks(run.text);
+  if (chunks.length < 2) return false;
+  final style = run.charStyle;
+  for (final chunk in chunks) {
+    final face = fontFamilyForLibvisioWrite(style, chunk.text);
+    final size = fontSizeForLibvisioWrite(style, chunk.text);
+    if ((face ?? '') != (style.fontFamily ?? '')) return true;
+    if ((size - style.fontSizeInches).abs() > 1e-12) return true;
+  }
+  return false;
+}
+
+/// `true` when a mixed-script run must become separate Character rows.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `readCharIX` stores `Font`
+/// / `Size` and skips `AsianFont` / `ComplexScriptFont` /
+/// `ComplexScriptSize`. An Asian-only or complex-only run already rewrites
+/// those into `Font` / `Size`. A mixed Latin+CJK or Latin+Arabic run would
+/// keep the Latin face on every glyph, while canvas / SVG already switch
+/// per script. A save splits the run so each script collects its face and
+/// size. Combining marks stay on the preceding glyph. A second save does
+/// not split again.
+bool shapeNeedsLibvisioMixedScriptFontBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (_runNeedsLibvisioMixedScriptFontBake(run)) return true;
+  }
+  return false;
+}
+
+List<VsdxTextRun> _libvisioMixedScriptFontRuns(List<VsdxTextRun> runs) {
+  final next = <VsdxTextRun>[];
+  for (final run in runs) {
+    if (!_runNeedsLibvisioMixedScriptFontBake(run)) {
+      next.add(run);
+      continue;
+    }
+    final chunks = _libvisioScriptFontChunks(run.text);
+    var tabOffset = 0;
+    for (final chunk in chunks) {
+      final tabs = '\t'.allMatches(chunk.text).length;
+      next.add(
+        VsdxTextRun(
+          text: chunk.text,
+          charStyle: run.charStyle.copyWith(
+            fontFamily: fontFamilyForLibvisioWrite(run.charStyle, chunk.text),
+            fontSizeInches: fontSizeForLibvisioWrite(run.charStyle, chunk.text),
+          ),
+          paraStyle: run.paraStyle,
+          fieldSpans: _libvisioFieldSpansInRange(
+            run.fieldSpans,
+            chunk.start,
+            chunk.text.length,
+          ),
+          tabIndices: run.tabIndices.skip(tabOffset).take(tabs).toList(),
+        ),
+      );
+      tabOffset += tabs;
+    }
+  }
+  return next;
+}
+
+VsdxShape bakeMixedScriptFontShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeMixedScriptFontShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioMixedScriptFontBake(shape)) {
+    final runs = _libvisioMixedScriptFontRuns(shape.richText.runs);
+    next = shape.copyWith(
+      text: shape.text == null
+          ? null
+          : VsdxRichText(runs: runs, textBlock: shape.richText.textBlock)
+              .plainText,
+      richText: shape.richText.copyWith(runs: runs),
+    );
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Split mixed-script runs so Draw collects Asian / complex Font and Size.
+VsdxDocument bakeMixedScriptFontForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeMixedScriptFontShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {
@@ -11470,8 +11642,8 @@ bool _isLatinUiFace(String? face) {
 
 /// `Font` cell Draw will collect. Asian-only runs whose Visio `Font` is a
 /// Latin UI face are rewritten to `AsianFont` (or YaHei); complex-script-only
-/// runs use `ComplexScriptFont`. Mixed Latin+CJK / Latin+Arabic keep `Font`
-/// so Visio's Latin glyphs do not change face.
+/// runs use `ComplexScriptFont`. Mixed Latin+CJK / Latin+Arabic runs are
+/// split first so each script still goes through this helper.
 String? fontFamilyForLibvisioWrite(VsdxCharStyle style, String text) {
   final current = style.fontFamily;
   if (_isAsianOnly(text)) {

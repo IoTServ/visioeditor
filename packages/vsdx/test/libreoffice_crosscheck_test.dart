@@ -4994,6 +4994,40 @@ void main() {
         ),
       ),
     );
+    var mixedScriptDocument = parser.parse(blank);
+    mixedScriptDocument = mixedScriptDocument.replacePage(
+      0,
+      mixedScriptDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: mixedScriptDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 1.4,
+          name: 'MixedScript',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'Hi世界',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'Hi世界',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  asianFont: 'Microsoft YaHei',
+                  fontSizeInches: 0.4,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+              ),
+            ],
+            textBlock: const VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        ),
+      ),
+    );
     var autoRotateDocument = parser.parse(blank);
     final autoRotatePage = autoRotateDocument.pages.first;
     autoRotateDocument = autoRotateDocument.replacePage(
@@ -5989,6 +6023,10 @@ void main() {
       'bullet_font_size': writer.write(
         originalBytes: blank,
         edited: bulletFontSizeDocument,
+      ),
+      'mixed_script': writer.write(
+        originalBytes: blank,
+        edited: mixedScriptDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -12411,6 +12449,57 @@ void main() {
             greaterThan(40),
             reason: 'Draw must collect BulletFontSize on the baked glyph run; '
                 'magentaHeight=${maxY - minY} magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'mixed_script') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'MixedScript');
+          expect(shape.richText.runs, hasLength(2));
+          expect(shape.richText.runs[0].text, 'Hi');
+          expect(shape.richText.runs[0].charStyle.fontFamily, 'Arial');
+          expect(shape.richText.runs[1].text, '世界');
+          expect(
+            shape.richText.runs[1].charStyle.fontFamily,
+            'Microsoft YaHei',
+          );
+        }
+        if (entry.key == 'mixed_script' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          var minX = rendered.width;
+          var maxX = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+              if (pixel.x < minX) minX = pixel.x;
+              if (pixel.x > maxX) maxX = pixel.x;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(40),
+            reason: 'LibreOffice must paint mixed Latin+CJK after the Font split; '
+                'magentaPixels=$magentaPixels',
+          );
+          expect(
+            maxX - minX,
+            greaterThan(70),
+            reason: 'Draw must paint 世界 beside Hi, not drop the CJK run; '
+                'magentaWidth=${maxX - minX} magentaPixels=$magentaPixels',
           );
         }
         if ((entry.key == 'shape_inside' ||

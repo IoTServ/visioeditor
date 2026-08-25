@@ -69,7 +69,9 @@
 /// `AsianFont` / `ComplexScriptFont` / `ComplexScriptSize` are not tokens,
 /// so an Asian-only (Hangul/Kana/Han) or complex-script-only run whose
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
-/// actually load. Mixed Latin+CJK runs keep `Font`. Character `LangID` is
+/// actually load. Mixed Latin+CJK / Latin+Arabic runs split so each
+/// script collects that face; a single `Font` would keep Arial on 世界.
+/// Character `LangID` is
 /// not a token; digit-only Arabic / Hebrew runs prefix U+200F so Draw's
 /// Unicode bidi matches canvas / SVG. Character `Letterspace`
 /// is not a token; canvas / SVG already fold FontScale into tracking at
@@ -9274,6 +9276,57 @@ void main() {
     expect(shapeNeedsLibvisioFontBake(latin), isFalse);
     expect(fontFamilyForLibvisioWrite(latinUi, 'Hi'), 'Arial');
     expect(fontFamilyForLibvisioWrite(latinUi, 'Hello世界'), 'Arial');
+
+    final mixed = box('MixedCJK', 'Hi世界', latinUi);
+    expect(shapeNeedsLibvisioMixedScriptFontBake(mixed), isTrue);
+    expect(shapeNeedsLibvisioMixedScriptFontBake(han), isFalse);
+    final mixedBlank = writer.emptyDocument();
+    var mixedDoc = parser.parse(mixedBlank);
+    mixedDoc = mixedDoc.replacePage(0, mixedDoc.pages.first.addShape(mixed));
+    final mixedBaked = documentForLibvisioWrite(mixedDoc);
+    final mixedRuns = mixedBaked.pages.first.findShapeById(1)!.richText.runs;
+    expect(mixedRuns, hasLength(2));
+    expect(mixedRuns[0].text, 'Hi');
+    expect(mixedRuns[0].charStyle.fontFamily, 'Arial');
+    expect(mixedRuns[1].text, '世界');
+    expect(mixedRuns[1].charStyle.fontFamily, 'Microsoft YaHei');
+    final mixedSaved =
+        writer.write(originalBytes: mixedBlank, edited: mixedDoc);
+    final mixedAfter = parser.parse(mixedSaved).pages.first.findShapeById(1)!;
+    expect(mixedAfter.richText.runs, hasLength(2));
+    expect(mixedAfter.richText.runs[0].charStyle.fontFamily, 'Arial');
+    expect(mixedAfter.richText.runs[1].charStyle.fontFamily, 'Microsoft YaHei');
+    expect(
+      documentForLibvisioWrite(mixedBaked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs,
+      hasLength(2),
+      reason: 'a second save must not split the script runs again',
+    );
+
+    final mixedArabic = box('MixedArabic', 'Hiسلام', latinUi);
+    expect(shapeNeedsLibvisioMixedScriptFontBake(mixedArabic), isTrue);
+    mixedDoc = parser.parse(mixedBlank).replacePage(
+          0,
+          parser.parse(mixedBlank).pages.first.addShape(mixedArabic),
+        );
+    final arabicRuns = documentForLibvisioWrite(mixedDoc)
+        .pages
+        .first
+        .findShapeById(1)!
+        .richText
+        .runs;
+    expect(arabicRuns, hasLength(2));
+    expect(arabicRuns[0].text, 'Hi');
+    expect(arabicRuns[0].charStyle.fontFamily, 'Arial');
+    expect(arabicRuns[0].charStyle.fontSizeInches, closeTo(12 / 72, 1e-12));
+    expect(arabicRuns[1].text, 'سلام');
+    expect(arabicRuns[1].charStyle.fontFamily, 'Times New Roman');
+    expect(arabicRuns[1].charStyle.fontSizeInches, closeTo(18 / 72, 1e-12));
+
     expect(fillPatternForLibvisioWrite(const VsdxFill(pattern: 41)), 1);
     expect(
       roundingForLibvisioWrite(const VsdxLine(
