@@ -208,8 +208,12 @@
 /// `text:min-label-width` inset, so a save writes the glyph into the
 /// paragraph text, shifts any `<fld>` spans past that prefix, and folds
 /// the label field into a hanging `IndLeft` / `IndFirst` on a rectangular
-/// label. Curved Text and Shape Inside skip that hanging indent — the
-/// glyph rides the existing arc / outline plates. Glow*
+/// label. `BulletFontSize` / `BulletFont` are tokens too, but that same
+/// drawing-text import never sizes `text:bullet-char`, so a rectangular
+/// save whose marker Size or Font disagrees with the body splits the
+/// prefix onto its own Character run. Curved Text and Shape Inside skip
+/// that hanging indent and keep a single run — the glyph rides the
+/// existing arc / outline plates at body Size. Glow*
 /// cells are not tokens; an unfilled 1-D stroke bakes a
 /// Gaussian PNG plate sized to the glow ribbon (a Foreign picture cannot
 /// hang on a zero-height 1-D XForm, and a FillForegndTrans ribbon would
@@ -3884,18 +3888,21 @@ double libvisioBulletLabelWidth(VsdxParaStyle para, VsdxCharStyle body) {
 /// `true` when a `Bullet` list must become a literal glyph for Draw.
 ///
 /// LibreOffice only calls `VisioDocument::parse`. `Bullet` / `BulletStr` /
-/// `BulletFont` / `TextPosAfterBullet` *are* tokens, and
+/// `BulletFont` / `BulletFontSize` / `TextPosAfterBullet` *are* tokens, and
 /// `_bulletFromParaFormat` resolves the glyph into
 /// `addOpenUnorderedListLevel`'s `text:bullet-char`, but Draw's drawing-text
 /// import keeps only the `text:min-label-width` inset — the glyph itself is
-/// never painted. Canvas / SVG do paint it, so a save writes the resolved
-/// character into the paragraph text, shifts `<fld>` UTF-16 starts past
-/// that prefix, folds the label field into `IndLeft` / `IndFirst` (a
-/// hanging indent Draw does collect as `fo:margin-left` /
-/// `fo:text-indent`), and drops the Bullet cells so reopening does not
-/// stack a second marker. Curved Text / Shape Inside skip the hanging
-/// indent so outline wrap still runs; the glyph is already in the text
-/// those plates copy.
+/// never painted, and that inset is never sized from `BulletFontSize`.
+/// Canvas / SVG do paint it, so a save writes the resolved character into
+/// the paragraph text, shifts `<fld>` UTF-16 starts past that prefix, folds
+/// the label field into `IndLeft` / `IndFirst` (a hanging indent Draw does
+/// collect as `fo:margin-left` / `fo:text-indent`), and drops the Bullet
+/// cells so reopening does not stack a second marker. When the marker Size
+/// or Font disagrees with the body, a rectangular save also splits that
+/// prefix onto its own Character run so Draw collects the canvas
+/// `effectiveBulletFontSizeInches` / `BulletFont`. Curved Text / Shape
+/// Inside skip the hanging indent so outline wrap still runs; the glyph is
+/// already in the text those plates copy.
 bool shapeNeedsLibvisioBulletGlyphBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.richText.textBlock.hideText) return false;
@@ -4036,45 +4043,178 @@ List<VsdxTextRun> libvisioBulletPrefixedRuns(List<VsdxTextRun> runs) {
   return next;
 }
 
+/// Character style Draw should collect for a baked list marker.
+///
+/// Canvas `_paintParagraphBlock` sizes the glyph from
+/// [VsdxParaStyle.effectiveBulletFontSizeInches] and `BulletFont`, and
+/// does not copy small-caps / super-sub / highlight onto the marker.
+VsdxCharStyle _libvisioBulletGlyphCharStyle(
+  VsdxParaStyle para,
+  VsdxCharStyle body,
+) {
+  final bodyFont = body.fontSizeInches > 0 ? body.fontSizeInches : 0.14;
+  final font = para.bulletFont?.trim();
+  return body.copyWith(
+    fontSizeInches: para.effectiveBulletFontSizeInches(bodyFont),
+    fontFamily: (font != null && font.isNotEmpty) ? font : body.fontFamily,
+    fontScale: 1,
+    position: VsdxTextPosition.normal,
+    textCase: VsdxTextCase.normal,
+    style: VsdxFontStyle.regular,
+    letterSpacingInches: 0,
+    clearHighlight: true,
+    underline: false,
+    strikethrough: false,
+    doubleUnderline: false,
+    doubleStrikethrough: false,
+    overline: false,
+    clearComplexScriptSize: true,
+  );
+}
+
+bool _libvisioBulletGlyphNeedsOwnCharRun(
+  VsdxParaStyle para,
+  VsdxCharStyle body,
+) {
+  final glyph = _libvisioBulletGlyphCharStyle(para, body);
+  if ((glyph.fontSizeInches - body.fontSizeInches).abs() > 1e-9) {
+    return true;
+  }
+  return (glyph.fontFamily ?? '') != (body.fontFamily ?? '');
+}
+
+List<VsdxFieldSpan> _libvisioFieldSpansInRange(
+  List<VsdxFieldSpan> spans,
+  int start,
+  int length,
+) {
+  if (spans.isEmpty || length <= 0) return const <VsdxFieldSpan>[];
+  final end = start + length;
+  final out = <VsdxFieldSpan>[];
+  for (final span in spans) {
+    final s = math.max(span.start, start);
+    final e = math.min(span.start + span.length, end);
+    if (e > s) {
+      out.add(VsdxFieldSpan(start: s - start, length: e - s, ix: span.ix));
+    }
+  }
+  return out;
+}
+
+/// Split a prefixed bullet run so Draw collects marker Size / Font.
+void _appendLibvisioBulletGlyphCharRuns({
+  required List<VsdxTextRun> into,
+  required VsdxTextRun original,
+  required VsdxTextRun prefixed,
+  required bool opensParagraph,
+  required VsdxCharStyle body,
+  required bool hanging,
+  required VsdxParaStyle bakedPara,
+}) {
+  final para = original.paraStyle;
+  if (!hanging || !_libvisioBulletGlyphNeedsOwnCharRun(para, body)) {
+    into.add(prefixed.copyWith(paraStyle: bakedPara));
+    return;
+  }
+  final prefix = _libvisioBulletPrefix(para.resolvedBulletGlyph);
+  final inserts = _libvisioBulletPrefixInserts(
+    original.text,
+    opensParagraph: opensParagraph,
+  );
+  if (inserts.isEmpty) {
+    into.add(prefixed.copyWith(paraStyle: bakedPara));
+    return;
+  }
+  final glyphStyle = _libvisioBulletGlyphCharStyle(para, body);
+  final text = prefixed.text;
+  var origCursor = 0;
+  var prefixedCursor = 0;
+  var tabOffset = 0;
+
+  void emit(int start, int length, VsdxCharStyle style) {
+    if (length <= 0) return;
+    final chunk = text.substring(start, start + length);
+    final tabs = '\t'.allMatches(chunk).length;
+    into.add(
+      VsdxTextRun(
+        text: chunk,
+        charStyle: style,
+        paraStyle: bakedPara,
+        fieldSpans: _libvisioFieldSpansInRange(
+          prefixed.fieldSpans,
+          start,
+          length,
+        ),
+        tabIndices: prefixed.tabIndices.skip(tabOffset).take(tabs).toList(),
+      ),
+    );
+    tabOffset += tabs;
+  }
+
+  for (final at in inserts) {
+    if (at > origCursor) {
+      final len = at - origCursor;
+      emit(prefixedCursor, len, original.charStyle);
+      prefixedCursor += len;
+      origCursor = at;
+    }
+    emit(prefixedCursor, prefix.length, glyphStyle);
+    prefixedCursor += prefix.length;
+  }
+  if (prefixedCursor < text.length) {
+    emit(
+      prefixedCursor,
+      text.length - prefixedCursor,
+      original.charStyle,
+    );
+  }
+}
+
 VsdxShape _sourceForLibvisioBulletGlyphWrite(VsdxShape shape) {
   final runs = shape.richText.runs;
   final paraOf = _libvisioParagraphIndexPerRun(runs);
   // The body font of a paragraph comes from its first non-empty run, the
   // same run canvas / SVG size the glyph against.
   final bodyStyle = <int, VsdxCharStyle>{};
+  final firstRunOfPara = <int, int>{};
   for (var i = 0; i < runs.length; i++) {
+    firstRunOfPara.putIfAbsent(paraOf[i], () => i);
     if (runs[i].text.trim().isEmpty) continue;
     bodyStyle.putIfAbsent(paraOf[i], () => runs[i].charStyle);
   }
   final prefixed = libvisioBulletPrefixedRuns(runs);
   // Arc / outline wrap rejects a hanging indent; the glyph is already in
-  // the text those plates copy.
+  // the text those plates copy, and those plates use body Size.
   final hanging = !shape.curvedText && !shape.shapeInside;
   final next = <VsdxTextRun>[];
   for (var i = 0; i < prefixed.length; i++) {
     final run = prefixed[i];
-    final para = runs[i].paraStyle;
+    final original = runs[i];
+    final para = original.paraStyle;
     if (para.bullet == 0) {
       next.add(run);
       continue;
     }
-    final label = hanging
-        ? libvisioBulletLabelWidth(
-            para,
-            bodyStyle[paraOf[i]] ?? VsdxCharStyle.defaults,
-          )
-        : 0.0;
-    next.add(run.copyWith(
-      paraStyle: para.copyWith(
-        bullet: 0,
-        clearBulletStr: true,
-        clearBulletFont: true,
-        clearBulletFontSize: true,
-        textPosAfterBulletInches: 0,
-        indentLeftInches: para.indentLeftInches + label,
-        indentFirstInches: para.indentFirstInches - label,
-      ),
-    ));
+    final body = bodyStyle[paraOf[i]] ?? VsdxCharStyle.defaults;
+    final label = hanging ? libvisioBulletLabelWidth(para, body) : 0.0;
+    final bakedPara = para.copyWith(
+      bullet: 0,
+      clearBulletStr: true,
+      clearBulletFont: true,
+      clearBulletFontSize: true,
+      textPosAfterBulletInches: 0,
+      indentLeftInches: para.indentLeftInches + label,
+      indentFirstInches: para.indentFirstInches - label,
+    );
+    _appendLibvisioBulletGlyphCharRuns(
+      into: next,
+      original: original,
+      prefixed: run,
+      opensParagraph: firstRunOfPara[paraOf[i]] == i,
+      body: body,
+      hanging: hanging,
+      bakedPara: bakedPara,
+    );
   }
   final rich = shape.richText.copyWith(runs: next);
   return shape.copyWith(

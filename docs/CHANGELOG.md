@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Paragraph `BulletFontSize` / `BulletFont` now keep their marker face
+  in LibreOffice. Draw's drawing-text import still drops
+  `text:bullet-char`, so a save already writes the glyph into the
+  paragraph, but that import never sizes the marker from those cells
+  while canvas / SVG already paint `effectiveBulletFontSizeInches`. A
+  rectangular save whose marker Size or Font disagrees with the body
+  splits the prefix onto its own Character run. Field spans stay on
+  the body. Curved Text / Shape Inside keep a single run so outline
+  plates still copy body Size. A second save does not stack another
+  marker.
 - Paragraph `SpLine=0` ("set solid") now keeps wrapped leading in
   LibreOffice. libvisio emits `fo:line-height="0%"` whenever that cell
   is ≤ 0, so Draw stacked every line on one baseline while canvas /

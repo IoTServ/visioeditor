@@ -4956,6 +4956,44 @@ void main() {
         ),
       ),
     );
+    var bulletFontSizeDocument = parser.parse(blank);
+    bulletFontSizeDocument = bulletFontSizeDocument.replacePage(
+      0,
+      bulletFontSizeDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: bulletFontSizeDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.0,
+          height: 2.0,
+          name: 'BulletFontSize',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'A',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'A',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.22,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  bullet: 3,
+                  bulletFontSizeInches: 0.7,
+                  textPosAfterBulletInches: 0.4,
+                ),
+              ),
+            ],
+            textBlock: const VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        ),
+      ),
+    );
     var autoRotateDocument = parser.parse(blank);
     final autoRotatePage = autoRotateDocument.pages.first;
     autoRotateDocument = autoRotateDocument.replacePage(
@@ -5947,6 +5985,10 @@ void main() {
       'bullet_field': writer.write(
         originalBytes: blank,
         edited: bulletFieldDocument,
+      ),
+      'bullet_font_size': writer.write(
+        originalBytes: blank,
+        edited: bulletFontSizeDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -12308,6 +12350,67 @@ void main() {
             greaterThan(12),
             reason: 'LibreOffice must still paint the field Value; '
                 'glyphInk=$glyphInk fieldInk=$fieldInk',
+          );
+        }
+        if (entry.key == 'bullet_font_size') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'BulletFontSize');
+          expect(shape.richText.runs.length, greaterThanOrEqualTo(2));
+          expect(shape.richText.runs.first.text, startsWith('\u25a0'));
+          expect(
+            shape.richText.runs.first.charStyle.fontSizeInches,
+            closeTo(0.7, 1e-6),
+          );
+          expect(
+            shape.richText.runs.any(
+              (run) =>
+                  run.text.contains('A') &&
+                  (run.charStyle.fontSizeInches - 0.22).abs() < 1e-6,
+            ),
+            isTrue,
+          );
+          expect(shape.richText.runs.first.paraStyle.bullet, 0);
+        }
+        if (entry.key == 'bullet_font_size' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          var minY = rendered.height;
+          var maxY = 0;
+          for (var y = 0; y < rendered.height; y++) {
+            for (var x = 0; x < rendered.width; x++) {
+              final pixel = rendered.getPixel(x, y);
+              if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+                magentaPixels++;
+                if (y < minY) minY = y;
+                if (y > maxY) maxY = y;
+              }
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(20),
+            reason: 'LibreOffice must paint the oversized bullet marker; '
+                'magentaPixels=$magentaPixels',
+          );
+          expect(
+            maxY - minY,
+            greaterThan(40),
+            reason: 'Draw must collect BulletFontSize on the baked glyph run; '
+                'magentaHeight=${maxY - minY} magentaPixels=$magentaPixels',
           );
         }
         if ((entry.key == 'shape_inside' ||

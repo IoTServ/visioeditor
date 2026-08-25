@@ -2762,6 +2762,183 @@ void main() {
     expect(oracle.svgPages(saved)?.join() ?? '', contains('42'));
   });
 
+  test('BulletFontSize and BulletFont bake onto their own Character run', () {
+    const prefix = '\u25a0 ';
+    const para = VsdxParaStyle(
+      bullet: 3,
+      bulletFont: 'Times New Roman',
+      bulletFontSizeInches: 0.7,
+      textPosAfterBulletInches: 0.25,
+      indentLeftInches: 0.1,
+    );
+    const body = VsdxCharStyle(
+      fontFamily: 'Arial',
+      fontSizeInches: 0.28,
+      color: VsdxColor(0xFF000000),
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 2,
+      name: 'BulletFontBox',
+      fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      text: 'AAA\nBBB',
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(text: 'AAA\nBBB', charStyle: body, paraStyle: para),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioBulletGlyphBake(shape), isTrue);
+    final label = libvisioBulletLabelWidth(para, body);
+    expect(label, greaterThan(0.25));
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    final runs = source.richText.runs;
+    expect(runs, hasLength(4));
+    expect(runs[0].text, prefix);
+    expect(runs[0].charStyle.fontSizeInches, closeTo(0.7, 1e-9));
+    expect(runs[0].charStyle.fontFamily, 'Times New Roman');
+    expect(runs[1].text, 'AAA\n');
+    expect(runs[1].charStyle.fontSizeInches, closeTo(0.28, 1e-9));
+    expect(runs[1].charStyle.fontFamily, 'Arial');
+    expect(runs[2].text, prefix);
+    expect(runs[2].charStyle.fontSizeInches, closeTo(0.7, 1e-9));
+    expect(runs[3].text, 'BBB');
+    expect(runs[3].charStyle.fontSizeInches, closeTo(0.28, 1e-9));
+    expect(source.richText.plainText, '${prefix}AAA\n${prefix}BBB');
+    expect(source.text, '${prefix}AAA\n${prefix}BBB');
+    expect(
+      runs.every((run) => run.paraStyle.bullet == 0),
+      isTrue,
+    );
+    expect(runs.first.paraStyle.bulletFont, isNull);
+    expect(runs.first.paraStyle.bulletFontSizeInches, isNull);
+    expect(runs.first.paraStyle.indentLeftInches, closeTo(0.1 + label, 1e-9));
+    expect(runs.first.paraStyle.indentFirstInches, closeTo(-label, 1e-9));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .runs,
+      hasLength(4),
+      reason: 'a second save must not stack another glyph run',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .richText
+          .plainText,
+      '${prefix}AAA\n${prefix}BBB',
+      reason: 'a second save must not stack another glyph',
+    );
+
+    final fieldShape = shape.copyWith(
+      text: '42\n99',
+      fields: const <VsdxFieldRow>[
+        VsdxFieldRow(
+          ix: 0,
+          value: '42',
+          valueFormula: 'PAGENUMBER()',
+        ),
+        VsdxFieldRow(
+          ix: 1,
+          value: '99',
+          valueFormula: 'PAGECOUNT()',
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: '42\n99',
+            charStyle: body,
+            paraStyle: para,
+            fieldSpans: <VsdxFieldSpan>[
+              VsdxFieldSpan(start: 0, length: 2, ix: 0),
+              VsdxFieldSpan(start: 3, length: 2, ix: 1),
+            ],
+          ),
+        ],
+      ),
+    );
+    final fieldBaked = documentForLibvisioWrite(
+      parser.parse(blank).replacePage(
+            0,
+            parser.parse(blank).pages.first.addShape(fieldShape),
+          ),
+    );
+    final fieldRuns = fieldBaked.pages.first.findShapeById(1)!.richText.runs;
+    expect(fieldRuns, hasLength(4));
+    expect(fieldRuns[1].text, '42\n');
+    expect(fieldRuns[1].fieldSpans.single,
+        const VsdxFieldSpan(start: 0, length: 2, ix: 0));
+    expect(fieldRuns[3].text, '99');
+    expect(fieldRuns[3].fieldSpans.single,
+        const VsdxFieldSpan(start: 0, length: 2, ix: 1));
+    expect(fieldRuns[0].fieldSpans, isEmpty);
+    expect(fieldRuns[2].fieldSpans, isEmpty);
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.richText.runs.length, greaterThanOrEqualTo(4));
+    expect(
+        after.richText.runs.first.charStyle.fontSizeInches, closeTo(0.7, 1e-6));
+    expect(after.richText.runs.first.charStyle.fontFamily, 'Times New Roman');
+    expect(
+      after.richText.runs.any(
+        (run) =>
+            run.text.contains('AAA') &&
+            (run.charStyle.fontSizeInches - 0.28).abs() < 1e-6,
+      ),
+      isTrue,
+    );
+    expect(after.richText.plainText, '${prefix}AAA\n${prefix}BBB');
+    expect(after.richText.runs.first.paraStyle.bullet, 0);
+
+    final sameSize = shape.copyWith(
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: 'AAA\nBBB',
+            charStyle: body,
+            paraStyle: VsdxParaStyle(
+              bullet: 3,
+              textPosAfterBulletInches: 0.25,
+              indentLeftInches: 0.1,
+            ),
+          ),
+        ],
+      ),
+    );
+    final sameBaked = documentForLibvisioWrite(
+      parser.parse(blank).replacePage(
+            0,
+            parser.parse(blank).pages.first.addShape(sameSize),
+          ),
+    );
+    expect(
+      sameBaked.pages.first.findShapeById(1)!.richText.runs,
+      hasLength(1),
+      reason: 'matching Size / Font must keep a single Character run',
+    );
+
+    final oracle = LibvisioOracle.tryLoad();
+    if (oracle == null) return;
+    expect(oracle.svgPages(saved)?.join() ?? '', contains('\u25a0'));
+  });
+
   test('Word Wrap off bakes TxtWidth LibreOffice wraps against', () {
     const label = 'NO WRAP NO WRAP NO WRAP';
     final shape = VsdxShapeFactory.rectangle(
