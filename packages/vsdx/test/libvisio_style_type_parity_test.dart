@@ -93,7 +93,9 @@
 /// hatch / pattern brushes and clips. Foreign
 /// `Object` OLE packages are the same missing paint: Draw fills Blue 2
 /// for `object/ole`, so a save unwraps `\x02OlePres000` as `MetaFile` /
-/// `EnhMetaFile` and the metafile bake writes PNG. A second
+/// `EnhMetaFile` and the metafile bake writes PNG. Bitmap payloads with
+/// no libvisio `CompressionType` (WebP, ICO, headerless DIB) become
+/// `image/bmp` and vanish; a save re-encodes those as PNG. A second
 /// save does not stack another PNG. Marker ids whose
 /// `_linePropertiesMarkerPath` is still a TODO stub bake as Geometry so
 /// Draw does not reuse a sibling silhouette. Unknown
@@ -7431,6 +7433,89 @@ void main() {
     );
   });
 
+  test('WebP Bitmap bakes to PNG for LibreOffice', () {
+    const part = '/visio/media/probe.webp';
+    final webp = _magentaWebp();
+    expect(raster.decodeWebP(webp), isNotNull);
+    final source = VsdxImage(
+      partName: part,
+      bytes: webp,
+      mimeType: 'image/webp',
+    );
+    expect(source.foreignType, 'Bitmap');
+    expect(source.compressionType, isNull);
+    expect(source.looksLikeBmpFile, isFalse);
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(pic, source), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    expect(bakedShape.imagePartName, isNot(part));
+    final png = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(png, isNotNull);
+    var magenta = 0;
+    var transparent = 0;
+    for (final pixel in raster.decodePng(png!.bytes)!) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+    }
+    expect(transparent, 0);
+    expect(magenta, greaterThan(50), reason: 'WebP magenta must survive PNG bake');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another WebP PNG',
+    );
+  });
+
+  test('BMP Bitmap stays native for LibreOffice', () {
+    const part = '/visio/media/probe.bmp';
+    final rasterImage = raster.Image(width: 8, height: 8);
+    for (final pixel in rasterImage) {
+      rasterImage.setPixelRgba(pixel.x, pixel.y, 255, 0, 0, 255);
+    }
+    final bmp = Uint8List.fromList(raster.encodeBmp(rasterImage));
+    final source = VsdxImage(
+      partName: part,
+      bytes: bmp,
+      mimeType: 'image/bmp',
+    );
+    expect(source.looksLikeBmpFile, isTrue);
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1,
+      height: 1,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(pic, source), isFalse);
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    expect(baked.pages.first.findShapeById(1)!.imagePartName, part);
+  });
+
   test('MetaFile floor-plan hatch bakes into PNG for LibreOffice', () {
     final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
         .readAsBytesSync();
@@ -12703,6 +12788,14 @@ Uint8List _hatchGreenEmf() {
   u32(0);
   return out.toBytes();
 }
+
+/// 16×16 magenta VP8 WebP (`package:image` 4.3's VP8L decoder throws).
+Uint8List _magentaWebp() => Uint8List.fromList(const <int>[
+      82, 73, 70, 70, 62, 0, 0, 0, 87, 69, 66, 80, 86, 80, 56, 32, 50, 0, 0, 0,
+      208, 1, 0, 157, 1, 42, 16, 0, 16, 0, 1, 64, 38, 37, 160, 2, 116, 186, 1,
+      248, 0, 3, 176, 0, 254, 235, 222, 47, 253, 227, 63, 220, 103, 251, 140,
+      255, 229, 247, 255, 201, 178, 249, 1, 255, 32, 63, 254, 73, 192, 0,
+    ]);
 
 /// Minimal vector EMF: magenta ExtTextOutW "HI", no embedded DIB.
 Uint8List _magentaTextEmf() {

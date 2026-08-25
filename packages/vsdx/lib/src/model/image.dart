@@ -180,6 +180,30 @@ class VsdxImage {
   String? get compressionType =>
       compressionTypeFor(mimeType: mimeType, partName: partName);
 
+  /// `true` when [bytes] already carry a BITMAPFILEHEADER (`BM`).
+  ///
+  /// libvisio maps a missing `CompressionType` to `image/bmp` and only
+  /// prepends a file header for the legacy DIB `format=0` path. A complete
+  /// BMP therefore survives Draw; WebP / ICO / headerless DIB do not.
+  bool get looksLikeBmpFile =>
+      bytes.length >= 14 && bytes[0] == 0x42 && bytes[1] == 0x4d;
+
+  /// Re-encode a Flutter-decodable raster as PNG, or `null` on failure.
+  ///
+  /// Used when libvisio would label the payload `image/bmp` (no JPEG / GIF /
+  /// TIFF / PNG `CompressionType`) but the bytes are not a BMP file.
+  Uint8List? pngBytesForLibvisioWrite() {
+    try {
+      final decoded = raster.decodeImage(bytes);
+      if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
+        return null;
+      }
+      return Uint8List.fromList(raster.encodePng(decoded));
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// Map MIME / part extension → Visio `ForeignType` attribute value.
   static String foreignTypeFor({
     required String mimeType,
@@ -217,6 +241,9 @@ class VsdxImage {
       return 'TIFF';
     }
     if (m.contains('png') || p.endsWith('.png')) return 'PNG';
+    // WebP / ICO / headerless DIB have no libvisio bitmap enum. A missing
+    // CompressionType becomes format 255 → `image/bmp`, and Draw drops the
+    // bytes. `documentForLibvisioWrite` re-encodes those as PNG.
     return null;
   }
 

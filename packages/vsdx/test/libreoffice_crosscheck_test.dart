@@ -1905,6 +1905,42 @@ void main() {
             ),
           ),
         );
+    var webpDocument = parser.parse(blank);
+    final webpPage = webpDocument.pages.first;
+    const webpPart = '/visio/media/libreoffice-crosscheck.webp';
+    final webpBytes = _magentaWebp();
+    expect(raster.decodeWebP(webpBytes), isNotNull);
+    expect(
+      VsdxImage(
+        partName: webpPart,
+        bytes: webpBytes,
+        mimeType: 'image/webp',
+      ).compressionType,
+      isNull,
+    );
+    webpDocument = webpDocument
+        .copyWith(
+          images: webpDocument.images.withImage(
+            VsdxImage(
+              partName: webpPart,
+              bytes: webpBytes,
+              mimeType: 'image/webp',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          webpPage.addShape(
+            VsdxShapeFactory.picture(
+              id: webpPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 1.5,
+              imagePartName: webpPart,
+            ),
+          ),
+        );
     var emfDocument = parser.parse(blank);
     final emfPage = emfDocument.pages.first;
     const emfPart = '/visio/media/libreoffice-crosscheck.emf';
@@ -5836,6 +5872,10 @@ void main() {
       'gif_foreign_data': writer.write(
         originalBytes: blank,
         edited: gifDocument,
+      ),
+      'webp_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: webpDocument,
       ),
       'emf_foreign_data': writer.write(
         originalBytes: blank,
@@ -12853,7 +12893,8 @@ void main() {
         }
         if (entry.key == 'vector_emf_foreign_data' ||
             entry.key == 'text_emf_foreign_data' ||
-            entry.key == 'hatch_emf_foreign_data') {
+            entry.key == 'hatch_emf_foreign_data' ||
+            entry.key == 'webp_foreign_data') {
           final reopened = parser.parse(entry.value);
           final shape = reopened.pages.first.shapes.single;
           expect(shape.foreignType, 'Bitmap');
@@ -12947,6 +12988,44 @@ void main() {
             lessThan(green),
             reason: 'Blue 2 graphic style must not hide hatch EMF; '
                 'green=$green blue2=$blue2',
+          );
+        }
+        if (entry.key == 'webp_foreign_data' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magenta = 0;
+          var blue2 = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+            if ((pixel.r - 114).abs() < 12 &&
+                (pixel.g - 159).abs() < 12 &&
+                (pixel.b - 207).abs() < 12) {
+              blue2++;
+            }
+          }
+          expect(
+            magenta,
+            greaterThan(80),
+            reason: 'Draw must paint baked WebP PNG, not Blue 2; '
+                'magenta=$magenta blue2=$blue2',
+          );
+          expect(
+            blue2,
+            lessThan(magenta),
+            reason: 'Blue 2 graphic style must not hide WebP; '
+                'magenta=$magenta blue2=$blue2',
           );
         }
         if ((entry.key == 'shape_inside' ||
@@ -14691,9 +14770,6 @@ String? _resolveExecutable(String name) {
   return path.isEmpty ? null : path;
 }
 
-/// Baseline little-endian, single-strip RGB TIFF understood by libtiff,
-/// LibreOffice and the pure-Dart decoder. Keeping this fixture uncompressed
-/// avoids coupling the interop assertion to any particular TIFF compressor.
 Uint8List _solidPng() {
   final image = raster.Image(width: 8, height: 8);
   for (var y = 0; y < 8; y++) {
@@ -14703,6 +14779,14 @@ Uint8List _solidPng() {
   }
   return raster.encodePng(image);
 }
+
+/// 16×16 magenta VP8 WebP (`package:image` 4.3's VP8L decoder throws).
+Uint8List _magentaWebp() => Uint8List.fromList(const <int>[
+      82, 73, 70, 70, 62, 0, 0, 0, 87, 69, 66, 80, 86, 80, 56, 32, 50, 0, 0, 0,
+      208, 1, 0, 157, 1, 42, 16, 0, 16, 0, 1, 64, 38, 37, 160, 2, 116, 186, 1,
+      248, 0, 3, 176, 0, 254, 235, 222, 47, 253, 227, 63, 220, 103, 251, 140,
+      255, 229, 247, 255, 201, 178, 249, 1, 255, 32, 63, 254, 73, 192, 0,
+    ]);
 
 /// Top half red, bottom half blue — picture Reflection must show blue nearest
 /// the source.

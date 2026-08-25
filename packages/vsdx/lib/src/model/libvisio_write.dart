@@ -136,6 +136,12 @@
 /// `ForeignType=MetaFile` / `EnhMetaFile`; the metafile bake then writes
 /// PNG so Draw does not keep Blue 2. A second
 /// save does not stack another preview.
+/// Bitmap payloads with no libvisio `CompressionType` enum (WebP, ICO,
+/// a PNG/JPEG sitting on a `.bin` part, headerless DIB) are labelled
+/// `image/bmp` (`readForeignData` format 255) and Draw drops them, while
+/// canvas / SVG already decode WebP / ICO. A save re-encodes those as
+/// PNG `ForeignType=Bitmap`. A complete `BM` file stays native. A second
+/// save does not stack another PNG.
 /// Picture `SoftEdgesSize`
 /// is not a token either: a 2-D Foreign bitmap bakes the same SourceAlpha
 /// feather canvas / SVG use, then SoftEdgesSize is written 0. A cropped
@@ -411,9 +417,11 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                                           bakeAutoRotateLabelForLibvisioWrite(
                                                             bakeTextDirectionForLibvisioWrite(
                                                               bakeBulletGlyphForLibvisioWrite(
-                                                                bakeMetafileBitmapsForLibvisioWrite(
-                                                                  bakeOlePreviewsForLibvisioWrite(
-                                                                    hopped,
+                                                                bakeUnsupportedBitmapsForLibvisioWrite(
+                                                                  bakeMetafileBitmapsForLibvisioWrite(
+                                                                    bakeOlePreviewsForLibvisioWrite(
+                                                                      hopped,
+                                                                    ),
                                                                   ),
                                                                 ),
                                                               ),
@@ -7566,6 +7574,155 @@ VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
           );
           changed = true;
         }
+      }
+    }
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) {
+      next = next.copyWith(children: children);
+      changed = true;
+    }
+    return next;
+  }
+
+  if (document.pages.isEmpty && document.images.length == 0) {
+    return document;
+  }
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) rewrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!changed && !pagesChanged) return document;
+  return document.copyWith(
+    pages: pagesChanged ? pages : document.pages,
+    images: registry,
+  );
+}
+
+/// CompressionType libvisio will see for this Foreign Bitmap.
+///
+/// Matches [VsdxWriter]: an explicit `None` is stripped, and a missing
+/// cell is inferred from the part extension only. Format 255 then becomes
+/// `image/bmp`.
+String? _libvisioWrittenBitmapCompression(VsdxShape shape) {
+  final explicit = shape.foreignCompressionType;
+  if (explicit != null && explicit.toLowerCase() == 'none') return null;
+  return explicit ??
+      VsdxImage.compressionTypeFor(
+        mimeType: '',
+        partName: shape.imagePartName ?? '',
+      );
+}
+
+/// `true` when a Bitmap payload would be labelled `image/bmp` but is not a BMP.
+///
+/// `readForeignData` maps a missing CompressionType to format 255 →
+/// `image/bmp`. Draw paints a `BM` file on that path; WebP / ICO /
+/// headerless DIB / a PNG sitting on `.bin` disappear. Canvas / SVG
+/// already decode those rasters. [image] is the Foreign media part.
+bool shapeNeedsLibvisioUnsupportedBitmapBake(
+  VsdxShape shape, [
+  VsdxImage? image,
+]) {
+  if (!shape.hasImage) return false;
+  final type = shape.foreignType ??
+      image?.foreignType ??
+      VsdxImage.foreignTypeFor(
+        mimeType: '',
+        partName: shape.imagePartName ?? '',
+      );
+  if (type != 'Bitmap') return false;
+  if (_libvisioWrittenBitmapCompression(shape) != null) return false;
+  if (image != null && image.looksLikeBmpFile) return false;
+  if (image != null) return image.pngBytesForLibvisioWrite() != null;
+  final part = (shape.imagePartName ?? '').toLowerCase();
+  return part.endsWith('.webp') ||
+      part.endsWith('.ico') ||
+      part.endsWith('.dib');
+}
+
+/// Re-encode Bitmap payloads libvisio would mislabel as BMP into PNG.
+VsdxDocument bakeUnsupportedBitmapsForLibvisioWrite(VsdxDocument document) {
+  var registry = document.images;
+  final used = <String>{
+    for (final image in document.images.all) image.partName,
+  };
+  final cache = <String, String>{};
+  var changed = false;
+
+  String allocatePart(int shapeId) {
+    var name = '/visio/media/image_lo_bmp_$shapeId.png';
+    var n = 0;
+    while (used.contains(name) || registry.findByPart(name) != null) {
+      n++;
+      name = '/visio/media/image_lo_bmp_${shapeId}_$n.png';
+    }
+    used.add(name);
+    return name;
+  }
+
+  VsdxShape rewrite(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) rewrite(child),
+    ];
+    var next = shape;
+    final source =
+        _imageForLibvisioWrite(document.images, shape.imagePartName);
+    if (shapeNeedsLibvisioUnsupportedBitmapBake(shape, source) &&
+        source != null) {
+      var bakedPart = cache[source.partName];
+      if (bakedPart == null) {
+        final bytes = source.pngBytesForLibvisioWrite();
+        if (bytes != null && bytes.isNotEmpty) {
+          bakedPart = allocatePart(shape.id);
+          cache[source.partName] = bakedPart;
+          registry = registry.withImage(
+            VsdxImage(
+              partName: bakedPart,
+              bytes: bytes,
+              mimeType: 'image/png',
+            ),
+          );
+        }
+      }
+      if (bakedPart != null) {
+        next = shape.copyWith(
+          imagePartName: bakedPart,
+          foreignType: VsdxImage.foreignTypeFor(
+            mimeType: 'image/png',
+            partName: bakedPart,
+          ),
+          foreignCompressionType: VsdxImage.compressionTypeFor(
+            mimeType: 'image/png',
+            partName: bakedPart,
+          ),
+        );
+        changed = true;
       }
     }
     var childrenChanged = children.length != shape.children.length;
