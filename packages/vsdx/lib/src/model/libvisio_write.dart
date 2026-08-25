@@ -16,7 +16,10 @@
 /// Opaque stops with more than two unique colours cannot use those two
 /// cells, so a save bakes the same SoftEdges fill PNG at sigma 0. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
-/// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect. That ribbon cannot dash: built-in LinePattern
+/// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
+/// Opaque LineGradient stops with more than two unique colours cannot use
+/// those two cells, so a save bakes the same SoftEdges stroke PNG at
+/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). That ribbon cannot dash: built-in LinePattern
 /// 2–23 (which `_lineProperties` *does* collect on a stroke) are flattened
 /// to MoveTo/LineTo first, the same way custom `User.veDashPattern` already
 /// is, so Draw keeps the gaps. Geometry-less Edraw labels that still carry
@@ -8094,6 +8097,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// then Office, into that PNG so Draw keeps the feather. A FillGradient
 /// whose opaque stops use more than two unique colours uses that same
 /// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
+/// A LineGradient whose opaque stops use more than two unique colours
+/// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
+/// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
 /// 1-D, pictures,
 /// open-path arrows, and unrecognised geometry stay native. Closed 2-D
 /// arrow cells do not block the bake — libvisio suppresses markers on
@@ -8102,23 +8108,23 @@ bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
 
-bool _softEdgesGeometryOk(VsdxShape shape) {
+bool _softEdgesGeometryOk(VsdxShape shape, {bool allow1d = false}) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D || shape.hasImage) return false;
+  if (shape.hasImage) return false;
   if (shape.children.isNotEmpty) return false;
-  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
   if (shape.sketchEffect) return false;
+  if (shape.is1D) {
+    if (!allow1d) return false;
+    return shape.width.abs() > 1e-9 || shape.height.abs() > 1e-9;
+  }
+  if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
   return true;
 }
 
-bool _softEdgesCommonOk(VsdxShape shape) =>
-    _softEdgesGeometryOk(shape) && shape.line.softEdgesInches > 1e-6;
-
 /// Classic FillPattern 25–40 only store FillForegnd / FillBkgnd. Opaque
-/// FillGradient stops with more than two unique colours cannot survive
-/// that collapse, so the SoftEdges fill PNG is used even at sigma 0.
-bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
-  final gradient = fill.paintGradient;
+/// gradient stops with more than two unique colours cannot survive that
+/// collapse, so the SoftEdges PNG is used even at sigma 0.
+bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
   final keys = <int>{};
   for (final stop in gradient.stops) {
@@ -8136,6 +8142,12 @@ bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
   }
   return keys.length > 2;
 }
+
+bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) =>
+    _gradientHasLibvisioUnrepresentableStops(fill.paintGradient);
+
+bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) =>
+    _gradientHasLibvisioUnrepresentableStops(line.gradient);
 
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!_softEdgesGeometryOk(shape)) return false;
@@ -8188,19 +8200,26 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (dashed) {
     return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
   }
-  return _softEdgesStrokeSilhouetteKind(shape) != null;
+  if (_softEdgesStrokeSilhouetteKind(shape) != null) return true;
+  if (_lineHasLibvisioUnrepresentableGradient(shape.line)) {
+    return _solidStrokeRibbonPolygons(shape).isNotEmpty;
+  }
+  return false;
 }
 
 bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
-  if (!_softEdgesCommonOk(shape)) return false;
+  final unrepresentable = _lineHasLibvisioUnrepresentableGradient(shape.line);
+  if (!_softEdgesGeometryOk(shape, allow1d: unrepresentable)) return false;
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) return false;
+  if (shape.line.softEdgesInches <= 1e-6 && !unrepresentable) return false;
   return _shapeHasBakeableSoftEdgesStroke(shape);
 }
 
 bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
     _shapeHasBakeableSoftEdgesStroke(shape) &&
-    shape.line.softEdgesInches > 1e-6;
+    (shape.line.softEdgesInches > 1e-6 ||
+        _lineHasLibvisioUnrepresentableGradient(shape.line));
 
 SoftEdgesSilhouetteKind? _softEdgesSilhouetteKind(VsdxShape shape) {
   VsdxGeometry? geom;
@@ -8634,6 +8653,118 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   return _softEdgesDashRibbonPolygons(shape);
 }
 
+({double width, double height, double locPinX, double locPinY})
+    _strokeRibbonPlateLocalBox(VsdxShape shape, double padInches) {
+  final pad = padInches < 0 ? 0.0 : padInches;
+  final aabb = _polygonsAabb(_libvisioStrokeSilhouettePolygons(shape));
+  if (aabb == null) {
+    final extent = _softEdgesStrokeExtentInches(shape);
+    return (
+      width: math.max(shape.width.abs(), 1e-6) + 2 * pad,
+      height: math.max(shape.height.abs(), 2 * extent) + 2 * pad,
+      locPinX: shape.effectiveLocPinX + pad,
+      locPinY: shape.effectiveLocPinY + pad,
+    );
+  }
+  return (
+    width: math.max(aabb.maxX - aabb.minX, 1e-6) + 2 * pad,
+    height: math.max(aabb.maxY - aabb.minY, 1e-6) + 2 * pad,
+    locPinX: shape.effectiveLocPinX - (aabb.minX - pad),
+    locPinY: shape.effectiveLocPinY - (aabb.minY - pad),
+  );
+}
+
+/// Rasterize a LineGradient ribbon Draw cannot hold in FillPattern 25–40.
+({Uint8List png, double padInches})? _lineGradientRibbonPngForLibvisioWrite(
+  VsdxShape shape,
+  VsdxTheme theme,
+) {
+  final ribbons = _libvisioStrokeSilhouettePolygons(shape);
+  final aabb = _polygonsAabb(ribbons);
+  if (aabb == null) return null;
+  final gradient = shape.line.gradient;
+  final stops = gradient == null
+      ? const <({double position, int r, int g, int b, int a})>[]
+      : _gradientBakeStops(gradient, shape.line.transparency, theme);
+  if (shape.line.hasGradient && stops.isEmpty) return null;
+  final color = _lineRgbForLibvisioWrite(shape.line, theme);
+  final trans = shape.line.transparency.clamp(0.0, 1.0);
+  final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
+  final originX = aabb.minX;
+  final originY = aabb.minY;
+  final aabbW = math.max(aabb.maxX - aabb.minX, 1e-6);
+  final aabbH = math.max(aabb.maxY - aabb.minY, 1e-6);
+  const minPx = 16;
+  var innerWidthPx =
+      math.max(minPx, (aabbW * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx =
+      math.max(minPx, (aabbH * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(innerWidthPx, innerHeightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    innerWidthPx = math.max(minPx, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(minPx, (innerHeightPx * scale).round());
+  }
+  final padInches = 2 / kLibvisioSoftEdgesPxPerInch;
+  final padPx = math.max(1, (padInches / aabbW * innerWidthPx).ceil());
+  final weight =
+      shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
+  final strokeWidthPx = math.max(weight / aabbW * innerWidthPx, 1.0);
+  final boxW = math.max(shape.width.abs(), aabbW);
+  final boxH = math.max(shape.height.abs(), aabbH);
+  ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
+      strokeColorAt;
+  if (stops.isNotEmpty && gradient != null) {
+    final linear = gradient.type == VsdxGradientType.linear;
+    strokeColorAt = (innerX, innerY) {
+      final ix = innerWidthPx <= 1
+          ? originX
+          : originX + innerX / (innerWidthPx - 1) * aabbW;
+      final iy = innerHeightPx <= 1
+          ? originY
+          : originY + (1 - innerY / (innerHeightPx - 1)) * aabbH;
+      return sampleVisioGradientRgba(
+        x: ix,
+        y: iy,
+        minX: 0,
+        minY: 0,
+        width: boxW,
+        height: boxH,
+        linear: linear,
+        angleRad: gradient.angleRad,
+        dir: gradient.dir,
+        stops: stops,
+      );
+    };
+  }
+  ({double x, double y}) toPx(Offset2D p) => (
+        x: padPx + (p.x - originX) / aabbW * (innerWidthPx - 1),
+        y: padPx + (1 - (p.y - originY) / aabbH) * (innerHeightPx - 1),
+      );
+  final ribbonPx = <List<({double x, double y})>>[
+    for (final ribbon in ribbons)
+      if (ribbon.length >= 3)
+        <({double x, double y})>[for (final p in ribbon) toPx(p)],
+  ];
+  if (ribbonPx.isEmpty) return null;
+  final png = bakeStrokedSilhouetteSoftEdgesPng(
+    innerWidthPx: innerWidthPx,
+    innerHeightPx: innerHeightPx,
+    padPx: padPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    softSigmaPx: 0,
+    strokeWidthPx: strokeWidthPx,
+    ribbons: ribbonPx,
+    strokeColorAt: strokeColorAt,
+  );
+  if (png == null) return null;
+  return (png: png, padInches: padInches);
+}
+
 ({Uint8List png, double padInches})? _softEdgesStrokePngForLibvisioWrite(
   VsdxShape shape, {
   required VsdxTheme theme,
@@ -8785,6 +8916,9 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     if (png == null) return null;
     return (png: png, padInches: 0);
   }
+  if (shape.is1D || _softEdgesStrokeSilhouetteKind(shape) == null) {
+    return _lineGradientRibbonPngForLibvisioWrite(shape, theme);
+  }
   return _softEdgesStrokePngForLibvisioWrite(shape, theme: theme);
 }
 
@@ -8806,21 +8940,32 @@ VsdxShape _softEdgesPlateForLibvisioWrite(
   required int id,
   required String imagePartName,
   double padInches = 0,
+  bool useStrokeRibbonAabb = false,
 }) {
   final pad = padInches < 0 ? 0.0 : padInches;
+  final box = useStrokeRibbonAabb
+      ? _strokeRibbonPlateLocalBox(source, pad)
+      : (
+          width: source.width.abs() + pad * 2,
+          height: source.height.abs() + pad * 2,
+          locPinX: pad > 1e-12
+              ? source.effectiveLocPinX + pad
+              : source.locPinXInches,
+          locPinY: pad > 1e-12
+              ? source.effectiveLocPinY + pad
+              : source.locPinYInches,
+        );
   return VsdxShapeFactory.picture(
     id: id,
     pinX: source.pinX,
     pinY: source.pinY,
-    width: source.width.abs() + pad * 2,
-    height: source.height.abs() + pad * 2,
+    width: box.width,
+    height: box.height,
     imagePartName: imagePartName,
     name: '$kLibvisioSoftEdgesShapeNamePrefix${source.id}',
   ).copyWith(
-    locPinXInches:
-        pad > 1e-12 ? source.effectiveLocPinX + pad : source.locPinXInches,
-    locPinYInches:
-        pad > 1e-12 ? source.effectiveLocPinY + pad : source.locPinYInches,
+    locPinXInches: box.locPinX,
+    locPinYInches: box.locPinY,
     angleRad: source.angleRad,
     flipX: source.flipX,
     flipY: source.flipY,
@@ -8910,6 +9055,10 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
           id: plateIds[next.id] ?? nextId(),
           imagePartName: part,
           padInches: payload.padInches,
+          useStrokeRibbonAabb: next.is1D ||
+              (_lineHasLibvisioUnrepresentableGradient(next.line) &&
+                  next.line.softEdgesInches <= 1e-6 &&
+                  _softEdgesStrokeSilhouetteKind(next) == null),
         );
         out.add(plate);
         out.add(_sourceForLibvisioGeometrySoftEdgesWrite(next));

@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- LineGradient washes with more than two unique opaque colours now
+  keep the middle stops in LibreOffice. libvisio has no LineGradient
+  token, so a save used to collapse those strokes to a filled ribbon
+  whose classic FillPattern 25–40 only interpolates two colours, while
+  canvas / SVG already sample every stop. A save bakes the same
+  SoftEdges stroke PNG at sigma 0 (1-D as a 2-D ribbon plate) and
+  drops the source line. Two-colour washes stay 25–40. A second save
+  does not stack another plate.
 - FillGradient washes with more than two unique opaque colours now
   keep the middle stops in LibreOffice. libvisio has no FillGradient
   token, so a save used to collapse those washes to classic

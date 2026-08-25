@@ -11,7 +11,8 @@
 /// opaque colours bakes a PNG plate instead), baked RelQuadBezTo corners, parallel Geometry
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
-/// collect. Arrowed 1-D connectors that also need rails or a ribbon bake
+/// collect. A LineGradient with more than two unique opaque colours
+/// bakes a PNG plate instead. Arrowed 1-D connectors that also need rails or a ribbon bake
 /// Begin/EndArrow as Geometry so Draw does not hang a marker on
 /// every open rail, and so BeginArrowSize (not a token) still has a size.
 /// A plain stroke whose size disagrees with `_lineProperties`' line-weight
@@ -3847,6 +3848,132 @@ void main() {
       isFalse,
       reason: 'a transparent first stop leaves two colours for 25–40',
     );
+  });
+
+  test('multi-stop LineGradient bakes a PNG plate for LibreOffice', () {
+    const wash = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+        VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    const line = VsdxLine(pattern: 1, weightInches: 0.16, gradient: wash);
+    ({int mag, int green, int blue}) counts(raster.Image decoded) {
+      var mag = 0, green = 0, blue = 0;
+      for (final pixel in decoded) {
+        if (pixel.a < 200) continue;
+        if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) mag++;
+        if (pixel.g > 160 && pixel.r < 100 && pixel.b < 100) green++;
+        if (pixel.b > 160 && pixel.r < 100 && pixel.g < 100) blue++;
+      }
+      return (mag: mag, green: green, blue: blue);
+    }
+
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'LineGrad3',
+      fill: const VsdxFill(pattern: 0),
+      line: line,
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.line.hasGradient, isFalse);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final ink = counts(raster.decodePng(png!.bytes)!);
+    expect(ink.mag, greaterThan(20), reason: 'left stop must stay magenta; $ink');
+    expect(ink.green, greaterThan(20),
+        reason: 'middle stop must stay green; $ink');
+    expect(ink.blue, greaterThan(20), reason: 'right stop must stay blue; $ink');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another LineGradient plate',
+    );
+
+    const twoStop = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    final two = VsdxShapeFactory.rectangle(
+      id: 2,
+      pinX: 5,
+      pinY: 2,
+      width: 2,
+      height: 1.2,
+      name: 'LineGrad2',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 1, weightInches: 0.16, gradient: twoStop),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(two), isFalse);
+    var twoDoc = parser.parse(blank);
+    twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+    expect(
+      documentForLibvisioWrite(twoDoc)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      isEmpty,
+      reason: 'two-colour LineGradient must stay a FillPattern 25–40 ribbon',
+    );
+    final twoSaved =
+        parser.parse(writer.write(originalBytes: blank, edited: twoDoc));
+    final twoShape = twoSaved.pages.first.findShapeById(2)!;
+    expect(twoShape.line.hasGradient, isFalse);
+    expect(
+      twoShape.fill.hasGradient ||
+          (twoShape.fill.pattern >= 25 && twoShape.fill.pattern <= 40),
+      isTrue,
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 1,
+      ay: 1,
+      bx: 4,
+      by: 1,
+      name: 'LineGrad3_1D',
+      line: line,
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(connector), isTrue);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    final oneSource = oneBaked.pages.first.findShapeById(3)!;
+    expect(oneSource.is1D, isTrue);
+    expect(oneSource.line.pattern, 0);
+    expect(oneSource.line.hasGradient, isFalse);
+    final onePlate =
+        oneBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(onePlate.is1D, isFalse);
+    expect(onePlate.height, greaterThan(0.1));
+    final oneInk = counts(
+      raster.decodePng(
+        oneBaked.images.findByPart(onePlate.imagePartName!)!.bytes,
+      )!,
+    );
+    expect(oneInk.green, greaterThan(8),
+        reason: '1-D middle stop must stay green; $oneInk');
   });
 
   test(

@@ -2340,6 +2340,33 @@ void main() {
         shapes: <VsdxShape>[flipXText, flipYText, flipXGroup],
       ),
     );
+    var lineGrad3Document = parser.parse(blank);
+    final lineGrad3Page = lineGrad3Document.pages.first;
+    lineGrad3Document = lineGrad3Document.replacePage(
+      0,
+      lineGrad3Page.addShape(
+        VsdxShapeFactory.rectangle(
+          id: lineGrad3Page.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 1.4,
+          name: 'LineGrad3',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.18,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     var glassDocument = parser.parse(blank);
     final glassPage = glassDocument.pages.first;
     var grad3Document = parser.parse(blank);
@@ -6022,6 +6049,10 @@ void main() {
       'grad3_fill_gradient': writer.write(
         originalBytes: blank,
         edited: grad3Document,
+      ),
+      'linegrad3': writer.write(
+        originalBytes: blank,
+        edited: lineGrad3Document,
       ),
       'opacity': writer.write(
         originalBytes: blank,
@@ -13154,7 +13185,20 @@ void main() {
             hasLength(1),
           );
         }
-        if (entry.key == 'grad3_fill_gradient' && pdftoppm != null) {
+        if (entry.key == 'linegrad3') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3');
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if ((entry.key == 'grad3_fill_gradient' ||
+                entry.key == 'linegrad3') &&
+            pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
             '-png',
