@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- LineGradient PNG hard shadows now follow page `ShdwObliqueAngle` in
+  LibreOffice. `ShdwObliqueAngle` is not a token, and factory rectangles
+  keep Geometry NoFill=0 even when unfilled, so the sheared silhouette
+  used to be a solid parallelogram. A save shears the stroke ring
+  about LocPin instead, including 1-D washes on a 2-D AABB plate.
 - 1-D LineGradient washes with more than two unique opaque colours now
   keep a hard drop shadow in LibreOffice. SoftEdges already baked a
   2-D Foreign PNG of the stroke, but shadow bake skipped `XForm1D`.

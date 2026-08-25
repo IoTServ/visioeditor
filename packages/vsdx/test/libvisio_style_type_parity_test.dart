@@ -4287,6 +4287,144 @@ void main() {
   );
 
   test(
+    'multi-stop LineGradient hard shadow shears on an oblique page',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      const hardShadow = VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.45,
+        offsetYInches: -0.45,
+        blurInches: 0,
+        transparency: 0.2,
+        pattern: 1,
+      );
+      final shape = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4.25,
+        pinY: 6.2,
+        width: 3.0,
+        height: 1.4,
+        name: 'LineGrad3ObliqueShadow',
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(pattern: 1, weightInches: 0.18, gradient: wash),
+      ).copyWith(shadow: hardShadow);
+
+      final blank = writer.emptyDocument();
+      final base = parser.parse(blank);
+      final upright = base.pages.first.addShape(shape);
+
+      ({double width, raster.Image png, int midAlpha}) bake(VsdxPage page) {
+        final doc = base.replacePage(0, page);
+        final baked = documentForLibvisioWrite(doc);
+        expect(
+          baked.pages.first.shapes.where(isLibvisioPageShadowPlate),
+          isEmpty,
+        );
+        final plate =
+            baked.pages.first.shapes.where(isLibvisioShadowPlate).single;
+        final png = raster.decodePng(
+          baked.images.findByPart(plate.imagePartName!)!.bytes,
+        )!;
+        final mid = png.getPixel(png.width ~/ 2, png.height ~/ 2);
+        return (width: plate.width, png: png, midAlpha: mid.a.toInt());
+      }
+
+      final plain = bake(upright);
+      expect(plain.midAlpha, lessThan(20),
+          reason: 'upright LineGradient shadow must stay a ring');
+      final oblique = bake(
+        upright.copyWith(
+          pageSheet: upright.pageSheet.copyWith(
+            shadowType: 1,
+            shadowObliqueAngle: 0.6,
+          ),
+        ),
+      );
+      expect(oblique.midAlpha, lessThan(20),
+          reason: 'sheared LineGradient shadow must stay a ring, not a box');
+      expect(
+        oblique.width,
+        greaterThan(plain.width + 0.1),
+        reason: 'the sheared stroke ring needs a wider box than the shape',
+      );
+
+      int firstOpaqueX(raster.Image png, int y) {
+        for (var x = 0; x < png.width; x++) {
+          if (png.getPixel(x, y).a > 40) return x;
+        }
+        return -1;
+      }
+
+      final near =
+          firstOpaqueX(oblique.png, (oblique.png.height * 0.25).round());
+      final far =
+          firstOpaqueX(oblique.png, (oblique.png.height * 0.75).round());
+      expect(near, greaterThanOrEqualTo(0));
+      expect(far, greaterThanOrEqualTo(0));
+      expect(
+        near,
+        greaterThan(far + 2),
+        reason: 'positive ShdwObliqueAngle leans the top edge right; '
+            'near=$near far=$far',
+      );
+
+      final connector = VsdxShapeFactory.line(
+        id: 2,
+        ax: 1.5,
+        ay: 6.2,
+        bx: 6.5,
+        by: 6.2,
+        name: 'LineGrad3ObliqueShadow_1D',
+        line: const VsdxLine(pattern: 1, weightInches: 0.18, gradient: wash),
+      ).copyWith(shadow: hardShadow);
+      final oneBase = parser.parse(blank);
+      final oneUpright = oneBase.pages.first.addShape(connector);
+      ({double width, raster.Image png}) bake1d(VsdxPage page) {
+        final doc = oneBase.replacePage(0, page);
+        final baked = documentForLibvisioWrite(doc);
+        final plate =
+            baked.pages.first.shapes.where(isLibvisioShadowPlate).single;
+        expect(plate.is1D, isFalse);
+        return (
+          width: plate.width,
+          png: raster.decodePng(
+            baked.images.findByPart(plate.imagePartName!)!.bytes,
+          )!,
+        );
+      }
+
+      final onePlain = bake1d(oneUpright);
+      final oneOblique = bake1d(
+        oneUpright.copyWith(
+          pageSheet: oneUpright.pageSheet.copyWith(
+            shadowType: 1,
+            shadowObliqueAngle: 0.6,
+          ),
+        ),
+      );
+      expect(oneOblique.width, greaterThan(onePlain.width + 0.05));
+      final oneNear = firstOpaqueX(
+        oneOblique.png,
+        (oneOblique.png.height * 0.25).round(),
+      );
+      final oneFar = firstOpaqueX(
+        oneOblique.png,
+        (oneOblique.png.height * 0.75).round(),
+      );
+      expect(oneNear, greaterThan(oneFar + 2),
+          reason: '1-D sheared stroke must lean top-right; '
+              'near=$oneNear far=$oneFar');
+    },
+  );
+
+  test(
     'multi-stop FillGradient on EllipticalArcTo follows the sampled silhouette',
     () {
       const wash = VsdxGradient(

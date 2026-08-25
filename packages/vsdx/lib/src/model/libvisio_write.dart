@@ -198,7 +198,8 @@
 /// ShadowBlur uses, at sigma 0 (the stroke ring, not a filled box),
 /// then ShdwPattern goes to 0. Two-colour washes keep native
 /// `draw:shadow` on the filled 25–40 ribbon. A 1-D three-colour wash
-/// bakes the same stroke-ring PNG on a 2-D plate.
+/// bakes the same stroke-ring PNG on a 2-D plate. An oblique page
+/// shears that ring — `ShdwObliqueAngle` is not a token.
 /// An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
@@ -9401,7 +9402,10 @@ const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 /// two-colour LineGradient stays a filled 25–40 ribbon whose
 /// `draw:shadow` Draw still honours. A 1-D three-colour wash bakes the
 /// same 2-D ribbon plate (Foreign cannot hang a shadow on a zero-height
-/// XForm1D). Groups and unrecognised geometry stay native.
+/// XForm1D). On an oblique page (`ShdwObliqueAngle` is not a token) the
+/// same stroke ring is sheared about LocPin — factory rectangles keep
+/// Geometry NoFill=0 even when unfilled, so filling that box would paint
+/// a solid parallelogram. Groups and unrecognised geometry stay native.
 bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.children.isNotEmpty) return false;
@@ -9605,7 +9609,10 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
 /// The plain path rasterizes the shape's own box, which cannot hold a sheared
 /// silhouette. Here the inner box is the transformed ring's bounding box, so
 /// the plate has to carry that box back to the source's local frame. Pictures
-/// use the same NoFill frame ring canvas `_drawShadow` shears.
+/// use the same NoFill frame ring canvas `_drawShadow` shears. An unfilled
+/// LineGradient must shear the stroke ribbon — factory rectangles keep
+/// Geometry NoFill=0 even when FillPattern is 0, and filling that box would
+/// paint a solid parallelogram under a hollow wash.
 ({
   Uint8List png,
   double minX,
@@ -9618,7 +9625,15 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
   VsdxPage page,
   VsdxTheme theme,
 ) {
-  final rings = _pageShadowRingsForLibvisioWrite(shape, page);
+  final paintsFill = _shapePaintsFill(shape, shape.geometries);
+  final useStrokeRibbon = !shape.hasImage && !paintsFill;
+  final rings = useStrokeRibbon
+      ? _shearPolygonsForPageShadow(
+          _lineGradientStrokePolygons(shape),
+          shape,
+          page,
+        )
+      : _pageShadowRingsForLibvisioWrite(shape, page);
   if (rings.isEmpty) return null;
   Offset2D? first;
   for (final ring in rings) {
@@ -9645,7 +9660,8 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
   if (w <= 1e-9 || h <= 1e-9) return null;
   final color = _shadowRgbForLibvisioWrite(shape.shadow, theme);
   final trans = shape.shadow.transparency.clamp(0.0, 1.0);
-  final fillTrans = shape.fill.foregroundTransparency.clamp(0.0, 1.0);
+  final fillTrans =
+      paintsFill ? shape.fill.foregroundTransparency.clamp(0.0, 1.0) : 0.0;
   final alpha =
       (color.alpha * (1 - trans) * (1 - fillTrans)).round().clamp(0, 255);
   var innerWidthPx = math.max(8, (w * kLibvisioSoftEdgesPxPerInch).round());
@@ -9682,7 +9698,12 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
     blurSigmaPx: sigmaPx,
     kind: SoftEdgesSilhouetteKind.polygon,
     polygon: evenOddPolygons.first,
-    evenOddPolygons: evenOddPolygons,
+    evenOddPolygons: useStrokeRibbon
+        ? const <List<({double x, double y})>>[]
+        : evenOddPolygons,
+    ribbons: useStrokeRibbon
+        ? evenOddPolygons
+        : const <List<({double x, double y})>>[],
   );
   if (png == null) return null;
   return (
@@ -10048,11 +10069,8 @@ bool shapeNeedsLibvisioPageShadowBake(VsdxShape shape, VsdxPage page) {
   return _pageShadowGeometriesForLibvisioWrite(shape, page).isNotEmpty;
 }
 
-/// The shape silhouette scaled and sheared about LocPin, matching canvas.
-///
-/// The page-space shadow offset rides on the plate pin (like the Gaussian PNG
-/// plate) so a rotated shape does not rotate its offset.
-List<List<Offset2D>> _pageShadowRingsForLibvisioWrite(
+Offset2D _pageShadowMappedPoint(
+  Offset2D p,
   VsdxShape shape,
   VsdxPage page,
 ) {
@@ -10061,12 +10079,32 @@ List<List<Offset2D>> _pageShadowRingsForLibvisioWrite(
   final shear = math.tan(sheet.shadowObliqueAngle);
   final cx = shape.effectiveLocPinX;
   final cy = shape.effectiveLocPinY;
-  Offset2D map(Offset2D p) {
-    final qy = (p.y - cy) * scale;
-    final qx = (p.x - cx) * scale + shear * qy;
-    return Offset2D(qx + cx, qy + cy);
-  }
+  final qy = (p.y - cy) * scale;
+  final qx = (p.x - cx) * scale + shear * qy;
+  return Offset2D(qx + cx, qy + cy);
+}
 
+List<List<Offset2D>> _shearPolygonsForPageShadow(
+  List<List<Offset2D>> rings,
+  VsdxShape shape,
+  VsdxPage page,
+) =>
+    <List<Offset2D>>[
+      for (final ring in rings)
+        if (ring.length >= 3)
+          <Offset2D>[
+            for (final p in ring) _pageShadowMappedPoint(p, shape, page),
+          ],
+    ];
+
+/// The shape silhouette scaled and sheared about LocPin, matching canvas.
+///
+/// The page-space shadow offset rides on the plate pin (like the Gaussian PNG
+/// plate) so a rotated shape does not rotate its offset.
+List<List<Offset2D>> _pageShadowRingsForLibvisioWrite(
+  VsdxShape shape,
+  VsdxPage page,
+) {
   final out = <List<Offset2D>>[];
   for (final geometry in shape.geometries) {
     if (geometry.noShow) continue;
@@ -10074,7 +10112,9 @@ List<List<Offset2D>> _pageShadowRingsForLibvisioWrite(
     if (geometry.noFill && !shape.hasImage) continue;
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 3) continue;
-    out.add(<Offset2D>[for (final p in points) map(p)]);
+    out.add(<Offset2D>[
+      for (final p in points) _pageShadowMappedPoint(p, shape, page),
+    ]);
   }
   return out;
 }

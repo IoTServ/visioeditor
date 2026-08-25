@@ -2438,6 +2438,101 @@ void main() {
         ),
       ),
     );
+    var lineGrad3ObliqueHardShadowDocument = parser.parse(blank);
+    final lineGrad3ObliqueHardShadowPage =
+        lineGrad3ObliqueHardShadowDocument.pages.first;
+    lineGrad3ObliqueHardShadowDocument =
+        lineGrad3ObliqueHardShadowDocument.replacePage(
+      0,
+      lineGrad3ObliqueHardShadowPage
+          .copyWith(
+            pageSheet: lineGrad3ObliqueHardShadowPage.pageSheet.copyWith(
+              shadowType: 1,
+              shadowObliqueAngle: 0.6,
+              shadowScaleFactor: 1.0,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: lineGrad3ObliqueHardShadowPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 6.2,
+              width: 3.0,
+              height: 1.4,
+              name: 'LineGrad3ObliqueShadow',
+              fill: const VsdxFill(pattern: 0),
+              line: const VsdxLine(
+                pattern: 1,
+                weightInches: 0.18,
+                gradient: VsdxGradient(
+                  stops: <VsdxGradientStop>[
+                    VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                    VsdxGradientStop(
+                        position: 0.5, color: VsdxColor(0xFF00FF00)),
+                    VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+                  ],
+                ),
+              ),
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.45,
+                offsetYInches: -0.45,
+                blurInches: 0,
+                transparency: 0.2,
+                pattern: 1,
+              ),
+            ),
+          ),
+    );
+    var lineGrad31dObliqueHardShadowDocument = parser.parse(blank);
+    final lineGrad31dObliqueHardShadowPage =
+        lineGrad31dObliqueHardShadowDocument.pages.first;
+    lineGrad31dObliqueHardShadowDocument =
+        lineGrad31dObliqueHardShadowDocument.replacePage(
+      0,
+      lineGrad31dObliqueHardShadowPage
+          .copyWith(
+            pageSheet: lineGrad31dObliqueHardShadowPage.pageSheet.copyWith(
+              shadowType: 1,
+              shadowObliqueAngle: 0.6,
+              shadowScaleFactor: 1.0,
+            ),
+          )
+          .addShape(
+            VsdxShapeFactory.line(
+              id: lineGrad31dObliqueHardShadowPage.nextFreeShapeId(),
+              ax: 1.5,
+              ay: 6.2,
+              bx: 6.5,
+              by: 6.2,
+              name: 'LineGrad3ObliqueShadow_1D',
+              line: const VsdxLine(
+                pattern: 1,
+                weightInches: 0.18,
+                gradient: VsdxGradient(
+                  stops: <VsdxGradientStop>[
+                    VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                    VsdxGradientStop(
+                        position: 0.5, color: VsdxColor(0xFF00FF00)),
+                    VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+                  ],
+                ),
+              ),
+            ).copyWith(
+              shadow: const VsdxShadow(
+                enabled: true,
+                color: VsdxColor(0xFF000000),
+                offsetXInches: 0.45,
+                offsetYInches: -0.45,
+                blurInches: 0,
+                transparency: 0.2,
+                pattern: 1,
+              ),
+            ),
+          ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6509,6 +6604,14 @@ void main() {
       'linegrad3_1d_hard_shadow': writer.write(
         originalBytes: blank,
         edited: lineGrad3_1dHardShadowDocument,
+      ),
+      'linegrad3_oblique_hard_shadow': writer.write(
+        originalBytes: blank,
+        edited: lineGrad3ObliqueHardShadowDocument,
+      ),
+      'linegrad3_1d_oblique_hard_shadow': writer.write(
+        originalBytes: blank,
+        edited: lineGrad31dObliqueHardShadowDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -13889,6 +13992,35 @@ void main() {
           expect(shadowPlate.is1D, isFalse);
           expect(shadowPlate.height.abs(), greaterThan(0.1));
         }
+        if (entry.key == 'linegrad3_oblique_hard_shadow') {
+          final reopened = parser.parse(entry.value);
+          expect(
+            reopened.pages.first.pageSheet.shadowObliqueAngle,
+            closeTo(0.6, 1e-9),
+          );
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3ObliqueShadow');
+          expect(source.line.pattern, 0);
+          expect(source.shadow.enabled, isFalse);
+          final shadowPlate =
+              reopened.pages.first.shapes.where(isLibvisioShadowPlate).single;
+          expect(shadowPlate.width, greaterThan(3.2));
+        }
+        if (entry.key == 'linegrad3_1d_oblique_hard_shadow') {
+          final reopened = parser.parse(entry.value);
+          expect(
+            reopened.pages.first.pageSheet.shadowObliqueAngle,
+            closeTo(0.6, 1e-9),
+          );
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3ObliqueShadow_1D');
+          expect(source.is1D, isTrue);
+          expect(source.shadow.enabled, isFalse);
+          final shadowPlate =
+              reopened.pages.first.shapes.where(isLibvisioShadowPlate).single;
+          expect(shadowPlate.is1D, isFalse);
+          expect(shadowPlate.width, greaterThan(5.1));
+        }
         if (entry.key == 'linegrad3_arrow') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13978,6 +14110,8 @@ void main() {
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_hard_shadow' ||
                 entry.key == 'linegrad3_1d_hard_shadow' ||
+                entry.key == 'linegrad3_oblique_hard_shadow' ||
+                entry.key == 'linegrad3_1d_oblique_hard_shadow' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
             pdftoppm != null) {
@@ -14056,6 +14190,15 @@ void main() {
               gray,
               greaterThan(40),
               reason: 'Draw must keep a 1-D LineGradient shadow on the PNG; '
+                  'gray=$gray green=$green',
+            );
+          }
+          if (entry.key == 'linegrad3_oblique_hard_shadow' ||
+              entry.key == 'linegrad3_1d_oblique_hard_shadow') {
+            expect(
+              gray,
+              greaterThan(40),
+              reason: 'Draw must keep the sheared LineGradient shadow; '
                   'gray=$gray green=$green',
             );
           }
