@@ -126,7 +126,8 @@
 /// Blue 2 graphic style — so a save writes an opaque
 /// `ForeignType=Bitmap` PNG. A thin DIB wrapper extracts that BMP; a
 /// pure-vector metafile replays the same display list canvas / SVG
-/// already paint so Draw cannot show Blue 2 through unpainted pixels.
+/// already paint — including ExtTextOut glyphs — so Draw cannot show
+/// Blue 2 through unpainted pixels.
 /// Foreign `Object` OLE packages are the same
 /// missing paint: libvisio emits `object/ole` and Draw fills the
 /// default Blue 2 graphic style, while canvas / SVG already replay the
@@ -7486,8 +7487,8 @@ bool shapeNeedsLibvisioCroppedSoftEdgesBake(VsdxShape shape) {
 /// / `MetaFile` still becomes `image/emf` / `image/wmf`, and Draw fills
 /// the default Blue 2 graphic style instead of replaying those records,
 /// while canvas / SVG already extract a wrapped DIB or replay the vector
-/// display list. A save writes an opaque PNG `ForeignType=Bitmap`. A
-/// second save does not stack another PNG.
+/// display list, including ExtTextOut glyphs. A save writes an opaque PNG
+/// `ForeignType=Bitmap`. A second save does not stack another PNG.
 bool shapeNeedsLibvisioMetafileBitmapBake(VsdxShape shape) {
   if (!shape.hasImage) return false;
   final type = shape.foreignType ??

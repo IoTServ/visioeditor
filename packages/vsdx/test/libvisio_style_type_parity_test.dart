@@ -89,7 +89,7 @@
 /// — libvisio emits a metafile — so a save extracts that DIB as PNG
 /// `ForeignType=Bitmap`. A thin DIB wrapper extracts that BMP; a
 /// pure-vector metafile replays the same display list canvas / SVG
-/// already paint onto an opaque PNG. Foreign
+/// already paint onto an opaque PNG, including ExtTextOut glyphs. Foreign
 /// `Object` OLE packages are the same missing paint: Draw fills Blue 2
 /// for `object/ole`, so a save unwraps `\x02OlePres000` as `MetaFile` /
 /// `EnhMetaFile` and the metafile bake writes PNG. A second
@@ -7238,6 +7238,108 @@ void main() {
     expect(after.foreignCompressionType, 'PNG');
   });
 
+  test('EnhMetaFile ExtTextOut glyphs bake to PNG Bitmap for LibreOffice', () {
+    const part = '/visio/media/probe_text.emf';
+    final emf = _magentaTextEmf();
+    final source = VsdxImage(
+      partName: part,
+      bytes: emf,
+      mimeType: 'image/x-emf',
+    );
+    expect(source.foreignType, 'EnhMetaFile');
+    expect(source.rasterForRendering(), isNull);
+    expect(extractEmfEmbeddedBitmap(emf), isNull);
+    expect(
+      parseEmfDrawing(emf)!.ops.whereType<MetafileTextOp>().single.text,
+      'HI',
+    );
+    final pngBytes = rasterizeVectorMetafileToPng(
+      emf,
+      mimeType: 'image/x-emf',
+      partName: part,
+    );
+    expect(pngBytes, isNotNull);
+    final decodedText = raster.decodePng(pngBytes!);
+    expect(decodedText, isNotNull);
+    var magenta = 0;
+    var transparent = 0;
+    for (final pixel in decodedText!) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+    }
+    expect(transparent, 0, reason: 'Draw shows Blue 2 through transparent PNG');
+    expect(magenta, greaterThan(200), reason: 'ExtTextOut HI must ink the PNG');
+
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1.5,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioMetafileBitmapBake(pic), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioMetafileBitmapBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    expect(bakedShape.imagePartName, isNot(part));
+    final png = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(png, isNotNull);
+    var bakedMagenta = 0;
+    var bakedTransparent = 0;
+    for (final pixel in raster.decodePng(png!.bytes)!) {
+      if (pixel.a < 250) bakedTransparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) bakedMagenta++;
+    }
+    expect(bakedTransparent, 0);
+    expect(bakedMagenta, greaterThan(200));
+
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another metafile PNG',
+    );
+
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.foreignType, 'Bitmap');
+    expect(after.foreignCompressionType, 'PNG');
+  });
+
+  test('MetaFile dimension labels bake into PNG for LibreOffice', () {
+    final wmf = File('test/fixtures/metafile/Visio6PlanWithDimensions.wmf')
+        .readAsBytesSync();
+    expect(parseWmfDrawing(wmf)!.ops.whereType<MetafileTextOp>(), isNotEmpty);
+    final png = rasterizeVectorMetafileToPng(
+      wmf,
+      mimeType: 'image/x-wmf',
+      partName: '/visio/media/plan.wmf',
+    )!;
+    final decoded = raster.decodePng(png)!;
+    var dark = 0;
+    var transparent = 0;
+    for (final pixel in decoded) {
+      if (pixel.a < 250) transparent++;
+      if (0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b < 80) dark++;
+    }
+    expect(transparent, 0);
+    expect(dark, greaterThan(70000), reason: 'WMF labels must add ink');
+  });
+
   test('Object OLE preview bakes to MetaFile for LibreOffice', () {
     const part = '/visio/media/probe.bin';
     final wmf = _rgbDibWmf(width: 32, height: 16);
@@ -12330,6 +12432,72 @@ Uint8List _vectorMagentaEmf() {
   u32(0);
   u32(0);
   return out.toBytes();
+}
+
+/// Minimal vector EMF: magenta ExtTextOutW "HI", no embedded DIB.
+Uint8List _magentaTextEmf() {
+  int aligned4(int value) => (value + 3) & ~3;
+  final out = BytesBuilder();
+  void addRecord(int type, Uint8List payload) {
+    final size = aligned4(payload.length + 8);
+    final header = ByteData(8)
+      ..setUint32(0, type, Endian.little)
+      ..setUint32(4, size, Endian.little);
+    out.add(header.buffer.asUint8List());
+    out.add(payload);
+    for (var i = payload.length + 8; i < size; i++) {
+      out.addByte(0);
+    }
+  }
+
+  final header = ByteData(88)
+    ..setUint32(0, 1, Endian.little)
+    ..setUint32(4, 88, Endian.little)
+    ..setInt32(16, 160, Endian.little)
+    ..setInt32(20, 100, Endian.little)
+    ..setUint32(40, 0x464D4520, Endian.little);
+  out.add(header.buffer.asUint8List());
+
+  final font = ByteData(96)..setUint32(0, 1, Endian.little);
+  const logFont = 4;
+  font
+    ..setInt32(logFont, 40, Endian.little)
+    ..setInt32(logFont + 16, 700, Endian.little);
+  for (var i = 0; i < 'Arial'.length; i++) {
+    font.setUint16(logFont + 28 + i * 2, 'Arial'.codeUnitAt(i), Endian.little);
+  }
+  addRecord(82, font.buffer.asUint8List());
+  addRecord(
+    37,
+    (ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List(),
+  );
+  addRecord(
+    24,
+    (ByteData(4)..setUint32(0, 0x00FF00FF, Endian.little)).buffer.asUint8List(),
+  );
+
+  const text = 'HI';
+  final source = Uint8List(text.length * 2);
+  final sourceData = ByteData.sublistView(source);
+  for (var i = 0; i < text.length; i++) {
+    sourceData.setUint16(i * 2, text.codeUnitAt(i), Endian.little);
+  }
+  const stringOffset = 76;
+  final recordSize = aligned4(stringOffset + source.length);
+  final payload = ByteData(recordSize - 8);
+  payload
+    ..setInt32(28, 20, Endian.little)
+    ..setInt32(32, 30, Endian.little)
+    ..setUint32(36, text.length, Endian.little)
+    ..setUint32(40, stringOffset, Endian.little);
+  payload.buffer.asUint8List().setRange(
+        stringOffset - 8,
+        stringOffset - 8 + source.length,
+        source,
+      );
+  addRecord(84, payload.buffer.asUint8List());
+  addRecord(14, Uint8List(0));
+  return Uint8List.fromList(out.toBytes());
 }
 
 /// Placeable WMF whose STRETCHDIB record wraps a 24bpp DIB (left red, right blue).

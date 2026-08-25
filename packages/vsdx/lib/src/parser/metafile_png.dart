@@ -4,7 +4,9 @@
 /// default Blue 2 graphic style through unpainted pixels. Polygon fill
 /// is a scanline rasteriser — `package:image` 4.3 `fillPolygon` drops a
 /// vertex whose `x` is slightly past `vertex.xi`, then pairs the leftover
-/// hit with 0 and paints only a left-edge strip.
+/// hit with 0 and paints only a left-edge strip. ExtTextOut glyphs are
+/// scaled from the bundled Arial bitmap so dimension labels survive the
+/// bake; canvas / SVG still paint through `dart:ui`.
 library;
 
 import 'dart:math' as math;
@@ -85,15 +87,7 @@ Uint8List? rasterizeMetafileDrawingToPng(
         evenOdd: false,
       );
     } else if (op is MetafileTextOp) {
-      final opaque = op.opaqueRect;
-      if (opaque != null) {
-        _fillRect(
-          image,
-          map(MetafilePoint(opaque.minX, opaque.minY)),
-          map(MetafilePoint(opaque.maxX, opaque.maxY)),
-          op.backgroundArgb ?? op.argb,
-        );
-      }
+      _paintText(image, op, map, scale);
     }
   }
 
@@ -483,6 +477,144 @@ void _put(raster.Image image, int x, int y, int argb) {
     color.g.toInt(),
     color.b.toInt(),
     color.a.toInt(),
+  );
+}
+
+void _paintText(
+  raster.Image image,
+  MetafileTextOp op,
+  raster.Point Function(MetafilePoint) map,
+  double scale,
+) {
+  final opaque = op.opaqueRect;
+  if (opaque != null) {
+    _fillRect(
+      image,
+      map(MetafilePoint(opaque.minX, opaque.minY)),
+      map(MetafilePoint(opaque.maxX, opaque.maxY)),
+      op.backgroundArgb ?? op.argb,
+    );
+  }
+  if (op.text.isEmpty) return;
+  final origin = map(MetafilePoint(op.x, op.y));
+  final pxHeight = math.max(6, (op.fontHeight.abs() * scale).round());
+  final layer = _glyphLayer(op, pxHeight);
+  if (layer == null) return;
+  var sprite = layer;
+  final angle = op.escapementDegrees % 360;
+  if (angle.abs() > 0.5) {
+    sprite = raster.copyRotate(
+      sprite,
+      angle: -angle,
+      interpolation: raster.Interpolation.linear,
+    );
+  }
+  final destW = sprite.width;
+  var dx = origin.x;
+  final align = op.align & 0x06;
+  if (align == 6) {
+    dx -= destW / 2;
+  } else if (align == 2) {
+    dx -= destW;
+  }
+  var dy = origin.y;
+  switch (op.align & 0x18) {
+    case 0x00:
+      break;
+    case 0x08:
+      dy -= sprite.height;
+    default:
+      dy -= sprite.height * 0.85;
+  }
+  raster.compositeImage(
+    image,
+    sprite,
+    dstX: dx.round(),
+    dstY: dy.round(),
+  );
+  if (op.underline || op.strikeThrough) {
+    final y = op.underline
+        ? dy + sprite.height * 0.9
+        : dy + sprite.height * 0.45;
+    raster.drawLine(
+      image,
+      x1: dx.round(),
+      y1: y.round(),
+      x2: (dx + destW).round(),
+      y2: y.round(),
+      color: _color(op.argb),
+      thickness: math.max(1, pxHeight ~/ 12),
+    );
+  }
+}
+
+raster.Image? _glyphLayer(MetafileTextOp op, int pxHeight) {
+  final font = raster.arial48;
+  final color = _color(op.argb);
+  if (color.a.toInt() == 0) return null;
+  final runes = op.text.runes.toList(growable: false);
+  if (runes.isEmpty) return null;
+  final advances = op.advancesX;
+  final useAdvances = advances != null &&
+      advances.length == runes.length &&
+      advances.every((a) => a.isFinite && a.abs() < 1e6);
+  var widthPx = 2;
+  if (useAdvances) {
+    widthPx += advances
+        .fold<double>(0, (sum, a) => sum + a.abs())
+        .round()
+        .clamp(1, 4096);
+    widthPx = math.max(
+      8,
+      (widthPx * font.lineHeight / math.max(op.fontHeight.abs(), 1)).round(),
+    );
+  } else {
+    for (final r in runes) {
+      final ch = font.characters[r];
+      widthPx += ch?.xAdvance ?? font.base ~/ 2;
+    }
+  }
+  widthPx = widthPx.clamp(8, 4096);
+  final heightPx = (font.lineHeight + 4).clamp(8, 512);
+  final layer = raster.Image(width: widthPx, height: heightPx, numChannels: 4);
+  var x = 1.0;
+  for (var i = 0; i < runes.length; i++) {
+    final r = runes[i];
+    final ch = font.characters[r];
+    if (ch != null) {
+      raster.drawChar(
+        layer,
+        String.fromCharCode(r),
+        font: font,
+        x: x.round(),
+        y: 1,
+        color: color,
+      );
+    } else {
+      final tofu = math.max(4, font.base ~/ 2);
+      raster.fillRect(
+        layer,
+        x1: x.round(),
+        y1: 1 + font.lineHeight ~/ 5,
+        x2: x.round() + tofu,
+        y2: 1 + font.lineHeight * 4 ~/ 5,
+        color: color,
+      );
+    }
+    if (useAdvances) {
+      x += advances[i].abs() * font.lineHeight / math.max(op.fontHeight.abs(), 1);
+    } else {
+      x += (ch?.xAdvance ?? font.base ~/ 2).toDouble();
+    }
+  }
+  final destH = pxHeight.clamp(6, 512);
+  final destW =
+      math.max(6, (layer.width * destH / heightPx).round().clamp(6, 2048));
+  return raster.copyResize(
+    layer,
+    width: destW,
+    height: destH,
+    interpolation: raster.Interpolation.linear,
   );
 }
 

@@ -1968,6 +1968,38 @@ void main() {
             ),
           ),
         );
+    var textEmfDocument = parser.parse(blank);
+    final textEmfPage = textEmfDocument.pages.first;
+    const textEmfPart = '/visio/media/libreoffice-crosscheck-text.emf';
+    final textEmfBytes = _magentaTextEmf();
+    expect(extractEmfEmbeddedBitmap(textEmfBytes), isNull);
+    expect(
+      parseEmfDrawing(textEmfBytes)!.ops.whereType<MetafileTextOp>().single.text,
+      'HI',
+    );
+    textEmfDocument = textEmfDocument
+        .copyWith(
+          images: textEmfDocument.images.withImage(
+            VsdxImage(
+              partName: textEmfPart,
+              bytes: textEmfBytes,
+              mimeType: 'image/x-emf',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          textEmfPage.addShape(
+            VsdxShapeFactory.picture(
+              id: textEmfPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 1.5,
+              imagePartName: textEmfPart,
+            ),
+          ),
+        );
     var oleDocument = parser.parse(blank);
     final olePage = oleDocument.pages.first;
     const olePart = '/visio/media/libreoffice-crosscheck.bin';
@@ -5777,6 +5809,10 @@ void main() {
       'vector_emf_foreign_data': writer.write(
         originalBytes: blank,
         edited: vectorEmfDocument,
+      ),
+      'text_emf_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: textEmfDocument,
       ),
       'ole_foreign_data': writer.write(
         originalBytes: blank,
@@ -12776,13 +12812,16 @@ void main() {
                 'A=${glyph.magenta} half=${half.magenta} two=${two.magenta}',
           );
         }
-        if (entry.key == 'vector_emf_foreign_data') {
+        if (entry.key == 'vector_emf_foreign_data' ||
+            entry.key == 'text_emf_foreign_data') {
           final reopened = parser.parse(entry.value);
           final shape = reopened.pages.first.shapes.single;
           expect(shape.foreignType, 'Bitmap');
           expect(shape.foreignCompressionType, 'PNG');
         }
-        if (entry.key == 'vector_emf_foreign_data' && pdftoppm != null) {
+        if ((entry.key == 'vector_emf_foreign_data' ||
+                entry.key == 'text_emf_foreign_data') &&
+            pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
             '-png',
@@ -12810,21 +12849,23 @@ void main() {
           expect(
             magenta,
             greaterThan(80),
-            reason: 'Draw must paint the baked vector EMF, not Blue 2; '
+            reason: 'Draw must paint the baked ${entry.key}, not Blue 2; '
                 'magenta=$magenta blue2=$blue2',
           );
           expect(
             blue2,
             lessThan(magenta),
-            reason: 'Blue 2 graphic style must not hide the vector EMF; '
+            reason: 'Blue 2 graphic style must not hide ${entry.key}; '
                 'magenta=$magenta blue2=$blue2',
           );
-          expect(
-            magenta,
-            greaterThan(blue2 * 4),
-            reason: 'baked vector EMF must dominate the Foreign box; '
-                'magenta=$magenta blue2=$blue2',
-          );
+          if (entry.key == 'vector_emf_foreign_data') {
+            expect(
+              magenta,
+              greaterThan(blue2 * 4),
+              reason: 'baked vector EMF must dominate the Foreign box; '
+                  'magenta=$magenta blue2=$blue2',
+            );
+          }
         }
         if ((entry.key == 'shape_inside' ||
                 entry.key == 'shape_inside_flipy') &&
@@ -14773,6 +14814,72 @@ Uint8List _vectorMagentaEmf() {
   u32(0);
   u32(0);
   return out.toBytes();
+}
+
+/// Minimal vector EMF: magenta ExtTextOutW "HI", no embedded DIB.
+Uint8List _magentaTextEmf() {
+  int aligned4(int value) => (value + 3) & ~3;
+  final out = BytesBuilder();
+  void addRecord(int type, Uint8List payload) {
+    final size = aligned4(payload.length + 8);
+    final header = ByteData(8)
+      ..setUint32(0, type, Endian.little)
+      ..setUint32(4, size, Endian.little);
+    out.add(header.buffer.asUint8List());
+    out.add(payload);
+    for (var i = payload.length + 8; i < size; i++) {
+      out.addByte(0);
+    }
+  }
+
+  final header = ByteData(88)
+    ..setUint32(0, 1, Endian.little)
+    ..setUint32(4, 88, Endian.little)
+    ..setInt32(16, 160, Endian.little)
+    ..setInt32(20, 100, Endian.little)
+    ..setUint32(40, 0x464D4520, Endian.little);
+  out.add(header.buffer.asUint8List());
+
+  final font = ByteData(96)..setUint32(0, 1, Endian.little);
+  const logFont = 4;
+  font
+    ..setInt32(logFont, 40, Endian.little)
+    ..setInt32(logFont + 16, 700, Endian.little);
+  for (var i = 0; i < 'Arial'.length; i++) {
+    font.setUint16(logFont + 28 + i * 2, 'Arial'.codeUnitAt(i), Endian.little);
+  }
+  addRecord(82, font.buffer.asUint8List());
+  addRecord(
+    37,
+    (ByteData(4)..setUint32(0, 1, Endian.little)).buffer.asUint8List(),
+  );
+  addRecord(
+    24,
+    (ByteData(4)..setUint32(0, 0x00FF00FF, Endian.little)).buffer.asUint8List(),
+  );
+
+  const text = 'HI';
+  final source = Uint8List(text.length * 2);
+  final sourceData = ByteData.sublistView(source);
+  for (var i = 0; i < text.length; i++) {
+    sourceData.setUint16(i * 2, text.codeUnitAt(i), Endian.little);
+  }
+  const stringOffset = 76;
+  final recordSize = aligned4(stringOffset + source.length);
+  final payload = ByteData(recordSize - 8);
+  payload
+    ..setInt32(28, 20, Endian.little)
+    ..setInt32(32, 30, Endian.little)
+    ..setUint32(36, text.length, Endian.little)
+    ..setUint32(40, stringOffset, Endian.little);
+  payload.buffer.asUint8List().setRange(
+        stringOffset - 8,
+        stringOffset - 8 + source.length,
+        source,
+      );
+  addRecord(84, payload.buffer.asUint8List());
+  addRecord(14, Uint8List(0));
+  return Uint8List.fromList(out.toBytes());
 }
 
 /// Placeable WMF whose STRETCHDIB record wraps a 24bpp DIB (left red, right blue).
