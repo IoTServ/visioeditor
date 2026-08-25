@@ -289,7 +289,11 @@
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
 /// 2-D shape bakes a locked sibling plate whose FillForegndTrans Draw
-/// collects, an unfilled 2-D stroke bakes a locked PNG band of the mirrored
+/// collects — unless the fill is a FillGradient whose opaque stops use
+/// more than two unique colours, or a SoftEdges / hatch wash that already
+/// bakes a fill PNG: FillPattern 25–40 would drop the middle stop, so
+/// that mirror is the same SoftEdges fill PNG flipped, clipped, and faded.
+/// An unfilled 2-D stroke bakes a locked PNG band of the mirrored
 /// stroke (filling the mirror would paint an interior Draw leaves empty;
 /// built-in LinePattern 2–23, `veDashPattern`, and CompoundType 1–4 rails
 /// go into that band as ribbons so Draw does not keep a solid ring or
@@ -772,8 +776,11 @@ List<VsdxGeometry> _reflectionGeometriesForLibvisioWrite(VsdxShape shape) {
 ///
 /// `tokens.txt` has no ReflectionSize. Canvas / SVG already paint the mirror;
 /// LibreOffice only sees Fill / Line / Geometry / ForeignData, so a filled
-/// 2-D leaf bakes a NoLine sibling (FillForegndTrans is a token), an
-/// unfilled 2-D or 1-D stroke bakes a mirrored PNG band, and a Foreign
+/// 2-D leaf bakes a NoLine sibling (FillForegndTrans is a token) unless
+/// that fill cannot survive FillPattern 25–40 — more than two unique
+/// opaque gradient colours, or a SoftEdges / hatch wash already destined
+/// for a fill PNG — in which case the mirror is that PNG flipped and
+/// clipped. An unfilled 2-D or 1-D stroke bakes a mirrored PNG band, and a Foreign
 /// picture bakes a Gaussian PNG sibling, then the live cells go to 0.
 /// Filled 1-D stays native — its FillPattern is already the body and a
 /// zero-height plate cannot carry a fill mirror.
@@ -792,6 +799,14 @@ bool shapeNeedsLibvisioReflectionBake(VsdxShape shape) {
   if (!shape.is1D && _shapePaintsFill(shape, shape.geometries)) return true;
   if (_shapeCanLibvisioStrokeReflectionPng(shape)) return true;
   return _shapeCanLibvisioPictureReflectionPng(shape);
+}
+
+/// Filled 2-D whose body Draw cannot hold in FillPattern 25–40 / hatch
+/// cells: mirror the same SoftEdges fill PNG canvas already paints.
+bool _shapeNeedsLibvisioFillReflectionPng(VsdxShape shape) {
+  if (shape.is1D) return false;
+  if (!_shapePaintsFill(shape, shape.geometries)) return false;
+  return _shapeNeedsLibvisioFillSoftEdgesBake(shape);
 }
 
 /// Unfilled 2-D and 1-D strokes: canvas `_drawReflection` strokes the
@@ -971,6 +986,33 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
     imgWidthInches: shape.imgWidthInches,
     imgHeightInches: shape.imgHeightInches,
     flipY: shape.flipY,
+  );
+  if (png == null) return null;
+  return (png: png, padInches: box.pad);
+}
+
+({Uint8List png, double padInches})? _fillReflectionPngForLibvisioWrite(
+  VsdxShape shape,
+  VsdxTheme theme,
+) {
+  final fillPng = _softEdgesPngForLibvisioWrite(shape, theme);
+  if (fillPng == null) return null;
+  final box = _reflectionPlateLocalBox(shape);
+  final png = bakePictureReflectionPng(
+    image: VsdxImage(
+      partName: '/visio/media/_lo_fill_reflection.png',
+      bytes: fillPng,
+      mimeType: 'image/png',
+    ),
+    sizeFraction: shape.reflection.sizeInches.clamp(0.01, 1.0),
+    transparency: shape.reflection.transparency,
+    blurSigmaPx: shape.reflection.blurInches * kLibvisioSoftEdgesPxPerInch,
+    padInches: box.pad,
+    displayWidthInches: shape.width.abs(),
+    frameWidthInches: shape.width.abs(),
+    frameHeightInches: shape.height.abs(),
+    flipY: shape.flipY,
+    opaqueBackground: true,
   );
   if (png == null) return null;
   return (png: png, padInches: box.pad);
@@ -1214,6 +1256,9 @@ List<VsdxShape> _bakeReflectionTree(
           // would mirror the band twice.
           pngPlateFlipY = false;
         }
+      } else if (_shapeNeedsLibvisioFillReflectionPng(next)) {
+        payload = _fillReflectionPngForLibvisioWrite(next, theme);
+        pngPlateFlipY = false;
       } else {
         plate = _reflectionPlateForLibvisioWrite(
           next,
@@ -1241,6 +1286,18 @@ List<VsdxShape> _bakeReflectionTree(
       if (plate != null) {
         out.add(plate);
         changed = true;
+        // SoftEdges runs after this pass and may drop the fill that
+        // `shapeNeedsLibvisioReflectionBake` keys off. Freeze Size=0 on
+        // a fill-PNG leftover so the writer cannot resurrect Reflection*
+        // (not a token) after the source is hollow.
+        if (_shapeNeedsLibvisioFillReflectionPng(next)) {
+          next = next.copyWith(
+            reflection: next.reflection.copyWith(
+              enabled: false,
+              sizeInches: 0,
+            ),
+          );
+        }
       }
     } else {
       final existingId = plateIds[next.id];

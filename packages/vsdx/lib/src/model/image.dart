@@ -1668,6 +1668,8 @@ Uint8List? bakeSilhouetteDropShadowPng({
 /// the visual bottom (original top) is nearest, then the plate sits
 /// above in local Y and PNG row 0 maps to max Y — the band is flipped
 /// so the near-axis rows land on min Y.
+/// [opaqueBackground] composites onto white so Draw does not paint Blue 2
+/// through the faded alpha of a fill-mirror plate.
 Uint8List? bakePictureReflectionPng({
   required VsdxImage image,
   required double sizeFraction,
@@ -1682,6 +1684,7 @@ Uint8List? bakePictureReflectionPng({
   double? imgWidthInches,
   double? imgHeightInches,
   bool flipY = false,
+  bool opaqueBackground = false,
 }) {
   if (padInches < 0) return null;
   final payload = image.rasterForRendering();
@@ -1767,6 +1770,9 @@ Uint8List? bakePictureReflectionPng({
     }
     if (flipY) {
       work = _flipImageVertical(work);
+    }
+    if (opaqueBackground) {
+      _compositeOntoWhite(work);
     }
     return raster.encodePng(work);
   } catch (_) {

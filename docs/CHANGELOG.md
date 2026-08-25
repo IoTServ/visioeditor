@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient washes with more than two unique opaque colours now keep
+  those stops in the Reflection mirror in LibreOffice. A filled 2-D
+  sibling used to copy the live FillGradient, and `fillForLibvisioWrite`
+  collapsed it to classic FillPattern 26/29 (FillForegnd / FillBkgnd
+  only). A save flips, clips and fades the same SoftEdges fill PNG
+  canvas already paints. Two-colour washes stay 25–40. A second save
+  does not stack another plate.
 - FillGradient washes with more than two unique opaque colours plus
   CompoundType 2–4 now keep the fill in LibreOffice. SoftEdges used to
   drop FillPattern while Geometry still said NoFill=0, so the unfilled

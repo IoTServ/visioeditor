@@ -9532,6 +9532,113 @@ void main() {
     expect(savedPlate.hasImage, isTrue);
   });
 
+  test(
+    'multi-stop FillGradient Reflection keeps the middle stop for LibreOffice',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final shape = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4.25,
+        pinY: 6.2,
+        width: 3.2,
+        height: 1.5,
+        name: 'Grad3Mirror',
+        fill: const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(pattern: 0),
+      ).copyWith(
+        reflection: const VsdxReflection(
+          enabled: true,
+          sizeInches: 0.55,
+          distanceInches: 0.12,
+          transparency: 0.25,
+          blurInches: 0,
+        ),
+      );
+      expect(shapeNeedsLibvisioReflectionBake(shape), isTrue);
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final baked = documentForLibvisioWrite(doc);
+      final plate =
+          baked.pages.first.shapes.where(isLibvisioReflectionPlate).single;
+      expect(plate.hasImage, isTrue,
+          reason: 'FillPattern 25–40 would drop the green stop on the mirror');
+      expect(plate.fill.hasGradient, isFalse);
+      expect(
+        baked.pages.first.findShapeById(1)!.reflection.enabled,
+        isFalse,
+        reason: 'SoftEdges then hollows the source; Size must already be 0',
+      );
+      final png = baked.images.findByPart(plate.imagePartName!);
+      expect(png, isNotNull);
+      final decoded = raster.decodePng(png!.bytes)!;
+      var mag = 0, green = 0, blue = 0;
+      for (final pixel in decoded) {
+        if (pixel.a < 80) continue;
+        if (pixel.r > 140 && pixel.g < 140 && pixel.b > 140) mag++;
+        if (pixel.g > 140 && pixel.r < 120 && pixel.b < 120) green++;
+        if (pixel.b > 140 && pixel.r < 120 && pixel.g < 140) blue++;
+      }
+      expect(green, greaterThan(40),
+          reason: 'FillPattern 26 would drop the green stop; '
+              'mag=$mag green=$green blue=$blue');
+      expect(mag + blue, greaterThan(10),
+          reason: 'mirrored endpoints must stay; mag=$mag blue=$blue');
+      expect(
+        documentForLibvisioWrite(baked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioReflectionPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another fill-mirror plate',
+      );
+
+      const twoStop = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final two = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 4.25,
+        pinY: 6.2,
+        width: 3.2,
+        height: 1.5,
+        name: 'Grad2Mirror',
+        fill: const VsdxFill(pattern: 1, gradient: twoStop),
+        line: const VsdxLine(pattern: 0),
+      ).copyWith(
+        reflection: const VsdxReflection(
+          enabled: true,
+          sizeInches: 0.55,
+          distanceInches: 0.12,
+          transparency: 0.25,
+          blurInches: 0,
+        ),
+      );
+      var twoDoc = parser.parse(blank);
+      twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+      final twoPlate = documentForLibvisioWrite(twoDoc)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioReflectionPlate)
+          .single;
+      expect(twoPlate.hasImage, isFalse,
+          reason: 'two-colour FillGradient reflection must stay FillPattern 25–40');
+    },
+  );
+
   test('picture Reflection bakes a Gaussian PNG sibling for LibreOffice', () {
     const part = '/visio/media/reflection.png';
     final rasterImage = raster.Image(width: 16, height: 16);

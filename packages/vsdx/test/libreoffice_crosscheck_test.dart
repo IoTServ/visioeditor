@@ -2590,6 +2590,30 @@ void main() {
         ),
       ),
     );
+    var grad3ReflectionDocument = parser.parse(blank);
+    grad3ReflectionDocument = grad3ReflectionDocument.replacePage(
+      0,
+      grad3ReflectionDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: grad3ReflectionDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.2,
+          height: 1.5,
+          name: 'Grad3Mirror',
+          fill: const VsdxFill(pattern: 1, gradient: wash3),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          reflection: const VsdxReflection(
+            enabled: true,
+            sizeInches: 0.55,
+            distanceInches: 0.12,
+            transparency: 0.25,
+            blurInches: 0,
+          ),
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -6260,6 +6284,10 @@ void main() {
       'grad3_compound2': writer.write(
         originalBytes: blank,
         edited: grad3Compound2Document,
+      ),
+      'grad3_reflection': writer.write(
+        originalBytes: blank,
+        edited: grad3ReflectionDocument,
       ),
       'linegrad3': writer.write(
         originalBytes: blank,
@@ -13445,6 +13473,32 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'grad3_reflection') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'Grad3Mirror');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(source.reflection.enabled, isFalse);
+          final plate = reopened.pages.first.shapes
+              .where(isLibvisioReflectionPlate)
+              .single;
+          expect(plate.hasImage, isTrue);
+          final png = reopened.images.findByPart(plate.imagePartName!);
+          expect(png, isNotNull);
+          final decoded = raster.decodePng(png!.bytes)!;
+          var mag = 0, green = 0, blue = 0;
+          for (final pixel in decoded) {
+            if (pixel.a < 80) continue;
+            if (pixel.r > 140 && pixel.g < 140 && pixel.b > 140) mag++;
+            if (pixel.g > 140 && pixel.r < 120 && pixel.b < 120) green++;
+            if (pixel.b > 140 && pixel.r < 120 && pixel.g < 140) blue++;
+          }
+          expect(green, greaterThan(40),
+              reason: 'Draw must not collapse the mirrored FillGradient to '
+                  'FillPattern 26; mag=$mag green=$green blue=$blue');
+          expect(mag + blue, greaterThan(10));
+        }
         if (entry.key == 'linegrad3') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13485,6 +13539,7 @@ void main() {
                 entry.key == 'evenodd_grad3' ||
                 entry.key == 'evenodd_grad3_line' ||
                 entry.key == 'grad3_compound2' ||
+                entry.key == 'grad3_reflection' ||
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
