@@ -2460,6 +2460,43 @@ void main() {
         ),
       ),
     );
+    var grad3ArcDocument = parser.parse(blank);
+    var grad3ArcPage = grad3ArcDocument.pages.first;
+    const wash3 = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+        VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+        VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+      ],
+    );
+    grad3ArcPage = grad3ArcPage.addShape(
+      VsdxShapeFactory.pie(
+        id: grad3ArcPage.nextFreeShapeId(),
+        pinX: 2.6,
+        pinY: 5.5,
+        width: 3.2,
+        height: 3.2,
+        name: 'Pie3',
+        fill: const VsdxFill(pattern: 1, gradient: wash3),
+        line: const VsdxLine(pattern: 0),
+      ),
+    );
+    grad3ArcDocument = grad3ArcDocument.replacePage(
+      0,
+      grad3ArcPage.addShape(
+        VsdxShapeFactory.roundedRectangle(
+          id: grad3ArcPage.nextFreeShapeId(),
+          pinX: 6.4,
+          pinY: 5.5,
+          width: 2.6,
+          height: 2.6,
+          radius: 0.75,
+          name: 'Round3',
+          fill: const VsdxFill(pattern: 1, gradient: wash3),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -3691,8 +3728,8 @@ void main() {
           pinY: 5.5,
           width: 3,
           height: 2,
-          // A spline body has no SoftEdges silhouette, so Glow cannot become
-          // a Gaussian PNG and falls back to the LineWeight halo.
+          // Spline commands sample into a SoftEdges silhouette, so Glow
+          // becomes a Gaussian PNG instead of a LineWeight halo.
           geometries: const <VsdxGeometry>[
             VsdxGeometry(
               commands: <VsdxPathCommand>[
@@ -6114,6 +6151,10 @@ void main() {
       'grad3_fill_gradient': writer.write(
         originalBytes: blank,
         edited: grad3Document,
+      ),
+      'grad3_arc_fill': writer.write(
+        originalBytes: blank,
+        edited: grad3ArcDocument,
       ),
       'linegrad3': writer.write(
         originalBytes: blank,
@@ -9578,22 +9619,12 @@ void main() {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
               .firstWhere((s) => s.name == 'GlowSplineTheme');
-          final expected = colourForLibvisioAlpha(
-            VsdxTheme.office.resolve(ThemeSlot.accent6)!,
-            0.4 + 0.6 * 0.15,
-          );
           expect(source.glow.enabled, isFalse);
-          expect(
-            source.line.color?.value,
-            expected.value,
-            reason: 'the LineWeight halo must carry the faded slot as RGB',
-          );
-          expect(source.line.themeColorIndex, isNull);
-          expect(source.line.transparency, closeTo(0, 1e-9));
-          expect(
-            reopened.pages.first.shapes.where(isLibvisioGlowPlate),
-            isEmpty,
-          );
+          expect(source.line.pattern, 0);
+          final plate =
+              reopened.pages.first.shapes.where(isLibvisioGlowPlate).single;
+          expect(plate.hasImage, isTrue);
+          expect(plate.width, greaterThan(source.width + 0.1));
         }
         if (entry.key == 'glow_spline_theme' && pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
@@ -9642,19 +9673,20 @@ void main() {
             return (r: sumR / count, g: sumG / count);
           }
 
-          final halo = mean(3.9, 4.28, 4.6, 4.42);
+          final body = mean(3.9, 5.2, 4.6, 5.8);
+          final halo = mean(2.28, 5.2, 2.52, 5.8);
           expect(
-            halo.r,
+            body.r,
             greaterThan(150),
-            reason: 'LibreOffice must paint the faded Office accent6 halo, not '
-                'the opaque black THEMEVAL() fallback getThemeColour drops; '
-                'haloR=${halo.r} haloG=${halo.g}',
+            reason: 'LibreOffice must still paint the spline fill; '
+                'bodyR=${body.r} haloG=${halo.g}',
           );
           expect(
             halo.g,
-            greaterThan(halo.r),
-            reason: 'the faded accent6 halo must stay green-tinted; '
-                'haloR=${halo.r} haloG=${halo.g}',
+            greaterThan(halo.r + 15),
+            reason: 'LibreOffice must paint the Gaussian Office accent6 glow, '
+                'not a hard LineWeight halo; bodyR=${body.r} haloG=${halo.g} '
+                'haloR=${halo.r}',
           );
         }
         if (entry.key == 'char_trans_theme') {
@@ -13258,6 +13290,21 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'grad3_arc_fill') {
+          final reopened = parser.parse(entry.value);
+          final pie =
+              reopened.pages.first.shapes.firstWhere((s) => s.name == 'Pie3');
+          final rounded =
+              reopened.pages.first.shapes.firstWhere((s) => s.name == 'Round3');
+          expect(pie.fill.pattern, 0);
+          expect(pie.fill.hasGradient, isFalse);
+          expect(rounded.fill.pattern, 0);
+          expect(rounded.fill.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(2),
+          );
+        }
         if (entry.key == 'linegrad3') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13294,6 +13341,7 @@ void main() {
           );
         }
         if ((entry.key == 'grad3_fill_gradient' ||
+                entry.key == 'grad3_arc_fill' ||
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
@@ -13315,10 +13363,16 @@ void main() {
           var magenta = 0;
           var green = 0;
           var blue = 0;
+          var blue2 = 0;
           for (final pixel in rendered) {
             if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
             if (pixel.g > 160 && pixel.r < 100 && pixel.b < 100) green++;
             if (pixel.b > 160 && pixel.r < 100 && pixel.g < 100) blue++;
+            if ((pixel.r - 114).abs() < 12 &&
+                (pixel.g - 159).abs() < 12 &&
+                (pixel.b - 207).abs() < 12) {
+              blue2++;
+            }
           }
           expect(
             magenta,
@@ -13338,6 +13392,14 @@ void main() {
             reason: 'Draw must paint the blue stop; '
                 'magenta=$magenta green=$green blue=$blue',
           );
+          if (entry.key == 'grad3_arc_fill') {
+            expect(
+              blue2,
+              lessThan(80),
+              reason: 'Draw must not fill the pie / rounded-rect box with Blue 2; '
+                  'blue2=$blue2 green=$green',
+            );
+          }
         }
         if ((entry.key == 'shape_inside' ||
                 entry.key == 'shape_inside_flipy') &&

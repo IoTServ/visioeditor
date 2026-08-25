@@ -8,7 +8,9 @@
 /// stroke, an unfilled LineGradient, or a semi-transparent stroke
 /// disappears or goes fully opaque in Draw. The writer rewrites those to
 /// classic FillPattern 25–40 (a FillGradient with more than two unique
-/// opaque colours bakes a PNG plate instead), baked RelQuadBezTo corners, parallel Geometry
+/// opaque colours bakes a PNG plate instead; EllipticalArcTo silhouettes
+/// are sampled so a pie is not a triangle and a rounded rectangle is not
+/// the Width×Height box), baked RelQuadBezTo corners, parallel Geometry
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. A LineGradient with more than two unique opaque colours
@@ -1551,21 +1553,15 @@ void main() {
     );
   });
 
-  test('theme-only Glow LineWeight halo freezes RGB for LibreOffice', () {
+  test('theme-only Glow on a spline bakes a Gaussian PNG for LibreOffice', () {
     const slot = ThemeSlot.accent6;
     const glow = VsdxGlow(
       themeColorIndex: slot,
       sizeInches: 0.28,
       transparency: 0.15,
     );
-    // Canvas `_drawGlow` fades the halo by 0.4 + 0.6 * GlowColorTrans.
-    final expected = colourForLibvisioAlpha(
-      VsdxTheme.office.resolve(slot)!,
-      0.4 + 0.6 * 0.15,
-    );
+    final expected = VsdxTheme.office.resolve(slot)!;
 
-    // A spline body has no SoftEdges silhouette, so Glow cannot become a
-    // Gaussian PNG and falls back to the LineWeight halo.
     VsdxShape splineBody(int id, String name, {required bool stroked}) =>
         VsdxShape(
           id: id,
@@ -1591,56 +1587,70 @@ void main() {
               : const VsdxLine(pattern: 0),
         ).copyWith(glow: glow);
 
+    int greenInk(raster.Image decoded) {
+      var ink = 0;
+      for (final pixel in decoded) {
+        if (pixel.a > 20 && pixel.g > pixel.r + 10 && pixel.g > pixel.b + 10) {
+          ink++;
+        }
+      }
+      return ink;
+    }
+
     final stolen = splineBody(1, 'GlowSplineTheme', stroked: false);
-    expect(shapeNeedsLibvisioGlowBake(stolen), isTrue,
-        reason: 'no silhouette, so the halo has to steal Line');
-    expect(shapeNeedsLibvisioGlowPlateBake(stolen), isFalse);
-    final stolenWrite = libvisioShapeWrite(stolen);
-    expect(stolenWrite.line.color?.value, expected.value);
-    expect(stolenWrite.line.themeColorIndex, isNull,
-        reason: 'getThemeColour stops at 8, so THEMEVAL would paint black');
-    expect(stolenWrite.line.transparency, 0);
-    expect(stolenWrite.line.weightInches, closeTo(0.56, 1e-9));
+    expect(shapeNeedsLibvisioGlowBake(stolen), isFalse);
+    expect(shapeNeedsLibvisioGlowPlateBake(stolen), isTrue);
 
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
     doc = doc.replacePage(0, doc.pages.first.addShape(stolen));
-    final saved = writer.write(originalBytes: blank, edited: doc);
-    final xml = VsdxPackage.open(saved)
-        .readPartXml('/visio/pages/page1.xml')!
-        .toXmlString();
-    expect(xml.contains('N="QuickStyleLineColor"'), isFalse);
-    final hex = (expected.value & 0xFFFFFF)
-        .toRadixString(16)
-        .padLeft(6, '0')
-        .toUpperCase();
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    final plate = baked.pages.first.shapes.where(isLibvisioGlowPlate).single;
+    expect(plate.hasImage, isTrue);
+    expect(plate.locked, isTrue);
+    expect(plate.width, greaterThan(source.width));
     expect(
-      xml.contains('N="LineColor" V="#$hex"'),
-      isTrue,
-      reason: 'the halo must be hex, not THEMEVAL; expected=#$hex',
+      greenInk(raster.decodePng(
+        baked.images.findByPart(plate.imagePartName!)!.bytes,
+      )!),
+      greaterThan(8),
+      reason: 'theme slot $slot (${expected.value.toRadixString(16)}) '
+          'must freeze into the sampled-spline Gaussian PNG',
     );
-    final after = parser.parse(saved).pages.first.findShapeById(1)!;
-    expect(after.line.color?.value, expected.value);
-    expect(after.line.themeColorIndex, isNull);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioGlowPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another Glow plate',
+    );
 
-    // Filled + stroked keeps its outline, so the halo becomes a sibling plate
-    // that goes through the same LineWeight fallback.
     final plated = splineBody(2, 'GlowSplinePlate', stroked: true);
     expect(shapeNeedsLibvisioGlowPlateBake(plated), isTrue);
     var platedDoc = parser.parse(blank).copyWith(theme: VsdxTheme.office);
     platedDoc =
         platedDoc.replacePage(0, platedDoc.pages.first.addShape(plated));
-    final plate = documentForLibvisioWrite(platedDoc)
-        .pages
-        .first
-        .shapes
-        .where(isLibvisioGlowPlate)
-        .single;
-    expect(plate.hasImage, isFalse);
-    expect(plate.locked, isTrue);
-    expect(plate.line.color?.value, expected.value);
-    expect(plate.line.themeColorIndex, isNull);
-    expect(plate.line.transparency, 0);
+    final platedBaked = documentForLibvisioWrite(platedDoc);
+    final strokedPlate =
+        platedBaked.pages.first.shapes.where(isLibvisioGlowPlate).single;
+    expect(strokedPlate.hasImage, isTrue);
+    expect(strokedPlate.locked, isTrue);
+    expect(
+      platedBaked.pages.first.findShapeById(2)!.line.pattern,
+      1,
+      reason: 'the source outline must stay on the source',
+    );
+    expect(
+      greenInk(raster.decodePng(
+        platedBaked.images.findByPart(strokedPlate.imagePartName!)!.bytes,
+      )!),
+      greaterThan(8),
+      reason: 'filled+stroked spline Glow must bake a Gaussian PNG',
+    );
   });
 
   test('Glow on a filled stroke bakes a sibling halo LibreOffice can collect',
@@ -3849,6 +3859,210 @@ void main() {
       reason: 'a transparent first stop leaves two colours for 25–40',
     );
   });
+
+  test(
+    'multi-stop FillGradient on EllipticalArcTo follows the sampled silhouette',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      raster.Pixel pxAt(
+        raster.Image img, {
+        required double x,
+        required double y,
+        required double width,
+        required double height,
+      }) {
+        final ix =
+            (x / width * (img.width - 1)).round().clamp(0, img.width - 1);
+        final iy = ((1 - y / height) * (img.height - 1))
+            .round()
+            .clamp(0, img.height - 1);
+        return img.getPixel(ix, iy);
+      }
+
+      final pie = VsdxShapeFactory.pie(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 2,
+        name: 'Pie3',
+        fill: const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(pattern: 0),
+      );
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(pie), isTrue);
+
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(pie));
+      final baked = documentForLibvisioWrite(doc);
+      expect(baked.pages.first.findShapeById(1)!.fill.pattern, 0);
+      final plate =
+          baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+      final png = baked.images.findByPart(plate.imagePartName!);
+      final decoded = raster.decodePng(png!.bytes)!;
+      final bow = pxAt(decoded, x: 1.7, y: 1.7, width: 2, height: 2);
+      final empty = pxAt(decoded, x: 0.25, y: 0.25, width: 2, height: 2);
+      expect(
+        bow.a,
+        greaterThan(200),
+        reason: 'pie arc bow must stay inside the PNG, not a chord triangle; '
+            'bow=$bow',
+      );
+      expect(
+        bow.r,
+        lessThan(200),
+        reason: 'pie arc bow must keep the wash, not the white plate; bow=$bow',
+      );
+      expect(
+        empty.r,
+        greaterThan(240),
+        reason: 'Draw paints Blue 2 through transparent PNG; empty=$empty',
+      );
+      expect(
+        empty.g,
+        greaterThan(240),
+        reason: 'Draw paints Blue 2 through transparent PNG; empty=$empty',
+      );
+      expect(
+        empty.b,
+        greaterThan(240),
+        reason: 'Draw paints Blue 2 through transparent PNG; empty=$empty',
+      );
+      expect(
+        documentForLibvisioWrite(baked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another pie FillGradient plate',
+      );
+
+      final rounded = VsdxShapeFactory.roundedRectangle(
+        id: 2,
+        pinX: 5,
+        pinY: 2,
+        width: 2,
+        height: 2,
+        radius: 0.6,
+        name: 'Round3',
+        fill: const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(pattern: 0),
+      );
+      var roundDoc = parser.parse(blank);
+      roundDoc =
+          roundDoc.replacePage(0, roundDoc.pages.first.addShape(rounded));
+      final roundBaked = documentForLibvisioWrite(roundDoc);
+      final roundPlate =
+          roundBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+      final roundPng = roundBaked.images.findByPart(roundPlate.imagePartName!);
+      final roundDecoded = raster.decodePng(roundPng!.bytes)!;
+      final cut = pxAt(roundDecoded, x: 0.04, y: 0.04, width: 2, height: 2);
+      final roundBow =
+          pxAt(roundDecoded, x: 0.22, y: 0.22, width: 2, height: 2);
+      expect(
+        cut.r,
+        greaterThan(240),
+        reason:
+            'rounded-rect corner must stay empty, not the Width×Height box; '
+            'cut=$cut',
+      );
+      expect(
+        cut.g,
+        greaterThan(240),
+        reason:
+            'rounded-rect corner must stay empty, not the Width×Height box; '
+            'cut=$cut',
+      );
+      expect(
+        roundBow.a,
+        greaterThan(200),
+        reason: 'rounded-rect arc must fill past the chamfer octagon; '
+            'bow=$roundBow',
+      );
+      expect(
+        roundBow.g,
+        lessThan(200),
+        reason: 'rounded-rect arc must not be the white plate; bow=$roundBow',
+      );
+
+      final relPie = VsdxShape(
+        id: 3,
+        name: 'RelPie3',
+        pinX: 2,
+        pinY: 6,
+        width: 2,
+        height: 2,
+        fill: const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(pattern: 0),
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            commands: <VsdxPathCommand>[
+              RelMoveTo(0.5, 0.5),
+              RelLineTo(1, 0.5),
+              RelEllipticalArcTo(fx: 0.5, fy: 1, fcx: 0.85, fcy: 0.85),
+              RelLineTo(0.5, 0.5),
+            ],
+          ),
+        ],
+      );
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(relPie), isTrue);
+      var relDoc = parser.parse(blank);
+      relDoc = relDoc.replacePage(0, relDoc.pages.first.addShape(relPie));
+      final relBaked = documentForLibvisioWrite(relDoc);
+      final relPlate =
+          relBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+      final relPng = relBaked.images.findByPart(relPlate.imagePartName!);
+      final relDecoded = raster.decodePng(relPng!.bytes)!;
+      final relBow = pxAt(relDecoded, x: 1.7, y: 1.7, width: 2, height: 2);
+      expect(
+        relBow.a,
+        greaterThan(200),
+        reason: 'RelEllipticalArcTo pie bow must bake, not skip the plate; '
+            'bow=$relBow',
+      );
+      expect(
+        relBow.r,
+        lessThan(200),
+        reason: 'RelEllipticalArcTo pie bow must keep the wash; bow=$relBow',
+      );
+
+      const twoStop = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final two = VsdxShapeFactory.pie(
+        id: 4,
+        pinX: 5,
+        pinY: 6,
+        width: 2,
+        height: 2,
+        fill: const VsdxFill(pattern: 1, gradient: twoStop),
+        line: const VsdxLine(pattern: 0),
+      );
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(two), isFalse);
+      var twoDoc = parser.parse(blank);
+      twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+      expect(
+        documentForLibvisioWrite(twoDoc)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason:
+            'two-colour pie FillGradient must stay classic FillPattern 25–40',
+      );
+    },
+  );
 
   test('multi-stop LineGradient bakes a PNG plate for LibreOffice', () {
     const wash = VsdxGradient(

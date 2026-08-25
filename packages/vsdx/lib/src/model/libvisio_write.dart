@@ -14,7 +14,12 @@
 /// stop's theme slot) — otherwise Draw stays
 /// hollow and an unfilled LineGradient ribbon would steal the body.
 /// Opaque stops with more than two unique colours cannot use those two
-/// cells, so a save bakes the same SoftEdges fill PNG at sigma 0. For an
+/// cells, so a save bakes the same SoftEdges fill PNG at sigma 0. Curve
+/// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
+/// sampled so that plate follows the painted path — endpoint-only
+/// polygons used to wash a pie as a triangle and a rounded rectangle as
+/// the Width×Height box — and unpainted pixels composite onto opaque
+/// white so Draw does not fill that box with Blue 2. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
@@ -8332,7 +8337,53 @@ SoftEdgesSilhouetteKind? _foreignFrameSilhouetteKind(VsdxShape shape) {
   return SoftEdgesSilhouetteKind.polygon;
 }
 
+bool _geometryHasNonLinearSoftEdgesCommands(VsdxGeometry geom) {
+  for (final cmd in geom.commands) {
+    switch (cmd) {
+      case MoveTo() || LineTo() || RelMoveTo() || RelLineTo():
+        break;
+      default:
+        return true;
+    }
+  }
+  return false;
+}
+
+List<Offset2D>? _sampledSoftEdgesPolygonInches(
+  VsdxShape shape,
+  VsdxGeometry geom,
+) {
+  final w = shape.width.abs();
+  final h = shape.height.abs();
+  var sampled = ShapePerimeter.sampledGeometryVertices(
+    geom,
+    width: w,
+    height: h,
+  );
+  if (sampled == null || sampled.isEmpty) return sampled;
+  if (_geometryHasInfiniteLine(geom) && sampled.length >= 2) {
+    sampled = clipInfiniteLineToPage(
+          sampled.first,
+          sampled.last,
+          pageWidth: math.max(w, 1e-6),
+          pageHeight: math.max(h, 1e-6),
+        ) ??
+        sampled;
+  }
+  if (sampled.length >= 2) {
+    final a = sampled.first;
+    final b = sampled.last;
+    if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) {
+      sampled = sampled.sublist(0, sampled.length - 1);
+    }
+  }
+  return sampled;
+}
+
 List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
+  if (_geometryHasNonLinearSoftEdgesCommands(geom)) {
+    return _sampledSoftEdgesPolygonInches(shape, geom);
+  }
   final w = shape.width.abs();
   final h = shape.height.abs();
   final points = <Offset2D>[];
@@ -8348,22 +8399,8 @@ List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
         points.add(Offset2D(fx * w, fy * h));
       case RelLineTo(:final fx, :final fy):
         points.add(Offset2D(fx * w, fy * h));
-      case QuadBezTo(:final x, :final y):
-        points.add(Offset2D(x, y));
-      case RelQuadBezTo(:final fx, :final fy):
-        points.add(Offset2D(fx * w, fy * h));
-      case CubBezTo(:final x, :final y):
-        points.add(Offset2D(x, y));
-      case RelCubBezTo(:final fx, :final fy):
-        points.add(Offset2D(fx * w, fy * h));
-      case ArcTo(:final x, :final y):
-        points.add(Offset2D(x, y));
-      case RelArcTo(:final fx, :final fy):
-        points.add(Offset2D(fx * w, fy * h));
-      case EllipticalArcTo(:final x, :final y):
-        points.add(Offset2D(x, y));
       default:
-        return null;
+        return _sampledSoftEdgesPolygonInches(shape, geom);
     }
   }
   if (points.length >= 2) {
@@ -8383,22 +8420,31 @@ List<Offset2D>? _softEdgesPolygonInches(VsdxShape shape, VsdxGeometry geom) {
   );
 }
 
+/// True when [points] are the four corners of the Width×Height box.
+///
+/// A bbox match is not enough: a pie chord, a diamond, or a rounded-rect
+/// octagon can span 0..W × 0..H and would otherwise bake as a rectangle.
 bool _softEdgesIsShapeBox(List<Offset2D> points, double w, double h) {
   if (points.length < 4) return false;
-  var minX = points.first.x;
-  var minY = points.first.y;
-  var maxX = minX;
-  var maxY = minY;
+  const eps = 1e-6;
+  bool near(double a, double b) => (a - b).abs() <= eps;
+  final boxW = w.abs();
+  final boxH = h.abs();
+  final seen = <int>{};
   for (final p in points) {
-    if (p.x < minX) minX = p.x;
-    if (p.y < minY) minY = p.y;
-    if (p.x > maxX) maxX = p.x;
-    if (p.y > maxY) maxY = p.y;
+    final onLeft = near(p.x, 0);
+    final onRight = near(p.x, boxW);
+    final onBottom = near(p.y, 0);
+    final onTop = near(p.y, boxH);
+    if (!onLeft && !onRight && !onBottom && !onTop) return false;
+    if ((onLeft || onRight) && (onBottom || onTop)) {
+      var id = 0;
+      if (onRight) id |= 1;
+      if (onTop) id |= 2;
+      seen.add(id);
+    }
   }
-  return minX.abs() <= 1e-6 &&
-      minY.abs() <= 1e-6 &&
-      (maxX - w.abs()).abs() <= 1e-6 &&
-      (maxY - h.abs()).abs() <= 1e-6;
+  return seen.length == 4;
 }
 
 Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {

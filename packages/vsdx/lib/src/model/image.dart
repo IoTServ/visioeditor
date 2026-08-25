@@ -717,7 +717,9 @@ enum SoftEdgesSilhouetteKind {
 ///
 /// Picture SoftEdges feathers a full-frame bitmap. Geometry SoftEdges must
 /// feather the painted alpha (ellipse / polygon), then Draw can show the PNG
-/// because `SoftEdgesSize` is not a token.
+/// because `SoftEdgesSize` is not a token. Sigma 0 (FillGradient plates)
+/// composites onto opaque white so Draw does not paint Blue 2 through
+/// unpainted pie / rounded-rect pixels.
 Uint8List? bakeSilhouetteSoftEdgesPng({
   required int widthPx,
   required int heightPx,
@@ -827,6 +829,11 @@ Uint8List? bakeSilhouetteSoftEdgesPng({
               (pixel.aNormalized * m.aNormalized).clamp(0.0, 1.0);
         }
       }
+    } else {
+      // Draw paints Blue 2 through unpainted Foreign pixels, so a pie /
+      // rounded-rect plate would show the Width×Height box. Stroke
+      // SoftEdges already composites onto white for the same reason.
+      _compositeOntoWhite(work);
     }
     return raster.encodePng(work);
   } catch (_) {

@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient washes with more than two unique opaque colours on
+  EllipticalArcTo / RelEllipticalArcTo geometry now keep the painted
+  silhouette in LibreOffice. The previous PNG bake walked only command
+  endpoints, so a pie collapsed to a triangle and a rounded rectangle
+  whose bbox filled the shape box baked as a sharp Width×Height plate,
+  while canvas / SVG already sample those arcs. A save samples the path
+  into the SoftEdges fill PNG and composites unpainted pixels onto
+  opaque white so Draw does not fill the box with Blue 2. Two-colour
+  washes stay 25–40. A second save does not stack another plate.
 - InfiniteLine LineGradient washes with more than two unique opaque
   colours now keep the middle stops in LibreOffice. Perimeter sampling
   of InfiniteLine spans hundreds of inches, so the previous PNG bake
