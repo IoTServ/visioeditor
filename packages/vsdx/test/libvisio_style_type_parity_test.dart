@@ -7516,6 +7516,114 @@ void main() {
     expect(baked.pages.first.findShapeById(1)!.imagePartName, part);
   });
 
+  test('headerless DIB Bitmap bakes to PNG for LibreOffice', () {
+    const part = '/visio/media/probe.dib';
+    final dib = _magentaDib();
+    expect(raster.decodeImage(dib), isNull);
+    final source = VsdxImage(
+      partName: part,
+      bytes: dib,
+      mimeType: 'image/bmp',
+    );
+    expect(source.looksLikeBmpFile, isFalse);
+    expect(source.looksLikeHeaderlessDib, isTrue);
+    expect(source.compressionType, isNull);
+    expect(source.rasterForRendering(), isNotNull);
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(pic, source), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    expect(bakedShape.imagePartName, isNot(part));
+    final png = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(png, isNotNull);
+    var magenta = 0;
+    var transparent = 0;
+    for (final pixel in raster.decodePng(png!.bytes)!) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+    }
+    expect(transparent, 0);
+    expect(magenta, greaterThan(50), reason: 'DIB magenta must survive PNG bake');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another DIB PNG',
+    );
+  });
+
+  test('ICO Bitmap bakes to PNG for LibreOffice', () {
+    const part = '/visio/media/probe.ico';
+    final ico = _magentaIco();
+    expect(raster.decodeIco(ico), isNotNull);
+    final source = VsdxImage(
+      partName: part,
+      bytes: ico,
+      mimeType: 'image/x-icon',
+    );
+    expect(source.looksLikeBmpFile, isFalse);
+    expect(source.looksLikeIco, isTrue);
+    expect(source.compressionType, isNull);
+    expect(source.rasterForRendering(), isNotNull);
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 2,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(pic, source), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioUnsupportedBitmapBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    expect(bakedShape.imagePartName, isNot(part));
+    final png = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(png, isNotNull);
+    var magenta = 0;
+    var transparent = 0;
+    for (final pixel in raster.decodePng(png!.bytes)!) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+    }
+    expect(transparent, 0);
+    expect(magenta, greaterThan(50), reason: 'ICO magenta must survive PNG bake');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another ICO PNG',
+    );
+  });
+
   test('MetaFile floor-plan hatch bakes into PNG for LibreOffice', () {
     final wmf = File('test/fixtures/metafile/Visio5PlanWithDimensions.wmf')
         .readAsBytesSync();
@@ -12796,6 +12904,33 @@ Uint8List _magentaWebp() => Uint8List.fromList(const <int>[
       248, 0, 3, 176, 0, 254, 235, 222, 47, 253, 227, 63, 220, 103, 251, 140,
       255, 229, 247, 255, 201, 178, 249, 1, 255, 32, 63, 254, 73, 192, 0,
     ]);
+
+Uint8List _magentaRaster({required bool bmp}) {
+  final image = raster.Image(width: 16, height: 16);
+  for (final pixel in image) {
+    image.setPixelRgba(pixel.x, pixel.y, 255, 0, 255, 255);
+  }
+  return Uint8List.fromList(
+    bmp ? raster.encodeBmp(image) : raster.encodePng(image),
+  );
+}
+
+/// BITMAPINFOHEADER + pixels, no `BM` file header (libvisio format 0).
+Uint8List _magentaDib() {
+  final bmp = _magentaRaster(bmp: true);
+  expect(bmp.length, greaterThan(14));
+  expect(bmp[0], 0x42);
+  expect(bmp[1], 0x4d);
+  return Uint8List.fromList(bmp.sublist(14));
+}
+
+Uint8List _magentaIco() {
+  final image = raster.Image(width: 16, height: 16);
+  for (final pixel in image) {
+    image.setPixelRgba(pixel.x, pixel.y, 255, 0, 255, 255);
+  }
+  return Uint8List.fromList(raster.encodeIco(image, singleFrame: true));
+}
 
 /// Minimal vector EMF: magenta ExtTextOutW "HI", no embedded DIB.
 Uint8List _magentaTextEmf() {

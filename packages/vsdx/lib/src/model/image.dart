@@ -111,6 +111,25 @@ class VsdxImage {
   /// Malformed or unsupported input is reported as `null`; callers can keep
   /// their normal placeholder fallback instead of failing the whole page.
   VsdxRenderableRaster? rasterForRendering() {
+    if (looksLikeHeaderlessDib) {
+      final bmp = _dibToBmpFile(bytes);
+      if (bmp != null) {
+        return VsdxRenderableRaster(bytes: bmp, mimeType: 'image/bmp');
+      }
+    }
+    if (looksLikeIco) {
+      try {
+        final decoded = raster.decodeIco(bytes) ?? raster.decodeImage(bytes);
+        if (decoded != null && decoded.width > 0 && decoded.height > 0) {
+          return VsdxRenderableRaster(
+            bytes: Uint8List.fromList(raster.encodePng(decoded)),
+            mimeType: 'image/png',
+          );
+        }
+      } catch (_) {
+        // Fall through to other codecs.
+      }
+    }
     if (isFlutterDecodable) {
       return VsdxRenderableRaster(
         bytes: bytes,
@@ -188,13 +207,50 @@ class VsdxImage {
   bool get looksLikeBmpFile =>
       bytes.length >= 14 && bytes[0] == 0x42 && bytes[1] == 0x4d;
 
+  /// `true` when [bytes] look like a BITMAPINFOHEADER DIB with no `BM` file
+  /// header.
+  ///
+  /// libvisio only prepends that header for `CompressionType` format 0
+  /// (`VSDContentCollector::_handleForeignData`). A missing CompressionType
+  /// is format 255 → `image/bmp` with the raw DIB, and Draw drops it.
+  bool get looksLikeHeaderlessDib {
+    if (looksLikeBmpFile || bytes.length < 40) return false;
+    final header = ByteData.sublistView(bytes);
+    final headerSize = header.getUint32(0, Endian.little);
+    if (headerSize != 40 && headerSize != 108 && headerSize != 124) {
+      return false;
+    }
+    final width = header.getInt32(4, Endian.little).abs();
+    final height = header.getInt32(8, Endian.little).abs();
+    return width > 0 && width <= 8192 && height > 0 && height <= 8192;
+  }
+
+  /// `true` when [bytes] look like an ICO / CUR container.
+  ///
+  /// ICO has no libvisio CompressionType. Format 255 labels it `image/bmp`
+  /// and Draw drops it. `decodeImage` / `decodeIco` can still read the
+  /// payload, so a save re-encodes PNG.
+  bool get looksLikeIco =>
+      bytes.length >= 6 &&
+      bytes[0] == 0 &&
+      bytes[1] == 0 &&
+      (bytes[2] == 1 || bytes[2] == 2) &&
+      bytes[3] == 0 &&
+      (bytes[4] | (bytes[5] << 8)) > 0;
+
   /// Re-encode a Flutter-decodable raster as PNG, or `null` on failure.
   ///
   /// Used when libvisio would label the payload `image/bmp` (no JPEG / GIF /
   /// TIFF / PNG `CompressionType`) but the bytes are not a BMP file.
+  /// Headerless DIB is wrapped with the same BITMAPFILEHEADER libvisio
+  /// prepends on format 0, then decoded.
   Uint8List? pngBytesForLibvisioWrite() {
     try {
-      final decoded = raster.decodeImage(bytes);
+      var decoded = raster.decodeImage(bytes);
+      if (decoded == null && looksLikeHeaderlessDib) {
+        final bmp = _dibToBmpFile(bytes);
+        if (bmp != null) decoded = raster.decodeBmp(bmp);
+      }
       if (decoded == null || decoded.width <= 0 || decoded.height <= 0) {
         return null;
       }
@@ -255,6 +311,53 @@ class VsdxImage {
 
   @override
   String toString() => 'VsdxImage($partName, ${bytes.length} bytes, $mimeType)';
+}
+
+/// Prepend BITMAPFILEHEADER the way libvisio `_handleForeignData` does for
+/// Foreign Bitmap format 0 (`computeBMPDataOffset` + 14-byte `BM` prefix).
+Uint8List? _dibToBmpFile(Uint8List dib) {
+  if (dib.length < 4) return null;
+  if (dib.length >= 14 && dib[0] == 0x42 && dib[1] == 0x4d) return dib;
+  final total = dib.length + 14;
+  final out = Uint8List(total);
+  out[0] = 0x42;
+  out[1] = 0x4d;
+  out[2] = total & 0xff;
+  out[3] = (total >> 8) & 0xff;
+  out[4] = (total >> 16) & 0xff;
+  out[5] = (total >> 24) & 0xff;
+  final dataOff = _bmpDataOffset(dib);
+  out[10] = dataOff & 0xff;
+  out[11] = (dataOff >> 8) & 0xff;
+  out[12] = (dataOff >> 16) & 0xff;
+  out[13] = (dataOff >> 24) & 0xff;
+  out.setRange(14, total, dib);
+  return out;
+}
+
+int _bmpDataOffset(Uint8List dib) {
+  if (dib.length < 4) return 54;
+  var headerSize = dib[0] | (dib[1] << 8) | (dib[2] << 16) | (dib[3] << 24);
+  if (headerSize > dib.length) headerSize = 40;
+  var offset = headerSize;
+  var bitsPerPixel = dib.length >= 16 ? dib[14] | (dib[15] << 8) : 0;
+  if (bitsPerPixel > 32) bitsPerPixel = 32;
+  for (final supported in const <int>[1, 4, 8, 16, 24, 32]) {
+    if (bitsPerPixel <= supported) {
+      bitsPerPixel = supported;
+      break;
+    }
+  }
+  var paletteColors = dib.length >= 36
+      ? dib[32] | (dib[33] << 8) | (dib[34] << 16) | (dib[35] << 24)
+      : 0;
+  if (bitsPerPixel < 16 && paletteColors == 0) {
+    paletteColors = 1 << bitsPerPixel;
+  }
+  if (paletteColors > 0 && paletteColors < (dib.length - offset) / 4) {
+    offset += 4 * paletteColors;
+  }
+  return offset + 14;
 }
 
 /// Lookup table for `Master="N"`-style indirection — the parser populates

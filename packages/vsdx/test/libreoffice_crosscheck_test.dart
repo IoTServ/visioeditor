@@ -1941,6 +1941,78 @@ void main() {
             ),
           ),
         );
+    var dibDocument = parser.parse(blank);
+    final dibPage = dibDocument.pages.first;
+    const dibPart = '/visio/media/libreoffice-crosscheck.dib';
+    final dibBytes = _magentaDib();
+    expect(raster.decodeImage(dibBytes), isNull);
+    expect(
+      VsdxImage(
+        partName: dibPart,
+        bytes: dibBytes,
+        mimeType: 'image/bmp',
+      ).looksLikeHeaderlessDib,
+      isTrue,
+    );
+    dibDocument = dibDocument
+        .copyWith(
+          images: dibDocument.images.withImage(
+            VsdxImage(
+              partName: dibPart,
+              bytes: dibBytes,
+              mimeType: 'image/bmp',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          dibPage.addShape(
+            VsdxShapeFactory.picture(
+              id: dibPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 1.5,
+              imagePartName: dibPart,
+            ),
+          ),
+        );
+    var icoDocument = parser.parse(blank);
+    final icoPage = icoDocument.pages.first;
+    const icoPart = '/visio/media/libreoffice-crosscheck.ico';
+    final icoBytes = _magentaIco();
+    expect(raster.decodeIco(icoBytes), isNotNull);
+    expect(
+      VsdxImage(
+        partName: icoPart,
+        bytes: icoBytes,
+        mimeType: 'image/x-icon',
+      ).compressionType,
+      isNull,
+    );
+    icoDocument = icoDocument
+        .copyWith(
+          images: icoDocument.images.withImage(
+            VsdxImage(
+              partName: icoPart,
+              bytes: icoBytes,
+              mimeType: 'image/x-icon',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          icoPage.addShape(
+            VsdxShapeFactory.picture(
+              id: icoPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 1.5,
+              imagePartName: icoPart,
+            ),
+          ),
+        );
     var emfDocument = parser.parse(blank);
     final emfPage = emfDocument.pages.first;
     const emfPart = '/visio/media/libreoffice-crosscheck.emf';
@@ -5876,6 +5948,14 @@ void main() {
       'webp_foreign_data': writer.write(
         originalBytes: blank,
         edited: webpDocument,
+      ),
+      'dib_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: dibDocument,
+      ),
+      'ico_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: icoDocument,
       ),
       'emf_foreign_data': writer.write(
         originalBytes: blank,
@@ -12894,7 +12974,9 @@ void main() {
         if (entry.key == 'vector_emf_foreign_data' ||
             entry.key == 'text_emf_foreign_data' ||
             entry.key == 'hatch_emf_foreign_data' ||
-            entry.key == 'webp_foreign_data') {
+            entry.key == 'webp_foreign_data' ||
+            entry.key == 'dib_foreign_data' ||
+            entry.key == 'ico_foreign_data') {
           final reopened = parser.parse(entry.value);
           final shape = reopened.pages.first.shapes.single;
           expect(shape.foreignType, 'Bitmap');
@@ -12990,7 +13072,10 @@ void main() {
                 'green=$green blue2=$blue2',
           );
         }
-        if (entry.key == 'webp_foreign_data' && pdftoppm != null) {
+        if ((entry.key == 'webp_foreign_data' ||
+                entry.key == 'dib_foreign_data' ||
+                entry.key == 'ico_foreign_data') &&
+            pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[
             '-png',
@@ -13018,13 +13103,13 @@ void main() {
           expect(
             magenta,
             greaterThan(80),
-            reason: 'Draw must paint baked WebP PNG, not Blue 2; '
+            reason: 'Draw must paint baked ${entry.key} PNG, not Blue 2; '
                 'magenta=$magenta blue2=$blue2',
           );
           expect(
             blue2,
             lessThan(magenta),
-            reason: 'Blue 2 graphic style must not hide WebP; '
+            reason: 'Blue 2 graphic style must not hide ${entry.key}; '
                 'magenta=$magenta blue2=$blue2',
           );
         }
@@ -14787,6 +14872,23 @@ Uint8List _magentaWebp() => Uint8List.fromList(const <int>[
       248, 0, 3, 176, 0, 254, 235, 222, 47, 253, 227, 63, 220, 103, 251, 140,
       255, 229, 247, 255, 201, 178, 249, 1, 255, 32, 63, 254, 73, 192, 0,
     ]);
+
+Uint8List _magentaDib() {
+  final image = raster.Image(width: 16, height: 16);
+  for (final pixel in image) {
+    image.setPixelRgba(pixel.x, pixel.y, 255, 0, 255, 255);
+  }
+  final bmp = raster.encodeBmp(image);
+  return Uint8List.fromList(bmp.sublist(14));
+}
+
+Uint8List _magentaIco() {
+  final image = raster.Image(width: 16, height: 16);
+  for (final pixel in image) {
+    image.setPixelRgba(pixel.x, pixel.y, 255, 0, 255, 255);
+  }
+  return Uint8List.fromList(raster.encodeIco(image, singleFrame: true));
+}
 
 /// Top half red, bottom half blue — picture Reflection must show blue nearest
 /// the source.

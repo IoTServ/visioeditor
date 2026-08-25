@@ -583,12 +583,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
-- WebP (and other non-BMP rasters without a libvisio CompressionType)
-  now keep that picture in LibreOffice. `readForeignData` maps a missing
-  CompressionType to format 255 → `image/bmp`, so Draw dropped WebP /
-  ICO / headerless DIB while canvas / SVG already decode them. A save
-  re-encodes those as PNG `ForeignType=Bitmap`. A complete `BM` file
-  stays native. A second save does not stack another PNG.
+- Headerless DIB and ICO Foreign bitmaps now keep that picture in
+  LibreOffice and on the canvas. libvisio only prepends a
+  BITMAPFILEHEADER for CompressionType format 0; a missing type is
+  format 255 → `image/bmp` with raw DIB / ICO bytes, so Draw dropped
+  them while `decodeImage` also skipped headerless DIB. A save wraps
+  the DIB the same way `_handleForeignData` does, re-encodes ICO / DIB
+  as PNG `ForeignType=Bitmap`, and `rasterForRendering` exposes a BMP /
+  PNG Flutter can paint. A complete `BM` file stays native.
+- WebP rasters without a libvisio CompressionType now keep that picture
+  in LibreOffice. `readForeignData` maps a missing CompressionType to
+  format 255 → `image/bmp`, so Draw dropped WebP while canvas / SVG
+  already decode it. A save re-encodes those as PNG `ForeignType=Bitmap`.
+  A complete `BM` file stays native. A second save does not stack
+  another PNG.
 - Vector EMF / WMF hatch, pattern-brush and clip records now keep that
   drawing in LibreOffice. Draw still fills Blue 2 for `image/emf` /
   `image/wmf` instead of replaying those records, and a pure-vector PNG
