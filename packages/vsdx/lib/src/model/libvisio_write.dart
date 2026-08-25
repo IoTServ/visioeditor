@@ -197,7 +197,8 @@
 /// an empty graphic style — so a save bakes the same silhouette PNG
 /// ShadowBlur uses, at sigma 0 (the stroke ring, not a filled box),
 /// then ShdwPattern goes to 0. Two-colour washes keep native
-/// `draw:shadow` on the filled 25–40 ribbon.
+/// `draw:shadow` on the filled 25–40 ribbon. A 1-D three-colour wash
+/// bakes the same stroke-ring PNG on a 2-D plate.
 /// An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
@@ -9398,13 +9399,16 @@ const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 /// at sigma 0 for the same empty-style reason. An unfilled LineGradient
 /// that already bakes a stroke PNG uses the stroke-ring silhouette —
 /// two-colour LineGradient stays a filled 25–40 ribbon whose
-/// `draw:shadow` Draw still honours. 1-D, groups, and unrecognised
-/// geometry stay native.
+/// `draw:shadow` Draw still honours. A 1-D three-colour wash bakes the
+/// same 2-D ribbon plate (Foreign cannot hang a shadow on a zero-height
+/// XForm1D). Groups and unrecognised geometry stay native.
 bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
-  if (shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
   if (!shape.shadow.enabled) return false;
+  if (shape.is1D) {
+    return _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
+  }
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
   if (shape.hasImage) {
     return _foreignFrameSilhouetteKind(shape) != null;
@@ -9524,6 +9528,76 @@ VsdxColor _shadowRgbForLibvisioWrite(VsdxShadow shadow, VsdxTheme theme) {
   );
   if (png == null) return null;
   return (png: png, padInches: padPx / innerWidthPx * w);
+}
+
+/// Stroke-ring shadow whose inner box is the ribbon AABB, not Width×Height.
+///
+/// 1-D connectors are often Height=0; mapping the ring through that box
+/// collapses the PNG. SoftEdges already uses this AABB for the wash plate.
+({
+  Uint8List png,
+  double minX,
+  double minY,
+  double width,
+  double height,
+  double padInches,
+})? _strokeShadowPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
+  final rings = _lineGradientStrokePolygons(shape);
+  final aabb = _polygonsAabb(rings);
+  if (aabb == null) return null;
+  final color = _shadowRgbForLibvisioWrite(shape.shadow, theme);
+  final trans = shape.shadow.transparency.clamp(0.0, 1.0);
+  final alpha = (color.alpha * (1 - trans)).round().clamp(0, 255);
+  if (alpha <= 0) return null;
+  final originX = aabb.minX;
+  final originY = aabb.minY;
+  final aabbW = math.max(aabb.maxX - aabb.minX, 1e-6);
+  final aabbH = math.max(aabb.maxY - aabb.minY, 1e-6);
+  const minPx = 16;
+  var innerWidthPx =
+      math.max(minPx, (aabbW * kLibvisioSoftEdgesPxPerInch).round());
+  var innerHeightPx =
+      math.max(minPx, (aabbH * kLibvisioSoftEdgesPxPerInch).round());
+  const maxPx = 1024;
+  final longest = math.max(innerWidthPx, innerHeightPx);
+  if (longest > maxPx) {
+    final scale = maxPx / longest;
+    innerWidthPx = math.max(minPx, (innerWidthPx * scale).round());
+    innerHeightPx = math.max(minPx, (innerHeightPx * scale).round());
+  }
+  final sigmaPx = shape.shadow.blurInches / aabbW * innerWidthPx;
+  final padPx = math.max(1, (sigmaPx * 1.5).round()) * 2;
+  ({double x, double y}) toPx(Offset2D p) => (
+        x: (p.x - originX) / aabbW * (innerWidthPx - 1),
+        y: (1 - (p.y - originY) / aabbH) * (innerHeightPx - 1),
+      );
+  final ribbons = <List<({double x, double y})>>[
+    for (final ring in rings)
+      if (ring.length >= 3)
+        <({double x, double y})>[for (final p in ring) toPx(p)],
+  ];
+  if (ribbons.isEmpty) return null;
+  final png = bakeSilhouetteDropShadowPng(
+    innerWidthPx: innerWidthPx,
+    innerHeightPx: innerHeightPx,
+    padPx: padPx,
+    red: color.red,
+    green: color.green,
+    blue: color.blue,
+    alpha: alpha,
+    blurSigmaPx: sigmaPx,
+    kind: SoftEdgesSilhouetteKind.polygon,
+    ribbons: ribbons,
+  );
+  if (png == null) return null;
+  return (
+    png: png,
+    minX: originX,
+    minY: originY,
+    width: aabbW,
+    height: aabbH,
+    padInches: padPx / innerWidthPx * aabbW,
+  );
 }
 
 /// Gaussian PNG of the scaled, sheared silhouette an oblique page needs.
@@ -9800,28 +9874,60 @@ List<VsdxShape> _bakeShadowTree(
         changed = true;
         continue;
       }
-      final raster = _shadowPngForLibvisioWrite(next, theme);
-      if (raster != null) {
-        final part = allocatePart(next.id);
-        addImage(
-          VsdxImage(
-            partName: part,
-            bytes: raster.png,
-            mimeType: 'image/png',
-          ),
-        );
-        final plate = _shadowPlateForLibvisioWrite(
-          next,
-          id: plateIds[next.id] ?? nextId(),
-          imagePartName: part,
-          padInches: raster.padInches,
-          offsetXInches: dx,
-          offsetYInches: dy,
-        );
-        out.add(plate);
-        out.add(_sourceForLibvisioShadowWrite(next));
-        changed = true;
-        continue;
+      if (next.is1D) {
+        final stroke = _strokeShadowPngForLibvisioWrite(next, theme);
+        if (stroke != null) {
+          final part = allocatePart(next.id);
+          addImage(
+            VsdxImage(
+              partName: part,
+              bytes: stroke.png,
+              mimeType: 'image/png',
+            ),
+          );
+          out.add(
+            _shadowBoxPlateForLibvisioWrite(
+              next,
+              id: plateIds[next.id] ?? nextId(),
+              imagePartName: part,
+              minX: stroke.minX,
+              minY: stroke.minY,
+              boxWidth: stroke.width,
+              boxHeight: stroke.height,
+              padInches: stroke.padInches,
+              offsetXInches: dx,
+              offsetYInches: dy,
+            ),
+          );
+          out.add(_sourceForLibvisioShadowWrite(next));
+          changed = true;
+          continue;
+        }
+        // Width×Height raster divides by Height; 1-D connectors are often 0.
+      } else {
+        final raster = _shadowPngForLibvisioWrite(next, theme);
+        if (raster != null) {
+          final part = allocatePart(next.id);
+          addImage(
+            VsdxImage(
+              partName: part,
+              bytes: raster.png,
+              mimeType: 'image/png',
+            ),
+          );
+          final plate = _shadowPlateForLibvisioWrite(
+            next,
+            id: plateIds[next.id] ?? nextId(),
+            imagePartName: part,
+            padInches: raster.padInches,
+            offsetXInches: dx,
+            offsetYInches: dy,
+          );
+          out.add(plate);
+          out.add(_sourceForLibvisioShadowWrite(next));
+          changed = true;
+          continue;
+        }
       }
     } else {
       final existingId = plateIds[next.id];

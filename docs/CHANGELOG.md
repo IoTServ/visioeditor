@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- 1-D LineGradient washes with more than two unique opaque colours now
+  keep a hard drop shadow in LibreOffice. SoftEdges already baked a
+  2-D Foreign PNG of the stroke, but shadow bake skipped `XForm1D`.
+  libvisio's `_flushCurrentForeignData` emits an empty graphic style,
+  so Draw's `draw:shadow` never lands on that plate. A save bakes the
+  stroke-ring silhouette on a 2-D plate sized to the ribbon AABB.
+  Two-colour 1-D washes stay a filled ribbon. A second save does not
+  stack another plate.
 - Unfilled LineGradient washes with more than two unique opaque colours
   now keep a hard drop shadow in LibreOffice. SoftEdges used to drop
   the stroke onto a Foreign PNG while `ShdwPattern` stayed on the

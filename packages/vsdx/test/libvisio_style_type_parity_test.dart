@@ -4219,6 +4219,70 @@ void main() {
       );
       expect(twoBaked.pages.first.findShapeById(2)!.shadow.enabled, isTrue,
           reason: 'two-colour LineGradient keeps native draw:shadow');
+
+      final connector = VsdxShapeFactory.line(
+        id: 3,
+        ax: 1.5,
+        ay: 6.2,
+        bx: 6.5,
+        by: 6.2,
+        name: 'LineGrad3HardShadow_1D',
+        line: const VsdxLine(pattern: 1, weightInches: 0.18, gradient: wash),
+      ).copyWith(shadow: hardShadow);
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(connector), isTrue);
+      expect(shapeNeedsLibvisioShadowBake(connector), isTrue,
+          reason: '1-D three-colour wash becomes a Foreign PNG');
+      var oneDoc = parser.parse(blank);
+      oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+      final oneBaked = documentForLibvisioWrite(oneDoc);
+      expect(oneBaked.pages.first.findShapeById(3)!.shadow.enabled, isFalse);
+      expect(
+        oneBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+      );
+      final oneShadow =
+          oneBaked.pages.first.shapes.where(isLibvisioShadowPlate).single;
+      expect(oneShadow.is1D, isFalse);
+      expect(oneShadow.height.abs(), greaterThan(0.1));
+      expect(oneShadow.pinX, closeTo(4.45, 1e-9));
+      expect(oneShadow.pinY, closeTo(5.75, 1e-9));
+      final oneShadowPng = raster.decodePng(
+        oneBaked.images.findByPart(oneShadow.imagePartName!)!.bytes,
+      )!;
+      var oneInk = 0;
+      for (final pixel in oneShadowPng) {
+        if (pixel.a > 100) oneInk++;
+      }
+      expect(
+        oneInk,
+        greaterThan(50),
+        reason: '1-D stroke-ring shadow must have ink; ink=$oneInk',
+      );
+      expect(
+        documentForLibvisioWrite(oneBaked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioShadowPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another 1-D hard-shadow plate',
+      );
+
+      final two1d = VsdxShapeFactory.line(
+        id: 4,
+        ax: 1.5,
+        ay: 5.0,
+        bx: 6.5,
+        by: 5.0,
+        name: 'LineGrad2HardShadow_1D',
+        line: const VsdxLine(
+          pattern: 1,
+          weightInches: 0.18,
+          gradient: twoStop,
+        ),
+      ).copyWith(shadow: hardShadow);
+      expect(shapeNeedsLibvisioShadowBake(two1d), isFalse,
+          reason: 'two-colour 1-D LineGradient keeps a filled ribbon');
     },
   );
 
