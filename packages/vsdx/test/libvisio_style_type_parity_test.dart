@@ -87,10 +87,12 @@
 /// matches Draw), then SoftEdgesSize is written 0. Foreign
 /// `EnhMetaFile` / `MetaFile` DIB wrappers are not a bitmap Draw paints
 /// — libvisio emits a metafile — so a save extracts that DIB as PNG
-/// `ForeignType=Bitmap`. Pure-vector metafiles stay native. Foreign
+/// `ForeignType=Bitmap`. A thin DIB wrapper extracts that BMP; a
+/// pure-vector metafile replays the same display list canvas / SVG
+/// already paint onto an opaque PNG. Foreign
 /// `Object` OLE packages are the same missing paint: Draw fills Blue 2
 /// for `object/ole`, so a save unwraps `\x02OlePres000` as `MetaFile` /
-/// `EnhMetaFile`. A second
+/// `EnhMetaFile` and the metafile bake writes PNG. A second
 /// save does not stack another PNG. Marker ids whose
 /// `_linePropertiesMarkerPath` is still a TODO stub bake as Geometry so
 /// Draw does not reuse a sibling silhouette. Unknown
@@ -7149,6 +7151,93 @@ void main() {
     expect(raster.decodePng(savedPng!.bytes), isNotNull);
   });
 
+  test('EnhMetaFile vector replay bakes to PNG Bitmap for LibreOffice', () {
+    const part = '/visio/media/probe_vector.emf';
+    final emf = _vectorMagentaEmf();
+    final source = VsdxImage(
+      partName: part,
+      bytes: emf,
+      mimeType: 'image/x-emf',
+    );
+    expect(source.foreignType, 'EnhMetaFile');
+    expect(source.rasterForRendering(), isNull);
+    expect(extractEmfEmbeddedBitmap(emf), isNull);
+    final pngBytes = rasterizeVectorMetafileToPng(
+      emf,
+      mimeType: 'image/x-emf',
+      partName: part,
+    );
+    expect(pngBytes, isNotNull);
+    final decodedVector = raster.decodePng(pngBytes!);
+    expect(decodedVector, isNotNull);
+    var magenta = 0;
+    var transparent = 0;
+    for (final pixel in decodedVector!) {
+      if (pixel.a < 250) transparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+    }
+    expect(transparent, 0, reason: 'Draw shows Blue 2 through transparent PNG');
+    expect(
+      magenta,
+      greaterThan((decodedVector.width * decodedVector.height * 0.55).round()),
+      reason: 'vector EMF rectangle must fill the baked PNG, not a left strip',
+    );
+
+    final pic = VsdxShapeFactory.picture(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3,
+      height: 1.5,
+      imagePartName: part,
+    );
+    expect(shapeNeedsLibvisioMetafileBitmapBake(pic), isTrue);
+
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc
+        .copyWith(images: doc.images.withImage(source))
+        .replacePage(0, doc.pages.first.addShape(pic));
+    final baked = documentForLibvisioWrite(doc);
+    final bakedShape = baked.pages.first.findShapeById(1)!;
+    expect(shapeNeedsLibvisioMetafileBitmapBake(bakedShape), isFalse);
+    expect(bakedShape.foreignType, 'Bitmap');
+    expect(bakedShape.foreignCompressionType, 'PNG');
+    expect(bakedShape.imagePartName, isNot(part));
+    final png = baked.images.findByPart(bakedShape.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes);
+    expect(decoded, isNotNull);
+    var bakedMagenta = 0;
+    var bakedTransparent = 0;
+    for (final pixel in decoded!) {
+      if (pixel.a < 250) bakedTransparent++;
+      if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) bakedMagenta++;
+    }
+    expect(bakedTransparent, 0);
+    expect(
+      bakedMagenta,
+      greaterThan((decoded.width * decoded.height * 0.55).round()),
+    );
+
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .imagePartName,
+      bakedShape.imagePartName,
+      reason: 'a second save must not stack another metafile PNG',
+    );
+
+    final saved = writer.write(
+      originalBytes: writer.emptyDocument(),
+      edited: doc,
+    );
+    final after = parser.parse(saved).pages.first.findShapeById(1)!;
+    expect(after.foreignType, 'Bitmap');
+    expect(after.foreignCompressionType, 'PNG');
+  });
+
   test('Object OLE preview bakes to MetaFile for LibreOffice', () {
     const part = '/visio/media/probe.bin';
     final wmf = _rgbDibWmf(width: 32, height: 16);
@@ -12190,6 +12279,56 @@ Uint8List _rgbDibEmf({required int width, required int height}) {
   eof[0] = 0x0e;
   eof[4] = 20;
   out.add(eof);
+  return out.toBytes();
+}
+
+/// Minimal vector EMF: solid magenta rectangle, no embedded DIB.
+Uint8List _vectorMagentaEmf() {
+  final out = BytesBuilder();
+  void u32(int value) {
+    final data = ByteData(4)..setUint32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  void i32(int value) {
+    final data = ByteData(4)..setInt32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add(const <int>[0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+  u32(39); // EMR_CREATEBRUSHINDIRECT
+  u32(24);
+  u32(1);
+  u32(0);
+  u32(0x00FF00FF);
+  u32(0);
+  u32(37); // EMR_SELECTOBJECT
+  u32(12);
+  u32(1);
+  u32(43); // EMR_RECTANGLE
+  u32(24);
+  i32(5);
+  i32(5);
+  i32(95);
+  i32(95);
+  u32(14); // EMR_EOF
+  u32(20);
+  u32(0);
+  u32(0);
+  u32(0);
   return out.toBytes();
 }
 

@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Pure-vector EMF / WMF pictures now keep that drawing in LibreOffice.
+  libvisio still emits `image/emf` / `image/wmf`, and Draw fills the
+  default Blue 2 graphic style instead of replaying those records, while
+  canvas / SVG already paint the vector display list. A save writes an
+  opaque PNG `ForeignType=Bitmap` (a wrapped DIB still extracts first;
+  otherwise the display list is replayed) so Draw cannot show Blue 2
+  through unpainted pixels. A second save does not stack another PNG.
 - Text-block `DefaultTabStop` now keeps its interval in LibreOffice.
   libvisio still emits `style:tab-stop-distance`, but Draw's
   drawing-text import ignores it and jumps 0.5" (ODF's default) while
@@ -655,7 +662,8 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 - EMF / WMF pictures that wrap a DIB now keep that bitmap in LibreOffice.
   Draw does not paint `ForeignType=EnhMetaFile` / `MetaFile`, so a save
   extracts the embedded DIB and writes PNG `ForeignType=Bitmap`. Canvas /
-  SVG already show that raster. Pure-vector metafiles stay native. A
+  SVG already show that raster. Pure-vector metafiles now bake through
+  the same PNG path. A
   second save does not stack another PNG.
 - Curved Text and Shape Inside lists now keep their bullet marker in
   LibreOffice. Draw's drawing-text import still drops

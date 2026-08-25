@@ -1940,6 +1940,34 @@ void main() {
             ),
           ),
         );
+    var vectorEmfDocument = parser.parse(blank);
+    final vectorEmfPage = vectorEmfDocument.pages.first;
+    const vectorEmfPart = '/visio/media/libreoffice-crosscheck-vector.emf';
+    final vectorEmfBytes = _vectorMagentaEmf();
+    expect(extractEmfEmbeddedBitmap(vectorEmfBytes), isNull);
+    vectorEmfDocument = vectorEmfDocument
+        .copyWith(
+          images: vectorEmfDocument.images.withImage(
+            VsdxImage(
+              partName: vectorEmfPart,
+              bytes: vectorEmfBytes,
+              mimeType: 'image/x-emf',
+            ),
+          ),
+        )
+        .replacePage(
+          0,
+          vectorEmfPage.addShape(
+            VsdxShapeFactory.picture(
+              id: vectorEmfPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 1.5,
+              imagePartName: vectorEmfPart,
+            ),
+          ),
+        );
     var oleDocument = parser.parse(blank);
     final olePage = oleDocument.pages.first;
     const olePart = '/visio/media/libreoffice-crosscheck.bin';
@@ -5745,6 +5773,10 @@ void main() {
       'emf_foreign_data': writer.write(
         originalBytes: blank,
         edited: emfDocument,
+      ),
+      'vector_emf_foreign_data': writer.write(
+        originalBytes: blank,
+        edited: vectorEmfDocument,
       ),
       'ole_foreign_data': writer.write(
         originalBytes: blank,
@@ -12744,6 +12776,56 @@ void main() {
                 'A=${glyph.magenta} half=${half.magenta} two=${two.magenta}',
           );
         }
+        if (entry.key == 'vector_emf_foreign_data') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes.single;
+          expect(shape.foreignType, 'Bitmap');
+          expect(shape.foreignCompressionType, 'PNG');
+        }
+        if (entry.key == 'vector_emf_foreign_data' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magenta = 0;
+          var blue2 = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
+            if ((pixel.r - 114).abs() < 12 &&
+                (pixel.g - 159).abs() < 12 &&
+                (pixel.b - 207).abs() < 12) {
+              blue2++;
+            }
+          }
+          expect(
+            magenta,
+            greaterThan(80),
+            reason: 'Draw must paint the baked vector EMF, not Blue 2; '
+                'magenta=$magenta blue2=$blue2',
+          );
+          expect(
+            blue2,
+            lessThan(magenta),
+            reason: 'Blue 2 graphic style must not hide the vector EMF; '
+                'magenta=$magenta blue2=$blue2',
+          );
+          expect(
+            magenta,
+            greaterThan(blue2 * 4),
+            reason: 'baked vector EMF must dominate the Foreign box; '
+                'magenta=$magenta blue2=$blue2',
+          );
+        }
         if ((entry.key == 'shape_inside' ||
                 entry.key == 'shape_inside_flipy') &&
             pdftoppm != null) {
@@ -14640,6 +14722,56 @@ Uint8List _rgbDibEmf({required int width, required int height}) {
   eof[0] = 0x0e;
   eof[4] = 20;
   out.add(eof);
+  return out.toBytes();
+}
+
+/// Minimal vector EMF: solid magenta rectangle, no embedded DIB.
+Uint8List _vectorMagentaEmf() {
+  final out = BytesBuilder();
+  void u32(int value) {
+    final data = ByteData(4)..setUint32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  void i32(int value) {
+    final data = ByteData(4)..setInt32(0, value, Endian.little);
+    out.add(data.buffer.asUint8List());
+  }
+
+  u32(1);
+  u32(88);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  i32(0);
+  i32(0);
+  i32(100);
+  i32(100);
+  out.add(const <int>[0x20, 0x45, 0x4D, 0x46]);
+  while (out.length < 88) {
+    out.addByte(0);
+  }
+  u32(39);
+  u32(24);
+  u32(1);
+  u32(0);
+  u32(0x00FF00FF);
+  u32(0);
+  u32(37);
+  u32(12);
+  u32(1);
+  u32(43);
+  u32(24);
+  i32(5);
+  i32(5);
+  i32(95);
+  i32(95);
+  u32(14);
+  u32(20);
+  u32(0);
+  u32(0);
+  u32(0);
   return out.toBytes();
 }
 

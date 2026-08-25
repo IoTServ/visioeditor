@@ -121,15 +121,18 @@
 /// and Draw does not clip to the Foreign box, while canvas / SVG already
 /// clip. A save composites that window into a frame-sized PNG and resets
 /// ImgOffset / ImgWidth / ImgHeight. Foreign
-/// `EnhMetaFile` / `MetaFile` payloads that are a thin DIB wrapper are
-/// not a bitmap Draw paints — libvisio emits them as a metafile — so a
-/// save extracts that DIB and writes `ForeignType=Bitmap` PNG. Pure-vector
-/// metafiles stay native. Foreign `Object` OLE packages are the same
+/// `EnhMetaFile` / `MetaFile` payloads are not a bitmap Draw paints —
+/// libvisio emits `image/emf` / `image/wmf` and Draw fills the default
+/// Blue 2 graphic style — so a save writes an opaque
+/// `ForeignType=Bitmap` PNG. A thin DIB wrapper extracts that BMP; a
+/// pure-vector metafile replays the same display list canvas / SVG
+/// already paint so Draw cannot show Blue 2 through unpainted pixels.
+/// Foreign `Object` OLE packages are the same
 /// missing paint: libvisio emits `object/ole` and Draw fills the
 /// default Blue 2 graphic style, while canvas / SVG already replay the
 /// `\x02OlePres000` WMF/EMF preview. A save unwraps that preview as
-/// `ForeignType=MetaFile` / `EnhMetaFile` so Draw paints it (and a
-/// wrapped DIB still becomes PNG through the metafile bake). A second
+/// `ForeignType=MetaFile` / `EnhMetaFile`; the metafile bake then writes
+/// PNG so Draw does not keep Blue 2. A second
 /// save does not stack another preview.
 /// Picture `SoftEdgesSize`
 /// is not a token either: a 2-D Foreign bitmap bakes the same SourceAlpha
@@ -339,6 +342,7 @@ import 'dart:typed_data';
 import '../export/compound_stroke.dart';
 import '../export/line_jumps.dart';
 import '../parser/emf_vector_parser.dart';
+import '../parser/metafile_png.dart';
 import '../parser/ole_preview.dart';
 import '../parser/wmf_parser.dart';
 import '../utils/color.dart';
@@ -7478,12 +7482,12 @@ bool shapeNeedsLibvisioCroppedSoftEdgesBake(VsdxShape shape) {
 
 /// `true` when Foreign EnhMetaFile / MetaFile must become a Bitmap PNG for Draw.
 ///
-/// LibreOffice only calls `VisioDocument::parse`. A thin EMF/WMF wrapper
-/// around a DIB is still `ForeignType=EnhMetaFile` / `MetaFile`, and
-/// libvisio emits that as a metafile Draw does not paint, while canvas /
-/// SVG already extract the bitmap. A save writes PNG `ForeignType=Bitmap`.
-/// Pure-vector metafiles (no embedded DIB) stay native. A second save
-/// does not stack another PNG.
+/// LibreOffice only calls `VisioDocument::parse`. `ForeignType=EnhMetaFile`
+/// / `MetaFile` still becomes `image/emf` / `image/wmf`, and Draw fills
+/// the default Blue 2 graphic style instead of replaying those records,
+/// while canvas / SVG already extract a wrapped DIB or replay the vector
+/// display list. A save writes an opaque PNG `ForeignType=Bitmap`. A
+/// second save does not stack another PNG.
 bool shapeNeedsLibvisioMetafileBitmapBake(VsdxShape shape) {
   if (!shape.hasImage) return false;
   final type = shape.foreignType ??
@@ -7494,7 +7498,7 @@ bool shapeNeedsLibvisioMetafileBitmapBake(VsdxShape shape) {
   return type == 'EnhMetaFile' || type == 'MetaFile';
 }
 
-/// Extract a wrapped EMF/WMF DIB as PNG Bitmap ForeignData Draw can paint.
+/// Extract a wrapped EMF/WMF DIB, or replay a vector metafile, as opaque PNG.
 VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
   var registry = document.images;
   final used = <String>{
@@ -7525,14 +7529,21 @@ VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
       if (source != null) {
         var bakedPart = cache[source.partName];
         if (bakedPart == null) {
-          final payload = source.rasterForRendering();
-          if (payload != null && payload.bytes.isNotEmpty) {
+          final wrapped = source.rasterForRendering();
+          final bytes = wrapped != null && wrapped.bytes.isNotEmpty
+              ? wrapped.bytes
+              : rasterizeVectorMetafileToPng(
+                  source.bytes,
+                  mimeType: source.mimeType,
+                  partName: source.partName,
+                );
+          if (bytes != null && bytes.isNotEmpty) {
             bakedPart = allocatePart(shape.id);
             cache[source.partName] = bakedPart;
             registry = registry.withImage(
               VsdxImage(
                 partName: bakedPart,
-                bytes: payload.bytes,
+                bytes: bytes,
                 mimeType: 'image/png',
               ),
             );
