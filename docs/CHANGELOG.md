@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Arrowed 1-D LineGradient washes with more than two unique opaque
+  colours now keep the middle stops and the markers in LibreOffice.
+  The previous PNG bake skipped open arrowheads (`draw:marker-*`
+  cannot follow a ribbon), so Draw still collapsed those connectors
+  to FillPattern 25–40. A save rasterizes the stroke ribbon and baked
+  arrow Geometry into the same plate and drops Begin/EndArrow.
+  Two-colour arrowed washes stay a 25–40 ribbon plus Geometry markers.
 - LineGradient washes with more than two unique opaque colours now
   keep the middle stops in LibreOffice. libvisio has no LineGradient
   token, so a save used to collapse those strokes to a filled ribbon

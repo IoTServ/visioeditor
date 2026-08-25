@@ -3974,6 +3974,61 @@ void main() {
     );
     expect(oneInk.green, greaterThan(8),
         reason: '1-D middle stop must stay green; $oneInk');
+
+    final arrowed = VsdxShapeFactory.line(
+      id: 4,
+      ax: 1,
+      ay: 2,
+      bx: 4,
+      by: 2,
+      name: 'LineGrad3_Arrow',
+      line: const VsdxLine(
+        pattern: 1,
+        weightInches: 0.12,
+        beginArrow: 4,
+        endArrow: 13,
+        beginArrowSizeInches: 0.35,
+        endArrowSizeInches: 0.35,
+        gradient: wash,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(arrowed), isTrue);
+    var arrowDoc = parser.parse(blank);
+    arrowDoc = arrowDoc.replacePage(0, arrowDoc.pages.first.addShape(arrowed));
+    final arrowBaked = documentForLibvisioWrite(arrowDoc);
+    final arrowSource = arrowBaked.pages.first.findShapeById(4)!;
+    expect(arrowSource.line.pattern, 0);
+    expect(arrowSource.line.hasGradient, isFalse);
+    expect(arrowSource.line.beginArrow, 0);
+    expect(arrowSource.line.endArrow, 0);
+    expect(
+      arrowSource.geometries.where((g) => !g.noFill).length,
+      0,
+      reason: 'arrowed 3-stop LineGradient must not keep a 25–40 ribbon',
+    );
+    final arrowPlate =
+        arrowBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(arrowPlate.is1D, isFalse);
+    final arrowInk = counts(
+      raster.decodePng(
+        arrowBaked.images.findByPart(arrowPlate.imagePartName!)!.bytes,
+      )!,
+    );
+    expect(arrowInk.mag, greaterThan(8),
+        reason: 'arrowed 1-D left stop must stay magenta; $arrowInk');
+    expect(arrowInk.green, greaterThan(8),
+        reason: 'arrowed 1-D middle stop must stay green; $arrowInk');
+    expect(arrowInk.blue, greaterThan(8),
+        reason: 'arrowed 1-D right stop must stay blue; $arrowInk');
+    expect(
+      documentForLibvisioWrite(arrowBaked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another arrowed LineGradient plate',
+    );
   });
 
   test(

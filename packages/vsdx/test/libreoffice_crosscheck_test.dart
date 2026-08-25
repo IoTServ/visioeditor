@@ -2367,6 +2367,36 @@ void main() {
         ),
       ),
     );
+    var lineGrad3ArrowDocument = parser.parse(blank);
+    final lineGrad3ArrowPage = lineGrad3ArrowDocument.pages.first;
+    lineGrad3ArrowDocument = lineGrad3ArrowDocument.replacePage(
+      0,
+      lineGrad3ArrowPage.addShape(
+        VsdxShapeFactory.line(
+          id: lineGrad3ArrowPage.nextFreeShapeId(),
+          ax: 1.5,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          name: 'LineGrad3Arrow',
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.12,
+            beginArrow: 4,
+            endArrow: 13,
+            beginArrowSizeInches: 0.35,
+            endArrowSizeInches: 0.35,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     var glassDocument = parser.parse(blank);
     final glassPage = glassDocument.pages.first;
     var grad3Document = parser.parse(blank);
@@ -6053,6 +6083,10 @@ void main() {
       'linegrad3': writer.write(
         originalBytes: blank,
         edited: lineGrad3Document,
+      ),
+      'linegrad3_arrow': writer.write(
+        originalBytes: blank,
+        edited: lineGrad3ArrowDocument,
       ),
       'opacity': writer.write(
         originalBytes: blank,
@@ -13196,8 +13230,22 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'linegrad3_arrow') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3Arrow');
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(source.line.beginArrow, 0);
+          expect(source.line.endArrow, 0);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
         if ((entry.key == 'grad3_fill_gradient' ||
-                entry.key == 'linegrad3') &&
+                entry.key == 'linegrad3' ||
+                entry.key == 'linegrad3_arrow') &&
             pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[

@@ -19,7 +19,10 @@
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
-/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). That ribbon cannot dash: built-in LinePattern
+/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Open
+/// Begin/EndArrow on those washes go into the same PNG — Draw cannot
+/// hang `draw:marker-*` on a Foreign plate — then Begin/EndArrow drop.
+/// That ribbon cannot dash: built-in LinePattern
 /// 2–23 (which `_lineProperties` *does* collect on a stroke) are flattened
 /// to MoveTo/LineTo first, the same way custom `User.veDashPattern` already
 /// is, so Draw keeps the gaps. Geometry-less Edraw labels that still carry
@@ -2924,6 +2927,26 @@ List<List<Offset2D>> _libvisioStrokeSilhouettePolygons(VsdxShape shape) {
   }
   return _solidStrokeRibbonPolygons(shape);
 }
+
+/// Filled Begin/EndArrow polygons in shape-local inches.
+List<List<Offset2D>> _arrowPolygonsForLibvisioWrite(VsdxShape shape) {
+  if (!_hasArrowheads(shape.line)) return const <List<Offset2D>>[];
+  final out = <List<Offset2D>>[];
+  for (final geometry in bakeArrowGeometriesForLibvisio(shape)) {
+    if (geometry.noShow) continue;
+    final points = _strokedVertices(geometry, shape) ??
+        _softEdgesPolygonInches(shape, geometry);
+    if (points == null || points.length < 3) continue;
+    out.add(points);
+  }
+  return out;
+}
+
+/// Stroke ribbon plus baked arrowheads — used only by LineGradient PNG.
+List<List<Offset2D>> _lineGradientStrokePolygons(VsdxShape shape) => [
+      ..._libvisioStrokeSilhouettePolygons(shape),
+      ..._arrowPolygonsForLibvisioWrite(shape),
+    ];
 
 VsdxShape _strokeRibbonPlateForLibvisioWrite(
   VsdxShape source, {
@@ -8100,8 +8123,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// A LineGradient whose opaque stops use more than two unique colours
 /// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
-/// 1-D, pictures,
-/// open-path arrows, and unrecognised geometry stay native. Closed 2-D
+/// Open-path arrows on those washes rasterize into the same plate.
+/// Pictures and unrecognised geometry stay native. Closed 2-D
 /// arrow cells do not block the bake — libvisio suppresses markers on
 /// Z-closed subpaths, same as canvas.
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
@@ -8193,7 +8216,10 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (shape.line.hasGradient && _softEdgesLineColorAt(shape) == null) {
     return false;
   }
-  if (_openArrowheadsBlockStrokeBake(shape)) return false;
+  if (_openArrowheadsBlockStrokeBake(shape) &&
+      !_lineHasLibvisioUnrepresentableGradient(shape.line)) {
+    return false;
+  }
   if (shape.line.compoundType != 0) {
     return _softEdgesCompoundRibbonPolygons(shape).isNotEmpty;
   }
@@ -8656,7 +8682,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
 ({double width, double height, double locPinX, double locPinY})
     _strokeRibbonPlateLocalBox(VsdxShape shape, double padInches) {
   final pad = padInches < 0 ? 0.0 : padInches;
-  final aabb = _polygonsAabb(_libvisioStrokeSilhouettePolygons(shape));
+  final aabb = _polygonsAabb(_lineGradientStrokePolygons(shape));
   if (aabb == null) {
     final extent = _softEdgesStrokeExtentInches(shape);
     return (
@@ -8679,7 +8705,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
   VsdxShape shape,
   VsdxTheme theme,
 ) {
-  final ribbons = _libvisioStrokeSilhouettePolygons(shape);
+  final ribbons = _lineGradientStrokePolygons(shape);
   final aabb = _polygonsAabb(ribbons);
   if (aabb == null) return null;
   final gradient = shape.line.gradient;
@@ -8916,7 +8942,9 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     if (png == null) return null;
     return (png: png, padInches: 0);
   }
-  if (shape.is1D || _softEdgesStrokeSilhouetteKind(shape) == null) {
+  if (shape.is1D ||
+      _openArrowheadsBlockStrokeBake(shape) ||
+      _softEdgesStrokeSilhouetteKind(shape) == null) {
     return _lineGradientRibbonPngForLibvisioWrite(shape, theme);
   }
   return _softEdgesStrokePngForLibvisioWrite(shape, theme: theme);
@@ -8931,6 +8959,9 @@ VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
   if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape) ||
       _shapeNeedsLibvisioStrokeSoftEdgesBake(shape)) {
     line = line.copyWith(pattern: 0, compoundType: 0, gradient: null);
+    if (_openArrowheadsBlockStrokeBake(shape)) {
+      line = line.copyWith(beginArrow: 0, endArrow: 0);
+    }
   }
   return shape.copyWith(fill: fill, line: line);
 }
@@ -9056,6 +9087,7 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
           imagePartName: part,
           padInches: payload.padInches,
           useStrokeRibbonAabb: next.is1D ||
+              _openArrowheadsBlockStrokeBake(next) ||
               (_lineHasLibvisioUnrepresentableGradient(next.line) &&
                   next.line.softEdgesInches <= 1e-6 &&
                   _softEdgesStrokeSilhouetteKind(next) == null),
