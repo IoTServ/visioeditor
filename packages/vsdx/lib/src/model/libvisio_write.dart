@@ -14,7 +14,9 @@
 /// stop's theme slot) — otherwise Draw stays
 /// hollow and an unfilled LineGradient ribbon would steal the body.
 /// Opaque stops with more than two unique colours cannot use those two
-/// cells, so a save bakes the same SoftEdges fill PNG at sigma 0. Curve
+/// cells, so a save bakes the same SoftEdges fill PNG at sigma 0 and
+/// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
+/// unfilled-ribbon path and LineColor covers that plate. Curve
 /// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
 /// sampled so that plate follows the painted path — endpoint-only
 /// polygons used to wash a pie as a triangle and a rounded rectangle as
@@ -8130,7 +8132,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
 /// Multiple NoFill=0 Geometry sections punch even-odd holes in that
 /// plate — libvisio emits `svg:fill-rule=evenodd`, so a two-ring frame
-/// must not bake as a solid Width×Height rectangle.
+/// must not bake as a solid Width×Height rectangle. Leftover source
+/// Geometry is marked NoFill so CompoundType 2–4 cannot refill the
+/// body with LineColor over that plate.
 /// A LineGradient whose opaque stops use more than two unique colours
 /// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
@@ -9051,8 +9055,15 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
 VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
   var fill = shape.fill;
   var line = shape.line.copyWith(softEdgesInches: 0);
+  var geometries = shape.geometries;
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) {
     fill = const VsdxFill(pattern: 0);
+    // CompoundType 2–4 ribbons would otherwise keep these NoFill=0
+    // sections and paint LineColor over the PNG plate.
+    geometries = <VsdxGeometry>[
+      for (final geometry in geometries)
+        geometry.noFill ? geometry : geometry.copyWith(noFill: true),
+    ];
   }
   if (_shapeNeedsLibvisioFillStrokeSoftEdgesBake(shape) ||
       _shapeNeedsLibvisioStrokeSoftEdgesBake(shape)) {
@@ -9061,7 +9072,7 @@ VsdxShape _sourceForLibvisioGeometrySoftEdgesWrite(VsdxShape shape) {
       line = line.copyWith(beginArrow: 0, endArrow: 0);
     }
   }
-  return shape.copyWith(fill: fill, line: line);
+  return shape.copyWith(fill: fill, line: line, geometries: geometries);
 }
 
 VsdxShape _softEdgesPlateForLibvisioWrite(
@@ -10612,7 +10623,12 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
       continue;
     }
     final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    if (!geometry.noFill) {
+    // Keep the authored fill body only while Fill still paints. After a
+    // multi-stop FillGradient becomes a SoftEdges PNG, FillPattern is 0
+    // but Geometry may still say NoFill=0; filling that leftover with
+    // LineColor would cover the plate. CompoundType 2–4 ribbons then
+    // paint only the rails.
+    if (!geometry.noFill && shape.fill.hasFill) {
       out.add(geometry.copyWith(noLine: true));
     }
     for (final rail in rails) {

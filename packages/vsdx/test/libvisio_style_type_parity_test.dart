@@ -4253,6 +4253,131 @@ void main() {
     },
   );
 
+  test(
+    'multi-stop FillGradient CompoundType 2 keeps the fill for LibreOffice',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final shape = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4.25,
+        pinY: 5.5,
+        width: 3.2,
+        height: 1.8,
+        name: 'Grad3Compound2',
+        fill: const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          pattern: 1,
+          weightInches: 0.2,
+          compoundType: 2,
+        ),
+      );
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final baked = documentForLibvisioWrite(doc);
+      final source = baked.pages.first.findShapeById(1)!;
+      expect(source.fill.pattern, 0);
+      expect(source.fill.hasGradient, isFalse);
+      expect(
+        source.geometries.every((g) => g.noFill),
+        isTrue,
+        reason: 'leftover NoFill=0 would let CompoundType 2 fill LineColor '
+            'over the PNG plate',
+      );
+      final plate =
+          baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+      final png = baked.images.findByPart(plate.imagePartName!);
+      expect(png, isNotNull);
+      final decoded = raster.decodePng(png!.bytes)!;
+      final mid = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+      expect(
+        mid.g,
+        greaterThan(mid.r + 80),
+        reason: 'FillGradient middle stop must stay green; mid=$mid',
+      );
+      expect(
+        mid.g,
+        greaterThan(mid.b + 80),
+        reason: 'FillGradient middle stop must stay green; mid=$mid',
+      );
+
+      final write = libvisioShapeWrite(source, theme: baked.theme);
+      final fillable =
+          write.geometries.where((g) => !g.noShow && !g.noFill).toList();
+      expect(
+        fillable,
+        isNotEmpty,
+        reason: 'CompoundType 2 must become filled thick-thin ribbons',
+      );
+      for (final geometry in fillable) {
+        final pts = geometry.polylineVertices(
+          widthInches: source.width,
+          heightInches: source.height,
+        );
+        expect(pts, isNotNull);
+        expect(
+          pts!.length,
+          greaterThan(6),
+          reason: 'LineColor must not refill the Width×Height body; pts=$pts',
+        );
+      }
+
+      expect(
+        documentForLibvisioWrite(baked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another FillGradient plate',
+      );
+
+      const twoStop = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final two = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 4.25,
+        pinY: 5.5,
+        width: 3.2,
+        height: 1.8,
+        name: 'Grad2Compound2',
+        fill: const VsdxFill(pattern: 1, gradient: twoStop),
+        line: const VsdxLine(
+          color: VsdxColor.black,
+          pattern: 1,
+          weightInches: 0.2,
+          compoundType: 2,
+        ),
+      );
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(two), isFalse);
+      var twoDoc = parser.parse(blank);
+      twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+      expect(
+        documentForLibvisioWrite(twoDoc)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason:
+            'two-colour FillGradient CompoundType 2 must stay classic FillPattern 25–40',
+      );
+    },
+  );
+
   test('multi-stop LineGradient bakes a PNG plate for LibreOffice', () {
     const wash = VsdxGradient(
       stops: <VsdxGradientStop>[

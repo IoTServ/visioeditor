@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient washes with more than two unique opaque colours plus
+  CompoundType 2–4 now keep the fill in LibreOffice. SoftEdges used to
+  drop FillPattern while Geometry still said NoFill=0, so the unfilled
+  thick-thin ribbon path filled that leftover body with LineColor and
+  covered the PNG plate. A save marks those sections NoFill so Draw
+  paints only the rails and the plate shows through. Two-colour washes
+  stay 25–40. A second save does not stack another plate.
 - FillGradient + LineGradient washes with more than two unique opaque
   colours on a compound even-odd fill now keep the hole in LibreOffice.
   A save that baked both into one SoftEdges PNG classified the outer

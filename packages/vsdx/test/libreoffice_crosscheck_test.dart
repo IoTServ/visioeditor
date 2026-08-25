@@ -2569,6 +2569,27 @@ void main() {
         ),
       ),
     );
+    var grad3Compound2Document = parser.parse(blank);
+    grad3Compound2Document = grad3Compound2Document.replacePage(
+      0,
+      grad3Compound2Document.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: grad3Compound2Document.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3.2,
+          height: 1.8,
+          name: 'Grad3Compound2',
+          fill: const VsdxFill(pattern: 1, gradient: wash3),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            pattern: 1,
+            weightInches: 0.2,
+            compoundType: 2,
+          ),
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -6235,6 +6256,10 @@ void main() {
       'evenodd_grad3_line': writer.write(
         originalBytes: blank,
         edited: evenoddGrad3LineDocument,
+      ),
+      'grad3_compound2': writer.write(
+        originalBytes: blank,
+        edited: grad3Compound2Document,
       ),
       'linegrad3': writer.write(
         originalBytes: blank,
@@ -13409,6 +13434,17 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'grad3_compound2') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'Grad3Compound2');
+          expect(source.fill.hasGradient, isFalse);
+          expect(source.line.compoundType, 0);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
         if (entry.key == 'linegrad3') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13448,6 +13484,7 @@ void main() {
                 entry.key == 'grad3_arc_fill' ||
                 entry.key == 'evenodd_grad3' ||
                 entry.key == 'evenodd_grad3_line' ||
+                entry.key == 'grad3_compound2' ||
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
@@ -13535,6 +13572,33 @@ void main() {
               lessThan(40),
               reason: 'Draw must keep the even-odd hole, not fill it with the wash; '
                   'centerDark=$centerDark green=$green',
+            );
+          }
+          if (entry.key == 'grad3_compound2') {
+            final page = parser.parse(entry.value).pages.first;
+            final shape = page.shapes.firstWhere(
+              (s) => s.name == 'Grad3Compound2',
+            );
+            final cx = ((shape.pinX / page.widthInches) * rendered.width)
+                .round()
+                .clamp(0, rendered.width - 1);
+            final cy = (((page.heightInches - shape.pinY) /
+                        page.heightInches) *
+                    rendered.height)
+                .round()
+                .clamp(0, rendered.height - 1);
+            final p = rendered.getPixel(cx, cy);
+            expect(
+              p.g,
+              greaterThan(p.r + 40),
+              reason: 'Draw must not cover the FillGradient plate with '
+                  'CompoundType 2 LineColor; center=$p green=$green',
+            );
+            expect(
+              p.g,
+              greaterThan(p.b + 40),
+              reason: 'Draw must not cover the FillGradient plate with '
+                  'CompoundType 2 LineColor; center=$p green=$green',
             );
           }
         }
