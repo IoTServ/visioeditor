@@ -2367,6 +2367,40 @@ void main() {
         ),
       ),
     );
+    var line2FadeDocument = parser.parse(blank);
+    final line2FadePage = line2FadeDocument.pages.first;
+    line2FadeDocument = line2FadeDocument.replacePage(
+      0,
+      line2FadePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: line2FadePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 1.4,
+          name: 'LineGrad2Fade',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.22,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF00FF),
+                  transparency: 0.65,
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                  transparency: 0.65,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
     var lineGrad3ArrowDocument = parser.parse(blank);
     final lineGrad3ArrowPage = lineGrad3ArrowDocument.pages.first;
     lineGrad3ArrowDocument = lineGrad3ArrowDocument.replacePage(
@@ -2453,6 +2487,39 @@ void main() {
                 VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
                 VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
                 VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
+    var grad2FadeDocument = parser.parse(blank);
+    final grad2FadePage = grad2FadeDocument.pages.first;
+    grad2FadeDocument = grad2FadeDocument.replacePage(
+      0,
+      grad2FadePage.addShape(
+        VsdxShapeFactory.rectangle(
+          id: grad2FadePage.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 1.4,
+          name: 'Grad2Fade',
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(
+                  position: 0,
+                  color: VsdxColor(0xFFFF00FF),
+                  transparency: 0.65,
+                ),
+                VsdxGradientStop(
+                  position: 1,
+                  color: VsdxColor(0xFF0000FF),
+                  transparency: 0.65,
+                ),
               ],
             ),
           ),
@@ -6332,6 +6399,10 @@ void main() {
         originalBytes: blank,
         edited: grad3Document,
       ),
+      'grad2_fade': writer.write(
+        originalBytes: blank,
+        edited: grad2FadeDocument,
+      ),
       'grad3_arc_fill': writer.write(
         originalBytes: blank,
         edited: grad3ArcDocument,
@@ -6359,6 +6430,10 @@ void main() {
       'linegrad3': writer.write(
         originalBytes: blank,
         edited: lineGrad3Document,
+      ),
+      'line2_fade': writer.write(
+        originalBytes: blank,
+        edited: line2FadeDocument,
       ),
       'linegrad3_arrow': writer.write(
         originalBytes: blank,
@@ -13577,6 +13652,28 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'grad2_fade') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'Grad2Fade');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
+        if (entry.key == 'line2_fade') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad2Fade');
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
         if (entry.key == 'grad3_arc_fill') {
           final reopened = parser.parse(entry.value);
           final pie =
@@ -13702,6 +13799,61 @@ void main() {
           expect(
             reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
             hasLength(1),
+          );
+        }
+        if ((entry.key == 'grad2_fade' || entry.key == 'line2_fade') &&
+            pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final reopened = parser.parse(entry.value);
+          final page = reopened.pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 0 : sum / count;
+          }
+
+          final body = entry.key == 'line2_fade'
+              ? meanLuma(3.2, 6.02, 5.3, 6.18)
+              : meanLuma(3.9, 5.2, 4.6, 5.8);
+          expect(
+            body,
+            greaterThan(150),
+            reason: 'LibreOffice must not paint the faded ${entry.key} opaque; '
+                'body=$body',
+          );
+          expect(
+            body,
+            lessThan(245),
+            reason: 'LibreOffice must still paint the faded ${entry.key}; '
+                'body=$body',
           );
         }
         if ((entry.key == 'grad3_fill_gradient' ||

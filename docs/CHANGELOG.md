@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Two-colour FillGradient / LineGradient washes with per-stop or cell
+  transparency now keep that fade in LibreOffice. FillPattern 25–40
+  drop `draw:opacity` and Draw ignores `librevenge:start-opacity` /
+  `end-opacity`, so those washes used to paint fully opaque. A save
+  bakes the same SoftEdges PNG three-colour washes already use.
+  Opaque two-colour washes stay 25–40. A second save does not stack
+  another plate.
 - Foreign pictures with a hard drop shadow now keep that shadow in
   LibreOffice. libvisio's `_flushCurrentForeignData` emits an empty
   graphic style, so Draw's `draw:shadow` never lands on the bitmap —

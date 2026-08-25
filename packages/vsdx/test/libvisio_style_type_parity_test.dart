@@ -8,7 +8,8 @@
 /// stroke, an unfilled LineGradient, or a semi-transparent stroke
 /// disappears or goes fully opaque in Draw. The writer rewrites those to
 /// classic FillPattern 25–40 (a FillGradient with more than two unique
-/// opaque colours bakes a PNG plate instead; EllipticalArcTo silhouettes
+/// opaque colours, or per-stop / Fill*Trans alpha Draw would paint
+/// opaque, bakes a PNG plate instead; EllipticalArcTo silhouettes
 /// are sampled so a pie is not a triangle and a rounded rectangle is not
 /// the Width×Height box; multiple NoFill=0 Geometry sections punch
 /// even-odd holes so a frame is not a solid plate), baked RelQuadBezTo corners, parallel Geometry
@@ -153,6 +154,9 @@
 /// hatches go into that PNG so Draw does not keep a hard fill.
 /// A FillGradient whose opaque stops use more than two unique colours
 /// uses that same plate at sigma 0 so Draw keeps the middle colour.
+/// Per-stop alpha and FillForegndTrans on a two-colour wash join that
+/// plate — FillPattern 25–40 drop `draw:opacity` and Draw ignores
+/// `librevenge:*-opacity`. Opaque two-colour washes stay 25–40.
 /// Theme-only FillForegnd / LineColor / gradient stops resolve through
 /// the document theme then Office into that PNG. An
 /// unfilled 2-D stroke with
@@ -3829,6 +3833,83 @@ void main() {
       inInclusiveRange(25, 40),
     );
 
+    const fadedStops = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(
+          position: 0,
+          color: VsdxColor(0xFFFF00FF),
+          transparency: 0.65,
+        ),
+        VsdxGradientStop(
+          position: 1,
+          color: VsdxColor(0xFF0000FF),
+          transparency: 0.65,
+        ),
+      ],
+    );
+    final faded = VsdxShapeFactory.rectangle(
+      id: 4,
+      pinX: 2,
+      pinY: 5,
+      width: 1.2,
+      height: 0.8,
+      name: 'Grad2Fade',
+      fill: const VsdxFill(pattern: 1, gradient: fadedStops),
+      line: const VsdxLine(pattern: 0),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(faded), isTrue);
+    var fadedDoc = parser.parse(blank);
+    fadedDoc = fadedDoc.replacePage(0, fadedDoc.pages.first.addShape(faded));
+    final fadedBaked = documentForLibvisioWrite(fadedDoc);
+    expect(fadedBaked.pages.first.findShapeById(4)!.fill.pattern, 0);
+    final fadedPlate =
+        fadedBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    final fadedPng = raster.decodePng(
+      fadedBaked.images.findByPart(fadedPlate.imagePartName!)!.bytes,
+    )!;
+    final fadedMid = fadedPng.getPixel(fadedPng.width ~/ 2, fadedPng.height ~/ 2);
+    final fadedLuma =
+        0.299 * fadedMid.r + 0.587 * fadedMid.g + 0.114 * fadedMid.b;
+    expect(
+      fadedLuma,
+      greaterThan(150),
+      reason: 'Draw composites FillPattern 25–40 opacity onto opaque; '
+          'the PNG must wash toward white; luma=$fadedLuma $fadedMid',
+    );
+    expect(
+      documentForLibvisioWrite(fadedBaked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another faded FillGradient plate',
+    );
+
+    final cellFade = VsdxShapeFactory.rectangle(
+      id: 5,
+      pinX: 5,
+      pinY: 5,
+      width: 1.2,
+      height: 0.8,
+      name: 'Grad2CellFade',
+      fill: const VsdxFill(
+        pattern: 1,
+        foregroundTransparency: 0.65,
+        gradient: twoStop,
+      ),
+      line: const VsdxLine(pattern: 0),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(cellFade), isTrue);
+    var cellDoc = parser.parse(blank);
+    cellDoc = cellDoc.replacePage(0, cellDoc.pages.first.addShape(cellFade));
+    final cellBaked = documentForLibvisioWrite(cellDoc);
+    expect(cellBaked.pages.first.findShapeById(5)!.fill.pattern, 0);
+    expect(
+      cellBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+
     const skipped = VsdxFill(
       pattern: 0,
       gradient: VsdxGradient(
@@ -4571,6 +4652,54 @@ void main() {
       twoShape.fill.hasGradient ||
           (twoShape.fill.pattern >= 25 && twoShape.fill.pattern <= 40),
       isTrue,
+    );
+
+    const fadedLineStops = VsdxGradient(
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(
+          position: 0,
+          color: VsdxColor(0xFFFF00FF),
+          transparency: 0.65,
+        ),
+        VsdxGradientStop(
+          position: 1,
+          color: VsdxColor(0xFF0000FF),
+          transparency: 0.65,
+        ),
+      ],
+    );
+    final fadedLine = VsdxShapeFactory.rectangle(
+      id: 6,
+      pinX: 2,
+      pinY: 5,
+      width: 2,
+      height: 1.2,
+      name: 'LineGrad2Fade',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        pattern: 1,
+        weightInches: 0.16,
+        gradient: fadedLineStops,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(fadedLine), isTrue);
+    var fadedLineDoc = parser.parse(blank);
+    fadedLineDoc =
+        fadedLineDoc.replacePage(0, fadedLineDoc.pages.first.addShape(fadedLine));
+    final fadedLineBaked = documentForLibvisioWrite(fadedLineDoc);
+    expect(fadedLineBaked.pages.first.findShapeById(6)!.line.pattern, 0);
+    expect(
+      fadedLineBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(fadedLineBaked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another faded LineGradient plate',
     );
 
     final connector = VsdxShapeFactory.line(

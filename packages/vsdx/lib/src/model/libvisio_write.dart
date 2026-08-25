@@ -16,7 +16,11 @@
 /// Opaque stops with more than two unique colours cannot use those two
 /// cells, so a save bakes the same SoftEdges fill PNG at sigma 0 and
 /// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
-/// unfilled-ribbon path and LineColor covers that plate. Curve
+/// unfilled-ribbon path and LineColor covers that plate. Per-stop alpha
+/// and FillForegndTrans / FillBkgndTrans on a 25–40 wash are the same
+/// missing paint: `_fillAndShadowProperties` drops `draw:opacity` and
+/// Draw ignores `librevenge:start-opacity` / `end-opacity`, so a save
+/// bakes that PNG too. Two-colour opaque washes stay 25–40. Curve
 /// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
 /// sampled so that plate follows the painted path — endpoint-only
 /// polygons used to wash a pie as a triangle and a rounded rectangle as
@@ -30,7 +34,9 @@
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
-/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). InfiniteLine
+/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Per-stop
+/// alpha and LineColorTrans on a two-colour wash would otherwise stay
+/// opaque on that 25–40 ribbon. InfiniteLine
 /// samples are clipped to the shape box first — perimeter sampling otherwise
 /// spans hundreds of inches and the PNG collapses to one stop. Open
 /// Begin/EndArrow on those washes go into the same PNG — Draw cannot
@@ -8222,9 +8228,17 @@ bool _softEdgesGeometryOk(VsdxShape shape, {bool allow1d = false}) {
   return true;
 }
 
+/// Classic FillPattern 25–40 copies Fill*Trans onto the synthesised
+/// stops. A modern FillGradient keeps the cell, so the sampler must
+/// still multiply it.
+double _fillGradientCellTransparency(VsdxFill fill) =>
+    fill.hasGradient ? fill.foregroundTransparency : 0;
+
 /// Classic FillPattern 25–40 only store FillForegnd / FillBkgnd. Opaque
 /// gradient stops with more than two unique colours cannot survive that
-/// collapse, so the SoftEdges PNG is used even at sigma 0.
+/// collapse, so the SoftEdges PNG is used even at sigma 0. Per-stop
+/// alpha is the same missing paint: those two Trans cells become
+/// `librevenge:*-opacity`, which Draw does not honour.
 bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
   final keys = <int>{};
@@ -8241,14 +8255,30 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
     }
     keys.add(key);
   }
-  return keys.length > 2;
+  if (keys.length > 2) return true;
+  for (final stop in gradient.stops) {
+    if (stop.transparency > 1e-9 && stop.transparency <= 1 - 1e-9) {
+      return true;
+    }
+  }
+  return false;
 }
 
-bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) =>
-    _gradientHasLibvisioUnrepresentableStops(fill.paintGradient);
+bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
+  final gradient = fill.paintGradient;
+  if (_gradientHasLibvisioUnrepresentableStops(gradient)) return true;
+  if (gradient == null || gradient.stops.length < 2) return false;
+  // FillPattern 25–40 drop `draw:opacity`; Draw ignores the replacement
+  // `librevenge:start-opacity` / `end-opacity` from Fill*Trans.
+  return fill.foregroundTransparency > 1e-9 ||
+      fill.backgroundTransparency > 1e-9;
+}
 
-bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) =>
-    _gradientHasLibvisioUnrepresentableStops(line.gradient);
+bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) {
+  if (_gradientHasLibvisioUnrepresentableStops(line.gradient)) return true;
+  if (line.gradient == null || line.gradient!.stops.length < 2) return false;
+  return line.transparency > 1e-9;
+}
 
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!_softEdgesGeometryOk(shape)) return false;
@@ -8259,8 +8289,10 @@ bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!shape.fill.hasFill) return false;
   final paintGradient = shape.fill.paintGradient;
   if (paintGradient != null) {
-    if (_gradientBakeStops(paintGradient, shape.fill.foregroundTransparency)
-        .isEmpty) {
+    if (_gradientBakeStops(
+      paintGradient,
+      _fillGradientCellTransparency(shape.fill),
+    ).isEmpty) {
       return false;
     }
   } else if (libvisioHatchSpec(shape.fill.pattern) != null) {
@@ -8622,7 +8654,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
   if (paintGradient != null) {
     return _softEdgesGradientSampler(
       paintGradient,
-      shape.fill.foregroundTransparency,
+      _fillGradientCellTransparency(shape.fill),
       w,
       h,
       theme,
