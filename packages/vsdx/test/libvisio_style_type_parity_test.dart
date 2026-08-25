@@ -71,7 +71,9 @@
 /// Visio `Font` is Arial is rewritten to the face and size Draw will
 /// actually load. Mixed Latin+CJK / Latin+Arabic runs split so each
 /// script collects that face; a single `Font` would keep Arial on 世界.
-/// Character `LangID` is
+/// Paragraph `HorzAlign=4` emits illegal ODF `fo:text-align="full"`;
+/// Draw falls back to left, so a save writes `justify` (canvas / SVG
+/// already map `full` that way). Character `LangID` is
 /// not a token; digit-only Arabic / Hebrew runs prefix U+200F so Draw's
 /// Unicode bidi matches canvas / SVG. Character `Letterspace`
 /// is not a token; canvas / SVG already fold FontScale into tracking at
@@ -742,6 +744,74 @@ void main() {
       twice.pages.first.shapes.single.richText.runs.single.paraStyle
           .lineSpacingSolid,
       isFalse,
+    );
+  });
+
+  test('Paragraph HorzAlign=full bakes justify so LibreOffice keeps wrap',
+      () {
+    const wrap = 'AA BB CC DD EE FF GG HH';
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2.6,
+      height: 2.4,
+      name: 'HorzAlignFull',
+    ).copyWith(
+      text: wrap,
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: wrap,
+            charStyle: VsdxCharStyle(
+              fontFamily: 'Arial',
+              fontSizeInches: 0.55,
+            ),
+            paraStyle: VsdxParaStyle(horizontalAlign: VsdxHorzAlign.full),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioHorzAlignFullBake(shape), isTrue);
+    final baked = bakeHorzAlignFullShapeForLibvisioWrite(shape);
+    expect(
+      baked.richText.runs.single.paraStyle.horizontalAlign,
+      VsdxHorzAlign.justify,
+    );
+    expect(
+      shapeNeedsLibvisioHorzAlignFullBake(baked),
+      isFalse,
+      reason: 'a second save must not rewrite HorzAlign=3 again',
+    );
+
+    final left = bakeHorzAlignFullShapeForLibvisioWrite(
+      shape.copyWith(
+        richText: shape.richText.copyWith(
+          runs: [
+            shape.richText.runs.single.copyWith(
+              paraStyle: const VsdxParaStyle(
+                horizontalAlign: VsdxHorzAlign.left,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    expect(
+      left.richText.runs.single.paraStyle.horizontalAlign,
+      VsdxHorzAlign.left,
+    );
+
+    final writer = VsdxWriter();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final once = documentForLibvisioWrite(doc);
+    final twice = documentForLibvisioWrite(once);
+    expect(
+      twice.pages.first.shapes.single.richText.runs.single.paraStyle
+          .horizontalAlign,
+      VsdxHorzAlign.justify,
     );
   });
 

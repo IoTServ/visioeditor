@@ -4994,6 +4994,42 @@ void main() {
         ),
       ),
     );
+    var horzAlignFullDocument = parser.parse(blank);
+    horzAlignFullDocument = horzAlignFullDocument.replacePage(
+      0,
+      horzAlignFullDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: horzAlignFullDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2.6,
+          height: 2.4,
+          name: 'HorzAlignFull',
+          fill: const VsdxFill(foreground: VsdxColor.white, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: 'AA BB CC DD EE FF GG HH',
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: 'AA BB CC DD EE FF GG HH',
+                charStyle: VsdxCharStyle(
+                  fontFamily: 'Arial',
+                  fontSizeInches: 0.55,
+                  color: VsdxColor(0xFFFF00FF),
+                ),
+                paraStyle: VsdxParaStyle(
+                  horizontalAlign: VsdxHorzAlign.full,
+                ),
+              ),
+            ],
+            textBlock: const VsdxTextBlock(
+              verticalAlign: VsdxVertAlign.top,
+            ),
+          ),
+        ),
+      ),
+    );
     var mixedScriptDocument = parser.parse(blank);
     mixedScriptDocument = mixedScriptDocument.replacePage(
       0,
@@ -6027,6 +6063,10 @@ void main() {
       'mixed_script': writer.write(
         originalBytes: blank,
         edited: mixedScriptDocument,
+      ),
+      'horz_align_full': writer.write(
+        originalBytes: blank,
+        edited: horzAlignFullDocument,
       ),
       'auto_rotate': writer.write(
         originalBytes: blank,
@@ -12500,6 +12540,82 @@ void main() {
             greaterThan(70),
             reason: 'Draw must paint 世界 beside Hi, not drop the CJK run; '
                 'magentaWidth=${maxX - minX} magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'horz_align_full') {
+          final reopened = parser.parse(entry.value);
+          final shape = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'HorzAlignFull');
+          expect(
+            shape.richText.runs.single.paraStyle.horizontalAlign,
+            VsdxHorzAlign.justify,
+          );
+        }
+        if (entry.key == 'horz_align_full' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          ({int magenta}) countWindow(
+            double x0,
+            double y0,
+            double x1,
+            double y1,
+          ) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var magenta = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+                  magenta++;
+                }
+              }
+            }
+            return (magenta: magenta);
+          }
+
+          // Draw used to treat HorzAlign=full as left. Two short words on a
+          // 2.6" band leave a wide gap; justify parks the second word on the
+          // right edge of the first line.
+          final left = countWindow(2.95, 6.1, 3.7, 6.7);
+          final right = countWindow(5.05, 6.1, 5.55, 6.7);
+          expect(
+            left.magenta,
+            greaterThan(10),
+            reason: 'LibreOffice must paint AA on the first wrapped line; '
+                'left=${left.magenta} right=${right.magenta}',
+          );
+          expect(
+            right.magenta,
+            greaterThan(8),
+            reason: 'Draw must collect HorzAlign=3 (justify), not fall back '
+                'to left from fo:text-align=full; '
+                'left=${left.magenta} right=${right.magenta}',
           );
         }
         if ((entry.key == 'shape_inside' ||

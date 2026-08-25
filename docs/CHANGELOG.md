@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Paragraph `HorzAlign=4` ("full") now keeps wrapped justification in
+  LibreOffice. libvisio still emits illegal ODF `fo:text-align="full"`,
+  so Draw's drawing-text import fell back to left while canvas / SVG
+  already map that cell to justify. A save writes `HorzAlign=3`. A
+  second save does not change that cell.
 - Mixed Latin+CJK and Latin+Arabic Character runs now keep their
   script faces in LibreOffice. `readCharIX` still stores only `Font` /
   `Size`, so an Asian-only or complex-only run already rewrites those

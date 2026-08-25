@@ -206,6 +206,12 @@
 /// 1× Size. A save writes the run's Size as a positive SpLine so
 /// libvisio takes the length branch. A second save does not change that
 /// absolute cell.
+/// Paragraph `HorzAlign=4` ("full" / distributed) *is* a token, but
+/// `_fillParagraphProperties` emits illegal ODF `fo:text-align="full"`.
+/// Draw's drawing-text import then falls back to left, while canvas /
+/// SVG already map that cell to justify (Flutter has no last-line
+/// stretch). A save writes `HorzAlign=3` so libvisio emits `justify`.
+/// A second save does not change that cell.
 /// Paragraph `Bullet` *is* a token and `_bulletFromParaFormat` resolves
 /// `text:bullet-char`, but Draw's drawing-text import keeps only the
 /// `text:min-label-width` inset, so a save writes the glyph into the
@@ -382,18 +388,20 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                     bakeCurvedTextForLibvisioWrite(
                                       bakeShapeOpacityForLibvisioWrite(
                                         bakeSolidLineSpacingForLibvisioWrite(
-                                          bakeMixedScriptFontForLibvisioWrite(
-                                            bakeLangIdRtlForLibvisioWrite(
-                                              bakeDoubleStrikethroughForLibvisioWrite(
-                                                bakeOverlineForLibvisioWrite(
-                                                  bakeMixedHighlightForLibvisioWrite(
-                                                    bakeLooseEdgeLabelForLibvisioWrite(
-                                                      bakeAutoRotateLabelForLibvisioWrite(
-                                                        bakeTextDirectionForLibvisioWrite(
-                                                          bakeBulletGlyphForLibvisioWrite(
-                                                            bakeMetafileBitmapsForLibvisioWrite(
-                                                              bakeOlePreviewsForLibvisioWrite(
-                                                                hopped,
+                                          bakeHorzAlignFullForLibvisioWrite(
+                                            bakeMixedScriptFontForLibvisioWrite(
+                                              bakeLangIdRtlForLibvisioWrite(
+                                                bakeDoubleStrikethroughForLibvisioWrite(
+                                                  bakeOverlineForLibvisioWrite(
+                                                    bakeMixedHighlightForLibvisioWrite(
+                                                      bakeLooseEdgeLabelForLibvisioWrite(
+                                                        bakeAutoRotateLabelForLibvisioWrite(
+                                                          bakeTextDirectionForLibvisioWrite(
+                                                            bakeBulletGlyphForLibvisioWrite(
+                                                              bakeMetafileBitmapsForLibvisioWrite(
+                                                                bakeOlePreviewsForLibvisioWrite(
+                                                                  hopped,
+                                                                ),
                                                               ),
                                                             ),
                                                           ),
@@ -4486,6 +4494,88 @@ VsdxDocument bakeDoubleStrikethroughForLibvisioWrite(VsdxDocument document) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
         bakeDoubleStrikethroughShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// `true` when Paragraph `HorzAlign=4` would collapse wrap to left in Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `_fillParagraphProperties`
+/// emits `fo:text-align="full"` for that cell. ODF allows `justify`, not
+/// `full`, so Draw's drawing-text import falls back to left. Canvas / SVG
+/// already map `full` to justify (Flutter has no last-line stretch).
+bool shapeNeedsLibvisioHorzAlignFullBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (_paraNeedsLibvisioHorzAlignFullBake(run.paraStyle)) return true;
+  }
+  return false;
+}
+
+bool _paraNeedsLibvisioHorzAlignFullBake(VsdxParaStyle para) =>
+    para.horizontalAlign == VsdxHorzAlign.full;
+
+VsdxShape bakeHorzAlignFullShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeHorzAlignFullShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioHorzAlignFullBake(shape)) {
+    final runs = <VsdxTextRun>[
+      for (final run in shape.richText.runs)
+        if (_paraNeedsLibvisioHorzAlignFullBake(run.paraStyle))
+          run.copyWith(
+            paraStyle: run.paraStyle.copyWith(
+              horizontalAlign: VsdxHorzAlign.justify,
+            ),
+          )
+        else
+          run,
+    ];
+    next = shape.copyWith(richText: shape.richText.copyWith(runs: runs));
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Rewrite `HorzAlign=4` into `justify` so Draw does not fall back to left.
+VsdxDocument bakeHorzAlignFullForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeHorzAlignFullShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {
