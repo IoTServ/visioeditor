@@ -2397,6 +2397,41 @@ void main() {
         ),
       ),
     );
+    var infiniteGrad3Document = parser.parse(blank);
+    final infiniteGrad3Page = infiniteGrad3Document.pages.first;
+    infiniteGrad3Document = infiniteGrad3Document.replacePage(
+      0,
+      infiniteGrad3Page.addShape(
+        VsdxShape(
+          id: infiniteGrad3Page.nextFreeShapeId(),
+          name: 'LineGrad3Infinite',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4,
+          height: 2,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            pattern: 1,
+            weightInches: 0.14,
+            gradient: VsdxGradient(
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                InfiniteLineCmd(x: 0, y: 1, a: 4, b: 1),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
     var glassDocument = parser.parse(blank);
     final glassPage = glassDocument.pages.first;
     var grad3Document = parser.parse(blank);
@@ -6087,6 +6122,10 @@ void main() {
       'linegrad3_arrow': writer.write(
         originalBytes: blank,
         edited: lineGrad3ArrowDocument,
+      ),
+      'infinite_grad3': writer.write(
+        originalBytes: blank,
+        edited: infiniteGrad3Document,
       ),
       'opacity': writer.write(
         originalBytes: blank,
@@ -13243,9 +13282,21 @@ void main() {
             hasLength(1),
           );
         }
+        if (entry.key == 'infinite_grad3') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'LineGrad3Infinite');
+          expect(source.line.pattern, 0);
+          expect(source.line.hasGradient, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+        }
         if ((entry.key == 'grad3_fill_gradient' ||
                 entry.key == 'linegrad3' ||
-                entry.key == 'linegrad3_arrow') &&
+                entry.key == 'linegrad3_arrow' ||
+                entry.key == 'infinite_grad3') &&
             pdftoppm != null) {
           final prefix = '${dir.path}/${entry.key}-render';
           final rasterized = await Process.run(pdftoppm, <String>[

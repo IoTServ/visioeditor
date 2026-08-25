@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- InfiniteLine LineGradient washes with more than two unique opaque
+  colours now keep the middle stops in LibreOffice. Perimeter sampling
+  of InfiniteLine spans hundreds of inches, so the previous PNG bake
+  scaled that ribbon down to one colour on the page. A save clips the
+  stroke to the shape box before rasterizing. Two-colour washes stay
+  25–40. A second save does not stack another plate.
 - Arrowed 1-D LineGradient washes with more than two unique opaque
   colours now keep the middle stops and the markers in LibreOffice.
   The previous PNG bake skipped open arrowheads (`draw:marker-*`

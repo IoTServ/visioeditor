@@ -19,7 +19,9 @@
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
-/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Open
+/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). InfiniteLine
+/// samples are clipped to the shape box first — perimeter sampling otherwise
+/// spans hundreds of inches and the PNG collapses to one stop. Open
 /// Begin/EndArrow on those washes go into the same PNG — Draw cannot
 /// hang `draw:marker-*` on a Foreign plate — then Begin/EndArrow drop.
 /// That ribbon cannot dash: built-in LinePattern
@@ -8123,6 +8125,7 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// A LineGradient whose opaque stops use more than two unique colours
 /// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
+/// InfiniteLine washes clip to the shape box so that plate keeps every stop.
 /// Open-path arrows on those washes rasterize into the same plate.
 /// Pictures and unrecognised geometry stay native. Closed 2-D
 /// arrow cells do not block the bake — libvisio suppresses markers on
@@ -10087,7 +10090,7 @@ LibvisioShapeWrite libvisioShapeWrite(
 }
 
 List<Offset2D>? _strokedVertices(VsdxGeometry geometry, VsdxShape shape) {
-  return geometry.polylineVertices(
+  final points = geometry.polylineVertices(
         widthInches: shape.width,
         heightInches: shape.height,
       ) ??
@@ -10096,6 +10099,24 @@ List<Offset2D>? _strokedVertices(VsdxGeometry geometry, VsdxShape shape) {
         width: shape.width,
         height: shape.height,
       );
+  if (points == null || points.length < 2) return points;
+  if (!_geometryHasInfiniteLine(geometry)) return points;
+  final w = math.max(shape.width.abs(), 1e-6);
+  final h = math.max(shape.height.abs(), 1e-6);
+  return clipInfiniteLineToPage(
+        points.first,
+        points.last,
+        pageWidth: w,
+        pageHeight: h,
+      ) ??
+      points;
+}
+
+bool _geometryHasInfiniteLine(VsdxGeometry geometry) {
+  for (final command in geometry.commands) {
+    if (command is InfiniteLineCmd) return true;
+  }
+  return false;
 }
 
 bool _shapePaintsFill(VsdxShape shape, List<VsdxGeometry> geometries) {

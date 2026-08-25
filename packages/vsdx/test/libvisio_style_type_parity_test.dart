@@ -4029,6 +4029,56 @@ void main() {
       hasLength(1),
       reason: 'a second save must not stack another arrowed LineGradient plate',
     );
+
+    final infinite = VsdxShape(
+      id: 5,
+      name: 'LineGrad3_Infinite',
+      pinX: 4,
+      pinY: 2,
+      width: 4,
+      height: 2,
+      fill: const VsdxFill(pattern: 0),
+      line: line,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            InfiniteLineCmd(x: 0, y: 1, a: 4, b: 1),
+          ],
+        ),
+      ],
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(infinite), isTrue);
+    var infDoc = parser.parse(blank);
+    infDoc = infDoc.replacePage(0, infDoc.pages.first.addShape(infinite));
+    final infBaked = documentForLibvisioWrite(infDoc);
+    final infSource = infBaked.pages.first.findShapeById(5)!;
+    expect(infSource.line.pattern, 0);
+    expect(infSource.line.hasGradient, isFalse);
+    final infPlate =
+        infBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(infPlate.width, lessThan(6),
+        reason: 'InfiniteLine PNG must clip to the shape box, not a 900" sample');
+    final infInk = counts(
+      raster.decodePng(
+        infBaked.images.findByPart(infPlate.imagePartName!)!.bytes,
+      )!,
+    );
+    expect(infInk.mag, greaterThan(8),
+        reason: 'InfiniteLine left stop must stay magenta; $infInk');
+    expect(infInk.green, greaterThan(8),
+        reason: 'InfiniteLine middle stop must stay green; $infInk');
+    expect(infInk.blue, greaterThan(8),
+        reason: 'InfiniteLine right stop must stay blue; $infInk');
+    expect(
+      documentForLibvisioWrite(infBaked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another InfiniteLine plate',
+    );
   });
 
   test(
