@@ -584,6 +584,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
 
 ### Fixed
 - FillGradient washes with more than two unique opaque colours now keep
+  a hard drop shadow in LibreOffice. SoftEdges used to drop the fill
+  onto a Foreign PNG while `ShdwPattern` stayed on the hollow leftover.
+  libvisio's `_flushCurrentForeignData` emits an empty graphic style, so
+  Draw's `draw:shadow` never lands on that plate. A save bakes the same
+  silhouette PNG ShadowBlur uses, at sigma 0. Two-colour washes stay
+  native 25–40 plus `draw:shadow`. A second save does not stack another
+  plate.
+- FillGradient washes with more than two unique opaque colours now keep
   those stops in the Reflection mirror in LibreOffice. A filled 2-D
   sibling used to copy the live FillGradient, and `fillForLibvisioWrite`
   collapsed it to classic FillPattern 26/29 (FillForegnd / FillBkgnd

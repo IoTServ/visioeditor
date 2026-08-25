@@ -2614,6 +2614,32 @@ void main() {
         ),
       ),
     );
+    var grad3HardShadowDocument = parser.parse(blank);
+    grad3HardShadowDocument = grad3HardShadowDocument.replacePage(
+      0,
+      grad3HardShadowDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: grad3HardShadowDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.0,
+          height: 1.4,
+          name: 'Grad3HardShadow',
+          fill: const VsdxFill(pattern: 1, gradient: wash3),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          shadow: const VsdxShadow(
+            enabled: true,
+            color: VsdxColor(0xFF000000),
+            offsetXInches: 0.45,
+            offsetYInches: -0.45,
+            blurInches: 0,
+            transparency: 0.2,
+            pattern: 1,
+          ),
+        ),
+      ),
+    );
     glassDocument = glassDocument.replacePage(
       0,
       glassPage.addShape(
@@ -6288,6 +6314,10 @@ void main() {
       'grad3_reflection': writer.write(
         originalBytes: blank,
         edited: grad3ReflectionDocument,
+      ),
+      'grad3_hard_shadow': writer.write(
+        originalBytes: blank,
+        edited: grad3HardShadowDocument,
       ),
       'linegrad3': writer.write(
         originalBytes: blank,
@@ -13499,6 +13529,22 @@ void main() {
                   'FillPattern 26; mag=$mag green=$green blue=$blue');
           expect(mag + blue, greaterThan(10));
         }
+        if (entry.key == 'grad3_hard_shadow') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'Grad3HardShadow');
+          expect(source.fill.pattern, 0);
+          expect(source.fill.hasGradient, isFalse);
+          expect(source.shadow.enabled, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(1),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioShadowPlate),
+            hasLength(1),
+          );
+        }
         if (entry.key == 'linegrad3') {
           final reopened = parser.parse(entry.value);
           final source = reopened.pages.first.shapes
@@ -13540,6 +13586,7 @@ void main() {
                 entry.key == 'evenodd_grad3_line' ||
                 entry.key == 'grad3_compound2' ||
                 entry.key == 'grad3_reflection' ||
+                entry.key == 'grad3_hard_shadow' ||
                 entry.key == 'linegrad3' ||
                 entry.key == 'linegrad3_arrow' ||
                 entry.key == 'infinite_grad3') &&
@@ -13562,6 +13609,7 @@ void main() {
           var green = 0;
           var blue = 0;
           var blue2 = 0;
+          var gray = 0;
           for (final pixel in rendered) {
             if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
             if (pixel.g > 160 && pixel.r < 100 && pixel.b < 100) green++;
@@ -13570,6 +13618,13 @@ void main() {
                 (pixel.g - 159).abs() < 12 &&
                 (pixel.b - 207).abs() < 12) {
               blue2++;
+            }
+            final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+            if ((pixel.r - pixel.g).abs() < 28 &&
+                (pixel.g - pixel.b).abs() < 28 &&
+                luma > 18 &&
+                luma < 110) {
+              gray++;
             }
           }
           expect(
@@ -13590,6 +13645,14 @@ void main() {
             reason: 'Draw must paint the blue stop; '
                 'magenta=$magenta green=$green blue=$blue',
           );
+          if (entry.key == 'grad3_hard_shadow') {
+            expect(
+              gray,
+              greaterThan(200),
+              reason: 'Draw must keep draw:shadow on the FillGradient PNG; '
+                  'gray=$gray green=$green',
+            );
+          }
           if (entry.key == 'grad3_arc_fill') {
             expect(
               blue2,

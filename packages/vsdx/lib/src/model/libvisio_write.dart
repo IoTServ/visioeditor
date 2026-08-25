@@ -183,7 +183,12 @@
 /// stops resolve through the document theme, then Office, into that PNG
 /// so Draw keeps the feather. Then
 /// SoftEdgesSize is written 0 and the source fill is dropped so the
-/// plate is the body Draw paints. An unfilled 2-D stroke with SoftEdges
+/// plate is the body Draw paints. A hard-edged shadow on that fill
+/// (`ShdwPattern` / `draw:shadow`) cannot ride the Foreign plate —
+/// `_flushCurrentForeignData` emits an empty graphic style — so a save
+/// bakes the same silhouette PNG ShadowBlur uses, at sigma 0, then
+/// ShdwPattern goes to 0. Two-colour washes keep native `draw:shadow`.
+/// An unfilled 2-D stroke with SoftEdges
 /// bakes the same way from the stroke ring (padded so the outer half of
 /// LineWeight and the blur halo are not clipped) and drops the source
 /// line. Built-in LinePattern 2–23 and custom `veDashPattern` dashes are
@@ -9338,7 +9343,8 @@ VsdxDocument bakeGeometrySoftEdgesForLibvisioWrite(VsdxDocument document) {
 /// Canvas fallback when ShadowForegnd is unset (`_drawShadow`).
 const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 
-/// `true` when ShadowBlur must become a Gaussian PNG sibling for Draw.
+/// `true` when ShadowBlur — or a hard shadow whose body will become a
+/// Foreign PNG — must become a silhouette sibling for Draw.
 ///
 /// LibreOffice only calls `VisioDocument::parse`. `tokens.txt` has
 /// ShdwPattern / ShdwOffset* / ShdwForegnd but no ShadowBlur, so Draw
@@ -9348,18 +9354,26 @@ const _kLibvisioShadowFallback = VsdxColor(0x99000000);
 /// does not add a second copy. Theme-only colour resolves through the
 /// document theme then Office into that PNG — Draw never sees
 /// THEMEVAL() on ShadowBlur. A Foreign picture with blur bakes the
-/// same filled image-frame silhouette canvas `_drawShadow` uses. 1-D,
-/// groups, and unrecognised geometry stay native.
+/// same filled image-frame silhouette canvas `_drawShadow` uses.
+/// A FillGradient whose opaque stops use more than two unique colours
+/// (or any other fill that already bakes a SoftEdges PNG) also bakes
+/// that silhouette at sigma 0: `_flushCurrentForeignData` emits an
+/// empty graphic style, so `draw:shadow` never lands on the fill plate.
+/// 1-D, groups, and unrecognised geometry stay native.
 bool shapeNeedsLibvisioShadowBake(VsdxShape shape) {
   if (_isLibvisioBakePlate(shape)) return false;
   if (shape.is1D) return false;
   if (shape.children.isNotEmpty) return false;
   if (!shape.shadow.enabled) return false;
-  if (shape.shadow.blurInches <= 1e-6) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;
-  if (shape.hasImage) return _foreignFrameSilhouetteKind(shape) != null;
+  if (shape.hasImage) {
+    if (shape.shadow.blurInches <= 1e-6) return false;
+    return _foreignFrameSilhouetteKind(shape) != null;
+  }
   if (!_shapePaintsFill(shape, shape.geometries)) return false;
-  return _softEdgesSilhouetteKind(shape) != null;
+  if (_softEdgesSilhouetteKind(shape) == null) return false;
+  if (shape.shadow.blurInches > 1e-6) return true;
+  return _shapeNeedsLibvisioFillSoftEdgesBake(shape);
 }
 
 /// RGB canvas `_colourOrTheme` would paint. Theme-only ShdwForegnd still

@@ -3862,6 +3862,105 @@ void main() {
   });
 
   test(
+    'multi-stop FillGradient keeps a hard shadow on the PNG for LibreOffice',
+    () {
+      const wash = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFF00FF00)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      const hardShadow = VsdxShadow(
+        enabled: true,
+        color: VsdxColor(0xFF000000),
+        offsetXInches: 0.45,
+        offsetYInches: -0.45,
+        blurInches: 0,
+        transparency: 0.2,
+        pattern: 1,
+      );
+      final shape = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 4.25,
+        pinY: 6.2,
+        width: 3.0,
+        height: 1.4,
+        name: 'Grad3HardShadow',
+        fill: const VsdxFill(pattern: 1, gradient: wash),
+        line: const VsdxLine(pattern: 0),
+      ).copyWith(shadow: hardShadow);
+      expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+      expect(shapeNeedsLibvisioShadowBake(shape), isTrue);
+
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final baked = documentForLibvisioWrite(doc);
+      final source = baked.pages.first.findShapeById(1)!;
+      expect(source.fill.pattern, 0);
+      expect(source.shadow.enabled, isFalse,
+          reason: 'Foreign fill PNG cannot collect draw:shadow');
+      expect(
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+      );
+      final shadowPlate =
+          baked.pages.first.shapes.where(isLibvisioShadowPlate).single;
+      expect(shadowPlate.hasImage, isTrue);
+      expect(shadowPlate.pinX, closeTo(4.7, 1e-9));
+      expect(shadowPlate.pinY, closeTo(5.75, 1e-9));
+      expect(
+        documentForLibvisioWrite(baked)
+            .pages
+            .first
+            .shapes
+            .where(isLibvisioShadowPlate),
+        hasLength(1),
+        reason: 'a second save must not stack another hard-shadow plate',
+      );
+
+      final saved = writer.write(originalBytes: blank, edited: doc);
+      final savedDoc = parser.parse(saved);
+      expect(savedDoc.pages.first.findShapeById(1)!.shadow.enabled, isFalse);
+      expect(
+        savedDoc.pages.first.shapes.where(isLibvisioShadowPlate),
+        hasLength(1),
+      );
+      expect(
+        savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+        hasLength(1),
+      );
+
+      const twoStop = VsdxGradient(
+        stops: <VsdxGradientStop>[
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      );
+      final two = VsdxShapeFactory.rectangle(
+        id: 2,
+        pinX: 4.25,
+        pinY: 6.2,
+        width: 3.0,
+        height: 1.4,
+        name: 'Grad2HardShadow',
+        fill: const VsdxFill(pattern: 1, gradient: twoStop),
+        line: const VsdxLine(pattern: 0),
+      ).copyWith(shadow: hardShadow);
+      var twoDoc = parser.parse(blank);
+      twoDoc = twoDoc.replacePage(0, twoDoc.pages.first.addShape(two));
+      final twoBaked = documentForLibvisioWrite(twoDoc);
+      expect(
+        twoBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+      );
+      expect(twoBaked.pages.first.findShapeById(2)!.shadow.enabled, isTrue,
+          reason: 'two-colour FillGradient keeps native draw:shadow');
+    },
+  );
+
+  test(
     'multi-stop FillGradient on EllipticalArcTo follows the sampled silhouette',
     () {
       const wash = VsdxGradient(
