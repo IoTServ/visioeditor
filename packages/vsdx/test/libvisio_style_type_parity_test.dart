@@ -165,6 +165,10 @@
 /// Per-stop alpha and FillForegndTrans on a two-colour wash join that
 /// plate — FillPattern 25–40 drop `draw:opacity` and Draw ignores
 /// `librevenge:*-opacity`. Opaque two-colour washes stay 25–40.
+/// FillPattern 2–24 FillForegndTrans freezes into FillForegnd /
+/// FillBkgnd: `_fillAndShadowProperties` drops hatch `draw:opacity`
+/// when FillBkgndTrans is 1 and otherwise fades the whole box from
+/// `max(fg,bg)`. Opaque hatches stay native.
 /// Theme-only FillForegnd / LineColor / gradient stops resolve through
 /// the document theme then Office into that PNG. An
 /// unfilled 2-D stroke with
@@ -780,8 +784,7 @@ void main() {
     );
   });
 
-  test('Paragraph HorzAlign=full bakes justify so LibreOffice keeps wrap',
-      () {
+  test('Paragraph HorzAlign=full bakes justify so LibreOffice keeps wrap', () {
     const wrap = 'AA BB CC DD EE FF GG HH';
     final shape = VsdxShapeFactory.rectangle(
       id: 1,
@@ -2241,7 +2244,8 @@ void main() {
         isTrue,
       );
       var green = 0;
-      for (final plate in baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate)) {
+      for (final plate
+          in baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate)) {
         final png = raster.decodePng(
           baked.images.findByPart(plate.imagePartName!)!.bytes,
         )!;
@@ -2361,9 +2365,11 @@ void main() {
     final glowNames =
         baked.pages.first.shapes.map((s) => s.name).toList(growable: false);
     expect(
-      glowNames.lastIndexWhere((n) => n.startsWith(kLibvisioGlowShapeNamePrefix)),
+      glowNames
+          .lastIndexWhere((n) => n.startsWith(kLibvisioGlowShapeNamePrefix)),
       lessThan(
-        glowNames.indexWhere((n) => n.startsWith(kLibvisioSketchShapeNamePrefix)),
+        glowNames
+            .indexWhere((n) => n.startsWith(kLibvisioSketchShapeNamePrefix)),
       ),
       reason: 'opaque Glow PNGs must sit under both jiggle strokes',
     );
@@ -2738,8 +2744,7 @@ void main() {
       isTrue,
       reason: 'jiggle leftovers must keep the high miter Draw would bevel',
     );
-    for (final plate
-        in baked.pages.first.shapes.where(isLibvisioSketchPlate)) {
+    for (final plate in baked.pages.first.shapes.where(isLibvisioSketchPlate)) {
       final write = libvisioShapeWrite(plate);
       expect(write.line.pattern, 0);
       expect(write.fill.hasFill, isTrue);
@@ -2825,7 +2830,10 @@ void main() {
         cap: LineCap.round,
         join: VsdxLineJoin.miter,
       ),
-    ).withDrawioLineJoin(VsdxLineJoin.miter).withSketchEffect(true).withSketchJiggle(3.5);
+    )
+        .withDrawioLineJoin(VsdxLineJoin.miter)
+        .withSketchEffect(true)
+        .withSketchJiggle(3.5);
     expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
     expect(shapeNeedsLibvisioRoundCapMiterFlatten(shape), isTrue);
 
@@ -2842,7 +2850,8 @@ void main() {
           .where(isLibvisioSketchPlate)
           .every(shapeNeedsLibvisioRoundCapMiterFlatten),
       isTrue,
-      reason: 'jiggle leftovers must flatten LineCap so Draw does not round-join',
+      reason:
+          'jiggle leftovers must flatten LineCap so Draw does not round-join',
     );
 
     final saved = writer.write(originalBytes: blank, edited: doc);
@@ -2882,7 +2891,10 @@ void main() {
         cap: LineCap.round,
         join: VsdxLineJoin.miter,
       ),
-    ).withDrawioLineJoin(VsdxLineJoin.miter).withSketchEffect(true).withSketchJiggle(3.5);
+    )
+        .withDrawioLineJoin(VsdxLineJoin.miter)
+        .withSketchEffect(true)
+        .withSketchJiggle(3.5);
     var oneDoc = parser.parse(blank);
     oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
     final oneBaked = documentForLibvisioWrite(oneDoc);
@@ -2940,7 +2952,8 @@ void main() {
     final plates = savedDoc.pages.first.shapes.where(isLibvisioSketchPlate);
     expect(plates, hasLength(2));
     expect(
-      plates.every((s) => s.line.pattern == 1 && s.line.customDashPattern == null),
+      plates.every(
+          (s) => s.line.pattern == 1 && s.line.customDashPattern == null),
       isTrue,
     );
     var moves = 0;
@@ -2952,7 +2965,8 @@ void main() {
     expect(
       moves,
       greaterThan(2),
-      reason: 'each jiggle must become multiple dash subpaths, not LinePattern 2',
+      reason:
+          'each jiggle must become multiple dash subpaths, not LinePattern 2',
     );
     expect(
       parser
@@ -2997,14 +3011,16 @@ void main() {
           .where(isLibvisioSketchPlate)
           .every(shapeNeedsLibvisioFlowDashBake),
       isTrue,
-      reason: 'jiggle leftovers must flatten Flow Animation Draw would stroke solid',
+      reason:
+          'jiggle leftovers must flatten Flow Animation Draw would stroke solid',
     );
 
     final saved = writer.write(originalBytes: blank, edited: doc);
     final savedDoc = parser.parse(saved);
     final plates = savedDoc.pages.first.shapes.where(isLibvisioSketchPlate);
     expect(plates, hasLength(2));
-    expect(plates.every((s) => !s.flowAnimation && s.line.pattern == 1), isTrue);
+    expect(
+        plates.every((s) => !s.flowAnimation && s.line.pattern == 1), isTrue);
     var moves = 0;
     for (final plate in plates) {
       for (final geometry in plate.geometries) {
@@ -3018,7 +3034,8 @@ void main() {
     );
   });
 
-  test('Sketch jiggle strokes keep LinePattern gaps on a ribbon for LibreOffice',
+  test(
+      'Sketch jiggle strokes keep LinePattern gaps on a ribbon for LibreOffice',
       () {
     final shape = VsdxShapeFactory.line(
       id: 1,
@@ -4762,7 +4779,8 @@ void main() {
     final fadedPng = raster.decodePng(
       fadedBaked.images.findByPart(fadedPlate.imagePartName!)!.bytes,
     )!;
-    final fadedMid = fadedPng.getPixel(fadedPng.width ~/ 2, fadedPng.height ~/ 2);
+    final fadedMid =
+        fadedPng.getPixel(fadedPng.width ~/ 2, fadedPng.height ~/ 2);
     final fadedLuma =
         0.299 * fadedMid.r + 0.587 * fadedMid.g + 0.114 * fadedMid.b;
     expect(
@@ -5641,7 +5659,8 @@ void main() {
             .shapes
             .where(isLibvisioSoftEdgesPlate),
         hasLength(1),
-        reason: 'a second save must not stack another even-odd FillGradient plate',
+        reason:
+            'a second save must not stack another even-odd FillGradient plate',
       );
 
       const twoStop = VsdxGradient(
@@ -5687,15 +5706,13 @@ void main() {
       expect(
         bothHole.r,
         greaterThan(240),
-        reason:
-            'even-odd FillGradient+LineGradient PNG must keep the hole; '
+        reason: 'even-odd FillGradient+LineGradient PNG must keep the hole; '
             'hole=$bothHole',
       );
       expect(
         bothHole.g,
         greaterThan(240),
-        reason:
-            'even-odd FillGradient+LineGradient PNG must keep the hole; '
+        reason: 'even-odd FillGradient+LineGradient PNG must keep the hole; '
             'hole=$bothHole',
       );
       expect(
@@ -5705,7 +5722,8 @@ void main() {
             .shapes
             .where(isLibvisioSoftEdgesPlate),
         hasLength(1),
-        reason: 'a second save must not stack another even-odd fill+stroke plate',
+        reason:
+            'a second save must not stack another even-odd fill+stroke plate',
       );
     },
   );
@@ -5879,10 +5897,12 @@ void main() {
     final png = baked.images.findByPart(plate.imagePartName!);
     expect(png, isNotNull);
     final ink = counts(raster.decodePng(png!.bytes)!);
-    expect(ink.mag, greaterThan(20), reason: 'left stop must stay magenta; $ink');
+    expect(ink.mag, greaterThan(20),
+        reason: 'left stop must stay magenta; $ink');
     expect(ink.green, greaterThan(20),
         reason: 'middle stop must stay green; $ink');
-    expect(ink.blue, greaterThan(20), reason: 'right stop must stay blue; $ink');
+    expect(ink.blue, greaterThan(20),
+        reason: 'right stop must stay blue; $ink');
     expect(
       documentForLibvisioWrite(baked)
           .pages
@@ -5961,8 +5981,8 @@ void main() {
     );
     expect(shapeNeedsLibvisioGeometrySoftEdgesBake(fadedLine), isTrue);
     var fadedLineDoc = parser.parse(blank);
-    fadedLineDoc =
-        fadedLineDoc.replacePage(0, fadedLineDoc.pages.first.addShape(fadedLine));
+    fadedLineDoc = fadedLineDoc.replacePage(
+        0, fadedLineDoc.pages.first.addShape(fadedLine));
     final fadedLineBaked = documentForLibvisioWrite(fadedLineDoc);
     expect(fadedLineBaked.pages.first.findShapeById(6)!.line.pattern, 0);
     expect(
@@ -6004,7 +6024,8 @@ void main() {
       ),
     );
     expect(shapeNeedsLibvisioGeometrySoftEdgesBake(clearLine), isTrue,
-        reason: 'a fully transparent LineGradient stop is not two 25–40 colours');
+        reason:
+            'a fully transparent LineGradient stop is not two 25–40 colours');
     var clearLineDoc = parser.parse(blank);
     clearLineDoc = clearLineDoc.replacePage(
       0,
@@ -6023,7 +6044,8 @@ void main() {
           .shapes
           .where(isLibvisioSoftEdgesPlate),
       hasLength(1),
-      reason: 'a second save must not stack another clear-stop LineGradient plate',
+      reason:
+          'a second save must not stack another clear-stop LineGradient plate',
     );
 
     final connector = VsdxShapeFactory.line(
@@ -6138,7 +6160,8 @@ void main() {
     final infPlate =
         infBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
     expect(infPlate.width, lessThan(6),
-        reason: 'InfiniteLine PNG must clip to the shape box, not a 900" sample');
+        reason:
+            'InfiniteLine PNG must clip to the shape box, not a 900" sample');
     final infInk = counts(
       raster.decodePng(
         infBaked.images.findByPart(infPlate.imagePartName!)!.bytes,
@@ -6432,6 +6455,166 @@ void main() {
           .where(isLibvisioSoftEdgesPlate),
       hasLength(1),
       reason: 'a second save must not stack another SoftEdges plate',
+    );
+  });
+
+  test('hatch FillForegndTrans freezes RGB LibreOffice can collect', () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const white = VsdxColor.white;
+    const blue = VsdxColor(0xFF0000FF);
+    const faded = VsdxFill(
+      foreground: mag,
+      background: white,
+      pattern: 6,
+      foregroundTransparency: 0.5,
+    );
+    expect(fillNeedsLibvisioHatchTransBake(faded), isTrue);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 1.2,
+          height: 0.8,
+          fill: faded,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isFalse,
+      reason: 'hatch line trans is a cell freeze, not a SoftEdges PNG',
+    );
+
+    final overWhite = fillHatchTransForLibvisioWrite(faded);
+    expect(overWhite.pattern, 6);
+    expect(overWhite.foregroundTransparency, closeTo(0, 1e-9));
+    expect(overWhite.backgroundTransparency, closeTo(0, 1e-9));
+    expect(
+      overWhite.foreground?.value,
+      colourForLibvisioAlpha(mag, 0.5).value,
+    );
+    expect(overWhite.background?.value, white.value);
+    expect(fillNeedsLibvisioHatchTransBake(overWhite), isFalse);
+
+    final hollow = fillHatchTransForLibvisioWrite(
+      const VsdxFill(
+        foreground: mag,
+        pattern: 6,
+        foregroundTransparency: 0.5,
+        backgroundTransparency: 1,
+      ),
+    );
+    expect(hollow.pattern, 6);
+    expect(hollow.foregroundTransparency, closeTo(0, 1e-9));
+    expect(hollow.backgroundTransparency, closeTo(1, 1e-9));
+    expect(hollow.foreground?.value, colourForLibvisioAlpha(mag, 0.5).value);
+
+    final overBlue = fillHatchTransForLibvisioWrite(
+      const VsdxFill(
+        foreground: mag,
+        background: blue,
+        pattern: 6,
+        foregroundTransparency: 0.5,
+      ),
+    );
+    expect(overBlue.background?.value, blue.value);
+    expect(overBlue.foreground?.red, 128);
+    expect(overBlue.foreground?.green, 0);
+    expect(overBlue.foreground?.blue, 255);
+
+    expect(
+      fillNeedsLibvisioHatchTransBake(
+        const VsdxFill(foreground: mag, background: white, pattern: 6),
+      ),
+      isFalse,
+      reason: 'opaque hatch stays native draw:fill=hatch',
+    );
+    expect(
+      fillNeedsLibvisioHatchTransBake(
+        const VsdxFill(
+          foreground: mag,
+          pattern: 6,
+          backgroundTransparency: 1,
+        ),
+      ),
+      isFalse,
+      reason: 'hollow opaque strokes already map to hatch-solid=false',
+    );
+
+    const slot = ThemeSlot.accent2;
+    final themeFg = fillHatchTransForLibvisioWrite(
+      const VsdxFill(
+        themeForegroundIndex: slot,
+        background: white,
+        pattern: 6,
+        foregroundTransparency: 0.5,
+      ),
+      VsdxTheme.office,
+    );
+    expect(themeFg.themeForegroundIndex, isNull);
+    expect(
+      themeFg.foreground?.value,
+      colourForLibvisioAlpha(VsdxTheme.office.resolve(slot)!, 0.5).value,
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'HatchFade',
+          fill: faded,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.fill.pattern, 6);
+    expect(source.fill.foregroundTransparency, closeTo(0, 1e-9));
+    expect(
+      source.fill.foreground?.value,
+      colourForLibvisioAlpha(mag, 0.5).value,
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .findShapeById(1)!
+          .fill
+          .foreground
+          ?.value,
+      source.fill.foreground?.value,
+      reason: 'a second save must not restack hatch FillForegndTrans',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final after = savedDoc.pages.first.findShapeById(1)!;
+    expect(after.fill.pattern, 6);
+    expect(after.fill.foregroundTransparency, closeTo(0, 1e-9));
+    expect(
+      after.fill.foreground?.value,
+      colourForLibvisioAlpha(mag, 0.5).value,
+    );
+    final savedAgain = writer.write(originalBytes: saved, edited: savedDoc);
+    expect(
+      parser
+          .parse(savedAgain)
+          .pages
+          .first
+          .findShapeById(1)!
+          .fill
+          .foreground
+          ?.value,
+      after.fill.foreground?.value,
+      reason: 'a second save must not restack hatch FillForegndTrans',
     );
   });
 
@@ -9968,7 +10151,8 @@ void main() {
       if (pixel.g > pixel.r + 20 && pixel.g > pixel.b + 20) green++;
     }
     expect(transparent, 0);
-    expect(green, greaterThan(50), reason: 'baked hatch PNG must keep green strokes');
+    expect(green, greaterThan(50),
+        reason: 'baked hatch PNG must keep green strokes');
     expect(
       documentForLibvisioWrite(baked)
           .pages
@@ -10020,7 +10204,8 @@ void main() {
       if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
     }
     expect(transparent, 0);
-    expect(magenta, greaterThan(50), reason: 'WebP magenta must survive PNG bake');
+    expect(magenta, greaterThan(50),
+        reason: 'WebP magenta must survive PNG bake');
     expect(
       documentForLibvisioWrite(baked)
           .pages
@@ -10104,7 +10289,8 @@ void main() {
       if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
     }
     expect(transparent, 0);
-    expect(magenta, greaterThan(50), reason: 'DIB magenta must survive PNG bake');
+    expect(magenta, greaterThan(50),
+        reason: 'DIB magenta must survive PNG bake');
     expect(
       documentForLibvisioWrite(baked)
           .pages
@@ -10158,7 +10344,8 @@ void main() {
       if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) magenta++;
     }
     expect(transparent, 0);
-    expect(magenta, greaterThan(50), reason: 'ICO magenta must survive PNG bake');
+    expect(magenta, greaterThan(50),
+        reason: 'ICO magenta must survive PNG bake');
     expect(
       documentForLibvisioWrite(baked)
           .pages
@@ -10190,14 +10377,13 @@ void main() {
     var transparent = 0;
     for (final pixel in decoded) {
       if (pixel.a < 250) transparent++;
-      if (pixel.g > pixel.r + 20 &&
-          pixel.g > pixel.b + 20 &&
-          pixel.g > 80) {
+      if (pixel.g > pixel.r + 20 && pixel.g > pixel.b + 20 && pixel.g > 80) {
         green++;
       }
     }
     expect(transparent, 0);
-    expect(green, greaterThan(200), reason: 'Visio5 hatch rooms must stay green');
+    expect(green, greaterThan(200),
+        reason: 'Visio5 hatch rooms must stay green');
   });
 
   test('Metafile pattern brush tiles bake into PNG for LibreOffice', () {
@@ -10240,8 +10426,10 @@ void main() {
       if (pixel.r < 20 && pixel.g < 20 && pixel.b < 20) black++;
       if (pixel.r > 240 && pixel.g > 240 && pixel.b > 240) white++;
     }
-    expect(black, greaterThan(50), reason: 'checker pattern must keep black tiles');
-    expect(white, greaterThan(50), reason: 'checker pattern must keep white tiles');
+    expect(black, greaterThan(50),
+        reason: 'checker pattern must keep black tiles');
+    expect(white, greaterThan(50),
+        reason: 'checker pattern must keep white tiles');
   });
 
   test('Metafile clip keeps later fills inside the GDI region', () {
@@ -11275,7 +11463,8 @@ void main() {
           .where(isLibvisioReflectionPlate)
           .single;
       expect(twoPlate.hasImage, isFalse,
-          reason: 'two-colour FillGradient reflection must stay FillPattern 25–40');
+          reason:
+              'two-colour FillGradient reflection must stay FillPattern 25–40');
     },
   );
 
@@ -15572,10 +15761,76 @@ Uint8List _hatchGreenEmf() {
 
 /// 16×16 magenta VP8 WebP (`package:image` 4.3's VP8L decoder throws).
 Uint8List _magentaWebp() => Uint8List.fromList(const <int>[
-      82, 73, 70, 70, 62, 0, 0, 0, 87, 69, 66, 80, 86, 80, 56, 32, 50, 0, 0, 0,
-      208, 1, 0, 157, 1, 42, 16, 0, 16, 0, 1, 64, 38, 37, 160, 2, 116, 186, 1,
-      248, 0, 3, 176, 0, 254, 235, 222, 47, 253, 227, 63, 220, 103, 251, 140,
-      255, 229, 247, 255, 201, 178, 249, 1, 255, 32, 63, 254, 73, 192, 0,
+      82,
+      73,
+      70,
+      70,
+      62,
+      0,
+      0,
+      0,
+      87,
+      69,
+      66,
+      80,
+      86,
+      80,
+      56,
+      32,
+      50,
+      0,
+      0,
+      0,
+      208,
+      1,
+      0,
+      157,
+      1,
+      42,
+      16,
+      0,
+      16,
+      0,
+      1,
+      64,
+      38,
+      37,
+      160,
+      2,
+      116,
+      186,
+      1,
+      248,
+      0,
+      3,
+      176,
+      0,
+      254,
+      235,
+      222,
+      47,
+      253,
+      227,
+      63,
+      220,
+      103,
+      251,
+      140,
+      255,
+      229,
+      247,
+      255,
+      201,
+      178,
+      249,
+      1,
+      255,
+      32,
+      63,
+      254,
+      73,
+      192,
+      0,
     ]);
 
 Uint8List _magentaRaster({required bool bmp}) {

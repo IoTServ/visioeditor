@@ -590,6 +590,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   samples LineTo when Width or Height is degenerate. Non-degenerate 2-D
   CubBezTo still writes RelCubBezTo. A second save does not resample
   the polyline.
+- Hatch FillForegndTrans now keeps faded strokes in LibreOffice.
+  `_fillAndShadowProperties` maps FillPattern 2–24 to `draw:fill=hatch`:
+  FillBkgndTrans=1 drops `draw:opacity` so lines stay hard, and a solid
+  background emits one opacity from `max(fg,bg)` that fades the whole
+  box. Canvas / SVG only fade the hatch lines. A save freezes those
+  cells into FillForegnd / FillBkgnd (toward the hatch background, or
+  white when the background is fully transparent) and writes Trans=0.
+  Opaque hatches stay native. A second save does not restack.
 - Geometry-less glueable connectors now keep their auto-route in
   LibreOffice. libvisio only emits a stroke when Geometry filled
   `m_currentFillGeometry`, so a Begin–End 1-D XForm with no rows stayed

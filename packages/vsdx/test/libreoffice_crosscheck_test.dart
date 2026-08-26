@@ -2082,7 +2082,11 @@ void main() {
     final textEmfBytes = _magentaTextEmf();
     expect(extractEmfEmbeddedBitmap(textEmfBytes), isNull);
     expect(
-      parseEmfDrawing(textEmfBytes)!.ops.whereType<MetafileTextOp>().single.text,
+      parseEmfDrawing(textEmfBytes)!
+          .ops
+          .whereType<MetafileTextOp>()
+          .single
+          .text,
       'HI',
     );
     textEmfDocument = textEmfDocument
@@ -3869,6 +3873,55 @@ void main() {
           line: const VsdxLine(pattern: 0, softEdgesInches: 0.2),
         ),
       ),
+    );
+    var hatchFadeDocument = parser.parse(blank);
+    final hatchFadePage = hatchFadeDocument.pages.first;
+    hatchFadeDocument = hatchFadeDocument.replacePage(
+      0,
+      hatchFadePage
+          .copyWith(backgroundColor: const VsdxColor(0xFF00FFFF))
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: hatchFadePage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              name: 'HatchFade',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF00FF),
+                background: VsdxColor.white,
+                pattern: 6,
+                foregroundTransparency: 0.5,
+              ),
+              line: const VsdxLine(pattern: 0),
+            ),
+          ),
+    );
+    var hatchFadeHollowDocument = parser.parse(blank);
+    final hatchFadeHollowPage = hatchFadeHollowDocument.pages.first;
+    hatchFadeHollowDocument = hatchFadeHollowDocument.replacePage(
+      0,
+      hatchFadeHollowPage
+          .copyWith(backgroundColor: const VsdxColor(0xFF00FFFF))
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: hatchFadeHollowPage.nextFreeShapeId(),
+              pinX: 4.25,
+              pinY: 5.5,
+              width: 3,
+              height: 2,
+              name: 'HatchFadeHollow',
+              fill: const VsdxFill(
+                foreground: VsdxColor(0xFFFF00FF),
+                background: VsdxColor.white,
+                pattern: 6,
+                foregroundTransparency: 0.5,
+                backgroundTransparency: 1,
+              ),
+              line: const VsdxLine(pattern: 0),
+            ),
+          ),
     );
     var strokeSoftDocument = parser.parse(blank);
     final strokeSoftPage = strokeSoftDocument.pages.first;
@@ -7028,6 +7081,14 @@ void main() {
         originalBytes: blank,
         edited: hatchSoftThemeFgDocument,
       ),
+      'hatch_fade': writer.write(
+        originalBytes: blank,
+        edited: hatchFadeDocument,
+      ),
+      'hatch_fade_hollow': writer.write(
+        originalBytes: blank,
+        edited: hatchFadeHollowDocument,
+      ),
       'stroke_soft': writer.write(
         originalBytes: blank,
         edited: strokeSoftDocument,
@@ -8897,6 +8958,158 @@ void main() {
               greaterThan(orangeInk),
               reason: 'LibreOffice must paint baked hatch background; '
                   'orangeInk=$orangeInk blueInk=$blueInk',
+            );
+          }
+        }
+        if (entry.key == 'hatch_fade') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'HatchFade');
+          expect(source.fill.pattern, 6);
+          expect(source.fill.foregroundTransparency, closeTo(0, 1e-9));
+          expect(
+            source.fill.foreground?.value,
+            colourForLibvisioAlpha(const VsdxColor(0xFFFF00FF), 0.5).value,
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            isEmpty,
+            reason: 'hatch line trans stays vector hatch, not a PNG plate',
+          );
+          if (pdftoppm != null) {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '96',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            )!;
+            final page = reopened.pages.first;
+            final left =
+                ((4.25 - 1.4) / page.widthInches * rendered.width).round();
+            final right =
+                ((4.25 + 1.4) / page.widthInches * rendered.width).round();
+            final top = ((page.heightInches - (5.5 + 0.9)) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final bottom = ((page.heightInches - (5.5 - 0.9)) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var cyan = 0;
+            var white = 0;
+            var sumR = 0;
+            var n = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final p = rendered.getPixel(x, y);
+                n++;
+                sumR += p.r.toInt();
+                if (p.g > 160 && p.b > 160 && p.r < 80) cyan++;
+                if (p.r > 220 && p.g > 220 && p.b > 220) white++;
+              }
+            }
+            expect(
+              cyan,
+              lessThan(200),
+              reason: 'LibreOffice must not apply hatch draw:opacity to the '
+                  'opaque FillBkgnd (that turns the box into page-coloured '
+                  'glass); cyan=$cyan white=$white meanR=${n == 0 ? 0 : sumR / n}',
+            );
+            expect(
+              white,
+              greaterThan(20000),
+              reason: 'LibreOffice must keep the opaque hatch background; '
+                  'cyan=$cyan white=$white',
+            );
+            expect(
+              n == 0 ? 0 : sumR / n,
+              greaterThan(200),
+              reason: 'native FillForegndTrans on hatch-solid fades the whole '
+                  'box toward PageColor (meanR≈128); frozen strokes stay on '
+                  'white; meanR=${n == 0 ? 0 : sumR / n}',
+            );
+          }
+        }
+        if (entry.key == 'hatch_fade_hollow') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'HatchFadeHollow');
+          expect(source.fill.pattern, 6);
+          expect(source.fill.foregroundTransparency, closeTo(0, 1e-9));
+          expect(source.fill.backgroundTransparency, closeTo(1, 1e-9));
+          expect(
+            source.fill.foreground?.value,
+            colourForLibvisioAlpha(const VsdxColor(0xFFFF00FF), 0.5).value,
+          );
+          if (pdftoppm != null) {
+            final prefix = '${dir.path}/${entry.key}-render';
+            final rasterized = await Process.run(pdftoppm, <String>[
+              '-png',
+              '-singlefile',
+              '-r',
+              '96',
+              pdf.path,
+              prefix,
+            ]);
+            expect(rasterized.exitCode, 0,
+                reason: 'pdftoppm stderr: ${rasterized.stderr}');
+            final rendered = raster.decodePng(
+              await File('$prefix.png').readAsBytes(),
+            )!;
+            final page = reopened.pages.first;
+            final left =
+                ((4.25 - 1.4) / page.widthInches * rendered.width).round();
+            final right =
+                ((4.25 + 1.4) / page.widthInches * rendered.width).round();
+            final top = ((page.heightInches - (5.5 + 0.9)) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            final bottom = ((page.heightInches - (5.5 - 0.9)) /
+                    page.heightInches *
+                    rendered.height)
+                .round();
+            var cyan = 0;
+            var pink = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final p = rendered.getPixel(x, y);
+                if (p.g > 160 && p.b > 160 && p.r < 80) cyan++;
+                if (p.r > 200 && p.b > 200 && p.g > 80 && p.g < 180) pink++;
+              }
+            }
+            expect(
+              cyan,
+              greaterThan(20000),
+              reason: 'hollow hatch must keep PageColor in the gaps; '
+                  'cyan=$cyan pink=$pink',
+            );
+            expect(
+              pink,
+              greaterThan(100),
+              reason: 'LibreOffice must paint frozen paler hatch strokes, '
+                  'not hard magenta; cyan=$cyan pink=$pink',
             );
           }
         }
@@ -13834,7 +14047,8 @@ void main() {
           expect(
             magentaPixels,
             greaterThan(40),
-            reason: 'LibreOffice must paint mixed Latin+CJK after the Font split; '
+            reason:
+                'LibreOffice must paint mixed Latin+CJK after the Font split; '
                 'magentaPixels=$magentaPixels',
           );
           expect(
@@ -14152,8 +14366,8 @@ void main() {
         }
         if (entry.key == 'grad3_fill_gradient') {
           final reopened = parser.parse(entry.value);
-          final source = reopened.pages.first.shapes
-              .firstWhere((s) => s.name == 'Grad3');
+          final source =
+              reopened.pages.first.shapes.firstWhere((s) => s.name == 'Grad3');
           expect(source.fill.pattern, 0);
           expect(source.fill.hasGradient, isFalse);
           expect(
@@ -14715,8 +14929,8 @@ void main() {
 
           // Bottom-left at (3.25, 4.90). Sample each jiggle's miter ear —
           // a round join (r=0.12) misses the 45° point ~0.13" out.
-          final leftover = page.shapes
-              .firstWhere((s) => s.name == 'SketchRoundCapMiter');
+          final leftover =
+              page.shapes.firstWhere((s) => s.name == 'SketchRoundCapMiter');
           final offsets = drawioSketchStrokeOffsets(
             leftover.id,
             leftover.sketchJiggle,
@@ -15092,7 +15306,8 @@ void main() {
           expect(
             magenta,
             greaterThan(40),
-            reason: 'Draw must paint the magenta stop, not FillForegnd/FillBkgnd; '
+            reason:
+                'Draw must paint the magenta stop, not FillForegnd/FillBkgnd; '
                 'magenta=$magenta green=$green blue=$blue',
           );
           expect(
@@ -15144,7 +15359,8 @@ void main() {
             expect(
               blue2,
               lessThan(80),
-              reason: 'Draw must not fill the pie / rounded-rect box with Blue 2; '
+              reason:
+                  'Draw must not fill the pie / rounded-rect box with Blue 2; '
                   'blue2=$blue2 green=$green',
             );
           }
@@ -15157,8 +15373,7 @@ void main() {
             final cx = ((shape.pinX / page.widthInches) * rendered.width)
                 .round()
                 .clamp(0, rendered.width - 1);
-            final cy = (((page.heightInches - shape.pinY) /
-                        page.heightInches) *
+            final cy = (((page.heightInches - shape.pinY) / page.heightInches) *
                     rendered.height)
                 .round()
                 .clamp(0, rendered.height - 1);
@@ -15175,7 +15390,8 @@ void main() {
             expect(
               centerDark,
               lessThan(40),
-              reason: 'Draw must keep the even-odd hole, not fill it with the wash; '
+              reason:
+                  'Draw must keep the even-odd hole, not fill it with the wash; '
                   'centerDark=$centerDark green=$green',
             );
           }
@@ -15187,8 +15403,7 @@ void main() {
             final cx = ((shape.pinX / page.widthInches) * rendered.width)
                 .round()
                 .clamp(0, rendered.width - 1);
-            final cy = (((page.heightInches - shape.pinY) /
-                        page.heightInches) *
+            final cy = (((page.heightInches - shape.pinY) / page.heightInches) *
                     rendered.height)
                 .round()
                 .clamp(0, rendered.height - 1);
@@ -15876,12 +16091,11 @@ void main() {
         }
         if (entry.key == 'cubbez_1d') {
           final reopened = parser.parse(entry.value);
-          final source = reopened.pages.first.shapes
-              .firstWhere((s) => s.name == 'Bez1D');
-          expect(source.geometries.single.commands.whereType<CubBezTo>(),
-              isEmpty);
-          final lines =
-              source.geometries.single.commands.whereType<LineTo>();
+          final source =
+              reopened.pages.first.shapes.firstWhere((s) => s.name == 'Bez1D');
+          expect(
+              source.geometries.single.commands.whereType<CubBezTo>(), isEmpty);
+          final lines = source.geometries.single.commands.whereType<LineTo>();
           expect(
             lines.length,
             greaterThanOrEqualTo(12),
@@ -16876,18 +17090,14 @@ void main() {
           // FillPattern 25–40 would skip it and top out around ACCFFF
           // (luma ~202). Stay 0.03" inside the fill so page white cannot
           // inflate the max.
-          final holeLeft =
-              (3.28 / page.widthInches * rendered.width).round();
-          final holeRight =
-              (5.22 / page.widthInches * rendered.width).round();
-          final holeTop = ((page.heightInches - 6.07) /
-                  page.heightInches *
-                  rendered.height)
-              .round();
-          final holeBottom = ((page.heightInches - 4.93) /
-                  page.heightInches *
-                  rendered.height)
-              .round();
+          final holeLeft = (3.28 / page.widthInches * rendered.width).round();
+          final holeRight = (5.22 / page.widthInches * rendered.width).round();
+          final holeTop =
+              ((page.heightInches - 6.07) / page.heightInches * rendered.height)
+                  .round();
+          final holeBottom =
+              ((page.heightInches - 4.93) / page.heightInches * rendered.height)
+                  .round();
           var holeMax = 0.0;
           for (var y = holeTop; y < holeBottom; y++) {
             for (var x = holeLeft; x < holeRight; x++) {
@@ -16898,8 +17108,7 @@ void main() {
                 continue;
               }
               final pixel = rendered.getPixel(x, y);
-              final luma =
-                  0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+              final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
               if (luma > holeMax) holeMax = luma;
             }
           }
@@ -17106,10 +17315,76 @@ Uint8List _solidPng() {
 
 /// 16×16 magenta VP8 WebP (`package:image` 4.3's VP8L decoder throws).
 Uint8List _magentaWebp() => Uint8List.fromList(const <int>[
-      82, 73, 70, 70, 62, 0, 0, 0, 87, 69, 66, 80, 86, 80, 56, 32, 50, 0, 0, 0,
-      208, 1, 0, 157, 1, 42, 16, 0, 16, 0, 1, 64, 38, 37, 160, 2, 116, 186, 1,
-      248, 0, 3, 176, 0, 254, 235, 222, 47, 253, 227, 63, 220, 103, 251, 140,
-      255, 229, 247, 255, 201, 178, 249, 1, 255, 32, 63, 254, 73, 192, 0,
+      82,
+      73,
+      70,
+      70,
+      62,
+      0,
+      0,
+      0,
+      87,
+      69,
+      66,
+      80,
+      86,
+      80,
+      56,
+      32,
+      50,
+      0,
+      0,
+      0,
+      208,
+      1,
+      0,
+      157,
+      1,
+      42,
+      16,
+      0,
+      16,
+      0,
+      1,
+      64,
+      38,
+      37,
+      160,
+      2,
+      116,
+      186,
+      1,
+      248,
+      0,
+      3,
+      176,
+      0,
+      254,
+      235,
+      222,
+      47,
+      253,
+      227,
+      63,
+      220,
+      103,
+      251,
+      140,
+      255,
+      229,
+      247,
+      255,
+      201,
+      178,
+      249,
+      1,
+      255,
+      32,
+      63,
+      254,
+      73,
+      192,
+      0,
     ]);
 
 Uint8List _magentaDib() {

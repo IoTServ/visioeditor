@@ -22,7 +22,15 @@
 /// Draw ignores `librevenge:start-opacity` / `end-opacity`, so a save
 /// bakes that PNG too — including a fully transparent stop that 25–40
 /// would skip, stretching the remaining opaque colours from the box
-/// edge. Two-colour opaque washes stay 25–40. Curve
+/// edge. Two-colour opaque washes stay 25–40. FillPattern 2–24 hatch
+/// FillForegndTrans is the same missing paint: `_fillAndShadowProperties`
+/// drops `draw:opacity` when FillBkgndTrans is 1 and otherwise fades the
+/// whole hatch-solid box from `max(fg,bg)`, so Draw keeps hard strokes
+/// or turns an opaque FillBkgnd into glass while canvas / SVG only fade
+/// the hatch lines. A save freezes those cells into FillForegnd /
+/// FillBkgnd (toward the hatch background, or white when the background
+/// is fully transparent) and writes Trans=0. Opaque hatches stay native.
+/// Curve
 /// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
 /// sampled so that plate follows the painted path — endpoint-only
 /// polygons used to wash a pie as a triangle and a rounded rectangle as
@@ -605,41 +613,43 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     pages.add(next);
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
-  return bakeThemeRgbCacheForLibvisioWrite(
-    bakePageColorForLibvisioWrite(
-      bakeCoveredForLibvisioWrite(
-        bakeCollapsedForLibvisioWrite(
-          bakeShapeInsideForLibvisioWrite(
-            bakeWordWrapForLibvisioWrite(
-              bakeLabelBorderForLibvisioWrite(
-                bakeLabelPaddingForLibvisioWrite(
-                  bakeFilledStrokeRibbonForLibvisioWrite(
-                    bakeGeometrySoftEdgesForLibvisioWrite(
-                      bakeReflectionForLibvisioWrite(
-                        bakeImageAdjustmentsForLibvisioWrite(
-                          bakeGlowPlateForLibvisioWrite(
-                            bakeGlassForLibvisioWrite(
-                              bakeSketchForLibvisioWrite(
-                                bakePageShadowForLibvisioWrite(
-                                  bakeShadowForLibvisioWrite(
-                                    bakeCurvedTextForLibvisioWrite(
-                                      bakeShapeOpacityForLibvisioWrite(
-                                        bakeSolidLineSpacingForLibvisioWrite(
-                                          bakeDefaultTabStopForLibvisioWrite(
-                                            bakeHorzAlignFullForLibvisioWrite(
-                                              bakeMixedScriptFontForLibvisioWrite(
-                                                bakeLangIdRtlForLibvisioWrite(
-                                                  bakeDoubleStrikethroughForLibvisioWrite(
-                                                    bakeOverlineForLibvisioWrite(
-                                                      bakeMixedHighlightForLibvisioWrite(
-                                                        bakeLooseEdgeLabelForLibvisioWrite(
-                                                          bakeAutoRotateLabelForLibvisioWrite(
-                                                            bakeTextDirectionForLibvisioWrite(
-                                                              bakeBulletGlyphForLibvisioWrite(
-                                                                bakeUnsupportedBitmapsForLibvisioWrite(
-                                                                  bakeMetafileBitmapsForLibvisioWrite(
-                                                                    bakeOlePreviewsForLibvisioWrite(
-                                                                      hopped,
+  return bakeHatchTransForLibvisioWrite(
+    bakeThemeRgbCacheForLibvisioWrite(
+      bakePageColorForLibvisioWrite(
+        bakeCoveredForLibvisioWrite(
+          bakeCollapsedForLibvisioWrite(
+            bakeShapeInsideForLibvisioWrite(
+              bakeWordWrapForLibvisioWrite(
+                bakeLabelBorderForLibvisioWrite(
+                  bakeLabelPaddingForLibvisioWrite(
+                    bakeFilledStrokeRibbonForLibvisioWrite(
+                      bakeGeometrySoftEdgesForLibvisioWrite(
+                        bakeReflectionForLibvisioWrite(
+                          bakeImageAdjustmentsForLibvisioWrite(
+                            bakeGlowPlateForLibvisioWrite(
+                              bakeGlassForLibvisioWrite(
+                                bakeSketchForLibvisioWrite(
+                                  bakePageShadowForLibvisioWrite(
+                                    bakeShadowForLibvisioWrite(
+                                      bakeCurvedTextForLibvisioWrite(
+                                        bakeShapeOpacityForLibvisioWrite(
+                                          bakeSolidLineSpacingForLibvisioWrite(
+                                            bakeDefaultTabStopForLibvisioWrite(
+                                              bakeHorzAlignFullForLibvisioWrite(
+                                                bakeMixedScriptFontForLibvisioWrite(
+                                                  bakeLangIdRtlForLibvisioWrite(
+                                                    bakeDoubleStrikethroughForLibvisioWrite(
+                                                      bakeOverlineForLibvisioWrite(
+                                                        bakeMixedHighlightForLibvisioWrite(
+                                                          bakeLooseEdgeLabelForLibvisioWrite(
+                                                            bakeAutoRotateLabelForLibvisioWrite(
+                                                              bakeTextDirectionForLibvisioWrite(
+                                                                bakeBulletGlyphForLibvisioWrite(
+                                                                  bakeUnsupportedBitmapsForLibvisioWrite(
+                                                                    bakeMetafileBitmapsForLibvisioWrite(
+                                                                      bakeOlePreviewsForLibvisioWrite(
+                                                                        hopped,
+                                                                      ),
                                                                     ),
                                                                   ),
                                                                 ),
@@ -10818,6 +10828,11 @@ LibvisioShapeWrite libvisioShapeWrite(
     theme,
     shape.quickStyleFillMatrix,
   );
+  fill = fillHatchTransForLibvisioWrite(
+    fill,
+    theme,
+    shape.quickStyleFillMatrix,
+  );
 
   final bezier = <VsdxGeometry>[
     for (final geometry in geometries)
@@ -12941,6 +12956,120 @@ VsdxDocument bakeThemeRgbCacheForLibvisioWrite(VsdxDocument document) {
           shapes: page.shapes.map(bakeShape).toList(growable: false),
         ),
     ],
+  );
+}
+
+/// `true` when FillPattern 2–24 FillForegndTrans cannot survive Draw's
+/// hatch mapping. `_fillAndShadowProperties` emits `draw:fill=hatch`;
+/// FillBkgndTrans==1 becomes `hatch-solid=false` with **no**
+/// `draw:opacity`, and a solid background becomes one `draw:opacity`
+/// from `1 - max(fg,bg)` that fades the whole box.
+bool fillNeedsLibvisioHatchTransBake(VsdxFill fill) {
+  if (libvisioHatchSpec(fill.pattern) == null) return false;
+  return fill.foregroundTransparency > 1e-9;
+}
+
+/// Hatch FillForegnd / FillBkgnd Draw will paint when FillForegndTrans
+/// cannot become ODF hatch opacity.
+///
+/// Hollow hatch (`FillBkgndTrans==1`) keeps the transparent background
+/// so page colour still shows through the gaps, and freezes paler
+/// strokes toward white. Solid hatch composites the strokes over
+/// FillBkgnd (then toward white when that cell is also translucent)
+/// and writes both Trans cells 0 so Draw does not fade the box.
+VsdxFill fillHatchTransForLibvisioWrite(
+  VsdxFill fill, [
+  VsdxTheme theme = VsdxTheme.empty,
+  int? fillMatrix,
+]) {
+  if (!fillNeedsLibvisioHatchTransBake(fill)) return fill;
+  if (fill.foreground == null && fill.themeForegroundIndex == null) {
+    return fill;
+  }
+  final fg = _fillRgbForLibvisioWrite(fill, theme, fillMatrix: fillMatrix);
+  final fgT = fill.foregroundTransparency.clamp(0.0, 1.0);
+  final bgT = fill.backgroundTransparency.clamp(0.0, 1.0);
+  if (bgT >= 1 - 1e-9) {
+    return fill.copyWith(
+      foreground: colourForLibvisioAlpha(fg, fgT),
+      foregroundTransparency: 0,
+      clearThemeForegroundIndex: true,
+    );
+  }
+  final bg = _fillBackgroundRgbForLibvisioWrite(fill, theme) ??
+      const VsdxColor(0xFFFFFFFF);
+  final gap = colourForLibvisioAlpha(bg, bgT);
+  return fill.copyWith(
+    foreground: _colourOver(gap, fg, fgT),
+    background: gap,
+    foregroundTransparency: 0,
+    backgroundTransparency: 0,
+    clearThemeForegroundIndex: true,
+    clearThemeBackgroundIndex: true,
+  );
+}
+
+/// Freeze hatch FillForegndTrans into RGB cells Draw will paint.
+VsdxDocument bakeHatchTransForLibvisioWrite(VsdxDocument document) {
+  final theme = document.theme;
+  var pagesChanged = false;
+  final pages = <VsdxPage>[];
+  VsdxShape bakeShape(VsdxShape shape) {
+    final fill = fillHatchTransForLibvisioWrite(
+      shape.fill,
+      theme,
+      shape.quickStyleFillMatrix,
+    );
+    final children = <VsdxShape>[
+      for (final child in shape.children) bakeShape(child),
+    ];
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (identical(fill, shape.fill) && !childrenChanged) return shape;
+    return shape.copyWith(fill: fill, children: children);
+  }
+
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes) bakeShape(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+VsdxColor _colourOver(VsdxColor dst, VsdxColor src, double srcTransparency) {
+  final a = 1 - srcTransparency.clamp(0.0, 1.0);
+  if (a >= 1 - 1e-9) return src;
+  if (a <= 1e-9) return dst;
+  int mix(int s, int d) => (s * a + d * (1 - a)).round().clamp(0, 255);
+  return VsdxColor.argb(
+    0xFF,
+    mix(src.red, dst.red),
+    mix(src.green, dst.green),
+    mix(src.blue, dst.blue),
   );
 }
 
