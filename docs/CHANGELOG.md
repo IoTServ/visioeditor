@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Corner radial LineGradient now strokes the full path in LibreOffice.
+  Two-colour washes become a filled ribbon whose FillPattern 36–39
+  `_fillAndShadowProperties` clips to an ODF circle (`svg:cx/cy` at a
+  corner), so Draw kept only a disc of a long bar while canvas / SVG
+  stroke the whole path with `ui.Gradient.radial` + clamp. A save bakes
+  the same SoftEdges stroke PNG at sigma 0 (dirs 1/2/3/5/6/7; 1-D uses
+  a 2-D plate). Linear two-colour LineGradient and centre radial 40 stay
+  a 25–40 ribbon. Leftover Geometry is NoLine so a second save does not
+  restack.
 - Corner radial FillPattern 36–39 now fills the shape in LibreOffice.
   `_fillAndShadowProperties` emits ODF `draw:style=radial` with
   `svg:cx/cy` at a corner, so Draw paints a circle and leaves the rest

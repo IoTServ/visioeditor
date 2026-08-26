@@ -49,7 +49,10 @@
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
-/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Per-stop
+/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
+/// corner radial / path dirs 1/2/3/5/6/7 are the same missing paint: the
+/// filled ribbon would become FillPattern 36–39 and Draw clips that to a
+/// circle. Per-stop
 /// alpha and LineColorTrans on a two-colour wash would otherwise stay
 /// opaque on that 25–40 ribbon. InfiniteLine
 /// samples are clipped to the shape box first — perimeter sampling otherwise
@@ -8759,6 +8762,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// A LineGradient whose opaque stops use more than two unique colours
 /// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
+/// Two-colour corner radial LineGradient is the same missing paint: that
+/// ribbon would be FillPattern 36–39 and Draw clips it to a circle.
 /// InfiniteLine washes clip to the shape box so that plate keeps every stop.
 /// Open-path arrows on those washes rasterize into the same plate.
 /// Pictures and unrecognised geometry stay native. Closed 2-D
@@ -8845,8 +8850,7 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
 /// the shape. Canvas / SVG fill the path (`ui.Gradient.radial` + clamp).
 /// FillPattern 36–39 are dirs 1/3/5/7; modern dir 2/6 would collapse to
 /// centre 40. Linear 25–34 and centre 40 stay native.
-bool _fillHasLibvisioClippedRadial(VsdxFill fill) {
-  final gradient = fill.paintGradient;
+bool _gradientHasLibvisioClippedRadial(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
   if (gradient.type != VsdxGradientType.radial &&
       gradient.type != VsdxGradientType.path) {
@@ -8861,6 +8865,9 @@ bool _fillHasLibvisioClippedRadial(VsdxFill fill) {
       dir == 7;
 }
 
+bool _fillHasLibvisioClippedRadial(VsdxFill fill) =>
+    _gradientHasLibvisioClippedRadial(fill.paintGradient);
+
 bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
   final gradient = fill.paintGradient;
   if (_gradientHasLibvisioUnrepresentableStops(gradient)) return true;
@@ -8874,6 +8881,7 @@ bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
 
 bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) {
   if (_gradientHasLibvisioUnrepresentableStops(line.gradient)) return true;
+  if (_gradientHasLibvisioClippedRadial(line.gradient)) return true;
   if (line.gradient == null || line.gradient!.stops.length < 2) return false;
   return line.transparency > 1e-9;
 }

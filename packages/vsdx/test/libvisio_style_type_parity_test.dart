@@ -19,7 +19,8 @@
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. A LineGradient with more than two unique opaque colours
-/// bakes a PNG plate instead. Arrowed 1-D connectors that also need rails or a ribbon bake
+/// bakes a PNG plate instead (two-colour corner radial dirs 1/2/3/5/6/7
+/// too — a 25–40 ribbon clips to an ODF circle). Arrowed 1-D connectors that also need rails or a ribbon bake
 /// Begin/EndArrow as Geometry so Draw does not hang a marker on
 /// every open rail, and so BeginArrowSize (not a token) still has a size.
 /// A plain stroke whose size disagrees with `_lineProperties`' line-weight
@@ -5117,6 +5118,97 @@ void main() {
       hasLength(1),
       reason: 'dir 2 would collapse to centre FillPattern 40',
     );
+  });
+
+  test('LineGradient corner radial bakes a PNG for LibreOffice', () {
+    const wash = VsdxGradient(
+      type: VsdxGradientType.radial,
+      dir: 1,
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+        VsdxGradientStop(position: 1, color: VsdxColor.white),
+      ],
+    );
+    const line = VsdxLine(pattern: 1, weightInches: 0.18, gradient: wash);
+    final bar = VsdxShape(
+      id: 1,
+      name: 'LineRad1',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 3.2,
+      height: 0.4,
+      fill: const VsdxFill(pattern: 0),
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[MoveTo(0, 0.2), LineTo(3.2, 0.2)],
+        ),
+      ],
+      line: line,
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(bar), isTrue,
+        reason: 'Draw clips a FillPattern 36 ribbon to a corner circle');
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(bar));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(1)!;
+    expect(source.line.pattern, 0);
+    expect(source.line.hasGradient, isFalse);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.hasImage, isTrue);
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    expect(
+      decoded.width / decoded.height,
+      greaterThan(4),
+      reason: 'the stroke PNG must keep the 3.2" bar, not Draw\'s half-circle; '
+          '${decoded.width}x${decoded.height}',
+    );
+    var mag = 0, opaque = 0, minX = decoded.width, maxX = 0;
+    for (final pixel in decoded) {
+      if (pixel.a < 200) continue;
+      opaque++;
+      if (pixel.x < minX) minX = pixel.x;
+      if (pixel.x > maxX) maxX = pixel.x;
+      if (pixel.r > 160 && pixel.g < 140 && pixel.b > 160) mag++;
+    }
+    expect(mag, greaterThan(20), reason: 'dir=1 origin stays magenta');
+    expect(maxX - minX, greaterThan((decoded.width * 0.8).round()),
+        reason: 'opaque ink must span the bar, not a clipped circle; '
+            'x=$minX-$maxX w=${decoded.width}');
+    expect(opaque, greaterThan(200));
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another LineGradient radial plate',
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 2,
+      ax: 1.5,
+      ay: 5.5,
+      bx: 6.5,
+      by: 5.5,
+      name: 'LineRad1_1D',
+      line: line,
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(connector), isTrue);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    expect(oneBaked.pages.first.findShapeById(2)!.line.pattern, 0);
+    final onePlate =
+        oneBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(onePlate.is1D, isFalse);
+    expect(onePlate.width, greaterThan(4));
   });
 
   test(
