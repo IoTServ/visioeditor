@@ -2613,6 +2613,27 @@ void main() {
             ),
       ),
     );
+    var sketchSoftDocument = parser.parse(blank);
+    sketchSoftDocument = sketchSoftDocument.replacePage(
+      0,
+      sketchSoftDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: sketchSoftDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 6.2,
+          width: 3.0,
+          height: 1.4,
+          name: 'SketchSoft',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            pattern: 1,
+            weightInches: 0.1,
+            softEdgesInches: 0.08,
+          ),
+        ).withSketchEffect(true).withSketchJiggle(3.5),
+      ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6704,6 +6725,10 @@ void main() {
       'sketch_reflection': writer.write(
         originalBytes: blank,
         edited: sketchReflectionDocument,
+      ),
+      'sketch_soft': writer.write(
+        originalBytes: blank,
+        edited: sketchSoftDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -14258,6 +14283,53 @@ void main() {
             greaterThan(bandRail.r + 8),
             reason: 'LibreOffice must paint the Sketch mirrored stroke, not '
                 'drop it; bandB=${bandRail.b} bandR=${bandRail.r}',
+          );
+        }
+        if (entry.key == 'sketch_soft') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchSoft');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate).every(
+                  (s) => !s.line.hasLine && s.line.softEdgesInches <= 1e-9,
+                ),
+            isTrue,
+          );
+        }
+        if (entry.key == 'sketch_soft' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var dark = 0;
+          for (final pixel in rendered) {
+            final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+            if (luma < 180) dark++;
+          }
+          expect(
+            dark,
+            greaterThan(40),
+            reason: 'LibreOffice must paint the Sketch SoftEdges ring; '
+                'dark=$dark',
           );
         }
         if (entry.key == 'linegrad3_arrow') {

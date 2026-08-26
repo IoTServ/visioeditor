@@ -164,7 +164,8 @@
 /// the document theme then Office into that PNG. An
 /// unfilled 2-D stroke with
 /// SoftEdges bakes the stroke ring the same way and drops the source
-/// line. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
+/// line. Sketch jiggle copies SoftEdgesSize onto those plates so leftover
+/// NoLine Geometry does not keep a hard stroke. Dashed LinePattern 2–23 / custom arrays become per-dash ribbons
 /// in that PNG so Draw keeps the gaps. A filled 2-D shape that also paints a
 /// solid or dashed stroke bakes both into one padded plate and drops fill
 /// and line. Gradient / hatch fills with a stroke join that plate.
@@ -2561,6 +2562,127 @@ void main() {
         oneBaked.pages.first.shapes.where(isLibvisioReflectionPlate);
     expect(onePlate, hasLength(2));
     expect(onePlate.every((s) => !s.is1D && s.height.abs() > 0.05), isTrue);
+  });
+
+  test('Sketch jiggle strokes keep SoftEdges for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 6.2,
+      width: 3.0,
+      height: 1.4,
+      name: 'SketchSoft',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.1,
+        softEdgesInches: 0.08,
+      ),
+    ).withSketchEffect(true).withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(2),
+      reason: 'each Sketch jiggle must become a SoftEdges PNG',
+    );
+    final names =
+        baked.pages.first.shapes.map((s) => s.name).toList(growable: false);
+    expect(
+      names.lastIndexWhere(
+        (n) => n.startsWith(kLibvisioSoftEdgesShapeNamePrefix),
+      ),
+      lessThan(
+        names.indexWhere((n) => n.startsWith(kLibvisioSketchShapeNamePrefix)),
+      ),
+      reason: 'opaque SoftEdges PNGs must sit under both jiggle leftovers',
+    );
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate).every(
+            (s) => !s.line.hasLine && s.line.softEdgesInches <= 1e-9,
+          ),
+      isTrue,
+    );
+    var dark = 0;
+    for (final plate
+        in baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate)) {
+      expect(plate.hasImage, isTrue);
+      expect(plate.is1D, isFalse);
+      expect(plate.height, greaterThan(shape.height));
+      final png = raster.decodePng(
+        baked.images.findByPart(plate.imagePartName!)!.bytes,
+      )!;
+      expect(
+        png.getPixel(png.width ~/ 2, png.height ~/ 2).r,
+        greaterThan(200),
+        reason: 'Sketch SoftEdges PNG must keep the hollow interior empty',
+      );
+      for (final pixel in png) {
+        final luma = 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+        if (luma < 180) dark++;
+      }
+    }
+    expect(
+      dark,
+      greaterThan(40),
+      reason: 'Sketch SoftEdges PNG must paint a feathered ring; dark=$dark',
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Sketch SoftEdges PNG',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(2),
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 1.5,
+      ay: 6.2,
+      bx: 6.5,
+      by: 6.2,
+      name: 'SketchSoft_1D',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        pattern: 1,
+        weightInches: 0.1,
+        softEdgesInches: 0.08,
+      ),
+    ).withSketchEffect(true).withSketchJiggle(3.5);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    expect(
+      oneBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      oneBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      isEmpty,
+      reason: '1-D SoftEdges stay skipped, matching canvas',
+    );
   });
 
   test('Glass bakes a top-light sibling LibreOffice can collect', () {

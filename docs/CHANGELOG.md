@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Sketch jiggle strokes now keep SoftEdges in LibreOffice. SoftEdgesSize
+  is not a token, leftover Geometry is already NoLine, and SoftEdges
+  bake skipped every bake plate unless the jiggle carried a three-colour
+  LineGradient, so Draw kept a hard stroke. A save bakes each jiggle
+  into the same stroke PNG unfilled SoftEdges already use. Opaque
+  Foreign PNGs sit under both leftovers. 1-D Sketch copies stay
+  Height=0 and skip, matching canvas. A second save does not stack
+  another plate.
 - Sketch jiggle strokes now keep Glow and Reflection in LibreOffice.
   Glow* / Reflection* are not tokens, Sketch copies used to drop those
   cells, leftover Geometry is already NoLine, and Glow / Reflection

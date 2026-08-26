@@ -337,6 +337,9 @@
 /// Glow* / Reflection* are not tokens either, so those copies also take
 /// the stroke PNG halo / mirror the unfilled path already uses — otherwise
 /// leftover Geometry is NoLine and Draw drops the effect.
+/// SoftEdgesSize is the same missing token on those copies: leftover
+/// Geometry is already NoLine, so a live size bakes the same stroke PNG
+/// (1-D Sketch copies stay Height=0 and skip, matching canvas).
 /// draw.io Glass is likewise `User.veGlass` (not a token), so a save inserts
 /// a locked white top-light sibling whose FillForegndTrans Draw collects,
 /// then writes `veGlass=0`. draw.io Shape Opacity is `User.veOpacity`
@@ -8301,13 +8304,19 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// Sketch jiggle siblings copy the live LineGradient; those plates are
 /// otherwise skipped as bake plates, so an unrepresentable wash would
 /// collapse to FillPattern 25–40. They take the same stroke PNG.
+/// SoftEdgesSize is not a token either — leftover Geometry is already
+/// NoLine — so a Sketch stroke with a live size takes that PNG too
+/// (1-D Sketch copies stay Height=0 and still skip, matching canvas).
 bool shapeNeedsLibvisioGeometrySoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) ||
     _shapeNeedsLibvisioStrokeSoftEdgesBake(shape);
 
 bool _softEdgesGeometryOk(VsdxShape shape, {bool allow1d = false}) {
   if (isLibvisioSketchPlate(shape)) {
-    if (!_lineHasLibvisioUnrepresentableGradient(shape.line)) return false;
+    if (!_lineHasLibvisioUnrepresentableGradient(shape.line) &&
+        shape.line.softEdgesInches <= 1e-6) {
+      return false;
+    }
   } else if (_isLibvisioBakePlate(shape)) {
     return false;
   } else {
@@ -8440,7 +8449,8 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
     return _softEdgesDashRibbonPolygons(shape).isNotEmpty;
   }
   if (_softEdgesStrokeSilhouetteKind(shape) != null) return true;
-  if (_lineHasLibvisioUnrepresentableGradient(shape.line)) {
+  if (_lineHasLibvisioUnrepresentableGradient(shape.line) ||
+      isLibvisioSketchPlate(shape)) {
     return _solidStrokeRibbonPolygons(shape).isNotEmpty;
   }
   return false;
@@ -8993,6 +9003,8 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
 }
 
 /// Rasterize a LineGradient ribbon Draw cannot hold in FillPattern 25–40.
+/// Sketch jiggle plates reuse this path (AABB + stroke rings) so a live
+/// SoftEdgesSize can feather that same PNG — leftover Geometry is NoLine.
 ({Uint8List png, double padInches})? _lineGradientRibbonPngForLibvisioWrite(
   VsdxShape shape,
   VsdxTheme theme,
@@ -9024,11 +9036,14 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     innerWidthPx = math.max(minPx, (innerWidthPx * scale).round());
     innerHeightPx = math.max(minPx, (innerHeightPx * scale).round());
   }
-  final padInches = 2 / kLibvisioSoftEdgesPxPerInch;
+  final soft = math.max(shape.line.softEdgesInches, 0.0);
+  final padInches =
+      2 / kLibvisioSoftEdgesPxPerInch + (soft > 1e-6 ? soft * 3 : 0.0);
   final padPx = math.max(1, (padInches / aabbW * innerWidthPx).ceil());
   final weight =
       shape.line.weightInches > 1e-9 ? shape.line.weightInches : 0.01;
   final strokeWidthPx = math.max(weight / aabbW * innerWidthPx, 1.0);
+  final sigmaPx = soft > 1e-6 ? soft / aabbW * innerWidthPx : 0.0;
   final boxW = math.max(shape.width.abs(), aabbW);
   final boxH = math.max(shape.height.abs(), aabbH);
   ({int r, int g, int b, int a}) Function(double innerX, double innerY)?
@@ -9074,7 +9089,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
     green: color.green,
     blue: color.blue,
     alpha: alpha,
-    softSigmaPx: 0,
+    softSigmaPx: sigmaPx,
     strokeWidthPx: strokeWidthPx,
     ribbons: ribbonPx,
     strokeColorAt: strokeColorAt,
@@ -9356,7 +9371,17 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
   required _SoftEdgesImageSink addImage,
 }) {
   final out = <VsdxShape>[];
+  final delayedSoft = <VsdxShape>[];
+  final delayedSketch = <VsdxShape>[];
   var changed = false;
+  void flushSketchGroup() {
+    if (delayedSoft.isEmpty && delayedSketch.isEmpty) return;
+    out.addAll(delayedSoft);
+    out.addAll(delayedSketch);
+    delayedSoft.clear();
+    delayedSketch.clear();
+  }
+
   for (final shape in shapes) {
     if (isLibvisioSoftEdgesPlate(shape)) {
       changed = true;
@@ -9377,6 +9402,8 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
         changed = true;
       }
     }
+    VsdxShape? plate;
+    var leftover = next;
     if (shapeNeedsLibvisioGeometrySoftEdgesBake(next)) {
       final payload = _softEdgesBakePayload(next, theme);
       if (payload != null) {
@@ -9388,7 +9415,7 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
             mimeType: 'image/png',
           ),
         );
-        final plate = _softEdgesPlateForLibvisioWrite(
+        plate = _softEdgesPlateForLibvisioWrite(
           next,
           id: plateIds[next.id] ?? nextId(),
           imagePartName: part,
@@ -9400,34 +9427,40 @@ List<VsdxShape> _bakeGeometrySoftEdgesTree(
                   next.line.softEdgesInches <= 1e-6 &&
                   _softEdgesStrokeSilhouetteKind(next) == null),
         );
-        out.add(plate);
-        out.add(_sourceForLibvisioGeometrySoftEdgesWrite(next));
+        leftover = _sourceForLibvisioGeometrySoftEdgesWrite(next);
         changed = true;
-        continue;
       }
     } else {
       final existingId = plateIds[next.id];
       if (existingId != null) {
-        VsdxShape? kept;
         for (final candidate in shapes) {
           if (candidate.id == existingId) {
-            kept = candidate;
+            plate = candidate;
+            changed = true;
             break;
           }
         }
-        if (kept != null) {
-          out.add(kept);
-          changed = true;
-        }
       }
     }
-    out.add(next);
-    if (!identical(next, shape)) changed = true;
+    if (isLibvisioSketchPlate(next)) {
+      if (plate != null) delayedSoft.add(plate);
+      delayedSketch.add(leftover);
+      if (!identical(leftover, shape)) changed = true;
+      continue;
+    }
+    flushSketchGroup();
+    if (plate != null) out.add(plate);
+    out.add(leftover);
+    if (!identical(leftover, shape)) changed = true;
   }
+  flushSketchGroup();
   return changed ? out : shapes;
 }
 
 /// Insert (or keep) the feathered PNG siblings Draw uses for geometry SoftEdges.
+/// Sketch jiggle copies SoftEdgesSize onto those plates; Foreign PNGs
+/// composite onto opaque white, so a save hangs every Sketch halo under
+/// both jiggle leftovers.
 VsdxDocument bakeGeometrySoftEdgesForLibvisioWrite(VsdxDocument document) {
   if (document.pages.isEmpty) return document;
   var registry = document.images;
