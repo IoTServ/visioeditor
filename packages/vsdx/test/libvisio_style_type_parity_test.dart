@@ -90,9 +90,11 @@
 /// already use `visioTabFieldStart`). Character `LangID` is
 /// not a token; digit-only Arabic / Hebrew runs prefix U+200F so Draw's
 /// Unicode bidi matches canvas / SVG. Character `Letterspace`
-/// is not a token; canvas / SVG already fold FontScale into tracking at
-/// 0.55×Size, so a save adds Letterspace into FontScale and writes
-/// Letterspace 0. Picture `SoftEdgesSize` is not a token; a 2-D Foreign
+/// is not a token; canvas / SVG paint it as tracking and FontScale as
+/// width scale, so a save inserts U+00A0 spacers whose FontScale is
+/// that gap over ~0.25 em and writes Letterspace 0 (negative tracking
+/// still folds into FontScale).
+/// Picture `SoftEdgesSize` is not a token; a 2-D Foreign
 /// bitmap bakes the same SourceAlpha feather canvas / SVG use into PNG
 /// alpha (cropped frames composite into the box first so ImgOffset still
 /// matches Draw), then SoftEdgesSize is written 0. Foreign
@@ -512,6 +514,53 @@ void main() {
     expect(
         baked.richText.runs.single.text, contains(kLibvisioCombiningOverline));
     expect(baked.text, contains(kLibvisioCombiningOverline));
+  });
+
+  test('Character Letterspace bakes NBSP spacers for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.4,
+      height: 0.7,
+      name: 'Letterspace',
+    ).copyWith(
+      text: 'Hi',
+      richText: const VsdxRichText(
+        runs: [
+          VsdxTextRun(
+            text: 'Hi',
+            charStyle: VsdxCharStyle(letterSpacingInches: 0.02),
+          ),
+        ],
+      ),
+    );
+    expect(shapeNeedsLibvisioLetterspaceBake(shape), isTrue);
+    final baked = bakeLetterspaceShapeForLibvisioWrite(shape);
+    final runs = baked.richText.runs;
+    expect(runs, hasLength(3));
+    expect(runs[0].text, 'H');
+    expect(runs[1].text, kLibvisioLetterspaceNbsp);
+    expect(runs[2].text, 'i');
+    expect(runs[0].charStyle.letterSpacingInches, 0);
+    expect(runs[0].charStyle.fontScale, 1);
+    expect(runs[1].charStyle.fontSizeInches, closeTo(12 / 72, 1e-12));
+    expect(
+      runs[1].charStyle.fontScale,
+      closeTo(0.02 / ((12 / 72) * kLibvisioNbspAdvanceEm), 1e-12),
+    );
+    expect(baked.text, 'H${kLibvisioLetterspaceNbsp}i');
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final once = documentForLibvisioWrite(doc);
+    final twice = documentForLibvisioWrite(once);
+    expect(
+      twice.pages.first.findShapeById(1)!.richText.runs.map((r) => r.text),
+      once.pages.first.findShapeById(1)!.richText.runs.map((r) => r.text),
+      reason: 'a second save must not stack another NBSP spacer',
+    );
   });
 
   test('Character Overline bakes combining marks past tab fields', () {
@@ -12873,12 +12922,18 @@ void main() {
     expect(fontSizeForLibvisioWrite(latinUi, '你好'), closeTo(12 / 72, 1e-12));
     const spacedStyle = VsdxCharStyle(letterSpacingInches: 0.02);
     final spaced = box('Letterspace', 'Hi', spacedStyle);
-    expect(shapeNeedsLibvisioFontBake(spaced), isTrue);
-    expect(letterSpacingForLibvisioWrite(spacedStyle, 'Hi'), 0);
+    expect(shapeNeedsLibvisioLetterspaceBake(spaced), isTrue);
+    expect(shapeNeedsLibvisioFontBake(spaced), isFalse);
+    expect(letterSpacingForLibvisioWrite(spacedStyle, 'Hi'), 0.02);
+    expect(fontScaleForLibvisioWrite(spacedStyle, 'Hi'), 1);
+    const condensedStyle = VsdxCharStyle(letterSpacingInches: -0.02);
+    expect(shapeNeedsLibvisioLetterspaceBake(box('Neg', 'Hi', condensedStyle)),
+        isFalse);
+    expect(letterSpacingForLibvisioWrite(condensedStyle, 'Hi'), 0);
     expect(
-      fontScaleForLibvisioWrite(spacedStyle, 'Hi'),
+      fontScaleForLibvisioWrite(condensedStyle, 'Hi'),
       closeTo(
-        1 + 0.02 / ((12 / 72) * kLibvisioMeanLatinAdvance),
+        1 + -0.02 / ((12 / 72) * kLibvisioMeanLatinAdvance),
         1e-12,
       ),
     );
@@ -15478,23 +15533,21 @@ void main() {
           .enabled,
       isTrue,
     );
-    final letterspace = savedDoc.pages.first.shapes
+    final letterspaceRuns = savedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'Letterspace')
         .richText
-        .runs
-        .single
-        .charStyle;
-    expect(letterspace.letterSpacingInches, closeTo(0, 1e-9),
-        reason: 'Letterspace is not a token; tracking bakes into FontScale');
+        .runs;
+    expect(letterspaceRuns.map((r) => r.text).toList(),
+        <String>['H', kLibvisioLetterspaceNbsp, 'i'],
+        reason: 'Letterspace is not a token; tracking bakes to NBSP spacers');
     expect(
-      letterspace.fontScale,
-      closeTo(
-        fontScaleForLibvisioWrite(
-          const VsdxCharStyle(letterSpacingInches: 0.02),
-          'Hi',
-        ),
-        1e-9,
-      ),
+        letterspaceRuns
+            .every((r) => r.charStyle.letterSpacingInches.abs() < 1e-9),
+        isTrue);
+    expect(letterspaceRuns.first.charStyle.fontScale, 1);
+    expect(
+      letterspaceRuns[1].charStyle.fontScale,
+      closeTo(0.02 / ((12 / 72) * kLibvisioNbspAdvanceEm), 1e-9),
     );
     expect(xml.contains('N="Letterspace" V="0.02"'), isFalse);
     // RVNGSVGDrawingGenerator never emits span fo:background-color (vsd2xhtml

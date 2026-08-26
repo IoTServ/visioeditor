@@ -1889,29 +1889,18 @@ void main() {
         ),
       ),
     );
-    final run = parser
+    final runs = parser
         .parse(writer.write(originalBytes: blank, edited: doc))
         .pages
         .first
         .findShapeById(id)!
         .richText
-        .runs
-        .first;
+        .runs;
+    expect(runs.map((r) => r.text).toList(),
+        <String>['H', kLibvisioLetterspaceNbsp, 'i']);
+    final run = runs.first;
     expect(run.charStyle.letterSpacingInches, closeTo(0, 1e-6));
-    expect(
-      run.charStyle.fontScale,
-      closeTo(
-        fontScaleForLibvisioWrite(
-          const VsdxCharStyle(
-            letterSpacingInches: 0.02,
-            position: VsdxTextPosition.superscript,
-            transparency: 0.3,
-          ),
-          'Hi',
-        ),
-        1e-9,
-      ),
-    );
+    expect(run.charStyle.fontScale, 1);
     expect(run.charStyle.position, VsdxTextPosition.superscript);
     expect(run.charStyle.transparency, closeTo(0, 1e-6));
     expect(

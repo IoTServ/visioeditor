@@ -1674,24 +1674,18 @@ void main() {
       overline.richText.runs.single.text,
       contains(kLibvisioCombiningOverline),
     );
-    final letterspace = reopenedDoc.pages.first.shapes
+    final letterspaceRuns = reopenedDoc.pages.first.shapes
         .firstWhere((s) => s.name == 'Letterspace')
         .richText
-        .runs
-        .single
-        .charStyle;
-    expect(letterspace.letterSpacingInches, closeTo(0, 1e-6),
-        reason: 'Letterspace is not a token; tracking bakes into FontScale');
+        .runs;
+    expect(letterspaceRuns.map((r) => r.text).toList(),
+        <String>['H', kLibvisioLetterspaceNbsp, 'i'],
+        reason: 'Letterspace is not a token; tracking bakes to NBSP spacers');
     expect(
-      letterspace.fontScale,
-      closeTo(
-        fontScaleForLibvisioWrite(
-          const VsdxCharStyle(letterSpacingInches: 0.02),
-          'Hi',
-        ),
-        1e-9,
-      ),
-    );
+        letterspaceRuns
+            .every((r) => r.charStyle.letterSpacingInches.abs() < 1e-9),
+        isTrue);
+    expect(letterspaceRuns.first.charStyle.fontScale, 1);
     expect(
       reopenedDoc.pages.first.shapes
           .firstWhere((s) => s.name == 'FontScale')

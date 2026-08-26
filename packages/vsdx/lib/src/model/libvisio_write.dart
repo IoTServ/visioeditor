@@ -320,10 +320,13 @@
 /// A Foreign picture bakes the same Gaussian PNG ring
 /// canvas `_drawGlow` paints around the image frame. Then `GlowSize` is
 /// written 0.
-/// `Letterspace` is not a token; canvas / SVG already fold FontScale into
-/// tracking at 0.55×Size, and `readCharIX` *does* collect FontScale as
-/// `style:text-scale`, so a save adds Letterspace into FontScale and
-/// writes Letterspace 0. Page `PageColor` is not a token either
+/// `Letterspace` is not a token; canvas / SVG paint it as tracking and
+/// FontScale as a true width scale (`style:text-scale`). A save with
+/// positive tracking inserts U+00A0 Character runs whose FontScale is
+/// that gap over ~0.25 em (same Size as the body) and writes Letterspace
+/// 0, so Draw keeps the extra advance without stretching glyphs. Negative
+/// tracking still folds into FontScale with 0.55×Size — spacers cannot
+/// condense. Page `PageColor` is not a token either
 /// (`readPageSheetProperties` only stores size, scale, and ShdwOffset*) —
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
@@ -636,19 +639,21 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                           bakeSolidLineSpacingForLibvisioWrite(
                                             bakeDefaultTabStopForLibvisioWrite(
                                               bakeHorzAlignFullForLibvisioWrite(
-                                                bakeMixedScriptFontForLibvisioWrite(
-                                                  bakeLangIdRtlForLibvisioWrite(
-                                                    bakeDoubleStrikethroughForLibvisioWrite(
-                                                      bakeOverlineForLibvisioWrite(
-                                                        bakeMixedHighlightForLibvisioWrite(
-                                                          bakeLooseEdgeLabelForLibvisioWrite(
-                                                            bakeAutoRotateLabelForLibvisioWrite(
-                                                              bakeTextDirectionForLibvisioWrite(
-                                                                bakeBulletGlyphForLibvisioWrite(
-                                                                  bakeUnsupportedBitmapsForLibvisioWrite(
-                                                                    bakeMetafileBitmapsForLibvisioWrite(
-                                                                      bakeOlePreviewsForLibvisioWrite(
-                                                                        hopped,
+                                                bakeLetterspaceForLibvisioWrite(
+                                                  bakeMixedScriptFontForLibvisioWrite(
+                                                    bakeLangIdRtlForLibvisioWrite(
+                                                      bakeDoubleStrikethroughForLibvisioWrite(
+                                                        bakeOverlineForLibvisioWrite(
+                                                          bakeMixedHighlightForLibvisioWrite(
+                                                            bakeLooseEdgeLabelForLibvisioWrite(
+                                                              bakeAutoRotateLabelForLibvisioWrite(
+                                                                bakeTextDirectionForLibvisioWrite(
+                                                                  bakeBulletGlyphForLibvisioWrite(
+                                                                    bakeUnsupportedBitmapsForLibvisioWrite(
+                                                                      bakeMetafileBitmapsForLibvisioWrite(
+                                                                        bakeOlePreviewsForLibvisioWrite(
+                                                                          hopped,
+                                                                        ),
                                                                       ),
                                                                     ),
                                                                   ),
@@ -3876,19 +3881,33 @@ VsdxDocument bakeLabelPaddingForLibvisioWrite(VsdxDocument document) {
 
 /// Conservative unwrapped advance so Draw's wrap-at-`svg:width` stays one
 /// line. Latin uses 0.72 em (wider than DejaVu's ~0.70 bold) so a slightly
-/// tight estimate cannot re-wrap in Draw. FontScale is a glyph width scale,
-/// including Letterspace baked into [fontScaleForLibvisioWrite].
+/// tight estimate cannot re-wrap in Draw. FontScale is a glyph width scale.
+/// Positive Letterspace is extra tracking between clusters (negative
+/// tracking is already inside [fontScaleForLibvisioWrite]).
 double nowrapTextAdvanceInches(String text, VsdxCharStyle style) {
   if (text.isEmpty) return 0;
   var fs = math.max(style.effectiveFontSizeInchesForText(text), 0.04);
   if (style.position != VsdxTextPosition.normal) fs *= 0.7;
   final scale = fontScaleForLibvisioWrite(style, text);
   var w = 0.0;
+  var letterspaceGaps = 0;
+  int? prevBase;
   for (final r in text.runes) {
     final chFs = isVisioComplexScriptRune(r) || isVisioAsianScriptRune(r)
         ? fs
         : fs * 0.72;
     w += chFs * scale;
+    if (_isCombiningMarkRune(r) || r == 0x200E || r == 0x200F) continue;
+    if (prevBase != null &&
+        style.letterSpacingInches > 1e-12 &&
+        !_libvisioLetterspaceBreakRune(prevBase) &&
+        !_libvisioLetterspaceBreakRune(r)) {
+      letterspaceGaps++;
+    }
+    prevBase = r;
+  }
+  if (style.letterSpacingInches > 1e-12) {
+    w += style.letterSpacingInches * letterspaceGaps;
   }
   return w;
 }
@@ -6041,6 +6060,247 @@ VsdxDocument bakeMixedScriptFontForLibvisioWrite(VsdxDocument document) {
     final shapes = <VsdxShape>[
       for (final shape in page.shapes)
         bakeMixedScriptFontShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
+/// NBSP Draw will paint as a tracking gap. Space (U+0020) would collapse
+/// or wrap; U+00A0 stays on the line.
+const kLibvisioLetterspaceNbsp = '\u00A0';
+
+/// Mean Arial / DejaVu NBSP advance used to size Letterspace spacers.
+const kLibvisioNbspAdvanceEm = 0.25;
+
+bool _libvisioLetterspaceBreakRune(int rune) =>
+    rune == 0x09 || rune == 0x0A || rune == 0x0D;
+
+List<String> _libvisioLetterspaceClusters(String text) {
+  final out = <String>[];
+  final buf = StringBuffer();
+  var started = false;
+  for (final rune in text.runes) {
+    if (started &&
+        (_isCombiningMarkRune(rune) || rune == 0x200E || rune == 0x200F)) {
+      buf.writeCharCode(rune);
+      continue;
+    }
+    if (started) {
+      out.add(buf.toString());
+      buf.clear();
+    }
+    buf.writeCharCode(rune);
+    started = true;
+  }
+  if (started) out.add(buf.toString());
+  return out;
+}
+
+int _libvisioLetterspaceClusterBase(String cluster) {
+  for (final rune in cluster.runes) {
+    if (!_isCombiningMarkRune(rune) && rune != 0x200E && rune != 0x200F) {
+      return rune;
+    }
+  }
+  return cluster.runes.first;
+}
+
+bool _libvisioLetterspaceShouldGap(String left, String right) {
+  if (left.isEmpty || right.isEmpty) return false;
+  return !_libvisioLetterspaceBreakRune(
+        _libvisioLetterspaceClusterBase(left),
+      ) &&
+      !_libvisioLetterspaceBreakRune(_libvisioLetterspaceClusterBase(right));
+}
+
+/// `copyWith(letterSpacingInches: 0)` is a no-op (`??` treats 0 as absent).
+VsdxCharStyle _charStyleWithoutLetterspace(VsdxCharStyle style) {
+  if (style.letterSpacingInches.abs() < 1e-12) return style;
+  return VsdxCharStyle(
+    fontFamily: style.fontFamily,
+    fontSizeInches: style.fontSizeInches,
+    style: style.style,
+    color: style.color,
+    themeColorIndex: style.themeColorIndex,
+    underline: style.underline,
+    strikethrough: style.strikethrough,
+    doubleUnderline: style.doubleUnderline,
+    doubleStrikethrough: style.doubleStrikethrough,
+    overline: style.overline,
+    highlight: style.highlight,
+    transparency: style.transparency,
+    letterSpacingInches: 0,
+    position: style.position,
+    textCase: style.textCase,
+    fontScale: style.fontScale,
+    asianFont: style.asianFont,
+    complexScriptFont: style.complexScriptFont,
+    langId: style.langId,
+    complexScriptSizeInches: style.complexScriptSizeInches,
+  );
+}
+
+double _libvisioLetterspaceSpacerFontScale(
+  VsdxCharStyle style,
+) {
+  final fs = style.fontSizeInches > 1e-9 ? style.fontSizeInches : 12.0 / 72.0;
+  return style.letterSpacingInches / (fs * kLibvisioNbspAdvanceEm);
+}
+
+/// Spacer Draw paints between glyphs. Same Size as the body so line
+/// height does not jump; FontScale = tracking / (Size × 0.25) because
+/// Arial NBSP is ~0.25 em. Underline / strike / highlight fill the gap
+/// the way Flutter letter-spacing decorations do.
+VsdxCharStyle _letterspaceSpacerStyle(VsdxCharStyle style) {
+  final fs = style.fontSizeInches > 1e-9 ? style.fontSizeInches : 12.0 / 72.0;
+  return VsdxCharStyle(
+    fontFamily: 'Arial',
+    fontSizeInches: fs,
+    color: style.color,
+    themeColorIndex: style.themeColorIndex,
+    underline: style.underline,
+    strikethrough: style.strikethrough,
+    doubleUnderline: style.doubleUnderline,
+    doubleStrikethrough: style.doubleStrikethrough,
+    highlight: style.highlight,
+    transparency: style.transparency,
+    letterSpacingInches: 0,
+    fontScale: _libvisioLetterspaceSpacerFontScale(style),
+  );
+}
+
+bool _runNeedsLibvisioLetterspaceBake(VsdxTextRun run) {
+  if (run.charStyle.letterSpacingInches <= 1e-12) return false;
+  if (run.text.isEmpty) return false;
+  final clusters = _libvisioLetterspaceClusters(run.text);
+  for (var i = 0; i + 1 < clusters.length; i++) {
+    if (_libvisioLetterspaceShouldGap(clusters[i], clusters[i + 1])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/// `true` when Character Letterspace must become NBSP spacers for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `Letterspace` is not a
+/// token; `readCharIX` *does* collect FontScale as `style:text-scale`.
+/// Canvas / SVG paint tracking and width-scale independently, so stretching
+/// glyphs would no longer match. A save inserts U+00A0 Character runs
+/// between glyph clusters (base + combining / bidi marks stay together)
+/// whose FontScale is tracking / (Size × 0.25), zeros Letterspace, and
+/// keeps authored FontScale on the glyphs. Tabs and newlines are
+/// not padded — Draw would wrap a gap across `\n` / `\t`. Negative
+/// tracking still folds into FontScale. A second save does not restack.
+bool shapeNeedsLibvisioLetterspaceBake(VsdxShape shape) {
+  if (shape.richText.textBlock.hideText) return false;
+  for (final run in shape.richText.runs) {
+    if (_runNeedsLibvisioLetterspaceBake(run)) return true;
+  }
+  return false;
+}
+
+List<VsdxTextRun> _libvisioLetterspaceRuns(List<VsdxTextRun> runs) {
+  final next = <VsdxTextRun>[];
+  for (final run in runs) {
+    if (!_runNeedsLibvisioLetterspaceBake(run)) {
+      next.add(run);
+      continue;
+    }
+    final clusters = _libvisioLetterspaceClusters(run.text);
+    final glyphStyle = _charStyleWithoutLetterspace(run.charStyle);
+    final spacerStyle = _letterspaceSpacerStyle(run.charStyle);
+    var utf16 = 0;
+    var tabOffset = 0;
+    for (var i = 0; i < clusters.length; i++) {
+      final cluster = clusters[i];
+      final tabs = '\t'.allMatches(cluster).length;
+      next.add(
+        VsdxTextRun(
+          text: cluster,
+          charStyle: glyphStyle,
+          paraStyle: run.paraStyle,
+          fieldSpans: _libvisioFieldSpansInRange(
+            run.fieldSpans,
+            utf16,
+            cluster.length,
+          ),
+          tabIndices: run.tabIndices.skip(tabOffset).take(tabs).toList(),
+        ),
+      );
+      tabOffset += tabs;
+      utf16 += cluster.length;
+      if (i + 1 < clusters.length &&
+          _libvisioLetterspaceShouldGap(cluster, clusters[i + 1])) {
+        next.add(
+          VsdxTextRun(
+            text: kLibvisioLetterspaceNbsp,
+            charStyle: spacerStyle,
+            paraStyle: run.paraStyle,
+          ),
+        );
+      }
+    }
+  }
+  return next;
+}
+
+VsdxShape bakeLetterspaceShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeLetterspaceShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioLetterspaceBake(shape)) {
+    final runs = _libvisioLetterspaceRuns(shape.richText.runs);
+    next = shape.copyWith(
+      text: shape.text == null
+          ? null
+          : VsdxRichText(runs: runs, textBlock: shape.richText.textBlock)
+              .plainText,
+      richText: shape.richText.copyWith(runs: runs),
+    );
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Insert NBSP spacers so Draw keeps Character Letterspace tracking.
+VsdxDocument bakeLetterspaceForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeLetterspaceShapeForLibvisioWrite(shape),
     ];
     var same = shapes.length == page.shapes.length;
     if (same) {
@@ -13294,18 +13554,19 @@ double fontSizeForLibvisioWrite(VsdxCharStyle style, String text) {
   return style.fontSizeInches;
 }
 
-/// Mean Latin advance used to fold Letterspace into FontScale for Draw.
+/// Mean Latin advance used to fold *negative* Letterspace into FontScale.
 ///
 /// `Letterspace` is not a token. Canvas / SVG paint it as tracking and apply
-/// FontScale as a true width scale (`style:text-scale`). A save therefore
-/// stretches glyphs by this extra amount so Draw's collected scale still
-/// matches the tracked line width.
+/// FontScale as a true width scale (`style:text-scale`). Positive tracking
+/// becomes NBSP spacers ([bakeLetterspaceForLibvisioWrite]). Negative
+/// tracking cannot use a spacer, so a save still condenses glyphs by this
+/// extra amount so Draw's collected scale matches the tighter line.
 const kLibvisioMeanLatinAdvance = 0.55;
 
-/// `FontScale` Draw will collect. Letterspace is not a token, so extra
-/// tracking is folded into this scale with [kLibvisioMeanLatinAdvance].
-/// Super/subscript use the same 0.7× Size canvas and SVG apply before
-/// adding FontScale tracking.
+/// `FontScale` Draw will collect. Negative Letterspace is folded into this
+/// scale with [kLibvisioMeanLatinAdvance]; positive tracking is already
+/// NBSP spacers. Super/subscript use the same 0.7× Size canvas and SVG
+/// apply before adding FontScale tracking.
 double fontScaleForLibvisioWrite(VsdxCharStyle style, [String text = '']) {
   var fs = fontSizeForLibvisioWrite(style, text);
   switch (style.position) {
@@ -13316,13 +13577,14 @@ double fontScaleForLibvisioWrite(VsdxCharStyle style, [String text = '']) {
       break;
   }
   var scale = style.fontScale;
-  if (style.letterSpacingInches.abs() > 1e-12 && fs > 1e-9) {
+  if (style.letterSpacingInches < -1e-12 && fs > 1e-9) {
     scale += style.letterSpacingInches / (fs * kLibvisioMeanLatinAdvance);
   }
   return scale;
 }
 
-/// `Letterspace` cell. Zeroed when [fontScaleForLibvisioWrite] absorbed it.
+/// `Letterspace` cell. Zeroed when [fontScaleForLibvisioWrite] absorbed
+/// negative tracking. Positive tracking is already 0 after the NBSP bake.
 double letterSpacingForLibvisioWrite(VsdxCharStyle style, [String text = '']) {
   if ((fontScaleForLibvisioWrite(style, text) - style.fontScale).abs() >
       1e-12) {

@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Character Letterspace now survives a save into LibreOffice as tracking,
+  not glyph stretch. The cell is not a token, and FontScale is a true
+  `style:text-scale` width scale, so folding extra advance into FontScale
+  made Draw (and a reopen here) widen every letter. A save with positive
+  tracking inserts U+00A0 Character runs whose FontScale is that gap
+  over Arial's ~0.25 em NBSP (same Size as the body so line height
+  stays put), zeros Letterspace, and keeps authored FontScale on the
+  glyphs. Negative tracking still folds into FontScale — spacers cannot
+  condense. A second save does not restack.
 - Character FontScale now paints as a true glyph width scale, matching
   LibreOffice. libvisio's `readCharIX` collects `XML_FONTSCALE` as
   `scaleWidth` and `_fillCharacterProperties` emits `style:text-scale`
@@ -592,9 +601,9 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   0.5× and 2×). SVG now wraps the line in `scale(sx,1)` about the
   HorzAlign anchor; canvas applies the same `canvas.scale` at paint
   after laying out unscaled glyphs. Letterspace stays tracking — Draw
-  still ignores that cell, so a save continues to fold it into FontScale.
-  Tab fields that already sit at visual x use `textLength` /
-  `spacingAndGlyphs`. A second save does not restack.
+  ignores that cell, so a save inserts NBSP spacers instead of folding
+  it into FontScale. Tab fields that already sit at visual x use
+  `textLength` / `spacingAndGlyphs`. A second save does not restack.
 - 1-D CubBezTo / QuadBezTo bows now keep their curve in LibreOffice.
   `tokens.txt` has no CubBezTo / QuadBezTo, so a save used Rel* fractions.
   RelY × Height is 0 on a horizontal 1-D XForm, and Draw painted a chord
@@ -1371,11 +1380,6 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   alpha with the same SourceAlpha blur canvas and SVG use, then writes
   SoftEdgesSize 0. Cropped pictures keep the cell so ImgOffset still
   frames the original pixels. Geometry-only SoftEdges cannot be a raster.
-- Character `Letterspace` now survives a save into LibreOffice. The cell is
-  not a token, but `FontScale` is collected as `style:text-scale`. A save
-  folds tracking into FontScale with the same 0.55×Size mean Latin advance
-  canvas and SVG already use, then writes Letterspace 0. Draw sees glyph
-  width scaling; reopen here still paints as tracking.
 - Character `Overline` and `Glow*` now survive a save into LibreOffice.
   libvisio's `readCharIX` has an empty `Overline` case, so a save inserts
   combining U+0305 marks and clears the cell. Glow cells are not tokens:
