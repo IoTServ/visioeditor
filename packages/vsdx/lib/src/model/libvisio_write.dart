@@ -147,7 +147,11 @@
 /// Office) — a black fallback plus THEMEVAL painted grey, while canvas
 /// already strokes `_colourOrTheme`. Page
 /// `ConLineJump*` cells are not tokens either, so a save bakes hops as
-/// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Image
+/// ArcTo / MoveTo / LineTo and writes `ConLineJumpCode=1`. Geometry-less
+/// glueable connectors have no path for libvisio's
+/// `m_currentFillGeometry`; canvas / SVG already paint
+/// `autoRoutedConnectorPolyline`, so a save writes that same elbow as
+/// MoveTo/LineTo first — otherwise Draw stays blank. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
 /// a save bakes them into a PNG and zeros the cells. Cropped Foreign
 /// bitmaps overflow in Draw: libvisio emits `svg:width` from `ImgWidth`
@@ -436,12 +440,80 @@ import 'table.dart';
 import 'theme.dart';
 import 'user_property.dart';
 
+/// `true` when a glueable 1-D connector has no drawable Geometry for Draw.
+///
+/// LibreOffice only calls `VisioDocument::parse`. libvisio emits a stroke
+/// only when `readGeometry` filled `m_currentFillGeometry`; a Begin–End
+/// XForm1D with no rows is not a path. Canvas / SVG already paint
+/// [VsdxPage.autoRoutedConnectorPolyline] for `!hasGeometry` glueable
+/// connectors. Master instances keep the stencil path — baking a local
+/// elbow would hide that geometry.
+bool shapeNeedsLibvisioConnectorRouteBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!shape.isGlueableConnector) return false;
+  if (shape.hasGeometry) return false;
+  if (shape.masterId != null || shape.masterShapeId != null) return false;
+  return shape.beginX != null &&
+      shape.beginY != null &&
+      shape.endX != null &&
+      shape.endY != null;
+}
+
+/// Write the canvas / SVG auto-route as MoveTo/LineTo libvisio collects.
+VsdxPage bakeConnectorRoutesForLibvisioWrite(VsdxPage page) {
+  VsdxShape rewrite(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) rewrite(child),
+    ];
+    var next = shape;
+    if (shapeNeedsLibvisioConnectorRouteBake(shape)) {
+      final poly = page.autoRoutedConnectorPolyline(shape);
+      if (poly.length >= 2) {
+        final parentId = page.findParentId(shape.id);
+        final frame = parentId == null
+            ? poly
+            : <Offset2D>[
+                for (final p in poly) page.pageToLocalDeep(parentId, p),
+              ];
+        next = shape.reshapeAsPolyline(frame);
+      }
+    }
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) next = next.copyWith(children: children);
+    return next;
+  }
+
+  final shapes = <VsdxShape>[
+    for (final shape in page.shapes) rewrite(shape),
+  ];
+  var same = shapes.length == page.shapes.length;
+  if (same) {
+    for (var i = 0; i < shapes.length; i++) {
+      if (!identical(shapes[i], page.shapes[i])) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) return page;
+  return page.copyWith(shapes: shapes);
+}
+
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
 VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   var pagesChanged = false;
   final pages = <VsdxPage>[];
   for (final page in document.pages) {
-    final next = bakeLineJumpsForLibvisioWrite(page);
+    final routed = bakeConnectorRoutesForLibvisioWrite(page);
+    final next = bakeLineJumpsForLibvisioWrite(routed);
     pagesChanged |= !identical(next, page);
     pages.add(next);
   }

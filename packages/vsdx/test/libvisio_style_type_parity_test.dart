@@ -198,7 +198,10 @@
 /// User row, so a save writes `TxtAngle` and drops `veAutoRotateLabel`.
 /// Glueable 1-D labels with no `TxtPin` also write that route midpoint
 /// into `TxtPin` / a tight `TxtWidth` so Draw does not use the Begin–End
-/// box or a TxtWidth-only `m_txtxform` whose pin defaults to 0. draw.io Flow Animation is also a User row, so a save flattens the
+/// box or a TxtWidth-only `m_txtxform` whose pin defaults to 0. Geometry-less
+/// glueable connectors have no path for libvisio, so a save writes the
+/// same `autoRoutedConnectorPolyline` canvas / SVG already paint.
+/// draw.io Flow Animation is also a User row, so a save flattens the
 /// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Sketch
 /// jiggle copies that row onto the plates so the same flatten keeps the
 /// gaps. Arrowed

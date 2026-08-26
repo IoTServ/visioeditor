@@ -6347,6 +6347,35 @@ void main() {
         ).withFlowAnimation(true),
       ),
     );
+    var emptyConnectorDocument = parser.parse(blank);
+    final emptyConnectorPage = emptyConnectorDocument.pages.first;
+    emptyConnectorDocument = emptyConnectorDocument.replacePage(
+      0,
+      emptyConnectorPage.addShape(
+        VsdxShape(
+          id: emptyConnectorPage.nextFreeShapeId(),
+          name: 'EmptyConn',
+          pinX: 4.25,
+          pinY: 5.5,
+          locPinXInches: 1.5,
+          locPinYInches: 0,
+          width: 3,
+          height: 0,
+          is1D: true,
+          beginX: 2.75,
+          beginY: 5.5,
+          endX: 5.75,
+          endY: 7.5,
+          objType: 2,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFFFF00FF),
+            weightInches: 0.08,
+            pattern: 1,
+          ),
+        ),
+      ),
+    );
     var dashArrowDocument = parser.parse(blank);
     final dashArrowPage = dashArrowDocument.pages.first;
     final flowArrowId = dashArrowPage.nextFreeShapeId();
@@ -7248,6 +7277,10 @@ void main() {
       'flow_dash': writer.write(
         originalBytes: blank,
         edited: flowDashDocument,
+      ),
+      'empty_connector': writer.write(
+        originalBytes: blank,
+        edited: emptyConnectorDocument,
       ),
       'dash_arrows': writer.write(
         originalBytes: blank,
@@ -15758,6 +15791,45 @@ void main() {
             lessThan(gap - 15),
             reason: 'LibreOffice must paint the Flow Animation dash, not a '
                 'solid LinePattern-1 stroke; ink=$ink gap=$gap',
+          );
+        }
+        if (entry.key == 'empty_connector') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'EmptyConn');
+          expect(source.hasGeometry, isTrue);
+          expect(
+            source.geometries.single.commands.whereType<LineTo>().length,
+            greaterThanOrEqualTo(2),
+            reason: 'libvisio has no path without Geometry rows',
+          );
+        }
+        if (entry.key == 'empty_connector' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(40),
+            reason: 'LibreOffice must paint the auto-routed 1-D connector, '
+                'not a blank Height=0 XForm; magentaPixels=$magentaPixels',
           );
         }
         if (entry.key == 'dash_arrows') {

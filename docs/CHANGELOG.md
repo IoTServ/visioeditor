@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Geometry-less glueable connectors now keep their auto-route in
+  LibreOffice. libvisio only emits a stroke when Geometry filled
+  `m_currentFillGeometry`, so a Begin–End 1-D XForm with no rows stayed
+  blank in Draw while canvas / SVG already painted
+  `autoRoutedConnectorPolyline`. A save writes that same elbow as
+  MoveTo/LineTo. Authored Geometry and master instances stay native. A
+  second save does not restack another route.
 - Sketch jiggle strokes now keep custom dashes, Flow Animation dashes,
   and LinePattern gaps on a later ribbon in LibreOffice.
   `_lineProperties` only dashes ids 2–23, leftover Geometry is already

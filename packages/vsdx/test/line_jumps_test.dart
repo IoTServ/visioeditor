@@ -498,4 +498,62 @@ void main() {
     expect(lCount, greaterThanOrEqualTo(geomCount - 1));
     expect(RegExp(r'\sA\s').hasMatch(svg), isFalse);
   });
+
+  test('geometry-less glueable connectors bake the canvas auto-route', () {
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    final empty = VsdxShape(
+      id: id,
+      name: 'EmptyConn',
+      pinX: 4.25,
+      pinY: 5.5,
+      locPinXInches: 1.5,
+      locPinYInches: 0,
+      width: 3,
+      height: 0,
+      is1D: true,
+      beginX: 2.75,
+      beginY: 5.5,
+      endX: 5.75,
+      endY: 7.5,
+      objType: 2,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(color: VsdxColor(0xFFFF00FF), weightInches: 0.08),
+    );
+    expect(shapeNeedsLibvisioConnectorRouteBake(empty), isTrue);
+    expect(empty.hasGeometry, isFalse);
+    doc = doc.replacePage(0, page.addShape(empty));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(id)!;
+    expect(source.hasGeometry, isTrue);
+    expect(
+      source.geometries.single.commands.whereType<LineTo>().length,
+      greaterThanOrEqualTo(2),
+      reason: 'dx>dy elbow is four vertices: MoveTo plus three LineTo',
+    );
+    expect(source.beginX, closeTo(2.75, 1e-9));
+    expect(source.beginY, closeTo(5.5, 1e-9));
+    expect(source.endX, closeTo(5.75, 1e-9));
+    expect(source.endY, closeTo(7.5, 1e-9));
+    final twice = documentForLibvisioWrite(baked);
+    expect(
+      twice.pages.first.findShapeById(id)!.geometries.single.commands.length,
+      source.geometries.single.commands.length,
+      reason: 'a second save must not restack another route',
+    );
+
+    final authored = VsdxShapeFactory.line(
+      id: 2,
+      ax: 1,
+      ay: 2,
+      bx: 4,
+      by: 2,
+      name: 'Authored',
+    );
+    expect(shapeNeedsLibvisioConnectorRouteBake(authored), isFalse);
+  });
 }
