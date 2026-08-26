@@ -583,6 +583,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Character FontScale now paints as a true glyph width scale, matching
+  LibreOffice. libvisio's `readCharIX` collects `XML_FONTSCALE` as
+  `scaleWidth` and `_fillCharacterProperties` emits `style:text-scale`
+  (`RVNG_PERCENT`) without changing `fo:font-size`. Canvas and SVG used
+  to approximate that with letter-spacing, so condensed/expanded runs
+  kept their cap height but not their glyph width (identical ink at
+  0.5× and 2×). SVG now wraps the line in `scale(sx,1)` about the
+  HorzAlign anchor; canvas applies the same `canvas.scale` at paint
+  after laying out unscaled glyphs. Letterspace stays tracking — Draw
+  still ignores that cell, so a save continues to fold it into FontScale.
+  Tab fields that already sit at visual x use `textLength` /
+  `spacingAndGlyphs`. A second save does not restack.
 - 1-D CubBezTo / QuadBezTo bows now keep their curve in LibreOffice.
   `tokens.txt` has no CubBezTo / QuadBezTo, so a save used Rel* fractions.
   RelY × Height is 0 on a horizontal 1-D XForm, and Draw painted a chord

@@ -4460,9 +4460,15 @@ class VsdxToSvgSerializer {
           coordinateScale: _svgTextUnitScale,
         );
       }
-      buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="middle" '
-        'y="${_n(yText * _svgTextUnitScale)}">$body</text>',
+      _writeSvgFontScaledText(
+        buf,
+        indent: indent,
+        segs: line.segs,
+        theme: theme,
+        anchor: 'middle',
+        xAnchor: 0,
+        yInches: yText,
+        prebuiltBody: body.toString(),
       );
       yTop += line.lineH;
     }
@@ -4935,10 +4941,17 @@ class VsdxToSvgSerializer {
         }
       }
       // Preserve consecutive spaces (canvas TextPainter does; SVG defaults fold).
-      buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="$anchor"'
-        '$justifyAttr '
-        'y="${_n(yText * _svgTextUnitScale)}">$body</text>',
+      _writeSvgFontScaledText(
+        buf,
+        indent: indent,
+        segs: layout.segs,
+        theme: theme,
+        anchor: anchor,
+        xAnchor: xBody,
+        yInches: yText,
+        justifyAttr: justifyAttr,
+        tabbed: tabbed,
+        prebuiltBody: body.toString(),
       );
     }
     buf.writeln('$indent</g>');
@@ -5204,9 +5217,15 @@ class VsdxToSvgSerializer {
           coordinateScale: _svgTextUnitScale,
         );
       }
-      buf.writeln(
-        '$indent  <text xml:space="preserve" text-anchor="$anchor" '
-        'y="${_n(y * _svgTextUnitScale)}">$body</text>',
+      _writeSvgFontScaledText(
+        buf,
+        indent: indent,
+        segs: layout.segs,
+        theme: theme,
+        anchor: anchor,
+        xAnchor: x,
+        yInches: y,
+        prebuiltBody: body.toString(),
       );
     }
     buf.writeln('$indent</g>');
@@ -5308,8 +5327,8 @@ class VsdxToSvgSerializer {
   }
 
   /// Approximate advance width for SVG layout (no font metrics in pure Dart).
-  /// Matches canvas: locale-specific complex-script size, FontScale/tracking,
-  /// and 0.7× super/sub size.
+  /// Matches canvas: locale-specific complex-script size, FontScale as a
+  /// true glyph width scale, Letterspace tracking, and 0.7× super/sub size.
   double _estSvgTextWidth(String text, VsdxCharStyle style) {
     double positionedSize(double inches) {
       var size = math.max(inches, 0.04);
@@ -5324,7 +5343,7 @@ class VsdxToSvgSerializer {
     final runes = text.runes.toList(growable: false);
     var w = 0.0;
     final smallCaps = style.style.smallCaps;
-    final scale = style.fontScale <= 0 ? 1.0 : style.fontScale.clamp(0.1, 4.0);
+    final scale = style.clampedFontScale;
     // The neutral table below is Helvetica/Arial-based. DejaVu Sans — the
     // face embedded with LibreOffice and used by the VDX corpus — is wider,
     // especially in its bold face. Account for that before deciding line and
@@ -5338,22 +5357,106 @@ class VsdxToSvgSerializer {
       // Match canvas / SVG synthetic small-caps (lowercase → 0.78× capitals).
       final chFs = smallCaps && r >= 0x61 && r <= 0x7a ? runeFs * 0.78 : runeFs;
       if (r >= 0x2E80) {
-        w += chFs; // CJK / wide ideographs
+        w += chFs * scale; // CJK / wide ideographs
       } else {
         // SVG export cannot query the installed font. A uniform 0.55 em
         // over-counts narrow glyphs enough to wrap valid Visio labels that
         // LibreOffice and Canvas keep on one line.
         final measuredRune = smallCaps && r >= 0x61 && r <= 0x7a ? r - 0x20 : r;
-        w += chFs * _latinAdvanceFactor(measuredRune) * faceWidthFactor;
+        w += chFs * _latinAdvanceFactor(measuredRune) * faceWidthFactor * scale;
       }
       if (i + 1 < runes.length) {
-        // Flutter applies tracking between glyphs. Complex-script tspans use
-        // their own size, so their FontScale contribution must do the same.
-        w += style.letterSpacingInches +
-            runeFs * (scale - 1.0) * kLibvisioMeanLatinAdvance;
+        w += style.letterSpacingInches;
       }
     }
     return w;
+  }
+
+  /// libvisio `style:text-scale` — width-only, about the run's anchor x.
+  String _svgFontScaleTransform(double anchorInches, double fontScale) {
+    if ((fontScale - 1.0).abs() <= 1e-6) return '';
+    final ax = anchorInches * _svgTextUnitScale;
+    return ' transform="translate(${_n(ax)} 0) scale(${_n(fontScale)} 1) '
+        'translate(${_n(-ax)} 0)"';
+  }
+
+  /// Shared FontScale of [styles], or `null` when runs disagree.
+  double? _sharedClampedFontScale(Iterable<VsdxCharStyle> styles) {
+    double? shared;
+    for (final style in styles) {
+      final v = style.clampedFontScale;
+      if (shared == null) {
+        shared = v;
+      } else if ((shared - v).abs() > 1e-6) {
+        return null;
+      }
+    }
+    return shared ?? 1.0;
+  }
+
+  /// One line of `<text>`. Uniform FontScale uses `scale(sx,1)` about the
+  /// anchor (libvisio `style:text-scale`); mixed runs paint sequentially so
+  /// each glyph width is independent. Tab / justify lengths are already
+  /// visual, so those paths skip the wrapper transform.
+  void _writeSvgFontScaledText(
+    StringBuffer buf, {
+    required String indent,
+    required List<(String text, VsdxTextRun run)> segs,
+    required VsdxTheme theme,
+    required String anchor,
+    required double xAnchor,
+    required double yInches,
+    String justifyAttr = '',
+    bool tabbed = false,
+    required String prebuiltBody,
+  }) {
+    final yAttr = 'y="${_n(yInches * _svgTextUnitScale)}"';
+    if (!tabbed && justifyAttr.isEmpty) {
+      final shared = _sharedClampedFontScale(
+        segs.map((seg) => seg.$2.charStyle),
+      );
+      if (shared == null) {
+        var total = 0.0;
+        for (final (raw, run) in segs) {
+          total += _estSvgTextWidth(raw, run.charStyle);
+        }
+        var x = switch (anchor) {
+          'end' => xAnchor - total,
+          'middle' => xAnchor - total / 2,
+          _ => xAnchor,
+        };
+        for (final (raw, run) in segs) {
+          if (raw.isEmpty) continue;
+          final sx = run.charStyle.clampedFontScale;
+          final w = _estSvgTextWidth(raw, run.charStyle);
+          final piece = StringBuffer();
+          _writeStyledTspans(
+            piece,
+            raw: raw,
+            style: run.charStyle,
+            theme: theme,
+            xAttr: 'x="${_n(x * _svgTextUnitScale)}"',
+            coordinateScale: _svgTextUnitScale,
+          );
+          buf.writeln(
+            '$indent  <text xml:space="preserve" text-anchor="start"'
+            '${_svgFontScaleTransform(x, sx)} $yAttr>$piece</text>',
+          );
+          x += w;
+        }
+        return;
+      }
+      buf.writeln(
+        '$indent  <text xml:space="preserve" text-anchor="$anchor"'
+        '${_svgFontScaleTransform(xAnchor, shared)} $yAttr>'
+        '$prebuiltBody</text>',
+      );
+      return;
+    }
+    buf.writeln(
+      '$indent  <text xml:space="preserve" text-anchor="$anchor"'
+      '$justifyAttr $yAttr>$prebuiltBody</text>',
+    );
   }
 
   /// Neutral Helvetica/Arial glyph advances used only for SVG line breaking.
@@ -5632,13 +5735,21 @@ class VsdxToSvgSerializer {
         forceX = true;
         continue;
       }
+      final sx = token.run.charStyle.clampedFontScale;
+      final scaled = (sx - 1.0).abs() > 1e-6 && token.text.isNotEmpty;
       _writeStyledTspans(
         body,
         raw: token.text,
-        style: token.run.charStyle,
+        style: scaled
+            ? token.run.charStyle.copyWith(letterSpacingInches: 0)
+            : token.run.charStyle,
         theme: theme,
         xAttr: forceX ? 'x="${_n((originX + x) * coordinateScale)}"' : null,
         coordinateScale: coordinateScale,
+        extraAttrs: scaled
+            ? ' textLength="${_n(_estSvgTextWidth(token.text, token.run.charStyle) * coordinateScale)}" '
+                'lengthAdjust="spacingAndGlyphs"'
+            : '',
       );
       x += _estSvgTextWidth(token.text, token.run.charStyle);
       maxX = math.max(maxX, x);
@@ -5699,7 +5810,8 @@ class VsdxToSvgSerializer {
     required String indent,
   }) {
     final laidOut = libvisioBulletPrefixedRuns(runs);
-    final plain = laidOut.map((r) => r.text).join().replaceAll('\n', ' ').trim();
+    final plain =
+        laidOut.map((r) => r.text).join().replaceAll('\n', ' ').trim();
     if (plain.isEmpty) return;
 
     // Match canvas: TextDirection=1 rotates into a vertical band, then the
@@ -5813,6 +5925,7 @@ class VsdxToSvgSerializer {
     String? xAttr,
     bool applyScriptFonts = true,
     double coordinateScale = 1.0,
+    String extraAttrs = '',
   }) {
     final asianFontName = style.asianFont?.trim();
     final latinFontName = style.fontFamily?.trim();
@@ -5865,6 +5978,7 @@ class VsdxToSvgSerializer {
           xAttr: first ? xAttr : null,
           applyScriptFonts: false,
           coordinateScale: coordinateScale,
+          extraAttrs: extraAttrs,
         );
         first = false;
       }
@@ -5880,7 +5994,7 @@ class VsdxToSvgSerializer {
         text: text,
         coordinateScale: coordinateScale,
       );
-      body.write('<tspan $x$attrs>${_esc(text)}</tspan>');
+      body.write('<tspan $x$attrs$extraAttrs>${_esc(text)}</tspan>');
       return;
     }
     var fs = math.max(style.fontSizeInches, 0.04);
@@ -5900,6 +6014,7 @@ class VsdxToSvgSerializer {
       final chunk = buf.toString();
       buf.clear();
       final prefix = first ? x : '';
+      final extras = first ? extraAttrs : '';
       first = false;
       final glyph = bufLower! ? chunk.toUpperCase() : chunk;
       final attrs = _charStyleSvgAttrs(
@@ -5910,7 +6025,7 @@ class VsdxToSvgSerializer {
         text: glyph,
         coordinateScale: coordinateScale,
       );
-      body.write('<tspan $prefix$attrs>${_esc(glyph)}</tspan>');
+      body.write('<tspan $prefix$attrs$extras>${_esc(glyph)}</tspan>');
       bufLower = null;
     }
 
@@ -5973,13 +6088,13 @@ class VsdxToSvgSerializer {
         break;
     }
     if (fontSizeOverride != null) fs = fontSizeOverride;
-    // FontScale is a *width* scale in Visio — do not multiply font-size (that
-    // also grows glyph height). Approximate with letter-spacing using the same
-    // mean Latin advance used by [_estSvgTextWidth] / LibreOffice FontScale bake.
+    // FontScale is a *width* scale (libvisio `style:text-scale`). The <text>
+    // wrapper applies `scale(sx,1)`, so tracking here must be the unscaled
+    // Letterspace — otherwise the extra gaps would stretch with the glyphs.
+    final fontScale = c.clampedFontScale;
     var letterSpacing = c.letterSpacingInches;
-    final fontScale = c.fontScale <= 0 ? 1.0 : c.fontScale.clamp(0.1, 4.0);
-    if ((fontScale - 1.0).abs() > 1e-6) {
-      letterSpacing += fs * (fontScale - 1.0) * kLibvisioMeanLatinAdvance;
+    if ((fontScale - 1.0).abs() > 1e-6 && letterSpacing.abs() > 1e-12) {
+      letterSpacing /= fontScale;
     }
     // Match canvas fontFallback: Latin face then AsianFont for CJK glyphs.
     final family = _svgFontFamily(
@@ -6038,8 +6153,7 @@ class VsdxToSvgSerializer {
         attrs.write(' style="text-decoration-style:double"');
       }
     }
-    // letter-spacing already includes FontScale above — do not rewrite it
-    // with the raw Character Letterspace cell.
+    // Letterspace is the Character cell; FontScale is the width transform.
     // package:pdf ignores baseline-shift — use canvas-matching dy offsets.
     final baseFs = math.max(c.fontSizeInches, 0.04);
     switch (c.position) {

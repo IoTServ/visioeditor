@@ -2735,6 +2735,9 @@ class VsdxPainter extends CustomPainter {
               backgroundColor: inlineBackground,
             )
           : null;
+      final edgeWidthScale = hasRich
+          ? (_sharedWidthScale(rich.runs) ?? 1.0)
+          : 1.0;
       final tp = hasTabs
           ? null
           : (TextPainter(
@@ -2743,7 +2746,7 @@ class VsdxPainter extends CustomPainter {
               textDirection: textDirection,
               maxLines: null,
             )..layout());
-      final textWidth = tabLine?.width ?? tp!.width;
+      final textWidth = tabLine?.width ?? (tp!.width * edgeWidthScale);
       final textHeight = tabLine?.height ?? tp!.height;
       final ox = -textWidth / 2;
       final oy = -textHeight / 2;
@@ -2784,13 +2787,15 @@ class VsdxPainter extends CustomPainter {
       }
       if (tabLine != null) {
         for (var i = 0; i < tabLine.painters.length; i++) {
-          tabLine.painters[i].paint(
+          _paintWidthScaled(
             canvas,
+            tabLine.painters[i],
             Offset(ox + tabLine.offsets[i], oy + tabLine.dys[i]),
+            tabLine.widthScales[i],
           );
         }
       } else {
-        tp!.paint(canvas, Offset(ox, oy));
+        _paintWidthScaled(canvas, tp!, Offset(ox, oy), edgeWidthScale);
       }
       canvas.restore();
       restoreHighlightSuppression();
@@ -2872,14 +2877,14 @@ class VsdxPainter extends CustomPainter {
         background: block.backgroundColor,
         backgroundTransparency: block.backgroundTransparency,
         border: shape.labelBorderColor,
+        widthScale: hasRich ? (_sharedWidthScale(rich.runs) ?? 1.0) : 1.0,
       );
     }
 
     // Curved Text: place glyphs along a quadratic arc inside the text block.
     // Falls back to the rectangular layout when the shape is a 1-D edge label.
     if (shape.curvedText && !isEdgeLabel) {
-      final curvedRuns =
-          hasRich ? libvisioBulletPrefixedRuns(rich.runs) : null;
+      final curvedRuns = hasRich ? libvisioBulletPrefixedRuns(rich.runs) : null;
       _paintCurvedText(
         canvas,
         spans: spans,
@@ -2987,7 +2992,8 @@ class VsdxPainter extends CustomPainter {
     final needsPosShift =
         hasRich &&
         rich.runs.any((r) => r.charStyle.position != VsdxTextPosition.normal);
-    if (needsPosShift) {
+    final sharedWidthScale = hasRich ? _sharedWidthScale(rich.runs) : 1.0;
+    if (needsPosShift || sharedWidthScale == null) {
       _paintRunsWithPosShift(
         canvas,
         runs: rich.runs,
@@ -3015,8 +3021,9 @@ class VsdxPainter extends CustomPainter {
       textDirection: textDirection,
       maxLines: null,
     );
+    final widthScale = sharedWidthScale;
     if (shape.wordWrap) {
-      tp.layout(maxWidth: maxW);
+      tp.layout(maxWidth: maxW / widthScale);
     } else {
       tp.layout();
     }
@@ -3030,11 +3037,12 @@ class VsdxPainter extends CustomPainter {
     final textHeight = authoredLineHeight == null || lineMetrics.isEmpty
         ? tp.height
         : authoredLineHeight * lineMetrics.length;
+    final visualW = tp.width * widthScale;
 
     // Offsets measured from the block's upper-left corner (px).
     final ox = switch (align) {
-      TextAlign.center => mlPx + (twPx - mlPx - mrPx - tp.width) / 2,
-      TextAlign.right => twPx - mrPx - tp.width,
+      TextAlign.center => mlPx + (twPx - mlPx - mrPx - visualW) / 2,
+      TextAlign.right => twPx - mrPx - visualW,
       _ => mlPx, // left / justify / start
     };
     var oy = switch (block.verticalAlign) {
@@ -3045,7 +3053,7 @@ class VsdxPainter extends CustomPainter {
     // Keep authored middle/bottom alignment when text is taller than its box.
     // Visio and LibreOffice allow vertical overflow on both sides.
 
-    tp.paint(canvas, Offset(ox, oy));
+    _paintWidthScaled(canvas, tp, Offset(ox, oy), widthScale);
     canvas.restore();
     restoreHighlightSuppression();
   }
@@ -3088,6 +3096,7 @@ class VsdxPainter extends CustomPainter {
     required VsdxColor? background,
     required double backgroundTransparency,
     required VsdxColor? border,
+    double widthScale = 1.0,
   }) {
     final tp = TextPainter(
       text: TextSpan(children: spans),
@@ -3096,13 +3105,14 @@ class VsdxPainter extends CustomPainter {
       maxLines: null,
     );
     if (wordWrap) {
-      tp.layout(maxWidth: maxW);
+      tp.layout(maxWidth: maxW / widthScale);
     } else {
       tp.layout();
     }
+    final visualW = tp.width * widthScale;
     final ox = switch (align) {
-      TextAlign.center => mlPx + (twPx - mlPx - mrPx - tp.width) / 2,
-      TextAlign.right => twPx - mrPx - tp.width,
+      TextAlign.center => mlPx + (twPx - mlPx - mrPx - visualW) / 2,
+      TextAlign.right => twPx - mrPx - visualW,
       _ => mlPx,
     };
     var oy = switch (verticalAlign) {
@@ -3113,7 +3123,7 @@ class VsdxPainter extends CustomPainter {
     final rect = Rect.fromLTWH(
       ox - padding.left,
       oy - padding.top,
-      tp.width + padding.left + padding.right,
+      visualW + padding.left + padding.right,
       tp.height + padding.top + padding.bottom,
     );
     if (background case final color?) {
@@ -3177,7 +3187,7 @@ class VsdxPainter extends CustomPainter {
         TextDirection.rtl;
     late List<
       ({
-        List<({TextPainter tp, double dy})> pieces,
+        List<({TextPainter tp, double dy, double widthScale})> pieces,
         double width,
         double height,
       })
@@ -3228,8 +3238,13 @@ class VsdxPainter extends CustomPainter {
       };
       var x = x0;
       for (final piece in line.pieces) {
-        piece.tp.paint(canvas, Offset(x, y + piece.dy));
-        x += piece.tp.width;
+        _paintWidthScaled(
+          canvas,
+          piece.tp,
+          Offset(x, y + piece.dy),
+          piece.widthScale,
+        );
+        x += piece.tp.width * piece.widthScale;
       }
       y += line.height;
     }
@@ -3287,8 +3302,13 @@ class VsdxPainter extends CustomPainter {
       };
       var x = ox;
       for (final piece in line.pieces) {
-        piece.tp.paint(canvas, Offset(x, y + piece.dy));
-        x += piece.tp.width;
+        _paintWidthScaled(
+          canvas,
+          piece.tp,
+          Offset(x, y + piece.dy),
+          piece.widthScale,
+        );
+        x += piece.tp.width * piece.widthScale;
       }
       y += line.height;
     }
@@ -3296,7 +3316,11 @@ class VsdxPainter extends CustomPainter {
 
   /// Greedy wrap of rich runs for baseline-shifted / first-line-indent painting.
   List<
-    ({List<({TextPainter tp, double dy})> pieces, double width, double height})
+    ({
+      List<({TextPainter tp, double dy, double widthScale})> pieces,
+      double width,
+      double height,
+    })
   >
   _wrapPosShiftLines(
     List<VsdxTextRun> runs,
@@ -3311,12 +3335,12 @@ class VsdxPainter extends CustomPainter {
     final lines =
         <
           ({
-            List<({TextPainter tp, double dy})> pieces,
+            List<({TextPainter tp, double dy, double widthScale})> pieces,
             double width,
             double height,
           })
         >[];
-    var cur = <({TextPainter tp, double dy})>[];
+    var cur = <({TextPainter tp, double dy, double widthScale})>[];
     var curW = 0.0;
     var curH = 0.0;
     double widthForLine(int index) => index == 0 && firstLineMaxW != null
@@ -3331,7 +3355,7 @@ class VsdxPainter extends CustomPainter {
         width: curW,
         height: math.max(curH, 1.0),
       ));
-      cur = <({TextPainter tp, double dy})>[];
+      cur = <({TextPainter tp, double dy, double widthScale})>[];
       curW = 0.0;
       curH = 0.0;
       lineMax = widthForLine(lines.length);
@@ -3350,12 +3374,13 @@ class VsdxPainter extends CustomPainter {
             backgroundColor: backgroundColor,
           );
           final isBlank = unit.trim().isEmpty;
-          if (curW > 1e-9 && curW + piece.tp.width > lineMax && !isBlank) {
+          final pieceW = piece.tp.width * piece.widthScale;
+          if (curW > 1e-9 && curW + pieceW > lineMax && !isBlank) {
             flush();
           }
           if (cur.isEmpty && isBlank) continue;
           // Hard-break oversized tokens (CJK / long words) like SVG wrap.
-          if (piece.tp.width > lineMax && unit.length > 1 && !isBlank) {
+          if (pieceW > lineMax && unit.length > 1 && !isBlank) {
             for (final r in unit.runes) {
               final ch = String.fromCharCode(r);
               final p = _posShiftPiece(
@@ -3365,15 +3390,16 @@ class VsdxPainter extends CustomPainter {
                 applyPosDy: applyPosDy,
                 backgroundColor: backgroundColor,
               );
-              if (curW > 1e-9 && curW + p.tp.width > lineMax) flush();
+              final pw = p.tp.width * p.widthScale;
+              if (curW > 1e-9 && curW + pw > lineMax) flush();
               cur.add(p);
-              curW += p.tp.width;
+              curW += pw;
               curH = math.max(curH, p.tp.height + p.dy.abs());
             }
             continue;
           }
           cur.add(piece);
-          curW += piece.tp.width;
+          curW += pieceW;
           curH = math.max(curH, piece.tp.height + piece.dy.abs());
         }
       }
@@ -3394,7 +3420,7 @@ class VsdxPainter extends CustomPainter {
     return lines;
   }
 
-  ({TextPainter tp, double dy}) _posShiftPiece(
+  ({TextPainter tp, double dy, double widthScale}) _posShiftPiece(
     String text,
     VsdxTextRun run,
     double scale, {
@@ -3422,7 +3448,7 @@ class VsdxPainter extends CustomPainter {
             VsdxTextPosition.subscript => base * 0.2,
             VsdxTextPosition.normal => 0.0,
           };
-    return (tp: tp, dy: dy);
+    return (tp: tp, dy: dy, widthScale: run.charStyle.clampedFontScale);
   }
 
   List<String> _canvasWrapUnits(String text) {
@@ -3475,6 +3501,8 @@ class VsdxPainter extends CustomPainter {
     final paraPosPainters = <List<TextPainter>?>[];
     final paraPosDys = <List<double>?>[];
     final paraPosOffsets = <List<double>?>[];
+    final paraPosWidthScales = <List<double>?>[];
+    final paraWidthScales = <double>[];
     final rowBodyTopOffsets = <double>[];
     final rowBulletTopOffsets = <double>[];
     final rowHeights = <double>[];
@@ -3581,8 +3609,12 @@ class VsdxPainter extends CustomPainter {
       // Per-line wrap when: super/sub needs dy; IndFirst is first-line-only;
       // or a bullet must stay on the first line (not vertically centred on
       // the whole paragraph block).
+      final mixedWidth = _sharedWidthScale(para.runs) == null;
       final needsLineWrap =
-          needsPos || hasBullet || (!hasBullet && indentF.abs() > 1e-9);
+          needsPos ||
+          hasBullet ||
+          mixedWidth ||
+          (!hasBullet && indentF.abs() > 1e-9);
       late final TextPainter? tp;
       late final double rowW;
       late final double rowTextH;
@@ -3616,6 +3648,8 @@ class VsdxPainter extends CustomPainter {
           paraPosPainters.add(line.painters);
           paraPosDys.add(line.dys);
           paraPosOffsets.add(line.offsets);
+          paraPosWidthScales.add(line.widthScales);
+          paraWidthScales.add(1.0);
           final alignedX = switch (pAlign) {
             TextAlign.center => lineX + (lineAvail - line.width) / 2,
             TextAlign.right => lineX + lineAvail - line.width,
@@ -3677,6 +3711,8 @@ class VsdxPainter extends CustomPainter {
           paraPosPainters.add([for (final p in pieces) p.tp]);
           paraPosDys.add([for (final p in pieces) p.dy]);
           paraPosOffsets.add(null);
+          paraPosWidthScales.add([for (final p in pieces) p.widthScale]);
+          paraWidthScales.add(1.0);
           final alignedX = switch (pAlign) {
             TextAlign.center => lineX + (lineAvail - line.width) / 2,
             TextAlign.right => lineX + lineAvail - line.width,
@@ -3715,12 +3751,13 @@ class VsdxPainter extends CustomPainter {
         ),
         maxLines: null,
       );
+      final widthScale = _sharedWidthScale(para.runs) ?? 1.0;
       if (wordWrap) {
-        tp.layout(maxWidth: availRest);
+        tp.layout(maxWidth: availRest / widthScale);
       } else {
         tp.layout();
       }
-      rowW = tp.width;
+      rowW = tp.width * widthScale;
       rowTextH = tp.height;
       posPainters = null;
       posDys = null;
@@ -3731,6 +3768,8 @@ class VsdxPainter extends CustomPainter {
       paraPosPainters.add(posPainters);
       paraPosDys.add(posDys);
       paraPosOffsets.add(null);
+      paraPosWidthScales.add(null);
+      paraWidthScales.add(widthScale);
       // Horizontal align still applies within the remaining text band.
       final alignedX = switch (pAlign) {
         TextAlign.center => textX + (availRest - rowW) / 2,
@@ -3774,11 +3813,17 @@ class VsdxPainter extends CustomPainter {
         final offsets = paraPosOffsets[i];
         for (var j = 0; j < posPs.length; j++) {
           final px = offsets == null ? x : textOriginsX[i] + offsets[j];
-          posPs[j].paint(canvas, Offset(px, ty + posDy[j]));
-          if (offsets == null) x += posPs[j].width;
+          final sx = paraPosWidthScales[i]?[j] ?? 1.0;
+          _paintWidthScaled(canvas, posPs[j], Offset(px, ty + posDy[j]), sx);
+          if (offsets == null) x += posPs[j].width * sx;
         }
       } else {
-        tp.paint(canvas, Offset(textOriginsX[i], ty));
+        _paintWidthScaled(
+          canvas,
+          tp,
+          Offset(textOriginsX[i], ty),
+          paraWidthScales[i],
+        );
       }
       y += rowH + afterPx[i];
     }
@@ -3788,6 +3833,7 @@ class VsdxPainter extends CustomPainter {
     List<TextPainter> painters,
     List<double> dys,
     List<double> offsets,
+    List<double> widthScales,
     double width,
     double height,
   })
@@ -3818,6 +3864,7 @@ class VsdxPainter extends CustomPainter {
       List<TextPainter> painters,
       List<double> dys,
       List<double> offsets,
+      List<double> widthScales,
       double width,
       double height,
     })
@@ -3899,6 +3946,7 @@ class VsdxPainter extends CustomPainter {
             List<TextPainter> painters,
             List<double> dys,
             List<double> offsets,
+            List<double> widthScales,
             double width,
             double height,
           })
@@ -3906,6 +3954,7 @@ class VsdxPainter extends CustomPainter {
     var painters = <TextPainter>[];
     var dys = <double>[];
     var offsets = <double>[];
+    var widthScales = <double>[];
     var x = 0.0;
     var maxX = 0.0;
     var height = 1.0;
@@ -3917,12 +3966,14 @@ class VsdxPainter extends CustomPainter {
         painters: painters,
         dys: dys,
         offsets: offsets,
+        widthScales: widthScales,
         width: maxX,
         height: height,
       ));
       painters = <TextPainter>[];
       dys = <double>[];
       offsets = <double>[];
+      widthScales = <double>[];
       x = 0.0;
       maxX = 0.0;
       height = 1.0;
@@ -3939,11 +3990,12 @@ class VsdxPainter extends CustomPainter {
           final next = tokens[j];
           if (next.tabSetIx != null) break;
           final tp = next.painter!;
-          following += tp.width;
+          final nextW = tp.width * next.run.charStyle.clampedFontScale;
+          following += nextW;
           if (!sawDecimal) {
             final dot = next.text.indexOf('.');
             if (dot < 0) {
-              decimalPrefix += tp.width;
+              decimalPrefix += nextW;
             } else {
               final probe = _posShiftPiece(
                 next.text.substring(0, dot),
@@ -3952,7 +4004,7 @@ class VsdxPainter extends CustomPainter {
                 applyPosDy: false,
                 backgroundColor: backgroundColor,
               );
-              decimalPrefix += probe.tp.width;
+              decimalPrefix += probe.tp.width * probe.widthScale;
               probe.tp.dispose();
               sawDecimal = true;
             }
@@ -3981,10 +4033,12 @@ class VsdxPainter extends CustomPainter {
         continue;
       }
       final tp = token.painter!;
+      final sx = token.run.charStyle.clampedFontScale;
       painters.add(tp);
       dys.add(token.dy);
       offsets.add(x);
-      x += tp.width;
+      widthScales.add(sx);
+      x += tp.width * sx;
       maxX = math.max(maxX, x);
       height = math.max(height, tp.height + token.dy.abs());
     }
@@ -4001,6 +4055,7 @@ class VsdxPainter extends CustomPainter {
         painters: <TextPainter>[empty.tp],
         dys: <double>[empty.dy],
         offsets: const <double>[0],
+        widthScales: <double>[empty.widthScale],
         width: 0,
         height: empty.tp.height,
       ));
@@ -4095,6 +4150,39 @@ class VsdxPainter extends CustomPainter {
     return height;
   }
 
+  /// libvisio `style:text-scale` — width-only scale at paint time.
+  void _paintWidthScaled(
+    Canvas canvas,
+    TextPainter tp,
+    Offset offset,
+    double widthScale,
+  ) {
+    if ((widthScale - 1.0).abs() <= 1e-6) {
+      tp.paint(canvas, offset);
+      return;
+    }
+    canvas.save();
+    canvas.translate(offset.dx, offset.dy);
+    canvas.scale(widthScale, 1.0);
+    tp.paint(canvas, Offset.zero);
+    canvas.restore();
+  }
+
+  /// Shared FontScale, or `null` when visible runs disagree.
+  double? _sharedWidthScale(Iterable<VsdxTextRun> runs) {
+    double? shared;
+    for (final run in runs) {
+      if (run.text.isEmpty) continue;
+      final v = run.charStyle.clampedFontScale;
+      if (shared == null) {
+        shared = v;
+      } else if ((shared - v).abs() > 1e-6) {
+        return null;
+      }
+    }
+    return shared ?? 1.0;
+  }
+
   /// Build a [TextSpan] for [run]. [scale] converts the run's inch-based sizes
   /// to the pixel units the caller lays the text out in (see [_paintRichText] —
   /// text must be shaped at real pixel sizes, not the canvas's inches-scale, or
@@ -4159,9 +4247,9 @@ class VsdxPainter extends CustomPainter {
       VsdxTextCase.normal => run.text,
     };
     // Match SVG export: clamp FontScale so extreme sheet values stay readable.
-    final widthScale = run.charStyle.fontScale <= 0
-        ? 1.0
-        : run.charStyle.fontScale.clamp(0.1, 4.0);
+    // Glyph width is applied at paint time via canvas.scale(sx, 1); tracking
+    // here is the unscaled Letterspace so those gaps do not stretch twice.
+    final widthScale = run.charStyle.clampedFontScale;
     final hl = _suppressCharacterHighlight ? null : run.charStyle.highlight;
     final spanBackground = hl != null ? Color(hl.value) : backgroundColor;
     final style = TextStyle(
@@ -4205,13 +4293,9 @@ class VsdxPainter extends CustomPainter {
         final base = run.charStyle.letterSpacingInches == 0
             ? 0.0
             : run.charStyle.letterSpacingInches * scale;
-        // Approximate FontScale as extra tracking. Use the same mean Latin
-        // advance as SVG [_estSvgTextWidth] / letter-spacing.
-        if ((widthScale - 1.0).abs() < 1e-6) {
-          return base == 0 ? null : base;
-        }
-        return base +
-            scaledSize * (widthScale - 1.0) * kLibvisioMeanLatinAdvance;
+        if (base.abs() < 1e-12) return null;
+        if ((widthScale - 1.0).abs() < 1e-6) return base;
+        return base / widthScale;
       }(),
       height: lineHeight,
       fontFeatures: features.isEmpty ? null : features,
@@ -4263,15 +4347,16 @@ class VsdxPainter extends CustomPainter {
             ? complexBaseSize
             : complexBaseSize * 0.7;
         final baseTracking = run.charStyle.letterSpacingInches * scale;
+        final tracking = (widthScale - 1.0).abs() < 1e-6
+            ? baseTracking
+            : baseTracking / widthScale;
         complexStyle = style.copyWith(
           fontFamily: complexFont.family,
           fontFamilyFallback: complexFont.familyFallback.isEmpty
               ? null
               : complexFont.familyFallback,
           fontSize: complexSize,
-          letterSpacing:
-              baseTracking +
-              complexSize * (widthScale - 1.0) * kLibvisioMeanLatinAdvance,
+          letterSpacing: tracking.abs() < 1e-12 ? null : tracking,
         );
       }
       return TextSpan(
@@ -4403,6 +4488,7 @@ class VsdxPainter extends CustomPainter {
     final chars = <String>[];
     final widths = <double>[];
     final painters = <TextPainter>[];
+    final glyphScales = <double>[];
     var totalW = 0.0;
 
     void addGlyph(String ch, VsdxCharStyle? style) {
@@ -4417,10 +4503,12 @@ class VsdxPainter extends CustomPainter {
         textDirection: visioTextDirection(ch, langId: style?.langId),
         maxLines: 1,
       )..layout();
+      final sx = style?.clampedFontScale ?? 1.0;
       chars.add(ch);
-      widths.add(tp.width);
+      widths.add(tp.width * sx);
       painters.add(tp);
-      totalW += tp.width;
+      glyphScales.add(sx);
+      totalW += tp.width * sx;
     }
 
     if (runs != null && runs.isNotEmpty) {
@@ -4443,11 +4531,13 @@ class VsdxPainter extends CustomPainter {
         totalW -= widths.removeAt(0);
         chars.removeAt(0);
         painters.removeAt(0).dispose();
+        glyphScales.removeAt(0);
       }
       while (chars.isNotEmpty && chars.last.trim().isEmpty) {
         totalW -= widths.removeLast();
         chars.removeLast();
         painters.removeLast().dispose();
+        glyphScales.removeLast();
       }
     } else {
       VsdxCharStyle? glyphStyle;
@@ -4469,6 +4559,7 @@ class VsdxPainter extends CustomPainter {
       final revChars = chars.reversed.toList();
       final revWidths = widths.reversed.toList();
       final revPainters = painters.reversed.toList();
+      final revScales = glyphScales.reversed.toList();
       chars
         ..clear()
         ..addAll(revChars);
@@ -4478,6 +4569,9 @@ class VsdxPainter extends CustomPainter {
       painters
         ..clear()
         ..addAll(revPainters);
+      glyphScales
+        ..clear()
+        ..addAll(revScales);
     }
 
     // Quadratic arc: left → right along the text block, bowing upward (Y-down).
@@ -4519,6 +4613,7 @@ class VsdxPainter extends CustomPainter {
       canvas.save();
       canvas.translate(pos.dx, pos.dy);
       canvas.rotate(angle);
+      canvas.scale(glyphScales[i], 1.0);
       tp.paint(canvas, Offset(-tp.width / 2, -tp.height * 0.75));
       canvas.restore();
 

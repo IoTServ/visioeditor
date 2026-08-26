@@ -15037,7 +15037,10 @@ void main() {
         reason: 'Character Overline is skipped by readCharIX but still paints');
     expect(svg, contains('letter-spacing="'),
         reason:
-            'Character Letterspace still paints here; FontScale bake is for Draw');
+            'Character Letterspace still paints here; FontScale is a width scale');
+    expect(svg, contains('scale(0.9 1)'),
+        reason:
+            'CollectedChar FontScale 0.9 is style:text-scale, not tracking');
     expect(svg, contains('stroke-linecap="round"'));
     expect(svg, contains('stroke-linecap="square"'));
     expect(svg, contains('stroke-linecap="butt"'),

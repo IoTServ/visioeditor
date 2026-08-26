@@ -370,6 +370,15 @@ class VsdxCharStyle {
   /// `Char.FontScale` — width scale (1.0 = 100%), libvisio `scaleWidth`.
   final double fontScale;
 
+  /// FontScale LibreOffice emits as `style:text-scale` (width only).
+  ///
+  /// Non-positive sheet values fall back to 100%; extreme values are clamped
+  /// so layout stays readable — the same range canvas and SVG already used.
+  double get clampedFontScale {
+    if (fontScale <= 0) return 1.0;
+    return fontScale.clamp(0.1, 4.0);
+  }
+
   /// `AsianFont` / `ComplexScriptFont` / `LangID` / `ComplexScriptSize`.
   /// Locale-specific faces and complex-script size are preserved for XML
   /// round-trip and consumed by the Canvas/SVG renderers.

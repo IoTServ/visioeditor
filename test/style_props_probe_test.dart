@@ -2045,7 +2045,7 @@ void main() {
     expect(after.reflection.transparency, closeTo(0.4, 1e-6));
   });
 
-  test('SVG FontScale uses letter-spacing not font-size scale', () {
+  test('SVG FontScale uses width scale not font-size scale', () {
     final page = VsdxPage(
       id: 0,
       name: 'P',
@@ -2077,10 +2077,12 @@ void main() {
     expect(svg.contains('font-size="400"'), isFalse,
         reason: 'FontScale must not inflate glyph height');
     expect(svg.contains('font-size="200"'), isTrue);
-    expect(svg.contains('letter-spacing='), isTrue);
+    expect(svg, contains('scale(2 1)'),
+        reason: 'libvisio style:text-scale is a width-only transform');
+    expect(svg.contains('letter-spacing='), isFalse);
   });
 
-  test('SVG FontScale merges with Letterspace (no duplicate override)', () {
+  test('SVG FontScale stays independent of Letterspace', () {
     final page = VsdxPage(
       id: 0,
       name: 'P',
@@ -2110,13 +2112,15 @@ void main() {
       ],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    // Combined ≈ 0.05 + 0.2*(2-1)*0.55 = 0.16 (mean Latin advance)
-    expect(svg, contains('letter-spacing="160"'));
+    expect(svg, contains('scale(2 1)'));
+    expect(svg, contains('letter-spacing="25"'),
+        reason: 'Letterspace is unscaled in the <text> so scale(sx,1) '
+            'restores the authored 0.05in tracking');
     expect(
       RegExp(r'letter-spacing="').allMatches(svg).length,
       1,
-      reason: 'raw Letterspace must not overwrite FontScale-merged spacing',
     );
+    expect(svg.contains('letter-spacing="160"'), isFalse);
     expect(svg.contains('letter-spacing="50"'), isFalse);
   });
 

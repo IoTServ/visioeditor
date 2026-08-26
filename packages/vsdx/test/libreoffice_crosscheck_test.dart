@@ -1328,6 +1328,33 @@ void main() {
                 ],
               ),
             ),
+          )
+          .addShape(
+            VsdxShapeFactory.rectangle(
+              id: id + 65,
+              pinX: 5.4,
+              pinY: 6.6,
+              width: 2.4,
+              height: 0.7,
+              name: 'FontScale',
+              fill:
+                  const VsdxFill(foreground: VsdxColor(0xFFFFFFFF), pattern: 1),
+              line: const VsdxLine(color: VsdxColor.black, pattern: 0),
+            ).copyWith(
+              text: 'MMMMMM',
+              richText: const VsdxRichText(
+                runs: [
+                  VsdxTextRun(
+                    text: 'MMMMMM',
+                    charStyle: VsdxCharStyle(
+                      fontFamily: 'Arial',
+                      fontSizeInches: 0.2,
+                      fontScale: 2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
     );
     doc = doc.copyWith(
@@ -1664,6 +1691,17 @@ void main() {
         ),
         1e-9,
       ),
+    );
+    expect(
+      reopenedDoc.pages.first.shapes
+          .firstWhere((s) => s.name == 'FontScale')
+          .richText
+          .runs
+          .single
+          .charStyle
+          .fontScale,
+      closeTo(2, 1e-9),
+      reason: 'FontScale is a token; Draw collects style:text-scale',
     );
     expect(
       reopenedDoc.pages.first.shapes
@@ -17294,6 +17332,117 @@ void main() {
       skip: (!require && soffice == null)
           ? 'LibreOffice soffice not installed'
           : false);
+
+  test('LibreOffice FontScale paints a true glyph width scale', () async {
+    if (soffice == null) {
+      if (require) {
+        fail('REQUIRE_SOFFICE=1 but LibreOffice soffice was not found');
+      }
+      return;
+    }
+    if (pdftoppm == null) {
+      if (require) {
+        fail('REQUIRE_SOFFICE=1 but pdftoppm was not found');
+      }
+      return;
+    }
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    VsdxDocument box(String name, double fontScale) {
+      var doc = parser.parse(blank);
+      return doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          VsdxShapeFactory.rectangle(
+            id: doc.pages.first.nextFreeShapeId(),
+            pinX: 4.25,
+            pinY: 5.5,
+            width: 7,
+            height: 1.8,
+            name: name,
+            fill: const VsdxFill(pattern: 0),
+            line: const VsdxLine(pattern: 0),
+          ).copyWith(
+            text: 'MMMMMM',
+            richText: VsdxRichText(
+              runs: <VsdxTextRun>[
+                VsdxTextRun(
+                  text: 'MMMMMM',
+                  charStyle: VsdxCharStyle(
+                    fontFamily: 'Arial',
+                    fontSizeInches: 0.5,
+                    fontScale: fontScale,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    ({int minX, int maxX, int dark}) ink(raster.Image img) {
+      var minX = img.width, maxX = -1, dark = 0;
+      for (var y = 0; y < img.height; y++) {
+        for (var x = 0; x < img.width; x++) {
+          final p = img.getPixel(x, y);
+          if (p.a < 32) continue;
+          final luma = 0.299 * p.r + 0.587 * p.g + 0.114 * p.b;
+          if (luma >= 170) continue;
+          dark++;
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+        }
+      }
+      return (minX: minX, maxX: maxX, dark: dark);
+    }
+
+    Future<raster.Image> render(String name, double fontScale) async {
+      final dir = await Directory.systemTemp.createTemp('fontscale_lo_');
+      File('${dir.path}/$name.vsdx').writeAsBytesSync(
+        writer.write(originalBytes: blank, edited: box(name, fontScale)),
+      );
+      final converted = await Process.run(soffice, <String>[
+        '--headless',
+        '--norestore',
+        '--convert-to',
+        'pdf',
+        '--outdir',
+        dir.path,
+        '${dir.path}/$name.vsdx',
+      ]);
+      expect(converted.exitCode, 0, reason: '${converted.stderr}');
+      final ppm = await Process.run(pdftoppm, <String>[
+        '-png',
+        '-singlefile',
+        '-r',
+        '96',
+        '${dir.path}/$name.pdf',
+        '${dir.path}/$name',
+      ]);
+      expect(ppm.exitCode, 0, reason: '${ppm.stderr}');
+      return raster.decodePng(File('${dir.path}/$name.png').readAsBytesSync())!;
+    }
+
+    final svg = VsdxToSvgSerializer().serializePage(box('S', 2).pages.first);
+    expect(svg, contains('scale(2 1)'));
+    expect(svg.contains('font-size="'), isTrue);
+    expect(svg.contains('letter-spacing="'), isFalse);
+
+    final one = ink(await render('scale1', 1));
+    final two = ink(await render('scale2', 2));
+    expect(one.dark, greaterThan(20));
+    expect(two.dark, greaterThan(20));
+    final w1 = one.maxX - one.minX + 1;
+    final w2 = two.maxX - two.minX + 1;
+    expect(
+      w2 / w1,
+      closeTo(2.0, 0.35),
+      reason: 'Draw style:text-scale must double glyph width; w1=$w1 w2=$w2',
+    );
+  }, timeout: const Timeout(Duration(minutes: 2)));
 }
 
 String? _resolveExecutable(String name) {

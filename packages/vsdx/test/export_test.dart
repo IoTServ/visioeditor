@@ -432,12 +432,12 @@ void main() {
     expect(svg, contains('GeometryAngleRadians -0.5236 rad'));
   });
 
-  test('SVG FontScale wrap estimate matches emitted letter-spacing', () {
+  test('SVG FontScale wraps using glyph width scale not letter-spacing', () {
     final shape = VsdxShapeFactory.rectangle(
       id: 1,
       pinX: 2,
       pinY: 2,
-      width: 0.82,
+      width: 3,
       height: 1,
     ).copyWith(
       richText: const VsdxRichText(
@@ -451,7 +451,7 @@ void main() {
           ),
         ],
         textBlock: VsdxTextBlock(
-          widthInches: 0.82,
+          widthInches: 3,
           marginLeftInches: 0,
           marginRightInches: 0,
           marginTopInches: 0,
@@ -467,7 +467,12 @@ void main() {
       shapes: <VsdxShape>[shape],
     );
     final svg = VsdxToSvgSerializer().serializePage(page);
-    expect(svg, contains('letter-spacing="110"'));
+    expect(svg.contains('font-size="400"'), isFalse,
+        reason: 'FontScale must not inflate glyph height');
+    expect(svg, contains('font-size="200"'));
+    expect(svg, contains('scale(2 1)'),
+        reason: 'libvisio style:text-scale is a width-only transform');
+    expect(svg.contains('letter-spacing="110"'), isFalse);
     expect(RegExp(r'<text\b').allMatches(svg), hasLength(1));
   });
 

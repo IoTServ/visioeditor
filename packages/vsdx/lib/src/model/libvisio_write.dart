@@ -3875,24 +3875,20 @@ VsdxDocument bakeLabelPaddingForLibvisioWrite(VsdxDocument document) {
 }
 
 /// Conservative unwrapped advance so Draw's wrap-at-`svg:width` stays one
-/// line. Latin uses 0.72 em (wider than the canvas 0.55 mean and DejaVu's
-/// ~0.70 bold) so a slightly tight estimate cannot re-wrap in Draw.
+/// line. Latin uses 0.72 em (wider than DejaVu's ~0.70 bold) so a slightly
+/// tight estimate cannot re-wrap in Draw. FontScale is a glyph width scale,
+/// including Letterspace baked into [fontScaleForLibvisioWrite].
 double nowrapTextAdvanceInches(String text, VsdxCharStyle style) {
   if (text.isEmpty) return 0;
   var fs = math.max(style.effectiveFontSizeInchesForText(text), 0.04);
   if (style.position != VsdxTextPosition.normal) fs *= 0.7;
   final scale = fontScaleForLibvisioWrite(style, text);
-  final runes = text.runes.toList(growable: false);
   var w = 0.0;
-  for (var i = 0; i < runes.length; i++) {
-    final r = runes[i];
+  for (final r in text.runes) {
     final chFs = isVisioComplexScriptRune(r) || isVisioAsianScriptRune(r)
         ? fs
         : fs * 0.72;
-    w += chFs;
-    if (i + 1 < runes.length) {
-      w += fs * (scale - 1.0) * kLibvisioMeanLatinAdvance;
-    }
+    w += chFs * scale;
   }
   return w;
 }
@@ -13298,12 +13294,12 @@ double fontSizeForLibvisioWrite(VsdxCharStyle style, String text) {
   return style.fontSizeInches;
 }
 
-/// Mean Latin advance used by canvas / SVG to fold FontScale into tracking.
+/// Mean Latin advance used to fold Letterspace into FontScale for Draw.
 ///
-/// `_drawText` and `svg_serializer` add `Size * (FontScale-1) * 0.55` to
-/// letter-spacing. Baking the inverse into FontScale keeps that appearance
-/// here after reopen; Draw collects FontScale (`style:text-scale`) and
-/// ignores Letterspace.
+/// `Letterspace` is not a token. Canvas / SVG paint it as tracking and apply
+/// FontScale as a true width scale (`style:text-scale`). A save therefore
+/// stretches glyphs by this extra amount so Draw's collected scale still
+/// matches the tracked line width.
 const kLibvisioMeanLatinAdvance = 0.55;
 
 /// `FontScale` Draw will collect. Letterspace is not a token, so extra
