@@ -16,7 +16,12 @@
 /// Opaque stops with more than two unique colours cannot use those two
 /// cells, so a save bakes the same SoftEdges fill PNG at sigma 0 and
 /// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
-/// unfilled-ribbon path and LineColor covers that plate. Per-stop alpha
+/// unfilled-ribbon path and LineColor covers that plate. Corner radial
+/// FillPattern 36–39 (and modern radial/path dirs 1/2/3/5/6/7) are the
+/// same missing paint: `_fillAndShadowProperties` emits ODF
+/// `draw:style=radial` whose `svg:cx/cy` clips to a circle, while canvas
+/// / SVG fill the whole path with `ui.Gradient.radial` + clamp. Centre
+/// radial 40 and linear 25–34 stay native. Per-stop alpha
 /// and FillForegndTrans / FillBkgndTrans on a 25–40 wash are the same
 /// missing paint: `_fillAndShadowProperties` drops `draw:opacity` and
 /// Draw ignores `librevenge:start-opacity` / `end-opacity`, so a save
@@ -208,7 +213,9 @@
 /// through the document theme, then Office). A FillGradient whose
 /// opaque stops use more than two unique colours uses that same plate
 /// at sigma 0 — FillPattern 25–40 only interpolates FillForegnd /
-/// FillBkgnd, so Draw would drop the middle colour. Theme-only FillForegnd /
+/// FillBkgnd, so Draw would drop the middle colour. Corner radial
+/// 36–39 clip to an ODF circle, so those washes use that plate too;
+/// centre 40 stays native. Theme-only FillForegnd /
 /// LineColor / gradient
 /// stops resolve through the document theme, then Office, into that PNG
 /// so Draw keeps the feather. Then
@@ -8742,6 +8749,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// then Office, into that PNG so Draw keeps the feather. A FillGradient
 /// whose opaque stops use more than two unique colours uses that same
 /// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
+/// Corner radial 36–39 clip to an ODF circle, so those two-colour
+/// washes use that plate; centre 40 stays native.
 /// Multiple NoFill=0 Geometry sections punch even-odd holes in that
 /// plate — libvisio emits `svg:fill-rule=evenodd`, so a two-ring frame
 /// must not bake as a solid Width×Height rectangle. Leftover source
@@ -8806,7 +8815,9 @@ double _fillGradientCellTransparency(VsdxFill fill) =>
 /// alpha is the same missing paint: those two Trans cells become
 /// `librevenge:*-opacity`, which Draw does not honour — including a
 /// fully transparent stop, which 25–40 would replace with the next
-/// opaque colour at the box edge.
+/// opaque colour at the box edge. Corner radial 36–39 (and modern
+/// radial/path dirs other than centre) clip to an ODF circle, so those
+/// two-colour washes use the same plate.
 bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
   final keys = <int>{};
@@ -8830,9 +8841,30 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   return false;
 }
 
+/// Draw's ODF radial with a non-centre `svg:cx/cy` paints a circle, not
+/// the shape. Canvas / SVG fill the path (`ui.Gradient.radial` + clamp).
+/// FillPattern 36–39 are dirs 1/3/5/7; modern dir 2/6 would collapse to
+/// centre 40. Linear 25–34 and centre 40 stay native.
+bool _fillHasLibvisioClippedRadial(VsdxFill fill) {
+  final gradient = fill.paintGradient;
+  if (gradient == null || gradient.stops.length < 2) return false;
+  if (gradient.type != VsdxGradientType.radial &&
+      gradient.type != VsdxGradientType.path) {
+    return false;
+  }
+  final dir = gradient.dir;
+  return dir == 1 ||
+      dir == 2 ||
+      dir == 3 ||
+      dir == 5 ||
+      dir == 6 ||
+      dir == 7;
+}
+
 bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
   final gradient = fill.paintGradient;
   if (_gradientHasLibvisioUnrepresentableStops(gradient)) return true;
+  if (_fillHasLibvisioClippedRadial(fill)) return true;
   if (gradient == null || gradient.stops.length < 2) return false;
   // FillPattern 25–40 drop `draw:opacity`; Draw ignores the replacement
   // `librevenge:start-opacity` / `end-opacity` from Fill*Trans.

@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Corner radial FillPattern 36–39 now fills the shape in LibreOffice.
+  `_fillAndShadowProperties` emits ODF `draw:style=radial` with
+  `svg:cx/cy` at a corner, so Draw paints a circle and leaves the rest
+  of a wide box empty, while canvas / SVG fill the whole path with
+  `ui.Gradient.radial` + clamp. A save bakes the same SoftEdges fill
+  PNG at sigma 0 (modern radial/path dirs 1/2/3/5/6/7 too — 25–40
+  would collapse 2/6 to centre 40). Linear 25–34 and centre 40 stay
+  native. Leftover Geometry is NoFill so a second save does not
+  restack.
 - Character Letterspace now survives a save into LibreOffice as tracking,
   not glyph stretch. The cell is not a token, and FontScale is a true
   `style:text-scale` width scale, so folding extra advance into FontScale
