@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Sketch jiggle strokes now keep high-miter spikes and round-cap
+  miters in LibreOffice. `_lineProperties` maps join from LineCap
+  only and never emits `svg:stroke-miterlimit`, leftover Geometry is
+  already NoLine, and both the round-cap flatten and the filled
+  ribbon skipped every bake plate, so Draw round-joined 90° elbows
+  and bevelled ratio>4 spikes. A save runs those rewrites on each
+  jiggle. Straight 1-D copies have no elbow and stay native. A
+  second save does not stack another ribbon.
 - Sketch jiggle strokes now keep SoftEdges in LibreOffice. SoftEdgesSize
   is not a token, leftover Geometry is already NoLine, and SoftEdges
   bake skipped every bake plate unless the jiggle carried a three-colour

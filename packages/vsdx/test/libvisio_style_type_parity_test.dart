@@ -118,6 +118,9 @@
 /// Filled 2-D uses a locked sibling ribbon so FillPattern stays the body.
 /// A round cap with an explicit miter join flattens LineCap to extended so
 /// Draw does not round-join from LineCap. Straight edges keep the round cap.
+/// Sketch jiggle copies that cap / join and `veMiterLimit` onto the
+/// locked siblings, so the same flatten and high-miter ribbon apply
+/// there; leftover Geometry is already NoLine.
 /// Arcs joins bake the same fillets as round (canvas `canvasStrokeJoin`).
 /// `Reflection*` cells are not tokens, so a
 /// filled 2-D shape bakes a locked sibling plate whose FillForegndTrans
@@ -2682,6 +2685,210 @@ void main() {
       oneBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
       isEmpty,
       reason: '1-D SoftEdges stay skipped, matching canvas',
+    );
+  });
+
+  test('Sketch jiggle strokes keep miter spikes for LibreOffice', () {
+    final shape = VsdxShape(
+      id: 1,
+      name: 'SketchLongMiter',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4.5,
+      height: 2,
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0.2, 1.0),
+            LineTo(2.5, 1.0),
+            LineTo(0.2, 1.45),
+          ],
+        ),
+      ],
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.square,
+        miterLimit: 12,
+      ),
+    ).withDrawioMiterLimit(12).withSketchEffect(true).withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioMiterSpikeBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every(shapeNeedsLibvisioMiterSpikeBake),
+      isTrue,
+      reason: 'jiggle leftovers must keep the high miter Draw would bevel',
+    );
+    for (final plate
+        in baked.pages.first.shapes.where(isLibvisioSketchPlate)) {
+      final write = libvisioShapeWrite(plate);
+      expect(write.line.pattern, 0);
+      expect(write.fill.hasFill, isTrue);
+      var maxX = 0.0;
+      for (final geometry in write.geometries) {
+        for (final command in geometry.commands) {
+          if (command is MoveTo && command.x > maxX) maxX = command.x;
+          if (command is LineTo && command.x > maxX) maxX = command.x;
+        }
+      }
+      expect(
+        maxX,
+        greaterThan(3.2),
+        reason: 'Sketch ribbon must keep the canvas miter spike past x=2.5',
+      );
+    }
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate).every(
+            (s) => s.fill.hasFill && !s.line.hasLine,
+          ),
+      isTrue,
+    );
+    expect(
+      parser
+          .parse(writer.write(originalBytes: saved, edited: savedDoc))
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSketchPlate),
+      hasLength(2),
+      reason: 'a second save must not stack another Sketch miter ribbon',
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 1.5,
+      ay: 6.2,
+      bx: 6.5,
+      by: 6.2,
+      name: 'SketchLongMiter_1D',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.square,
+        miterLimit: 12,
+      ),
+    ).withDrawioMiterLimit(12).withSketchEffect(true).withSketchJiggle(3.5);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    expect(
+      oneBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      oneBaked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every((s) => !shapeNeedsLibvisioMiterSpikeBake(s)),
+      isTrue,
+      reason: 'a straight 1-D Sketch copy has no elbow to ribbon',
+    );
+  });
+
+  test('Sketch jiggle strokes keep round-cap miters for LibreOffice', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 1.2,
+      name: 'SketchRoundCapMiter',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.round,
+        join: VsdxLineJoin.miter,
+      ),
+    ).withDrawioLineJoin(VsdxLineJoin.miter).withSketchEffect(true).withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioRoundCapMiterFlatten(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every(shapeNeedsLibvisioRoundCapMiterFlatten),
+      isTrue,
+      reason: 'jiggle leftovers must flatten LineCap so Draw does not round-join',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      savedDoc.pages.first.shapes.where(isLibvisioSketchPlate).every(
+            (s) => s.line.cap == LineCap.extended && s.line.pattern == 1,
+          ),
+      isTrue,
+    );
+    expect(
+      parser
+          .parse(writer.write(originalBytes: saved, edited: savedDoc))
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSketchPlate)
+          .every((s) => s.line.cap == LineCap.extended),
+      isTrue,
+      reason: 'a second save must not restroke the already-flattened jiggle',
+    );
+
+    final connector = VsdxShapeFactory.line(
+      id: 3,
+      ax: 1.5,
+      ay: 6.2,
+      bx: 6.5,
+      by: 6.2,
+      name: 'SketchRoundCapMiter_1D',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.24,
+        cap: LineCap.round,
+        join: VsdxLineJoin.miter,
+      ),
+    ).withDrawioLineJoin(VsdxLineJoin.miter).withSketchEffect(true).withSketchJiggle(3.5);
+    var oneDoc = parser.parse(blank);
+    oneDoc = oneDoc.replacePage(0, oneDoc.pages.first.addShape(connector));
+    final oneBaked = documentForLibvisioWrite(oneDoc);
+    expect(
+      oneBaked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      oneBaked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every((s) => !shapeNeedsLibvisioRoundCapMiterFlatten(s)),
+      isTrue,
+      reason: 'a straight 1-D Sketch copy has no join; keep the round cap',
     );
   });
 

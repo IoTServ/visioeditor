@@ -107,12 +107,16 @@
 /// The same flatten applies to an explicit miter / miter-clip join on a
 /// round cap: Draw would round-join from LineCap, while canvas / SVG keep
 /// the sharp elbow. Straight edges have no join to fix and stay round-capped.
-/// `User.veMiterLimit` is not a token and `_lineProperties` never emits
-/// `svg:stroke-miterlimit` (ODF defaults to 4), so a save chamfers corners
-/// whose miter ratio exceeds a tighter limit and drops the User row.
-/// Limits above 4 keep the canvas spike: a save expands the unfilled stroke
-/// into a filled ribbon whose outline uses that limit (Draw would otherwise
-/// bevel every ratio>4 elbow) and drops the User row.
+/// Sketch jiggle copies LineCap / `User.veLineJoin` onto those plates —
+/// leftover Geometry is already NoLine — so the flatten runs on the
+/// jiggle, not the leftover. `User.veMiterLimit` is not a token and
+/// `_lineProperties` never emits `svg:stroke-miterlimit` (ODF defaults
+/// to 4), so a save chamfers corners whose miter ratio exceeds a tighter
+/// limit and drops the User row. Limits above 4 keep the canvas spike: a
+/// save expands the unfilled stroke into a filled ribbon whose outline
+/// uses that limit (Draw would otherwise bevel every ratio>4 elbow) and
+/// drops the User row. Sketch jiggle copies that limit onto the plates
+/// so the same ribbon keeps the spike; other bake plates stay skipped.
 /// The Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
 /// filled-shape LineColorTrans that cannot become a sibling ribbon, and
 /// ShdwForegndTrans are not tokens —
@@ -11130,9 +11134,13 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
 /// `User.veLineJoin` miter / miter-clip even on a round cap, so a 90°
 /// corner is sharp here and a round join in Draw. Flattening LineCap to
 /// extended makes Draw miter, matching the bevel-on-round-cap bake.
-/// Straight edges have no join and keep the round endpoints.
+/// Straight edges have no join and keep the round endpoints. Sketch
+/// jiggle copies the live cap / join onto those plates, so the same
+/// flatten applies; leftover Geometry is already NoLine.
 bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   if (!shape.line.hasLine) return false;
   if (shape.line.cap != LineCap.round) return false;
   if (shape.line.join != VsdxLineJoin.miter &&
@@ -11178,8 +11186,12 @@ bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
 /// instead ([shapeNeedsLibvisioFilledStrokeRibbonBake]). Dashed strokes keep
 /// LinePattern. A round cap with an implicit join stays native; an explicit
 /// miter join flattens the cap first so Draw does not round the elbow.
+/// Sketch jiggle copies `veMiterLimit` onto those plates — leftover
+/// Geometry is already NoLine — so the same ribbon keeps the spike.
 bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
   if (shape.line.pattern != 1) return false;

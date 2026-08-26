@@ -2634,6 +2634,60 @@ void main() {
         ).withSketchEffect(true).withSketchJiggle(3.5),
       ),
     );
+    var sketchLongMiterDocument = parser.parse(blank);
+    sketchLongMiterDocument = sketchLongMiterDocument.replacePage(
+      0,
+      sketchLongMiterDocument.pages.first.addShape(
+        VsdxShape(
+          id: sketchLongMiterDocument.pages.first.nextFreeShapeId(),
+          name: 'SketchLongMiter',
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4.5,
+          height: 2,
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0.2, 1.0),
+                LineTo(2.5, 1.0),
+                LineTo(0.2, 1.45),
+              ],
+            ),
+          ],
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.24,
+            cap: LineCap.square,
+            miterLimit: 12,
+          ),
+        ).withDrawioMiterLimit(12).withSketchEffect(true).withSketchJiggle(3.5),
+      ),
+    );
+    var sketchRoundCapMiterDocument = parser.parse(blank);
+    sketchRoundCapMiterDocument = sketchRoundCapMiterDocument.replacePage(
+      0,
+      sketchRoundCapMiterDocument.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: sketchRoundCapMiterDocument.pages.first.nextFreeShapeId(),
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2,
+          height: 1.2,
+          name: 'SketchRoundCapMiter',
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.24,
+            cap: LineCap.round,
+            join: VsdxLineJoin.miter,
+          ),
+        )
+            .withDrawioLineJoin(VsdxLineJoin.miter)
+            .withSketchEffect(true)
+            .withSketchJiggle(3.5),
+      ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6729,6 +6783,14 @@ void main() {
       'sketch_soft': writer.write(
         originalBytes: blank,
         edited: sketchSoftDocument,
+      ),
+      'sketch_long_miter': writer.write(
+        originalBytes: blank,
+        edited: sketchLongMiterDocument,
+      ),
+      'sketch_round_cap_miter': writer.write(
+        originalBytes: blank,
+        edited: sketchRoundCapMiterDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -14330,6 +14392,200 @@ void main() {
             greaterThan(40),
             reason: 'LibreOffice must paint the Sketch SoftEdges ring; '
                 'dark=$dark',
+          );
+        }
+        if (entry.key == 'sketch_long_miter') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchLongMiter');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate).every(
+                  (s) => s.fill.hasFill && !s.line.hasLine,
+                ),
+            isTrue,
+          );
+        }
+        if (entry.key == 'sketch_long_miter' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          final source =
+              page.shapes.firstWhere((s) => s.name == 'SketchLongMiter');
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          const pts = <Offset2D>[
+            Offset2D(0.2, 1.0),
+            Offset2D(2.5, 1.0),
+            Offset2D(0.2, 1.45),
+          ];
+          const elbow = Offset2D(2.5, 1.0);
+          double dist2(Offset2D p) {
+            final dx = p.x - elbow.x;
+            final dy = p.y - elbow.y;
+            return dx * dx + dy * dy;
+          }
+
+          Offset2D farther(List<Offset2D> a, List<Offset2D> b) =>
+              dist2(a[1]) >= dist2(b[1]) ? a[1] : b[1];
+          final longTip = farther(
+            offsetPolyline(pts, 0.12, miterLimit: 12),
+            offsetPolyline(pts, -0.12, miterLimit: 12),
+          );
+          final clippedTip = farther(
+            offsetPolyline(pts, 0.12, miterLimit: 4),
+            offsetPolyline(pts, -0.12, miterLimit: 4),
+          );
+          final probe = Offset2D(
+            clippedTip.x + (longTip.x - clippedTip.x) * 0.4,
+            clippedTip.y + (longTip.y - clippedTip.y) * 0.4,
+          );
+          double pageX(double x) => source.pinX + (x - source.effectiveLocPinX);
+          double pageY(double y) => source.pinY + (y - source.effectiveLocPinY);
+          final probeX = pageX(probe.x);
+          final probeY = pageY(probe.y);
+          final body =
+              meanLuma(pageX(1.2), pageY(0.90), pageX(1.5), pageY(1.10));
+          final spike = meanLuma(
+            probeX - 0.08,
+            probeY - 0.08,
+            probeX + 0.08,
+            probeY + 0.08,
+          );
+          expect(
+            body,
+            lessThan(80),
+            reason: 'LibreOffice must still paint the Sketch stroke body; '
+                'body=$body',
+          );
+          expect(
+            spike,
+            lessThan(80),
+            reason: 'LibreOffice must keep the Sketch miter spike Draw would '
+                'bevel at miterlimit 4; spike=$spike at ($probeX,$probeY)',
+          );
+        }
+        if (entry.key == 'sketch_round_cap_miter') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchRoundCapMiter');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate).every(
+                  (s) => s.line.cap == LineCap.extended && s.line.pattern == 1,
+                ),
+            isTrue,
+          );
+        }
+        if (entry.key == 'sketch_round_cap_miter' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // Bottom-left at (3.25, 4.90). Sample each jiggle's miter ear —
+          // a round join (r=0.12) misses the 45° point ~0.13" out.
+          final leftover = page.shapes
+              .firstWhere((s) => s.name == 'SketchRoundCapMiter');
+          final offsets = drawioSketchStrokeOffsets(
+            leftover.id,
+            leftover.sketchJiggle,
+            pxPerInch: kLibvisioSketchPxPerInch,
+          );
+          var corner = 255.0;
+          for (final offset in offsets) {
+            final x = 3.25 + offset.x - 0.10;
+            final y = 4.90 + offset.y - 0.10;
+            final luma = meanLuma(x - 0.02, y - 0.02, x + 0.02, y + 0.02);
+            if (luma < corner) corner = luma;
+          }
+          expect(
+            corner,
+            lessThan(80),
+            reason: 'LibreOffice must miter the Sketch elbow Draw would '
+                'round-join from LineCap.round; corner=$corner',
           );
         }
         if (entry.key == 'linegrad3_arrow') {
