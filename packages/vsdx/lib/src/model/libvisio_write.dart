@@ -389,7 +389,9 @@
 /// User row. Glueable labels pin TxtPin first so that wider plate stays
 /// on the route, not the Begin–End box. draw.io Flow Animation is `User.veFlowAnimation*`
 /// (not a token), so a save flattens the same 8 CSS-px dash canvas / SVG
-/// synthesise into MoveTo/LineTo and writes `veFlowAnimation=0`. Arrowed
+/// synthesise into MoveTo/LineTo and writes `veFlowAnimation=0`. Sketch
+/// jiggle copies that User row onto the plates — leftover Geometry is
+/// already NoLine — so the same flatten keeps the gaps. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
 /// Begin/EndArrow as Geometry first so Draw does not hang a marker on
 /// every open dash. draw.io collapsed containers are `User.veCollapsed`
@@ -2567,6 +2569,7 @@ VsdxShape _sketchPlateForLibvisioWrite(
     line: source.line.copyWith(beginArrow: 0, endArrow: 0),
     glow: source.glow,
     reflection: source.reflection,
+    userCells: _sketchPlateUserCells(source),
     layerMemberIds: source.layerMemberIds,
     locked: true,
     richText: const VsdxRichText(
@@ -2575,6 +2578,28 @@ VsdxShape _sketchPlateForLibvisioWrite(
     ),
     text: '',
   );
+}
+
+/// Dash / Flow Animation User rows the jiggle must keep so write-time
+/// flatten can see them. Leftover Geometry is already NoLine. Flow rows
+/// copy only from a glueable source — Sketch plates are `is1D=false`.
+List<VsdxUserCell> _sketchPlateUserCells(VsdxShape source) {
+  const dashKeep = <String>{
+    VsdxShape.userDashPattern,
+    VsdxShape.userFixedDash,
+  };
+  const flowKeep = <String>{
+    VsdxShape.userFlowAnimation,
+    VsdxShape.userFlowAnimationDuration,
+    VsdxShape.userFlowAnimationTiming,
+    VsdxShape.userFlowAnimationDirection,
+  };
+  return <VsdxUserCell>[
+    for (final cell in source.userCells)
+      if (dashKeep.contains(cell.name) ||
+          (source.supportsFlowAnimation && flowKeep.contains(cell.name)))
+        cell,
+  ];
 }
 
 VsdxShape _sourceForLibvisioSketchWrite(VsdxShape shape) {
@@ -12024,8 +12049,12 @@ List<VsdxPathCommand> strokeRibbonCommands(
 /// (and every `veFixedDash` array, which is CSS-px rather than weight-
 /// scaled) has to be MoveTo/LineTo dashes with LinePattern=1. Filled 2-D
 /// keeps the original ring as NoLine so FillPattern is untouched.
+/// Sketch jiggle copies `veDashPattern` onto those plates — leftover
+/// Geometry is already NoLine — so the same flatten keeps the gaps.
 bool shapeNeedsLibvisioCustomDashBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   return _customDashCanBake(shape, shape.line, shape.geometries);
 }
 
@@ -12060,9 +12089,12 @@ bool _dashBakeHasStrokableGeometry(
 /// carries no dash cell of its own — canvas `_effectiveStrokeDashes` and the
 /// SVG `_flowStrokePaint` both synthesise 8 CSS px of ink and gap. Draw
 /// would otherwise stroke the route solid. Connectors that already dash
-/// (`LinePattern` or `veDashPattern`) keep that authored pattern.
+/// (`LinePattern` or `veDashPattern`) keep that authored pattern. Sketch
+/// jiggle copies `veFlowAnimation` onto those plates — leftover Geometry
+/// is already NoLine, and copies are `is1D=false` — so the same flatten
+/// keeps the 8 CSS-px gaps.
 List<double>? flowAnimationDashInchesForLibvisioWrite(VsdxShape shape) {
-  if (!shape.flowAnimation || !shape.supportsFlowAnimation) return null;
+  if (!_libvisioFlowAnimationOn(shape)) return null;
   if (!shape.line.hasLine) return null;
   final authored = effectiveDashPatternForLine(shape.line);
   if (authored != null && authored.isNotEmpty) return null;
@@ -12072,7 +12104,9 @@ List<double>? flowAnimationDashInchesForLibvisioWrite(VsdxShape shape) {
 
 /// `true` when Flow Animation's synthetic dash must become Geometry.
 bool shapeNeedsLibvisioFlowDashBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   return _flowDashCanBake(shape, shape.geometries);
 }
 
@@ -12084,10 +12118,18 @@ bool shapeNeedsLibvisioFlowDashBake(VsdxShape shape) {
 /// canvas would then synthesise another 8 CSS-px array on top if the User
 /// row stayed 1.
 bool shapeNeedsLibvisioFlowAnimationClear(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
-  if (!shape.flowAnimation || !shape.supportsFlowAnimation) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
+  if (!_libvisioFlowAnimationOn(shape)) return false;
   return shapeNeedsLibvisioFlowDashBake(shape) ||
       shapeNeedsLibvisioCustomDashBake(shape);
+}
+
+/// Glueable 1-D, or a Sketch copy of one (`is1D=false`, Height=0).
+bool _libvisioFlowAnimationOn(VsdxShape shape) {
+  if (!shape.flowAnimation) return false;
+  return shape.supportsFlowAnimation || isLibvisioSketchPlate(shape);
 }
 
 bool _flowDashCanBake(VsdxShape shape, List<VsdxGeometry> geometries) {
@@ -12167,9 +12209,12 @@ List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
 ///
 /// `_lineProperties` dashes those ids, but a FillForegndTrans / classic
 /// gradient ribbon is a filled silhouette and cannot. Opaque dashed
-/// strokes stay native.
+/// strokes stay native. Sketch jiggle copies LinePattern onto those
+/// plates, so the same flatten keeps the gaps on a later ribbon.
 bool shapeNeedsLibvisioLinePatternDashBake(VsdxShape shape) {
-  if (_isLibvisioBakePlate(shape)) return false;
+  if (_isLibvisioBakePlate(shape) && !isLibvisioSketchPlate(shape)) {
+    return false;
+  }
   if (!shapeNeedsLibvisioStrokeRibbon(shape)) return false;
   return _linePatternDashCanBake(shape, shape.line, shape.geometries);
 }

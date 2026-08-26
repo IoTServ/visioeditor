@@ -29,6 +29,8 @@
 /// dashes with LinePattern=1. Built-in LinePattern 2–23 that also need a
 /// LineColorTrans / LineGradient ribbon flatten the same way first, so the
 /// filled silhouette keeps the gaps `_lineProperties` would have dashed.
+/// Sketch jiggle copies those dash cells onto the locked siblings, so the
+/// same flatten applies there; leftover Geometry is already NoLine.
 /// `LineCap` 0/1/2 is a token libvisio *does* collect. Character Highlight is skipped by
 /// `readCharIX` but a uniform marker with no authored TextBkgnd is written
 /// there — `VSDContentCollector` paints it as span `fo:background-color`
@@ -197,7 +199,9 @@
 /// Glueable 1-D labels with no `TxtPin` also write that route midpoint
 /// into `TxtPin` / a tight `TxtWidth` so Draw does not use the Begin–End
 /// box or a TxtWidth-only `m_txtxform` whose pin defaults to 0. draw.io Flow Animation is also a User row, so a save flattens the
-/// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Arrowed
+/// synthesised 8 CSS-px dash and writes `veFlowAnimation=0`. Sketch
+/// jiggle copies that row onto the plates so the same flatten keeps the
+/// gaps. Arrowed
 /// connectors that also flatten those dashes (or `veDashPattern`) bake
 /// Begin/EndArrow as Geometry first so Draw does not hang a marker on
 /// every open dash. draw.io collapsed containers also use a User row, so
@@ -2889,6 +2893,181 @@ void main() {
           .every((s) => !shapeNeedsLibvisioRoundCapMiterFlatten(s)),
       isTrue,
       reason: 'a straight 1-D Sketch copy has no join; keep the round cap',
+    );
+  });
+
+  test('Sketch jiggle strokes keep custom dashes for LibreOffice', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 5.5,
+      bx: 7,
+      by: 5.5,
+      name: 'SketchCustomDash',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.15,
+        pattern: 2,
+      ),
+    )
+        .withDrawioDashPattern(const <double>[8, 4])
+        .withSketchEffect(true)
+        .withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioCustomDashBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every(shapeNeedsLibvisioCustomDashBake),
+      isTrue,
+      reason: 'jiggle leftovers must flatten veDashPattern Draw would snap',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final plates = savedDoc.pages.first.shapes.where(isLibvisioSketchPlate);
+    expect(plates, hasLength(2));
+    expect(
+      plates.every((s) => s.line.pattern == 1 && s.line.customDashPattern == null),
+      isTrue,
+    );
+    var moves = 0;
+    for (final plate in plates) {
+      for (final geometry in plate.geometries) {
+        moves += geometry.commands.whereType<MoveTo>().length;
+      }
+    }
+    expect(
+      moves,
+      greaterThan(2),
+      reason: 'each jiggle must become multiple dash subpaths, not LinePattern 2',
+    );
+    expect(
+      parser
+          .parse(writer.write(originalBytes: saved, edited: savedDoc))
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSketchPlate)
+          .every((s) => s.line.pattern == 1),
+      isTrue,
+      reason: 'a second save must not restroke the already-dashed jiggle',
+    );
+  });
+
+  test('Sketch jiggle strokes keep Flow Animation dashes for LibreOffice', () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 5.5,
+      bx: 7,
+      by: 5.5,
+      name: 'SketchFlowDash',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.04,
+        pattern: 1,
+      ),
+    ).withFlowAnimation(true).withSketchEffect(true).withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioFlowDashBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every(shapeNeedsLibvisioFlowDashBake),
+      isTrue,
+      reason: 'jiggle leftovers must flatten Flow Animation Draw would stroke solid',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final plates = savedDoc.pages.first.shapes.where(isLibvisioSketchPlate);
+    expect(plates, hasLength(2));
+    expect(plates.every((s) => !s.flowAnimation && s.line.pattern == 1), isTrue);
+    var moves = 0;
+    for (final plate in plates) {
+      for (final geometry in plate.geometries) {
+        moves += geometry.commands.whereType<MoveTo>().length;
+      }
+    }
+    expect(
+      moves,
+      greaterThan(2),
+      reason: 'each jiggle must become multiple 8 CSS-px dash subpaths',
+    );
+  });
+
+  test('Sketch jiggle strokes keep LinePattern gaps on a ribbon for LibreOffice',
+      () {
+    final shape = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1,
+      ay: 5.5,
+      bx: 7,
+      by: 5.5,
+      name: 'SketchPatternDashTrans',
+      line: const VsdxLine(
+        color: VsdxColor.black,
+        weightInches: 0.15,
+        pattern: 2,
+        transparency: 0.5,
+      ),
+    ).withSketchEffect(true).withSketchJiggle(3.5);
+    expect(shapeNeedsLibvisioSketchStrokeBake(shape), isTrue);
+    expect(shapeNeedsLibvisioLinePatternDashBake(shape), isTrue);
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSketchPlate),
+      hasLength(2),
+    );
+    expect(
+      baked.pages.first.shapes
+          .where(isLibvisioSketchPlate)
+          .every(shapeNeedsLibvisioLinePatternDashBake),
+      isTrue,
+      reason: 'jiggle leftovers must flatten LinePattern before the ribbon',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final savedDoc = parser.parse(saved);
+    final plates = savedDoc.pages.first.shapes.where(isLibvisioSketchPlate);
+    expect(plates, hasLength(2));
+    expect(
+      plates.every(
+        (s) => !s.line.hasLine && s.fill.foregroundTransparency > 0.4,
+      ),
+      isTrue,
+    );
+    var filled = 0;
+    for (final plate in plates) {
+      filled += plate.geometries.where((g) => !g.noFill).length;
+    }
+    expect(
+      filled,
+      greaterThan(2),
+      reason: 'each jiggle must ribbon each dash, not one solid band',
     );
   });
 

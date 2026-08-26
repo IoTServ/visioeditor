@@ -2688,6 +2688,67 @@ void main() {
             .withSketchJiggle(3.5),
       ),
     );
+    var sketchCustomDashDocument = parser.parse(blank);
+    sketchCustomDashDocument = sketchCustomDashDocument.replacePage(
+      0,
+      sketchCustomDashDocument.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: sketchCustomDashDocument.pages.first.nextFreeShapeId(),
+          ax: 1,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          name: 'SketchCustomDash',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.15,
+            pattern: 2,
+          ),
+        )
+            .withDrawioDashPattern(const <double>[8, 4])
+            .withSketchEffect(true)
+            .withSketchJiggle(3.5),
+      ),
+    );
+    var sketchFlowDashDocument = parser.parse(blank);
+    sketchFlowDashDocument = sketchFlowDashDocument.replacePage(
+      0,
+      sketchFlowDashDocument.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: sketchFlowDashDocument.pages.first.nextFreeShapeId(),
+          ax: 1,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          name: 'SketchFlowDash',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.04,
+            pattern: 1,
+          ),
+        ).withFlowAnimation(true).withSketchEffect(true).withSketchJiggle(3.5),
+      ),
+    );
+    var sketchPatternDashTransDocument = parser.parse(blank);
+    sketchPatternDashTransDocument = sketchPatternDashTransDocument.replacePage(
+      0,
+      sketchPatternDashTransDocument.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: sketchPatternDashTransDocument.pages.first.nextFreeShapeId(),
+          ax: 1,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          name: 'SketchPatternDashTrans',
+          line: const VsdxLine(
+            color: VsdxColor(0xFF000000),
+            weightInches: 0.15,
+            pattern: 2,
+            transparency: 0.5,
+          ),
+        ).withSketchEffect(true).withSketchJiggle(3.5),
+      ),
+    );
     var line2FadeDocument = parser.parse(blank);
     final line2FadePage = line2FadeDocument.pages.first;
     line2FadeDocument = line2FadeDocument.replacePage(
@@ -6791,6 +6852,18 @@ void main() {
       'sketch_round_cap_miter': writer.write(
         originalBytes: blank,
         edited: sketchRoundCapMiterDocument,
+      ),
+      'sketch_custom_dash': writer.write(
+        originalBytes: blank,
+        edited: sketchCustomDashDocument,
+      ),
+      'sketch_flow_dash': writer.write(
+        originalBytes: blank,
+        edited: sketchFlowDashDocument,
+      ),
+      'sketch_pattern_dash_trans': writer.write(
+        originalBytes: blank,
+        edited: sketchPatternDashTransDocument,
       ),
       'line2_fade': writer.write(
         originalBytes: blank,
@@ -14586,6 +14659,228 @@ void main() {
             lessThan(80),
             reason: 'LibreOffice must miter the Sketch elbow Draw would '
                 'round-join from LineCap.round; corner=$corner',
+          );
+        }
+        if (entry.key == 'sketch_custom_dash') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchCustomDash');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate).every(
+                  (s) =>
+                      s.line.pattern == 1 && s.line.customDashPattern == null,
+                ),
+            isTrue,
+          );
+          var moves = 0;
+          for (final plate
+              in reopened.pages.first.shapes.where(isLibvisioSketchPlate)) {
+            for (final geometry in plate.geometries) {
+              moves += geometry.commands.whereType<MoveTo>().length;
+            }
+          }
+          expect(moves, greaterThan(2));
+        }
+        if (entry.key == 'sketch_custom_dash' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // [8,4] × 0.15" → 1.2" dash / 0.6" gap. A LinePattern-2 snap
+          // ([6,3] × 0.15") would still be inking at x=2.5.
+          final ink = meanLuma(1.50, 5.42, 1.70, 5.58);
+          final gap = meanLuma(2.40, 5.42, 2.60, 5.58);
+          expect(
+            ink,
+            lessThan(gap - 15),
+            reason: 'LibreOffice must paint the Sketch custom dash, not the '
+                'nearest built-in LinePattern; ink=$ink gap=$gap',
+          );
+        }
+        if (entry.key == 'sketch_flow_dash') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchFlowDash');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          expect(
+            reopened.pages.first.shapes
+                .where(isLibvisioSketchPlate)
+                .every((s) => !s.flowAnimation && s.line.pattern == 1),
+            isTrue,
+          );
+        }
+        if (entry.key == 'sketch_flow_dash' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double minLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var min = 255.0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                final luma =
+                    0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                if (luma < min) min = luma;
+              }
+            }
+            return min;
+          }
+
+          // 8 CSS-px gaps are ~0.08"; two jiggle copies shift by ~0.06" and
+          // can cover each other. Custom [8,4] (0.6" gaps) is the pixel
+          // proof that Sketch dash flatten survived Draw.
+          var dark = 0;
+          for (var x = 1.1; x < 6.9; x += 0.04) {
+            final luma = minLuma(x - 0.01, 5.40, x + 0.01, 5.60);
+            if (luma < 80) dark++;
+          }
+          expect(
+            dark,
+            greaterThan(5),
+            reason: 'LibreOffice must paint the Sketch Flow stroke; dark=$dark',
+          );
+        }
+        if (entry.key == 'sketch_pattern_dash_trans') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'SketchPatternDashTrans');
+          expect(source.sketchEffect, isFalse);
+          expect(
+            reopened.pages.first.shapes.where(isLibvisioSketchPlate),
+            hasLength(2),
+          );
+          var filled = 0;
+          for (final plate
+              in reopened.pages.first.shapes.where(isLibvisioSketchPlate)) {
+            expect(plate.line.hasLine, isFalse);
+            filled += plate.geometries.where((g) => !g.noFill).length;
+          }
+          expect(filled, greaterThan(2));
+        }
+        if (entry.key == 'sketch_pattern_dash_trans' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          final page = parser.parse(entry.value).pages.first;
+          double meanLuma(double x0, double y0, double x1, double y1) {
+            final left = (x0 / page.widthInches * rendered.width).round();
+            final right = (x1 / page.widthInches * rendered.width).round();
+            final top =
+                ((page.heightInches - y1) / page.heightInches * rendered.height)
+                    .round();
+            final bottom =
+                ((page.heightInches - y0) / page.heightInches * rendered.height)
+                    .round();
+            var sum = 0.0;
+            var count = 0;
+            for (var y = top; y < bottom; y++) {
+              for (var x = left; x < right; x++) {
+                if (x < 0 ||
+                    y < 0 ||
+                    x >= rendered.width ||
+                    y >= rendered.height) {
+                  continue;
+                }
+                final pixel = rendered.getPixel(x, y);
+                sum += 0.299 * pixel.r + 0.587 * pixel.g + 0.114 * pixel.b;
+                count++;
+              }
+            }
+            return count == 0 ? 255 : sum / count;
+          }
+
+          // LinePattern 2: [6,3] × 0.15" → 0.9" dash / 0.45" gap from x=1.
+          final ink = meanLuma(1.30, 5.42, 1.50, 5.58);
+          final gap = meanLuma(2.05, 5.42, 2.25, 5.58);
+          expect(
+            ink,
+            lessThan(gap - 15),
+            reason: 'LibreOffice must keep LinePattern 2 gaps on the Sketch '
+                'LineColorTrans ribbon; ink=$ink gap=$gap',
           );
         }
         if (entry.key == 'linegrad3_arrow') {

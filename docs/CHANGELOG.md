@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Sketch jiggle strokes now keep custom dashes, Flow Animation dashes,
+  and LinePattern gaps on a later ribbon in LibreOffice.
+  `_lineProperties` only dashes ids 2–23, leftover Geometry is already
+  NoLine, and those flattens skipped every bake plate, so Draw snapped
+  `veDashPattern` onto the nearest built-in, stroked Flow Animation
+  solid, or filled a LineColorTrans ribbon without gaps. A save copies
+  the dash / Flow rows onto each jiggle and runs the same MoveTo/LineTo
+  flatten unfilled strokes already use. A second save does not restroke
+  the already-dashed copies.
 - Sketch jiggle strokes now keep high-miter spikes and round-cap
   miters in LibreOffice. `_lineProperties` maps join from LineCap
   only and never emits `svg:stroke-miterlimit`, leftover Geometry is
