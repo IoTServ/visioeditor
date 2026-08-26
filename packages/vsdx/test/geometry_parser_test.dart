@@ -743,6 +743,57 @@ void main() {
       expect(quad.fy1, closeTo(0, 1e-9));
     });
 
+    test('Height=0 CubBezTo / QuadBezTo become LineTo samples', () {
+      expect(
+        cubBezNeedsLibvisioPolylineBake(width: 3, height: 0),
+        isTrue,
+      );
+      final cubic = commandsForLibvisioWrite(
+        const <VsdxPathCommand>[
+          MoveTo(0, 0),
+          CubBezTo(x: 3, y: 0, x1: 0.8, y1: 1.2, x2: 2.2, y2: 1.2),
+        ],
+        width: 3,
+        height: 0,
+      );
+      expect(cubic.first, isA<MoveTo>());
+      expect(cubic.whereType<LineTo>().length, 12);
+      expect(
+        cubic.whereType<LineTo>().map((c) => c.y).reduce((a, b) => a > b ? a : b),
+        greaterThan(0.5),
+        reason: 'RelCubBezTo would have collapsed fy to 0',
+      );
+      final quad = commandsForLibvisioWrite(
+        const <VsdxPathCommand>[
+          MoveTo(0, 0),
+          QuadBezTo(x: 3, y: 0, x1: 1.5, y1: 1.4),
+        ],
+        width: 3,
+        height: 0,
+      );
+      expect(quad.whereType<LineTo>().length, 12);
+      expect(
+        quad.whereType<LineTo>().map((c) => c.y).reduce((a, b) => a > b ? a : b),
+        greaterThan(0.5),
+      );
+    });
+
+    test('Width=0 CubBezTo keeps local-inch X in LineTo', () {
+      final cmds = commandsForLibvisioWrite(
+        const <VsdxPathCommand>[
+          MoveTo(0, 0),
+          CubBezTo(x: 0, y: 2, x1: 1.2, y1: 0.4, x2: 1.2, y2: 1.6),
+        ],
+        width: 0,
+        height: 2,
+      );
+      expect(cmds.whereType<LineTo>().length, 12);
+      expect(
+        cmds.whereType<LineTo>().map((c) => c.x).reduce((a, b) => a > b ? a : b),
+        greaterThan(0.5),
+      );
+    });
+
     test('RelArcTo / RelPolylineTo / RelNURBSTo bake to absolute rows', () {
       final arc = forLibvisioWrite(
         const RelArcTo(fx: 1, fy: 0, fbow: 0.1),

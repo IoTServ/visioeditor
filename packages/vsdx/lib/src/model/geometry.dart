@@ -1609,6 +1609,20 @@ List<VsdxGeometry> preserveGeometryFlags(
 double _axisFraction(double value, double span) =>
     span.abs() < 1e-12 ? 0.0 : value / span;
 
+/// `true` when Rel* `X/Y * Width/Height` would not collapse a coordinate.
+bool libvisioRelAxisIsUsable(double span) => span.abs() >= 1e-12;
+
+/// `true` when CubBezTo / QuadBezTo cannot become Rel* without flattening.
+///
+/// RelCubBezTo / RelQuadBezTo multiply Y by Height. A 1-D bow whose
+/// Height is 0 (BeginY = EndY) would write fy = 0, and Draw paints a
+/// chord. Canvas / SVG keep the cubic in local inches.
+bool cubBezNeedsLibvisioPolylineBake({
+  required double width,
+  required double height,
+}) =>
+    !libvisioRelAxisIsUsable(width) || !libvisioRelAxisIsUsable(height);
+
 /// Whether [cmd] is a VSDX row type LibreOffice's libvisio importer drops.
 ///
 /// `VSDXParser::getElementToken` maps `Row T=` through `tokens.txt`. That
@@ -1616,7 +1630,9 @@ double _axisFraction(double value, double span) =>
 /// SplineStart / SplineKnot / NURBSTo, but not CubBezTo, QuadBezTo, RelArcTo,
 /// RelPolylineTo, RelInfiniteLine, RelSpline* or RelNURBSTo. Those rows are
 /// skipped in `readGeometry`'s default branch, so a save that keeps the
-/// original `T=` looks empty in Draw.
+/// original `T=` looks empty in Draw. Absolute CubBezTo / QuadBezTo on a
+/// degenerate Width or Height cannot use Rel* either — [commandsForLibvisioWrite]
+/// samples them as LineTo.
 bool commandNeedsLibvisioRewrite(VsdxPathCommand cmd) => switch (cmd) {
       CubBezTo() || QuadBezTo() || RelArcTo() => true,
       PolylineTo(:final relative) => relative,
@@ -1627,10 +1643,182 @@ bool commandNeedsLibvisioRewrite(VsdxPathCommand cmd) => switch (cmd) {
       _ => false,
     };
 
+Offset2D? _commandPenEndInches(
+  VsdxPathCommand cmd, {
+  required double width,
+  required double height,
+}) {
+  final w = width;
+  final h = height;
+  return switch (cmd) {
+    MoveTo(:final x, :final y) => Offset2D(x, y),
+    LineTo(:final x, :final y) => Offset2D(x, y),
+    RelMoveTo(:final fx, :final fy) => Offset2D(fx * w, fy * h),
+    RelLineTo(:final fx, :final fy) => Offset2D(fx * w, fy * h),
+    CubBezTo(:final x, :final y) => Offset2D(x, y),
+    RelCubBezTo(:final fx, :final fy) => Offset2D(fx * w, fy * h),
+    QuadBezTo(:final x, :final y) => Offset2D(x, y),
+    RelQuadBezTo(:final fx, :final fy) => Offset2D(fx * w, fy * h),
+    ArcTo(:final x, :final y) => Offset2D(x, y),
+    RelArcTo(:final fx, :final fy) => Offset2D(fx * w, fy * h),
+    EllipticalArcTo(:final x, :final y) => Offset2D(x, y),
+    RelEllipticalArcTo(:final fx, :final fy) => Offset2D(fx * w, fy * h),
+    PolylineTo(:final x, :final y, :final relative) =>
+      Offset2D(relative ? x * w : x, relative ? y * h : y),
+    SplineStart(:final x, :final y, :final relative) =>
+      Offset2D(relative ? x * w : x, relative ? y * h : y),
+    SplineKnot(:final x, :final y, :final relative) =>
+      Offset2D(relative ? x * w : x, relative ? y * h : y),
+    NurbsTo(:final x, :final y, :final relative) =>
+      Offset2D(relative ? x * w : x, relative ? y * h : y),
+    EllipseCmd() || InfiniteLineCmd() => null,
+  };
+}
+
+List<Offset2D> _sampleCubicBezier(
+  Offset2D p0,
+  Offset2D p1,
+  Offset2D p2,
+  Offset2D p3, {
+  int steps = 12,
+}) {
+  final out = <Offset2D>[];
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final u = 1 - t;
+    out.add(
+      Offset2D(
+        u * u * u * p0.x +
+            3 * u * u * t * p1.x +
+            3 * u * t * t * p2.x +
+            t * t * t * p3.x,
+        u * u * u * p0.y +
+            3 * u * u * t * p1.y +
+            3 * u * t * t * p2.y +
+            t * t * t * p3.y,
+      ),
+    );
+  }
+  return out;
+}
+
+List<Offset2D> _sampleQuadBezier(
+  Offset2D p0,
+  Offset2D p1,
+  Offset2D p2, {
+  int steps = 12,
+}) {
+  final out = <Offset2D>[];
+  for (var i = 1; i <= steps; i++) {
+    final t = i / steps;
+    final u = 1 - t;
+    out.add(
+      Offset2D(
+        u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+        u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+      ),
+    );
+  }
+  return out;
+}
+
+/// Map every command onto a row type libvisio collects.
+///
+/// CubBezTo / QuadBezTo on a degenerate Width or Height become LineTo
+/// samples in local inches so Draw keeps the bow. Other row types follow
+/// [forLibvisioWrite].
+List<VsdxPathCommand> commandsForLibvisioWrite(
+  List<VsdxPathCommand> commands, {
+  required double width,
+  required double height,
+}) {
+  if (commands.isEmpty) return commands;
+  final flatten = cubBezNeedsLibvisioPolylineBake(
+    width: width,
+    height: height,
+  );
+  final out = <VsdxPathCommand>[];
+  var penX = 0.0;
+  var penY = 0.0;
+  var hasPen = false;
+  var changed = false;
+  for (final original in commands) {
+    if (flatten && original is CubBezTo) {
+      final start = hasPen ? Offset2D(penX, penY) : const Offset2D(0, 0);
+      for (final p in _sampleCubicBezier(
+        start,
+        Offset2D(original.x1, original.y1),
+        Offset2D(original.x2, original.y2),
+        Offset2D(original.x, original.y),
+      )) {
+        out.add(LineTo(p.x, p.y));
+      }
+      penX = original.x;
+      penY = original.y;
+      hasPen = true;
+      changed = true;
+      continue;
+    }
+    if (flatten && original is QuadBezTo) {
+      final start = hasPen ? Offset2D(penX, penY) : const Offset2D(0, 0);
+      for (final p in _sampleQuadBezier(
+        start,
+        Offset2D(original.x1, original.y1),
+        Offset2D(original.x, original.y),
+      )) {
+        out.add(LineTo(p.x, p.y));
+      }
+      penX = original.x;
+      penY = original.y;
+      hasPen = true;
+      changed = true;
+      continue;
+    }
+    final next = forLibvisioWrite(
+      original,
+      width: width,
+      height: height,
+    );
+    out.add(next);
+    if (!identical(next, original)) changed = true;
+    final end = _commandPenEndInches(
+      original,
+      width: width,
+      height: height,
+    );
+    if (end != null) {
+      penX = end.x;
+      penY = end.y;
+      hasPen = true;
+    }
+  }
+  return changed ? out : commands;
+}
+
+/// Geometry whose CubBezTo / QuadBezTo Draw will actually stroke.
+VsdxGeometry geometryForLibvisioWrite(
+  VsdxGeometry geometry, {
+  required double width,
+  required double height,
+}) {
+  final commands = commandsForLibvisioWrite(
+    geometry.commands,
+    width: width,
+    height: height,
+  );
+  if (identical(commands, geometry.commands)) return geometry;
+  return geometry.copyWith(
+    commands: commands,
+    commandFormulas: const <Map<String, String>>[],
+    rowIndices: const <int>[],
+  );
+}
+
 /// Map [cmd] onto a row type libvisio collects, baking Rel* endpoints into
 /// local inches (or CubBezTo/QuadBezTo into Rel*) at the current [width] /
 /// [height]. Appearance at this size is preserved; LibreOffice can then
-/// draw the path.
+/// draw the path. Degenerate Width / Height CubBezTo / QuadBezTo must go
+/// through [commandsForLibvisioWrite] — Rel* would flatten the bow.
 VsdxPathCommand forLibvisioWrite(
   VsdxPathCommand cmd, {
   required double width,

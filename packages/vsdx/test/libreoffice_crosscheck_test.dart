@@ -6376,6 +6376,44 @@ void main() {
         ),
       ),
     );
+    var cubbez1dDocument = parser.parse(blank);
+    final cubbez1dPage = cubbez1dDocument.pages.first;
+    cubbez1dDocument = cubbez1dDocument.replacePage(
+      0,
+      cubbez1dPage.addShape(
+        VsdxShape(
+          id: cubbez1dPage.nextFreeShapeId(),
+          name: 'Bez1D',
+          pinX: 4.25,
+          pinY: 5.5,
+          locPinXInches: 1.5,
+          locPinYInches: 0,
+          width: 3,
+          height: 0,
+          is1D: true,
+          beginX: 2.75,
+          beginY: 5.5,
+          endX: 5.75,
+          endY: 5.5,
+          objType: 2,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(
+            color: VsdxColor(0xFFFF00FF),
+            weightInches: 0.08,
+            pattern: 1,
+          ),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                CubBezTo(x: 3, y: 0, x1: 0.8, y1: 1.2, x2: 2.2, y2: 1.2),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
     var dashArrowDocument = parser.parse(blank);
     final dashArrowPage = dashArrowDocument.pages.first;
     final flowArrowId = dashArrowPage.nextFreeShapeId();
@@ -7281,6 +7319,10 @@ void main() {
       'empty_connector': writer.write(
         originalBytes: blank,
         edited: emptyConnectorDocument,
+      ),
+      'cubbez_1d': writer.write(
+        originalBytes: blank,
+        edited: cubbez1dDocument,
       ),
       'dash_arrows': writer.write(
         originalBytes: blank,
@@ -15830,6 +15872,62 @@ void main() {
             greaterThan(40),
             reason: 'LibreOffice must paint the auto-routed 1-D connector, '
                 'not a blank Height=0 XForm; magentaPixels=$magentaPixels',
+          );
+        }
+        if (entry.key == 'cubbez_1d') {
+          final reopened = parser.parse(entry.value);
+          final source = reopened.pages.first.shapes
+              .firstWhere((s) => s.name == 'Bez1D');
+          expect(source.geometries.single.commands.whereType<CubBezTo>(),
+              isEmpty);
+          final lines =
+              source.geometries.single.commands.whereType<LineTo>();
+          expect(
+            lines.length,
+            greaterThanOrEqualTo(12),
+            reason: 'RelCubBezTo would collapse fy*Height=0 to a chord',
+          );
+          expect(
+            lines.map((c) => c.y).reduce((a, b) => a > b ? a : b),
+            greaterThan(0.5),
+          );
+        }
+        if (entry.key == 'cubbez_1d' && pdftoppm != null) {
+          final prefix = '${dir.path}/${entry.key}-render';
+          final rasterized = await Process.run(pdftoppm, <String>[
+            '-png',
+            '-singlefile',
+            '-r',
+            '96',
+            pdf.path,
+            prefix,
+          ]);
+          expect(rasterized.exitCode, 0,
+              reason: 'pdftoppm stderr: ${rasterized.stderr}');
+          final rendered = raster.decodePng(
+            await File('$prefix.png').readAsBytes(),
+          )!;
+          var magentaPixels = 0;
+          var minY = rendered.height;
+          var maxY = 0;
+          for (final pixel in rendered) {
+            if (pixel.r > 160 && pixel.g < 100 && pixel.b > 160) {
+              magentaPixels++;
+              if (pixel.y < minY) minY = pixel.y;
+              if (pixel.y > maxY) maxY = pixel.y;
+            }
+          }
+          expect(
+            magentaPixels,
+            greaterThan(40),
+            reason: 'LibreOffice must paint the 1-D CubBezTo bow, '
+                'not a blank Height=0 XForm; magentaPixels=$magentaPixels',
+          );
+          expect(
+            maxY - minY,
+            greaterThan(40),
+            reason: 'RelCubBezTo would flatten the bow to a ~7px hairline; '
+                'bboxH=${maxY - minY} magentaPixels=$magentaPixels',
           );
         }
         if (entry.key == 'dash_arrows') {

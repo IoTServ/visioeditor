@@ -8944,21 +8944,24 @@ class VsdxWriter {
     // an instance that inherits/overrides master rows keeps aligning by IX on
     // re-parse; otherwise number rows sequentially (freshly-built shapes).
     // Baked Rounding / Rel* rewrites invent rows, so sequential IX is required.
+    final rewritten = commandsForLibvisioWrite(
+      geometry.commands,
+      width: width,
+      height: height,
+    );
+    final expanded = rewritten.length != geometry.commands.length ||
+        geometry.commands.any(commandNeedsLibvisioRewrite);
     final useSourceIx = !baked &&
+        !expanded &&
         g.rowIndices.length == g.commands.length &&
         g.rowIndices.isNotEmpty;
     var rowIx = 1;
     var cmdIx = 0;
-    for (final original in geometry.commands) {
+    for (final cmd in rewritten) {
       final thisIx = useSourceIx ? g.rowIndices[cmdIx] : rowIx;
-      final cmd = forLibvisioWrite(
-        original,
-        width: width,
-        height: height,
-      );
       // Rel* / CubBezTo formulas assume the original cell units; drop them
       // when the row type changes so baked V= is what Visio and libvisio see.
-      final formulas = baked || commandNeedsLibvisioRewrite(original)
+      final formulas = baked || expanded
           ? const <String, String>{}
           : g.formulasAt(cmdIx);
       final row = _buildRow(cmd, thisIx, formulas: formulas);

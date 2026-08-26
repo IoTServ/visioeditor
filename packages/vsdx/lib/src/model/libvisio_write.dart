@@ -151,7 +151,13 @@
 /// glueable connectors have no path for libvisio's
 /// `m_currentFillGeometry`; canvas / SVG already paint
 /// `autoRoutedConnectorPolyline`, so a save writes that same elbow as
-/// MoveTo/LineTo first — otherwise Draw stays blank. Image
+/// MoveTo/LineTo first — otherwise Draw stays blank. Absolute
+/// `CubBezTo` / `QuadBezTo` become `RelCubBezTo` / `RelQuadBezTo`
+/// (`tokens.txt` has no CubBezTo / QuadBezTo), but Rel* multiplies Y
+/// by Height: a 1-D bow whose Height is 0 (BeginY=EndY) would collapse
+/// to a straight chord while canvas / SVG already paint the cubic in
+/// local inches. A save samples that bow as MoveTo/LineTo first.
+/// A second save does not resample the polyline. Image
 /// Transparency / Brightness / Contrast / Blur are likewise missing;
 /// a save bakes them into a PNG and zeros the cells. Cropped Foreign
 /// bitmaps overflow in Draw: libvisio emits `svg:width` from `ImgWidth`
@@ -507,12 +513,93 @@ VsdxPage bakeConnectorRoutesForLibvisioWrite(VsdxPage page) {
   return page.copyWith(shapes: shapes);
 }
 
+/// `true` when CubBezTo / QuadBezTo would flatten in Rel* at this XForm.
+bool shapeNeedsLibvisioDegenerateBezierBake(VsdxShape shape) {
+  if (_isLibvisioBakePlate(shape)) return false;
+  if (!cubBezNeedsLibvisioPolylineBake(
+    width: shape.width,
+    height: shape.height,
+  )) {
+    return false;
+  }
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow) continue;
+    for (final command in geometry.commands) {
+      if (command is CubBezTo || command is QuadBezTo) return true;
+    }
+  }
+  return false;
+}
+
+VsdxShape _sourceForLibvisioDegenerateBezierWrite(VsdxShape shape) {
+  final geometries = <VsdxGeometry>[
+    for (final geometry in shape.geometries)
+      geometryForLibvisioWrite(
+        geometry,
+        width: shape.width,
+        height: shape.height,
+      ),
+  ];
+  var same = geometries.length == shape.geometries.length;
+  if (same) {
+    for (var i = 0; i < geometries.length; i++) {
+      if (!identical(geometries[i], shape.geometries[i])) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) return shape;
+  return shape.copyWith(geometries: geometries);
+}
+
+/// Sample Height=0 / Width=0 CubBezTo / QuadBezTo as LineTo Draw can stroke.
+VsdxPage bakeDegenerateBezierForLibvisioWrite(VsdxPage page) {
+  VsdxShape rewrite(VsdxShape shape) {
+    final children = <VsdxShape>[
+      for (final child in shape.children) rewrite(child),
+    ];
+    var next = shape;
+    if (shapeNeedsLibvisioDegenerateBezierBake(shape)) {
+      next = _sourceForLibvisioDegenerateBezierWrite(shape);
+    }
+    var childrenChanged = children.length != shape.children.length;
+    if (!childrenChanged) {
+      for (var i = 0; i < children.length; i++) {
+        if (!identical(children[i], shape.children[i])) {
+          childrenChanged = true;
+          break;
+        }
+      }
+    }
+    if (childrenChanged) next = next.copyWith(children: children);
+    return next;
+  }
+
+  final shapes = <VsdxShape>[
+    for (final shape in page.shapes) rewrite(shape),
+  ];
+  var same = shapes.length == page.shapes.length;
+  if (same) {
+    for (var i = 0; i < shapes.length; i++) {
+      if (!identical(shapes[i], page.shapes[i])) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) return page;
+  return page.copyWith(shapes: shapes);
+}
+
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
 VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   var pagesChanged = false;
   final pages = <VsdxPage>[];
   for (final page in document.pages) {
-    final routed = bakeConnectorRoutesForLibvisioWrite(page);
+    final routed = bakeConnectorRoutesForLibvisioWrite(
+      bakeDegenerateBezierForLibvisioWrite(page),
+    );
     final next = bakeLineJumpsForLibvisioWrite(routed);
     pagesChanged |= !identical(next, page);
     pages.add(next);
@@ -10731,6 +10818,27 @@ LibvisioShapeWrite libvisioShapeWrite(
     theme,
     shape.quickStyleFillMatrix,
   );
+
+  final bezier = <VsdxGeometry>[
+    for (final geometry in geometries)
+      geometryForLibvisioWrite(
+        geometry,
+        width: shape.width,
+        height: shape.height,
+      ),
+  ];
+  if (bezier.length == geometries.length) {
+    for (var i = 0; i < bezier.length; i++) {
+      if (!identical(bezier[i], geometries[i])) {
+        geometries = bezier;
+        geometryRewritten = true;
+        break;
+      }
+    }
+  } else {
+    geometries = bezier;
+    geometryRewritten = true;
+  }
 
   return LibvisioShapeWrite(
     geometries: geometries,

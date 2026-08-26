@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- 1-D CubBezTo / QuadBezTo bows now keep their curve in LibreOffice.
+  `tokens.txt` has no CubBezTo / QuadBezTo, so a save used Rel* fractions.
+  RelY × Height is 0 on a horizontal 1-D XForm, and Draw painted a chord
+  while canvas / SVG already stroked the cubic in local inches. A save
+  samples LineTo when Width or Height is degenerate. Non-degenerate 2-D
+  CubBezTo still writes RelCubBezTo. A second save does not resample
+  the polyline.
 - Geometry-less glueable connectors now keep their auto-route in
   LibreOffice. libvisio only emits a stroke when Geometry filled
   `m_currentFillGeometry`, so a Begin–End 1-D XForm with no rows stayed

@@ -5,7 +5,9 @@
 /// RelPolylineTo / RelInfiniteLine / RelSpline* / RelNURBSTo. Leaving those
 /// `T=` values in the package makes Draw skip the curve. The writer rewrites
 /// them to RelCubBezTo / RelQuadBezTo / ArcTo / PolylineTo / InfiniteLine /
-/// Spline* / NURBSTo, which `VSDXMLParserBase::readGeometry` handles.
+/// Spline* / NURBSTo, which `VSDXMLParserBase::readGeometry` handles. A 1-D
+/// CubBezTo whose Height is 0 cannot use Rel* (fy×Height = 0); a save
+/// samples LineTo instead so Draw keeps the bow.
 library;
 
 import 'dart:io';
@@ -287,6 +289,60 @@ void main() {
         reason: 'rewritten quads reach libvisio');
     expect(RegExp(r'\nA').hasMatch(joined) || RegExp(r'\nL').hasMatch(joined),
         isTrue);
+  });
+
+  test('Height=0 CubBezTo samples LineTo so Rel* cannot flatten the bow', () {
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      page.addShape(
+        VsdxShape(
+          id: id,
+          name: 'Bez1D',
+          pinX: 4.25,
+          pinY: 5.5,
+          locPinXInches: 1.5,
+          locPinYInches: 0,
+          width: 3,
+          height: 0,
+          is1D: true,
+          beginX: 2.75,
+          beginY: 5.5,
+          endX: 5.75,
+          endY: 5.5,
+          objType: 2,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(color: VsdxColor(0xFFFF00FF), weightInches: 0.08),
+          geometries: const <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: true,
+              commands: <VsdxPathCommand>[
+                MoveTo(0, 0),
+                CubBezTo(x: 3, y: 0, x1: 0.8, y1: 1.2, x2: 2.2, y2: 1.2),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final xml = VsdxPackage.open(saved)
+        .readPartXml('/visio/pages/page1.xml')!
+        .toXmlString();
+    expect(xml, isNot(contains('T="CubBezTo"')));
+    expect(xml, isNot(contains('T="RelCubBezTo"')),
+        reason: 'RelCubBezTo would collapse fy*Height=0 to a chord');
+    expect(xml, contains('T="LineTo"'));
+    final source = parser.parse(saved).pages.first.findShapeById(id)!;
+    final lines = source.geometries.single.commands.whereType<LineTo>();
+    expect(lines.length, 12);
+    expect(
+      lines.map((c) => c.y).reduce((a, b) => a > b ? a : b),
+      greaterThan(0.5),
+    );
   });
 }
 

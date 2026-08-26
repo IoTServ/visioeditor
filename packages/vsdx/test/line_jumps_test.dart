@@ -556,4 +556,61 @@ void main() {
     );
     expect(shapeNeedsLibvisioConnectorRouteBake(authored), isFalse);
   });
+
+  test('Height=0 CubBezTo bakes LineTo so LibreOffice keeps the bow', () {
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    final page = doc.pages.first;
+    final id = page.nextFreeShapeId();
+    final curved = VsdxShape(
+      id: id,
+      name: 'Bez1D',
+      pinX: 4.25,
+      pinY: 5.5,
+      locPinXInches: 1.5,
+      locPinYInches: 0,
+      width: 3,
+      height: 0,
+      is1D: true,
+      beginX: 2.75,
+      beginY: 5.5,
+      endX: 5.75,
+      endY: 5.5,
+      objType: 2,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(color: VsdxColor(0xFFFF00FF), weightInches: 0.08),
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            CubBezTo(x: 3, y: 0, x1: 0.8, y1: 1.2, x2: 2.2, y2: 1.2),
+          ],
+        ),
+      ],
+    );
+    expect(shapeNeedsLibvisioDegenerateBezierBake(curved), isTrue);
+    expect(
+      cubBezNeedsLibvisioPolylineBake(width: curved.width, height: curved.height),
+      isTrue,
+    );
+    doc = doc.replacePage(0, page.addShape(curved));
+    final baked = documentForLibvisioWrite(doc);
+    final source = baked.pages.first.findShapeById(id)!;
+    expect(source.geometries.single.commands.whereType<CubBezTo>(), isEmpty);
+    final lines = source.geometries.single.commands.whereType<LineTo>();
+    expect(lines.length, 12);
+    expect(
+      lines.map((c) => c.y).reduce((a, b) => a > b ? a : b),
+      greaterThan(0.5),
+    );
+    final twice = documentForLibvisioWrite(baked);
+    expect(
+      twice.pages.first.findShapeById(id)!.geometries.single.commands.length,
+      source.geometries.single.commands.length,
+      reason: 'a second save must not resample the polyline',
+    );
+  });
 }
