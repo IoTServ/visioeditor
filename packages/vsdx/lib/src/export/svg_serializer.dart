@@ -972,7 +972,7 @@ class VsdxToSvgSerializer {
         (!noFill && fillRule != null) ? ' fill-rule="$fillRule"' : '';
     final sketchPatternFill = !noFill && shape.usesSketchPatternFill;
     final fillAttr = !noFill && !sketchPatternFill
-        ? '${_fillAttr(shape, theme, paintId, defs, bounds: fillBounds)}$fillRuleAttr'
+        ? '${_fillAttr(shape, theme, paintId, defs, bounds: fillBounds, pathD: d)}$fillRuleAttr'
         : 'fill="none"';
     // Line gradients follow the unjumped geometry (canvas path bounds).
     // Jump hops must not shift the gradient centre.
@@ -2723,12 +2723,82 @@ class VsdxToSvgSerializer {
     defs.write('</pattern>');
   }
 
+  /// MS-VSDX path fill: concentric similar copies of [pathD]. SVG has no
+  /// path-gradient primitive; LibreOffice maps dir 13 to FillPattern 40.
+  void _writePathGradientPattern(
+    StringBuffer defs, {
+    required String id,
+    required VsdxGradient gradient,
+    required VsdxTheme theme,
+    required ({double minX, double minY, double width, double height}) bounds,
+    required String pathD,
+    double extraTransparency = 0,
+  }) {
+    if (pathD.trim().isEmpty) {
+      _writeRectangularGradientPattern(
+        defs,
+        id: id,
+        gradient: gradient,
+        theme: theme,
+        bounds: bounds,
+        extraTransparency: extraTransparency,
+      );
+      return;
+    }
+    final extra = 1 - extraTransparency.clamp(0.0, 1.0);
+    final stopList = <({double position, int r, int g, int b, int a})>[];
+    for (final s in gradient.stops) {
+      final c = _resolveColor(s.color, s.themeColorIndex, theme) ??
+          const VsdxColor(0xFF000000);
+      final op = (_combinedOpacity(c, s.transparency) * extra).clamp(0.0, 1.0);
+      stopList.add((
+        position: s.position,
+        r: c.red,
+        g: c.green,
+        b: c.blue,
+        a: (op * 255).round().clamp(0, 255),
+      ));
+    }
+    if (stopList.isEmpty) {
+      defs.write('<pattern id="$id"/>');
+      return;
+    }
+    final ox = bounds.minX + bounds.width / 2;
+    final oy = bounds.minY + bounds.height / 2;
+    defs.write(
+      '<pattern id="$id" patternUnits="userSpaceOnUse" '
+      'x="${_n(bounds.minX)}" y="${_n(bounds.minY)}" '
+      'width="${_n(bounds.width)}" height="${_n(bounds.height)}">',
+    );
+    for (var i = kVisioRectangularGradientSteps; i >= 0; i--) {
+      final t = i / kVisioRectangularGradientSteps;
+      final c = lerpVisioGradientStops(stopList, t);
+      final hex = _hex(VsdxColor.argb(255, c.r, c.g, c.b));
+      final opacity = c.a / 255.0;
+      if (t <= 1e-12) {
+        defs.write(
+          '<circle cx="${_n(ox)}" cy="${_n(oy)}" r="0.001" '
+          'fill="$hex" fill-opacity="${_n(opacity)}"/>',
+        );
+        continue;
+      }
+      defs.write(
+        '<g transform="translate(${_n(ox)} ${_n(oy)}) scale(${_n(t)}) '
+        'translate(${_n(-ox)} ${_n(-oy)})">'
+        '<path d="$pathD" fill="$hex" fill-opacity="${_n(opacity)}"/>'
+        '</g>',
+      );
+    }
+    defs.write('</pattern>');
+  }
+
   String _fillAttr(
     VsdxShape shape,
     VsdxTheme theme,
     String paintId,
     StringBuffer defs, {
     required ({double minX, double minY, double width, double height}) bounds,
+    String pathD = '',
   }) {
     final fill = shape.fill;
     if (!fill.hasFill) return 'fill="none"';
@@ -2771,8 +2841,18 @@ class VsdxToSvgSerializer {
           bounds: bounds,
           extraTransparency: fill.foregroundTransparency,
         );
+      } else if (g.type == VsdxGradientType.path) {
+        _writePathGradientPattern(
+          defs,
+          id: id,
+          gradient: g,
+          theme: theme,
+          bounds: bounds,
+          pathD: pathD,
+          extraTransparency: fill.foregroundTransparency,
+        );
       } else {
-        // Radial / path: match canvas radial disc + FillGradientDir.
+        // Radial: match canvas radial disc + FillGradientDir.
         final origin = radialGradientOrigin(
           dir: g.dir,
           minX: bounds.minX,
@@ -2962,7 +3042,8 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
-      } else if (g.type == VsdxGradientType.rectangular) {
+      } else if (g.type == VsdxGradientType.rectangular ||
+          g.type == VsdxGradientType.path) {
         _writeRectangularGradientPattern(
           defs,
           id: id,
@@ -2972,7 +3053,7 @@ class VsdxToSvgSerializer {
           extraTransparency: line.transparency,
         );
       } else {
-        // Radial / path: match canvas radial disc + LineGradientDir.
+        // Radial: match canvas radial disc + LineGradientDir.
         final origin = radialGradientOrigin(
           dir: g.dir,
           minX: bounds.minX,

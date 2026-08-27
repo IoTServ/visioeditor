@@ -5225,6 +5225,57 @@ void main() {
     );
   });
 
+  test('FillGradientDir 13 path wash bakes a PNG for LibreOffice', () {
+    const wash = VsdxGradient(
+      type: VsdxGradientType.path,
+      dir: 13,
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+        VsdxGradientStop(position: 1, color: VsdxColor.white),
+      ],
+    );
+    final box = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2.6,
+      height: 1.0,
+      name: 'Path13',
+      fill: const VsdxFill(pattern: 1, gradient: wash),
+      line: const VsdxLine(pattern: 0),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box), isTrue,
+        reason: 'Draw maps path to FillPattern 40 (a circle)');
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(box));
+    final baked = documentForLibvisioWrite(doc);
+    expect(baked.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.hasImage, isTrue);
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final centre = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    final midTop = decoded.getPixel(decoded.width ~/ 2, 2);
+    expect(centre.r, greaterThan(160));
+    expect(centre.b, greaterThan(160));
+    expect(centre.g, lessThan(140),
+        reason: 'path origin is FillForegnd magenta; centre=$centre');
+    expect(midTop.g, greaterThan(centre.g + 40),
+        reason: 'short edge is t=1 (white), not a radial disc; midTop=$midTop');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another path plate',
+    );
+  });
+
   test('LineGradient corner radial bakes a PNG for LibreOffice', () {
     const wash = VsdxGradient(
       type: VsdxGradientType.radial,

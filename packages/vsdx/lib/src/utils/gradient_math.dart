@@ -68,11 +68,54 @@ double rectangularGradientT(
   return math.max(tx, ty);
 }
 
+/// MS-VSDX `FillGradientDir` 13 / path fill on an axis-aligned box.
+///
+/// Concentric similar copies of a rectangle are Chebyshev isolines, the
+/// same metric as centre rectangular (dir 10 / FillPattern 35). A radial
+/// disc washes the short side first.
+double pathGradientT(
+  double x,
+  double y, {
+  required double minX,
+  required double minY,
+  required double width,
+  required double height,
+}) =>
+    rectangularGradientT(
+      x,
+      y,
+      minX: minX,
+      minY: minY,
+      width: width,
+      height: height,
+      dir: 10,
+    );
+
+/// Path fill on an ellipse inscribed in the box: concentric similar
+/// ellipses (`t=1` on the whole outline).
+double ellipticalPathGradientT(
+  double x,
+  double y, {
+  required double minX,
+  required double minY,
+  required double width,
+  required double height,
+}) {
+  final rx = width.abs() / 2;
+  final ry = height.abs() / 2;
+  if (rx <= 1e-18 || ry <= 1e-18) return 0;
+  final nx = (x - (minX + width / 2)) / rx;
+  final ny = (y - (minY + height / 2)) / ry;
+  return math.sqrt(nx * nx + ny * ny);
+}
+
 /// Sample canvas / SVG gradient paint at a point in the same user-space
 /// inches (Y-up). Linear uses the box centre ± 0.6×longest side along
-/// [angleRad]; radial / path use [radialGradientOrigin] and that same
-/// radius; rectangular uses Chebyshev so isolines match LibreOffice
-/// `_fillAndShadowProperties` `draw:style=rectangular`.
+/// [angleRad]; radial uses [radialGradientOrigin] and that same radius;
+/// rectangular uses Chebyshev so isolines match LibreOffice
+/// `_fillAndShadowProperties` `draw:style=rectangular`; path uses
+/// concentric similar copies of the box (Chebyshev) or, when
+/// [ellipticalPath] is set, of the inscribed ellipse.
 ({int r, int g, int b, int a}) sampleVisioGradientRgba({
   required double x,
   required double y,
@@ -84,6 +127,8 @@ double rectangularGradientT(
   required double angleRad,
   int? dir,
   bool rectangular = false,
+  bool path = false,
+  bool ellipticalPath = false,
   required List<({double position, int r, int g, int b, int a})> stops,
 }) {
   final t = linear
@@ -96,25 +141,34 @@ double rectangularGradientT(
           height: height,
           angleRad: angleRad,
         )
-      : rectangular
-          ? rectangularGradientT(
+      : ellipticalPath
+          ? ellipticalPathGradientT(
               x,
               y,
               minX: minX,
               minY: minY,
               width: width,
               height: height,
-              dir: dir,
             )
-          : _radialGradientT(
-              x,
-              y,
-              minX: minX,
-              minY: minY,
-              width: width,
-              height: height,
-              dir: dir,
-            );
+          : (rectangular || path)
+              ? rectangularGradientT(
+                  x,
+                  y,
+                  minX: minX,
+                  minY: minY,
+                  width: width,
+                  height: height,
+                  dir: path ? 10 : dir,
+                )
+              : _radialGradientT(
+                  x,
+                  y,
+                  minX: minX,
+                  minY: minY,
+                  width: width,
+                  height: height,
+                  dir: dir,
+                );
   return lerpVisioGradientStops(stops, t);
 }
 

@@ -1358,6 +1358,16 @@ class VsdxPainter extends CustomPainter {
         );
         return;
       }
+      if (paintGradient.type == VsdxGradientType.path) {
+        _drawPathGradientFill(
+          canvas,
+          path,
+          bounds,
+          paintGradient,
+          fillTransparency: fill.foregroundTransparency,
+        );
+        return;
+      }
       final shader = _buildGradientShader(
         paintGradient,
         bounds,
@@ -1508,7 +1518,6 @@ class VsdxPainter extends CustomPainter {
           stops,
         );
       case VsdxGradientType.radial:
-      case VsdxGradientType.path:
         final origin = radialGradientOrigin(
           dir: gradient.dir,
           minX: bounds.left,
@@ -1522,6 +1531,10 @@ class VsdxPainter extends CustomPainter {
           colors,
           stops,
         );
+      case VsdxGradientType.path:
+        // Stroke path wash: Chebyshev of the stroke box (fill uses
+        // [_drawPathGradientFill] concentric copies of the geometry).
+        return _rectangularGradientShader(bounds, colors, stops, 10);
       case VsdxGradientType.rectangular:
         return _rectangularGradientShader(bounds, colors, stops, gradient.dir);
     }
@@ -1591,6 +1604,52 @@ class VsdxPainter extends CustomPainter {
         ),
         Paint()..color = color,
       );
+    }
+    canvas.restore();
+  }
+
+  /// Clip to [path] and fill concentric similar copies, matching MS-VSDX
+  /// `FillGradientDir` 13. LibreOffice has no ODF path style (FillPattern
+  /// 40 is a circle).
+  void _drawPathGradientFill(
+    Canvas canvas,
+    Path path,
+    Rect bounds,
+    VsdxGradient gradient, {
+    required double fillTransparency,
+  }) {
+    final fillAlpha = (1 - fillTransparency.clamp(0.0, 1.0));
+    final colors = <Color>[];
+    final stops = <double>[];
+    for (final s in gradient.stops) {
+      final base = _colourOrTheme(s.color, s.themeColorIndex) ?? fallbackFill;
+      final stopAlpha = (1 - s.transparency).clamp(0.0, 1.0) * fillAlpha;
+      colors.add(base.withValues(alpha: base.a * stopAlpha));
+      stops.add(s.position);
+    }
+    if (colors.isEmpty) return;
+    if (colors.length == 1) {
+      colors.add(colors.first);
+      stops.add(1.0);
+    }
+    final origin = bounds.center;
+    canvas.save();
+    canvas.clipPath(path);
+    for (var i = kVisioRectangularGradientSteps; i >= 0; i--) {
+      final t = i / kVisioRectangularGradientSteps;
+      final color = _gradientStopColor(colors, stops, t);
+      if (t <= 1e-12) {
+        canvas.drawCircle(origin, 1e-4, Paint()..color = color);
+        continue;
+      }
+      final matrix = Float64List(16);
+      matrix[0] = t;
+      matrix[5] = t;
+      matrix[10] = 1;
+      matrix[15] = 1;
+      matrix[12] = origin.dx * (1 - t);
+      matrix[13] = origin.dy * (1 - t);
+      canvas.drawPath(path.transform(matrix), Paint()..color = color);
     }
     canvas.restore();
   }

@@ -182,6 +182,94 @@ void main() {
         reason: 'a radial disc washes the short side first');
   });
 
+  test('pathGradientT matches centre rectangular on a box', () {
+    const minX = 0.0, minY = 0.0, width = 10.0, height = 4.0;
+    expect(
+      pathGradientT(5, 2, minX: minX, minY: minY, width: width, height: height),
+      closeTo(0, 1e-9),
+    );
+    final top = pathGradientT(
+      5,
+      4,
+      minX: minX,
+      minY: minY,
+      width: width,
+      height: height,
+    );
+    final side = pathGradientT(
+      0,
+      2,
+      minX: minX,
+      minY: minY,
+      width: width,
+      height: height,
+    );
+    expect(top, closeTo(1, 1e-9));
+    expect(side, closeTo(1, 1e-9));
+    expect(
+      ellipticalPathGradientT(
+        5,
+        4,
+        minX: minX,
+        minY: minY,
+        width: width,
+        height: height,
+      ),
+      closeTo(1, 1e-9),
+    );
+    final ellipse45 = ellipticalPathGradientT(
+      5 + 5 * 0.70710678118,
+      2 + 2 * 0.70710678118,
+      minX: minX,
+      minY: minY,
+      width: width,
+      height: height,
+    );
+    expect(ellipse45, closeTo(1, 0.02));
+    expect(
+      pathGradientT(
+        5 + 5 * 0.70710678118,
+        2 + 2 * 0.70710678118,
+        minX: minX,
+        minY: minY,
+        width: width,
+        height: height,
+      ),
+      closeTo(0.70710678118, 0.02),
+      reason: 'box path is Chebyshev; 45° is inside the rectangle outline',
+    );
+
+    const stops = <({double position, int r, int g, int b, int a})>[
+      (position: 0, r: 255, g: 0, b: 255, a: 255),
+      (position: 1, r: 255, g: 255, b: 255, a: 255),
+    ];
+    final pathTop = sampleVisioGradientRgba(
+      x: 5,
+      y: 3.6,
+      minX: minX,
+      minY: minY,
+      width: width,
+      height: height,
+      linear: false,
+      path: true,
+      angleRad: 0,
+      stops: stops,
+    );
+    final radialTop = sampleVisioGradientRgba(
+      x: 5,
+      y: 3.6,
+      minX: minX,
+      minY: minY,
+      width: width,
+      height: height,
+      linear: false,
+      angleRad: 0,
+      stops: stops,
+    );
+    expect(pathTop.g, greaterThan(radialTop.g + 20),
+        reason: 'path short-edge is t≈1; radial disc is still magenta');
+  });
+
   test('SVG rectangular fill gradient emits concentric rect pattern', () {
     final blank = const VsdxWriter().emptyDocument();
     var doc = const DocumentParser().parse(blank);
@@ -213,6 +301,39 @@ void main() {
     expect(svg, contains('patternUnits="userSpaceOnUse"'));
     expect(svg, isNot(contains('radialGradient')));
     expect(svg, isNot(contains('linearGradient id="grad-')));
+  });
+
+  test('SVG path fill gradient emits concentric scaled copies', () {
+    final blank = const VsdxWriter().emptyDocument();
+    var doc = const DocumentParser().parse(blank);
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 1,
+        ).copyWith(
+          fill: const VsdxFill(
+            gradient: VsdxGradient(
+              type: VsdxGradientType.path,
+              dir: 13,
+              stops: [
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+                VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    final svg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(svg, contains('patternUnits="userSpaceOnUse"'));
+    expect(svg, contains('scale('));
+    expect(svg, isNot(contains('radialGradient')));
   });
 
   test('SVG classic FillPattern 36–39 anchor the MS-VSDX corner', () {

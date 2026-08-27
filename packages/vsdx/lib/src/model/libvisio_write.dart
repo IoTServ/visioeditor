@@ -17,12 +17,15 @@
 /// cells, so a save bakes the same SoftEdges fill PNG at sigma 0 and
 /// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
 /// unfilled-ribbon path and LineColor covers that plate. Corner radial
-/// FillPattern 36–39 (and modern radial/path dirs 1/2/4/5/6/7 plus
+/// FillPattern 36–39 (and modern radial dirs 1/2/4/5/6/7 plus
 /// rectangular 8/9/11/12) are the
 /// same missing paint: `_fillAndShadowProperties` emits ODF
 /// `draw:style=radial` whose `svg:cx/cy` clips to a circle, or
 /// `draw:style=rectangular` pinned at the box centre (FillPattern 35),
 /// while canvas / SVG fill the whole path from the MS-VSDX origin.
+/// Path `FillGradientDir` 13 is the same missing paint: there is no ODF
+/// path style, so the classic fallback is FillPattern 40 (a circle)
+/// while canvas / SVG fill concentric similar copies of the geometry.
 /// Centre radial 40 / rectangular 35 and linear 25–34 stay native. Per-stop alpha
 /// and FillForegndTrans / FillBkgndTrans on a 25–40 wash are the same
 /// missing paint: `_fillAndShadowProperties` drops `draw:opacity` and
@@ -52,10 +55,10 @@
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
 /// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
-/// corner radial / path dirs 1/2/4/5/6/7 and rectangular 8/9/11/12 are
-/// the same missing paint: the
-/// filled ribbon would become FillPattern 36–39 (clipped circle) or 35
-/// (centre Chebyshev). Per-stop
+/// corner radial dirs 1/2/4/5/6/7, rectangular 8/9/11/12, and path 13
+/// are the same missing paint: the
+/// filled ribbon would become FillPattern 36–39 (clipped circle), 35
+/// (centre Chebyshev), or 40 (a circle instead of scaled copies). Per-stop
 /// alpha and LineColorTrans on a two-colour wash would otherwise stay
 /// opaque on that 25–40 ribbon. InfiniteLine
 /// samples are clipped to the shape box first — perimeter sampling otherwise
@@ -8865,7 +8868,15 @@ bool _dirIsLibvisioNonCentreGradientOrigin(int? dir) => switch (dir) {
 bool _gradientHasLibvisioClippedRadial(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
   if (gradient.type == VsdxGradientType.linear) return false;
+  if (gradient.type == VsdxGradientType.path) return false;
   return _dirIsLibvisioNonCentreGradientOrigin(gradient.dir);
+}
+
+/// Draw has no ODF `draw:style=path`. `libvisioClassicPatternFor` emits
+/// FillPattern 40 (a circle) while canvas / SVG scale the geometry.
+bool _gradientHasLibvisioPathWash(VsdxGradient? gradient) {
+  if (gradient == null || gradient.stops.length < 2) return false;
+  return gradient.type == VsdxGradientType.path;
 }
 
 bool _fillHasLibvisioClippedRadial(VsdxFill fill) =>
@@ -8875,6 +8886,7 @@ bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
   final gradient = fill.paintGradient;
   if (_gradientHasLibvisioUnrepresentableStops(gradient)) return true;
   if (_fillHasLibvisioClippedRadial(fill)) return true;
+  if (_gradientHasLibvisioPathWash(gradient)) return true;
   if (gradient == null || gradient.stops.length < 2) return false;
   // FillPattern 25–40 drop `draw:opacity`; Draw ignores the replacement
   // `librevenge:start-opacity` / `end-opacity` from Fill*Trans.
@@ -8885,6 +8897,7 @@ bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
 bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) {
   if (_gradientHasLibvisioUnrepresentableStops(line.gradient)) return true;
   if (_gradientHasLibvisioClippedRadial(line.gradient)) return true;
+  if (_gradientHasLibvisioPathWash(line.gradient)) return true;
   if (line.gradient == null || line.gradient!.stops.length < 2) return false;
   return line.transparency > 1e-9;
 }
@@ -9268,6 +9281,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
       w,
       h,
       theme,
+      _softEdgesSilhouetteKind(shape) == SoftEdgesSilhouetteKind.ellipse,
     );
   }
   final hatch = libvisioHatchSpec(shape.fill.pattern);
@@ -9321,10 +9335,14 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
   double w,
   double h, [
   VsdxTheme theme = VsdxTheme.empty,
+  bool pathEllipse = false,
 ]) {
   final stops = _gradientBakeStops(gradient, transparency, theme);
   if (stops.isEmpty) return null;
   final linear = gradient.type == VsdxGradientType.linear;
+  final path = gradient.type == VsdxGradientType.path;
+  final rectangular = gradient.type == VsdxGradientType.rectangular ||
+      (path && !pathEllipse);
   final angle = gradient.angleRad;
   final dir = gradient.dir;
   return (xPx, yPx, widthPx, heightPx) {
@@ -9340,7 +9358,9 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
       linear: linear,
       angleRad: angle,
       dir: dir,
-      rectangular: gradient.type == VsdxGradientType.rectangular,
+      rectangular: rectangular,
+      path: path && !pathEllipse,
+      ellipticalPath: path && pathEllipse,
       stops: stops,
     );
   };
@@ -9566,6 +9586,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
         angleRad: gradient.angleRad,
         dir: gradient.dir,
         rectangular: gradient.type == VsdxGradientType.rectangular,
+        path: gradient.type == VsdxGradientType.path,
         stops: stops,
       );
     };

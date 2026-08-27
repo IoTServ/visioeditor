@@ -7648,10 +7648,14 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('N="FillGradientDir" V="13"'), isTrue);
+    expect(pageXml.contains('N="FillGradientDir" V="13"'), isFalse,
+        reason: 'Draw has no path style; dir 13 bakes a PNG');
     after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.fill.gradient!.type, VsdxGradientType.path);
-    expect(after.fill.gradient!.dir, 13);
+    expect(after.fill.hasFill, isFalse);
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      isNotEmpty,
+    );
   });
 
   test('legacy FillGradientDir 35 still parses as radial', () {

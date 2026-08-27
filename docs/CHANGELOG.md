@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Path `FillGradientDir` 13 now fills concentric similar copies of the
+  geometry, matching Visio. `_fillAndShadowProperties` has no ODF path
+  style, so the classic fallback was FillPattern 40 (a circle) and
+  canvas / SVG used the same radial disc — a wide box washed its short
+  sides first. Sampling, SoftEdges PNG plates, canvas clip-fill and SVG
+  stacked scaled `<path>`s now follow the outline (Chebyshev on a
+  rectangle, similar ellipses on an ellipse). A save bakes that plate
+  for LibreOffice. Centre radial 40 / rectangular 35 stay native. A
+  second save does not restack.
 - FillGradientDir 8/9/11/12 rectangular fills now keep their MS-VSDX
   corner origin, matching Visio. `radialGradientOrigin` treated 8–12
   as centre (only FillPattern 35 / dir 10 is centre); dirs 1–7 now
