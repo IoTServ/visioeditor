@@ -272,12 +272,12 @@ VsdxFill withLibvisioClassicGradient(VsdxFill fill) {
     );
   } else {
     final dir = switch (pattern) {
-      35 => 10,
-      36 => 1,
-      37 => 3,
-      38 => 5,
-      39 => 7,
-      _ => 4,
+      35 => 10, // rectangular centre
+      36 => 7, // radial top-left (ODF 36 cx/cy 0)
+      37 => 6, // radial top-right
+      38 => 2, // radial bottom-left
+      39 => 1, // radial bottom-right
+      _ => 3, // 40 radial centre
     };
     gradient = VsdxGradient(
       stops: List.unmodifiable([
@@ -318,11 +318,11 @@ int? libvisioClassicPatternFor(VsdxGradient gradient) {
     case VsdxGradientType.radial:
     case VsdxGradientType.path:
       return switch (gradient.dir) {
-        1 => 36,
-        3 => 37,
-        5 => 38,
-        7 => 39,
-        _ => 40,
+        7 || 12 => 36, // top-left
+        6 || 11 => 37, // top-right
+        2 || 9 => 38, // bottom-left
+        1 || 8 => 39, // bottom-right
+        _ => 40, // centre (3 / 10) and edge 4/5 (those bake)
       };
     case VsdxGradientType.linear:
       break;

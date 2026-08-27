@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradientDir 8/9/11/12 rectangular fills now keep their MS-VSDX
+  corner origin, matching Visio. `radialGradientOrigin` treated 8–12
+  as centre (only FillPattern 35 / dir 10 is centre); dirs 1–7 now
+  follow MS-VSDX 2.4.4.122 (classic 36–40 remap onto 7/6/2/1/3 so
+  ODF 36 stays top-left). `_fillAndShadowProperties` still emits
+  FillPattern 35 with `svg:cx/cy=0.5`, so a save bakes the Chebyshev
+  plate for 8/9/11/12 (and radial edge dirs 4/5). Centre 35/40 stay
+  native. A second save does not restack.
 - FillPattern 35 / rectangular FillGradient now paints concentric
   rectangles, matching LibreOffice. `_fillAndShadowProperties` emits
   ODF `draw:style=rectangular` (`svg:cx/cy` at the box centre for id

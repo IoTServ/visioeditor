@@ -19,8 +19,9 @@
 /// rails (including 1-D), and a filled ribbon for line gradients and
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. A LineGradient with more than two unique opaque colours
-/// bakes a PNG plate instead (two-colour corner radial dirs 1/2/3/5/6/7
-/// too — a 25–40 ribbon clips to an ODF circle). Arrowed 1-D connectors that also need rails or a ribbon bake
+/// bakes a PNG plate instead (two-colour non-centre radial dirs
+/// 1/2/4/5/6/7 and rectangular 8/9/11/12 too — a 25–40 ribbon clips
+/// to an ODF circle or collapses to centre FillPattern 35). Arrowed 1-D connectors that also need rails or a ribbon bake
 /// Begin/EndArrow as Geometry so Draw does not hang a marker on
 /// every open rail, and so BeginArrowSize (not a token) still has a size.
 /// A plain stroke whose size disagrees with `_lineProperties`' line-weight
@@ -5050,12 +5051,13 @@ void main() {
       greaterThan(1.3),
       reason: 'plate is the 2.6×1.6 box, not a square circle',
     );
-    final origin = decoded.getPixel(2, decoded.height - 3);
-    final far = decoded.getPixel(decoded.width - 3, 2);
+    final origin = decoded.getPixel(2, 2);
+    final far = decoded.getPixel(decoded.width - 3, decoded.height - 3);
     expect(origin.r, greaterThan(160));
     expect(origin.b, greaterThan(160));
     expect(origin.g, lessThan(140),
-        reason: 'dir=1 origin is FillForegnd magenta; origin=$origin');
+        reason: 'FillPattern 36 / MS dir 7 is top-left FillForegnd; '
+            'origin=$origin');
     expect(far.a, greaterThan(200),
         reason: 'the far corner must stay filled, not Draw\'s empty wedge; '
             'far=$far');
@@ -5075,7 +5077,8 @@ void main() {
     );
 
     var modernDoc = parser.parse(blank);
-    modernDoc = modernDoc.replacePage(0, modernDoc.pages.first.addShape(modern));
+    modernDoc =
+        modernDoc.replacePage(0, modernDoc.pages.first.addShape(modern));
     expect(
       documentForLibvisioWrite(modernDoc)
           .pages
@@ -5116,7 +5119,109 @@ void main() {
           .shapes
           .where(isLibvisioSoftEdgesPlate),
       hasLength(1),
-      reason: 'dir 2 would collapse to centre FillPattern 40',
+      reason: 'dir 2 is MS bottom-left; FillPattern 38 clips to a circle',
+    );
+  });
+
+  test('FillGradientDir 8–12 rectangular corners bake; 10 stays native', () {
+    VsdxShape box(int id, int? dir) => VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2.6,
+          height: 1.6,
+          fill: VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              type: VsdxGradientType.rectangular,
+              dir: dir,
+              stops: const <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 1, color: VsdxColor.white),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0),
+        );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(1, 10)), isFalse,
+        reason: 'FillPattern 35 is centre rectangular');
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(2, null)), isFalse,
+        reason: 'default rectangular dir is 10');
+    for (final dir in <int>[8, 9, 11, 12]) {
+      expect(
+        shapeNeedsLibvisioGeometrySoftEdgesBake(box(dir, dir)),
+        isTrue,
+        reason: 'FillGradientDir $dir would collapse to centre FillPattern 35',
+      );
+    }
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 3,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2.6,
+          height: 1.6,
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              type: VsdxGradientType.radial,
+              dir: 3,
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 1, color: VsdxColor.white),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isFalse,
+      reason: 'MS FillGradientDir 3 is centre radial / FillPattern 40',
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 4,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2.6,
+          height: 1.6,
+          fill: const VsdxFill(
+            pattern: 1,
+            gradient: VsdxGradient(
+              type: VsdxGradientType.radial,
+              dir: 4,
+              stops: <VsdxGradientStop>[
+                VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+                VsdxGradientStop(position: 1, color: VsdxColor.white),
+              ],
+            ),
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isTrue,
+      reason: 'MS FillGradientDir 4 is centre-bottom; ODF 40 is box centre',
+    );
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(box(9, 9)));
+    final baked = documentForLibvisioWrite(doc);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(baked.pages.first.findShapeById(9)!.fill.hasFill, isFalse);
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another rectangular plate',
     );
   });
 

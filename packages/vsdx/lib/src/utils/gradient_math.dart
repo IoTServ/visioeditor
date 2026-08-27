@@ -6,11 +6,12 @@ import 'dart:math' as math;
 /// Concentric-rectangle steps matching ODF `draw:style=rectangular`.
 const kVisioRectangularGradientSteps = 48;
 
-/// Visio `FillGradientDir` / `LineGradientDir` 1–7 → radial origin within
-/// an axis-aligned box. `4` / `null` / unknown → centre.
+/// MS-VSDX `FillGradientDir` / `LineGradientDir` origin in an axis-aligned
+/// box (Visio Y-up: [minY] is the visual bottom).
 ///
-/// Rectangular FillPattern 35 / dirs 8–12 also use this: 10 (and 4) are
-/// centre; 1–7 keep the same corner / side presets as radial.
+/// 1–7 radial, 8–12 rectangular, 10 / 3 / `null` → centre. LibreOffice
+/// FillPattern 35 is always centre rectangular; 36–39 are the four radial
+/// corners (`_fillAndShadowProperties` `svg:cx/cy`).
 ({double x, double y}) radialGradientOrigin({
   int? dir,
   required double minX,
@@ -25,13 +26,13 @@ const kVisioRectangularGradientSteps = 48;
   final cx = left + width / 2;
   final cy = top + height / 2;
   return switch (dir) {
-    1 => (x: left, y: top),
-    2 => (x: cx, y: top),
-    3 => (x: right, y: top),
-    5 => (x: left, y: bottom),
-    6 => (x: cx, y: bottom),
-    7 => (x: right, y: bottom),
-    _ => (x: cx, y: cy), // 4 / 8–12 / null / legacy
+    1 || 8 => (x: right, y: top), // bottom-right
+    2 || 9 => (x: left, y: top), // bottom-left
+    4 => (x: cx, y: top), // radial centre-bottom
+    5 => (x: cx, y: bottom), // radial centre-top
+    6 || 11 => (x: right, y: bottom), // top-right
+    7 || 12 => (x: left, y: bottom), // top-left
+    _ => (x: cx, y: cy), // 3 / 10 / 13 / null / linear 0
   };
 }
 

@@ -56,7 +56,7 @@ void main() {
     expect(fill.pattern, 40);
     expect(fill.gradient, isNotNull);
     expect(fill.gradient!.type, VsdxGradientType.radial);
-    expect(fill.gradient!.dir, 4);
+    expect(fill.gradient!.dir, 3);
     expect(fill.gradient!.stops.first.color, const VsdxColor(0xFFF4F9FF));
     expect(fill.gradient!.stops.last.color, const VsdxColor(0xFFDFF4D5));
   });
@@ -71,7 +71,7 @@ void main() {
     expect(fill.hasGradient, isFalse);
     expect(fill.paintGradient, isNotNull);
     expect(fill.paintGradient!.type, VsdxGradientType.radial);
-    expect(fill.paintGradient!.dir, 4);
+    expect(fill.paintGradient!.dir, 3);
 
     final page = const DocumentParser()
         .parse(const VsdxWriter().emptyDocument())

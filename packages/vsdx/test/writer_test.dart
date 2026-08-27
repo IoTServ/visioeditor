@@ -7578,7 +7578,9 @@ void main() {
             pattern: 1,
             gradient: VsdxGradient(
               type: VsdxGradientType.radial,
-              dir: 4,
+              // MS-VSDX 3 is centre radial (FillPattern 40); 1/2/4/5/6/7
+              // and rectangular 8/9/11/12 bake a PNG for LibreOffice.
+              dir: 3,
               stops: [
                 VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
                 VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
@@ -7595,13 +7597,13 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('N="FillGradientDir" V="4"'), isTrue);
+    expect(pageXml.contains('N="FillGradientDir" V="3"'), isTrue);
     expect(pageXml.contains('N="FillGradientDir" V="35"'), isFalse);
     var after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.fill.gradient!.type, VsdxGradientType.radial);
-    expect(after.fill.gradient!.dir, 4);
+    expect(after.fill.gradient!.dir, 3);
 
-    // Rectangular origin preset 9 and path 13.
+    // Rectangular centre preset 10 and path 13.
     doc = parser.parse(out);
     doc = doc.replacePage(
       0,
@@ -7611,7 +7613,7 @@ void main() {
           fill: s.fill.copyWith(
             gradient: VsdxGradient(
               type: VsdxGradientType.rectangular,
-              dir: 9,
+              dir: 10,
               stops: s.fill.gradient!.stops,
             ),
           ),
@@ -7621,7 +7623,7 @@ void main() {
     out = writer.write(originalBytes: out, edited: doc);
     after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.fill.gradient!.type, VsdxGradientType.rectangular);
-    expect(after.fill.gradient!.dir, 9);
+    expect(after.fill.gradient!.dir, 10);
 
     doc = parser.parse(out);
     doc = doc.replacePage(
@@ -8887,7 +8889,7 @@ void main() {
     var pageXml = utf8.decode(pageFile.content as List<int>);
     pageXml = pageXml.replaceFirst(
       RegExp(r'<Cell N="FillGradientDir"[^/]*/>'),
-      '<Cell N="FillGradientDir" V="4" F="Inh"/>',
+      '<Cell N="FillGradientDir" V="3" F="Inh"/>',
     );
     pageXml = pageXml.replaceFirst(
       RegExp(r'<Cell N="FillGradientAngle"[^/]*/>'),
@@ -8928,7 +8930,7 @@ void main() {
               e.name.local == 'Cell' &&
               e.getAttribute('N') == 'FillGradientAngle',
         );
-    expect(dir.getAttribute('V'), '4');
+    expect(dir.getAttribute('V'), '3');
     expect(dir.getAttribute('F'), isNull);
     expect(double.parse(angle.getAttribute('V')!), closeTo(0.75, 1e-6));
     expect(angle.getAttribute('F'), isNull);

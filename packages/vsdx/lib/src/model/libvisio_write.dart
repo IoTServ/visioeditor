@@ -17,11 +17,13 @@
 /// cells, so a save bakes the same SoftEdges fill PNG at sigma 0 and
 /// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
 /// unfilled-ribbon path and LineColor covers that plate. Corner radial
-/// FillPattern 36–39 (and modern radial/path dirs 1/2/3/5/6/7) are the
+/// FillPattern 36–39 (and modern radial/path dirs 1/2/4/5/6/7 plus
+/// rectangular 8/9/11/12) are the
 /// same missing paint: `_fillAndShadowProperties` emits ODF
-/// `draw:style=radial` whose `svg:cx/cy` clips to a circle, while canvas
-/// / SVG fill the whole path with `ui.Gradient.radial` + clamp. Centre
-/// radial 40 and linear 25–34 stay native. Per-stop alpha
+/// `draw:style=radial` whose `svg:cx/cy` clips to a circle, or
+/// `draw:style=rectangular` pinned at the box centre (FillPattern 35),
+/// while canvas / SVG fill the whole path from the MS-VSDX origin.
+/// Centre radial 40 / rectangular 35 and linear 25–34 stay native. Per-stop alpha
 /// and FillForegndTrans / FillBkgndTrans on a 25–40 wash are the same
 /// missing paint: `_fillAndShadowProperties` drops `draw:opacity` and
 /// Draw ignores `librevenge:start-opacity` / `end-opacity`, so a save
@@ -50,9 +52,10 @@
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
 /// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
-/// corner radial / path dirs 1/2/3/5/6/7 are the same missing paint: the
-/// filled ribbon would become FillPattern 36–39 and Draw clips that to a
-/// circle. Per-stop
+/// corner radial / path dirs 1/2/4/5/6/7 and rectangular 8/9/11/12 are
+/// the same missing paint: the
+/// filled ribbon would become FillPattern 36–39 (clipped circle) or 35
+/// (centre Chebyshev). Per-stop
 /// alpha and LineColorTrans on a two-colour wash would otherwise stay
 /// opaque on that 25–40 ribbon. InfiniteLine
 /// samples are clipped to the shape box first — perimeter sampling otherwise
@@ -8753,7 +8756,9 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// whose opaque stops use more than two unique colours uses that same
 /// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
 /// Corner radial 36–39 clip to an ODF circle, so those two-colour
-/// washes use that plate; centre 40 stays native.
+/// washes use that plate; centre 40 stays native. Rectangular
+/// FillGradientDir 8/9/11/12 would become centre FillPattern 35,
+/// so those wash that plate too.
 /// Multiple NoFill=0 Geometry sections punch even-odd holes in that
 /// plate — libvisio emits `svg:fill-rule=evenodd`, so a two-ring frame
 /// must not bake as a solid Width×Height rectangle. Leftover source
@@ -8848,21 +8853,19 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
 
 /// Draw's ODF radial with a non-centre `svg:cx/cy` paints a circle, not
 /// the shape. Canvas / SVG fill the path (`ui.Gradient.radial` + clamp).
-/// FillPattern 36–39 are dirs 1/3/5/7; modern dir 2/6 would collapse to
-/// centre 40. Linear 25–34 and centre 40 stay native.
+/// MS-VSDX centre radial is dir 3 (FillPattern 40); 1/2/4/5/6/7 clip.
+/// Rectangular FillPattern 35 is always `svg:cx/cy=0.5`; dirs 8/9/11/12
+/// would collapse to that centre. Linear 25–34 and centre 35/40 stay
+/// native.
+bool _dirIsLibvisioNonCentreGradientOrigin(int? dir) => switch (dir) {
+      1 || 2 || 4 || 5 || 6 || 7 || 8 || 9 || 11 || 12 => true,
+      _ => false,
+    };
+
 bool _gradientHasLibvisioClippedRadial(VsdxGradient? gradient) {
   if (gradient == null || gradient.stops.length < 2) return false;
-  if (gradient.type != VsdxGradientType.radial &&
-      gradient.type != VsdxGradientType.path) {
-    return false;
-  }
-  final dir = gradient.dir;
-  return dir == 1 ||
-      dir == 2 ||
-      dir == 3 ||
-      dir == 5 ||
-      dir == 6 ||
-      dir == 7;
+  if (gradient.type == VsdxGradientType.linear) return false;
+  return _dirIsLibvisioNonCentreGradientOrigin(gradient.dir);
 }
 
 bool _fillHasLibvisioClippedRadial(VsdxFill fill) =>

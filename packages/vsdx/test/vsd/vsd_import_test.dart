@@ -1424,7 +1424,7 @@ void main() {
       for (final entry in centred) {
         final fill = entry.shape.fill;
         expect(fill.gradient!.type, VsdxGradientType.radial);
-        expect(fill.gradient!.dir, 4);
+        expect(fill.gradient!.dir, 3);
         expect(fill.gradient!.stops.first.color, fill.foreground);
         expect(fill.gradient!.stops.last.color, fill.background);
       }

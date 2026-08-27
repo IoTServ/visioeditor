@@ -6267,15 +6267,38 @@ class VsdxWriter {
   }
 
   static int _gradientDirFromType(VsdxGradientType t) => switch (t) {
-        // MS FillGradientDir / LineGradientDir canonical defaults.
+        // MS-VSDX 2.4.4.122 FillGradientDir canonical defaults.
         VsdxGradientType.linear => 0,
-        VsdxGradientType.radial => 4, // mid of 1–7 (centre-ish)
-        VsdxGradientType.rectangular => 10, // mid of 8–12
+        VsdxGradientType.radial => 3, // centre of 1–7
+        VsdxGradientType.rectangular => 10, // centre of 8–12
         VsdxGradientType.path => 13,
       };
 
-  static int _gradientDirFor(VsdxGradient g) =>
-      g.dir ?? _gradientDirFromType(g.type);
+  /// Keep [VsdxGradient.type] and `FillGradientDir` in the same MS bucket so
+  /// a rectangular wash with a radial-looking `dir` does not reopen as radial.
+  static int _gradientDirFor(VsdxGradient g) {
+    final raw = g.dir ?? _gradientDirFromType(g.type);
+    return switch (g.type) {
+      VsdxGradientType.rectangular => switch (raw) {
+          1 || 8 => 8,
+          2 || 9 => 9,
+          6 || 11 => 11,
+          7 || 12 => 12,
+          _ => 10,
+        },
+      VsdxGradientType.radial => switch (raw) {
+          1 || 8 => 1,
+          2 || 9 => 2,
+          4 => 4,
+          5 => 5,
+          6 || 11 => 6,
+          7 || 12 => 7,
+          _ => 3,
+        },
+      VsdxGradientType.path => 13,
+      VsdxGradientType.linear => 0,
+    };
+  }
 
   /// Patch text-block transform cells so TxtPin / TxtWidth / TxtAngle / margins
   /// survive a save (parser already reads them; previously only VerticalAlign
@@ -8961,9 +8984,8 @@ class VsdxWriter {
       final thisIx = useSourceIx ? g.rowIndices[cmdIx] : rowIx;
       // Rel* / CubBezTo formulas assume the original cell units; drop them
       // when the row type changes so baked V= is what Visio and libvisio see.
-      final formulas = baked || expanded
-          ? const <String, String>{}
-          : g.formulasAt(cmdIx);
+      final formulas =
+          baked || expanded ? const <String, String>{} : g.formulasAt(cmdIx);
       final row = _buildRow(cmd, thisIx, formulas: formulas);
       if (row != null) {
         rows.add(row);
