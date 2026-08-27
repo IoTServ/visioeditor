@@ -123,7 +123,9 @@
 /// like a solid triangle; canvas / SVG already stroke the hollow /
 /// V / swept heads, so those bake too. Id 8 is labelled filled but the
 /// SVG path has no `z`, so Draw shrinks it; canvas aliases 8 to 6's
-/// filled sweep. Open arrow ids become filled ribbons of the original
+/// filled sweep. Id 14's unfilled-long path lives in viewBox
+/// `110 200 200 300`, so Draw collapses it onto id 16; canvas / SVG
+/// already stroke a wide overflow triangle. Open arrow ids become filled ribbons of the original
 /// weight so they survive a CompoundType rail rewrite. Character Highlight
 /// is skipped by
 /// `readCharIX` but `TextBkgnd` is collected and painted as
@@ -11978,7 +11980,11 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// circle; canvas / SVG already stroke an open circle plus crow-foot
 /// past the endpoint. Id 30 adds filled plus-arms around a holed
 /// circle (`…zM1700 1400v100h1500…`); canvas / SVG already stroke an
-/// open circle plus a single “one” hash. Filled 1-D bakes expand to a LineWeight
+/// open circle plus a single “one” hash. Id 14 is labelled Unfilled
+/// Long Triangle but `_linePropertiesMarkerViewbox` is `110 200 200 300`
+/// while the path starts at `m100 0`; Draw paints the same silhouette
+/// as holed 16. Canvas / SVG already stroke a wide overflow triangle
+/// (`overflow=visible`). Filled 1-D bakes expand to a LineWeight
 /// ribbon — Draw clips fill to the XForm box, and factory `line`
 /// Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
@@ -11989,6 +11995,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 8:
     case 9:
     case 12:
+    case 14:
     case 19:
     case 23:
     case 24:

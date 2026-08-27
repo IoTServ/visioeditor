@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 14 now keeps the wide overflow triangle in LibreOffice.
+  `_linePropertiesMarkerViewbox` case 14 is `110 200 200 300` while
+  `_linePropertiesMarkerPath` starts at `m100 0`, so Draw painted the
+  same holed triangle as id 16. Canvas / SVG already stroke a wide
+  overflow head (`overflow=visible`). A save bakes that Geometry ribbon
+  and drops the native marker. Id 16 stays native. A second save does
+  not restack.
 - Begin/EndArrow 30 now keeps optional-one in LibreOffice.
   `_linePropertiesMarkerPath` case 30 adds filled plus-arms around a
   holed circle, so Draw painted a circle-plus while canvas / SVG

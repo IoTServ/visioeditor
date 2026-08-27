@@ -2413,6 +2413,11 @@ void main() {
     );
     expect(
       sourceSvg,
+      contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z"'),
+      reason: 'native marker 14 keeps the wide overflow triangle',
+    );
+    expect(
+      sourceSvg,
       contains('d="M 0 9 L 10 1 M 5 0 V 10"'),
       reason: 'native marker 23 keeps the open backslash tick',
     );
@@ -2469,6 +2474,11 @@ void main() {
       svg,
       isNot(contains('d="M 0 -6 L 10 16 M 5 -6 V 16"')),
       reason: 'id 9 bakes the overflow tick as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z"')),
+      reason: 'id 14 bakes the wide overflow triangle as Geometry for LibreOffice',
     );
     expect(
       svg,

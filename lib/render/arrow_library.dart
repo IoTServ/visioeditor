@@ -153,6 +153,9 @@ ArrowDescriptor _openTriangleNarrow() {
 }
 
 ArrowDescriptor _openTriangleWide() {
+  // libvisio marker 14 is labelled Unfilled Long Triangle but its viewBox
+  // (`110 200 200 300`) clips the authored path. Keep the wide overflow
+  // silhouette canvas / SVG already stroke (`overflow=visible`).
   final p = Path()
     ..moveTo(0, 0)
     ..lineTo(-0.85, -0.55)
