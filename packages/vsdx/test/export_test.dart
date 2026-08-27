@@ -2411,6 +2411,11 @@ void main() {
       contains('d="M 0 -6 L 10 16 M 5 -6 V 16"'),
       reason: 'native marker 9 keeps libvisio dimension-tick viewBox overflow',
     );
+    expect(
+      sourceSvg,
+      contains('d="M 0 9 L 10 1 M 5 0 V 10"'),
+      reason: 'native marker 23 keeps the open backslash tick',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2422,6 +2427,11 @@ void main() {
       svg,
       isNot(contains('d="M 0 -6 L 10 16 M 5 -6 V 16"')),
       reason: 'id 9 bakes the overflow tick as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 0 9 L 10 1 M 5 0 V 10"')),
+      reason: 'id 23 bakes the open backslash as Geometry for LibreOffice',
     );
     expect(
       svg,

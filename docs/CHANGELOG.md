@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 23 now keeps the open backslash tick in LibreOffice.
+  `_linePropertiesMarkerPath` case 23 closes a filled parallelogram
+  (`…z`) plus a stem, so Draw painted a solid blob while canvas / SVG
+  already stroke an open oblique plus centred stem. A save bakes that
+  Geometry ribbon and drops the native marker. A second save does not
+  restack.
 - Begin/EndArrow 9 now keeps the architectural dimension tick in
   LibreOffice. `_linePropertiesMarkerPath` case 9 closes a filled
   parallelogram (`…z`) inside viewBox `0 0 20 10` while the path runs

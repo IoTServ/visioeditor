@@ -10343,6 +10343,7 @@ void main() {
       9,
       12,
       19,
+      23,
       26,
       31,
       32,
@@ -10404,7 +10405,7 @@ void main() {
 
     var doc = parser.parse(writer.emptyDocument());
     var y = 1.0;
-    for (final id in <int>[1, 3, 7, 8, 9, 12, 19, 40]) {
+    for (final id in <int>[1, 3, 7, 8, 9, 12, 19, 23, 40]) {
       doc = doc.replacePage(
         0,
         doc.pages.first.addShape(
@@ -10427,7 +10428,7 @@ void main() {
     final after = parser.parse(
       writer.write(originalBytes: writer.emptyDocument(), edited: doc),
     );
-    for (final id in <int>[1, 3, 7, 8, 9, 12, 19, 40]) {
+    for (final id in <int>[1, 3, 7, 8, 9, 12, 19, 23, 40]) {
       final shape = after.pages.first.findShapeById(id)!;
       expect(shape.line.endArrow, 0, reason: 'id $id leftover has no marker');
       expect(shape.geometries.any((g) => !g.noFill), isTrue,
