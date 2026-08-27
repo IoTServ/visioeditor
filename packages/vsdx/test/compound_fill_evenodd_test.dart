@@ -296,4 +296,50 @@ void main() {
     expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
         reason: 'a second save must not restore two filled ellipses');
   });
+
+  test('mockup toggle keeps a solid track for LibreOffice', () {
+    final shape = VsdxShapeFactory.mockupToggle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2.2,
+      height: 1.0,
+    );
+    expect(shape.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'filled track plus thumb evenodd into a hole in Draw');
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [shape],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.mockupToggle(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2.2,
+          height: 1.0,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'a second save must not restore a filled thumb');
+  });
 }

@@ -5646,15 +5646,20 @@ abstract final class VsdxShapeFactory {
           EllipticalArcTo(x: 0, y: r, controlX: 0, controlY: 0),
           EllipticalArcTo(x: r, y: h, controlX: 0, controlY: h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          EllipseCmd(
-              cx: 0.72 * w,
-              cy: r,
-              aX: 0.72 * w + 0.35 * r,
-              aY: r,
-              bX: 0.72 * w,
-              bY: r + 0.35 * r),
-        ]),
+        // Thumb used to be NoFill=0, which evenodd-punched a hole through the
+        // track in canvas, SVG and libvisio `_fillAndShadowProperties`.
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: 0.72 * w,
+                cy: r,
+                aX: 0.72 * w + 0.35 * r,
+                aY: r,
+                bX: 0.72 * w,
+                bY: r + 0.35 * r),
+          ],
+        ),
       ],
       fill: fill,
       line: line,

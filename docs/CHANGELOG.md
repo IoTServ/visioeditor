@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mockup toggles now keep a solid track in LibreOffice.
+  A `NoFill=0` thumb inside a filled capsule becomes one evenodd path
+  in canvas, SVG and libvisio `_fillAndShadowProperties`
+  (`svg:fill-rule=evenodd`), so Draw punched a hole. The factory now
+  fills the track and strokes the thumb. A second save does not restore
+  a filled thumb.
 - Floorplan plants now keep a solid foliage disc in LibreOffice.
   Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
