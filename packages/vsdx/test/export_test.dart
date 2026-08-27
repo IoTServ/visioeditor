@@ -2434,6 +2434,14 @@ void main() {
       )),
       reason: 'native start crow-foot uses the reversed libvisio anchor',
     );
+    expect(
+      sourceSvg,
+      matches(RegExp(
+        r'<marker id="arrow-end-[^"]+"[^>]*refX="0"[^>]*>'
+        r'<path d="M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9"',
+      )),
+      reason: 'native end crow-foot-plus-one uses the reversed libvisio anchor',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2468,11 +2476,10 @@ void main() {
     );
     expect(
       svg,
-      matches(RegExp(
-        r'<marker id="arrow-end-[^"]+"[^>]*refX="0"[^>]*>'
-        r'<path d="M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9"',
+      isNot(contains(
+        'd="M 0 5 L 7 1 M 0 5 L 7 5 M 0 5 L 7 9 M 9 1 V 9"',
       )),
-      reason: 'end crow-foot-plus-one uses the reversed libvisio anchor',
+      reason: 'id 28 bakes crow-foot-plus-one as Geometry for LibreOffice',
     );
   });
 

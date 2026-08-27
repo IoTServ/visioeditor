@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 28 now keeps crow-foot-plus-one in LibreOffice.
+  `_linePropertiesMarkerPath` case 28 prepends a filled bar to 27's
+  inverted triangle, so Draw painted a solid arrow while canvas / SVG
+  already stroke three lines plus a “one” hash past the endpoint. A
+  save bakes that Geometry ribbon and drops the native marker. A
+  second save does not restack.
 - Begin/EndArrow 27 now keeps the open crow-foot in LibreOffice.
   `_linePropertiesMarkerPath` case 27 is labelled Copied from LO but
   closes a filled inverted triangle, so Draw painted a solid arrow
