@@ -13,7 +13,17 @@
 library;
 
 import 'dart:math' as math;
-import 'dart:ui' as ui show FontFeature, Gradient, ImageFilter;
+import 'dart:typed_data';
+import 'dart:ui'
+    as ui
+    show
+        FontFeature,
+        Gradient,
+        Image,
+        ImageFilter,
+        ImageShader,
+        PictureRecorder,
+        TileMode;
 
 import 'package:flutter/material.dart';
 import 'package:logging/logging.dart';
@@ -127,6 +137,8 @@ class VsdxPainter extends CustomPainter {
   /// ForeignData frame. LibreOffice uses a high-quality resampler here; keep
   /// the policy explicit so platform defaults cannot make pictures blurrier.
   static const FilterQuality imageFilterQuality = FilterQuality.high;
+  static final Map<String, ui.Image> _rectangularShaderImages =
+      <String, ui.Image>{};
 
   VsdxPainter({
     required this.page,
@@ -1336,6 +1348,16 @@ class VsdxPainter extends CustomPainter {
     if (paintGradient != null) {
       final bounds = path.getBounds();
       if (bounds.isEmpty) return;
+      if (paintGradient.type == VsdxGradientType.rectangular) {
+        _drawRectangularGradientFill(
+          canvas,
+          path,
+          bounds,
+          paintGradient,
+          fillTransparency: fill.foregroundTransparency,
+        );
+        return;
+      }
       final shader = _buildGradientShader(
         paintGradient,
         bounds,
@@ -1487,7 +1509,6 @@ class VsdxPainter extends CustomPainter {
         );
       case VsdxGradientType.radial:
       case VsdxGradientType.path:
-      case VsdxGradientType.rectangular:
         final origin = radialGradientOrigin(
           dir: gradient.dir,
           minX: bounds.left,
@@ -1501,7 +1522,169 @@ class VsdxPainter extends CustomPainter {
           colors,
           stops,
         );
+      case VsdxGradientType.rectangular:
+        return _rectangularGradientShader(bounds, colors, stops, gradient.dir);
     }
+  }
+
+  /// Clip to [path] and fill concentric rectangles, matching
+  /// `rectangularGradientT` / LibreOffice `draw:style=rectangular`.
+  void _drawRectangularGradientFill(
+    Canvas canvas,
+    Path path,
+    Rect bounds,
+    VsdxGradient gradient, {
+    required double fillTransparency,
+  }) {
+    final fillAlpha = (1 - fillTransparency.clamp(0.0, 1.0));
+    final colors = <Color>[];
+    final stops = <double>[];
+    for (final s in gradient.stops) {
+      final base = _colourOrTheme(s.color, s.themeColorIndex) ?? fallbackFill;
+      final stopAlpha = (1 - s.transparency).clamp(0.0, 1.0) * fillAlpha;
+      colors.add(base.withValues(alpha: base.a * stopAlpha));
+      stops.add(s.position);
+    }
+    if (colors.isEmpty) return;
+    if (colors.length == 1) {
+      colors.add(colors.first);
+      stops.add(1.0);
+    }
+    final origin = radialGradientOrigin(
+      dir: gradient.dir,
+      minX: bounds.left,
+      minY: bounds.top,
+      width: bounds.width,
+      height: bounds.height,
+    );
+    final reachX = math.max(
+      (origin.x - bounds.left).abs(),
+      (bounds.right - origin.x).abs(),
+    );
+    final reachY = math.max(
+      (origin.y - bounds.top).abs(),
+      (bounds.bottom - origin.y).abs(),
+    );
+    if (reachX <= 1e-18 && reachY <= 1e-18) {
+      canvas.drawPath(path, Paint()..color = colors.first);
+      return;
+    }
+    canvas.save();
+    canvas.clipPath(path);
+    for (var i = kVisioRectangularGradientSteps; i >= 0; i--) {
+      final t = i / kVisioRectangularGradientSteps;
+      final color = _gradientStopColor(colors, stops, t);
+      if (t <= 1e-12) {
+        canvas.drawCircle(
+          Offset(origin.x, origin.y),
+          1e-4,
+          Paint()..color = color,
+        );
+        continue;
+      }
+      canvas.drawRect(
+        Rect.fromLTRB(
+          origin.x - t * reachX,
+          origin.y - t * reachY,
+          origin.x + t * reachX,
+          origin.y + t * reachY,
+        ),
+        Paint()..color = color,
+      );
+    }
+    canvas.restore();
+  }
+
+  /// Stretch a Chebyshev unit-square onto [bounds] for LineGradient strokes.
+  Shader? _rectangularGradientShader(
+    Rect bounds,
+    List<Color> colors,
+    List<double> stops,
+    int? dir,
+  ) {
+    const res = 96;
+    final key =
+        '$dir|'
+        '${[for (final c in colors) '${c.a},${c.r},${c.g},${c.b}'].join(';')}|'
+        '${stops.join(',')}';
+    ui.Image image;
+    try {
+      image = _rectangularShaderImages.putIfAbsent(key, () {
+        final recorder = ui.PictureRecorder();
+        final canvas = Canvas(
+          recorder,
+          Rect.fromLTWH(0, 0, res.toDouble(), res.toDouble()),
+        );
+        final origin = radialGradientOrigin(
+          dir: dir,
+          minX: 0,
+          minY: 0,
+          width: 1,
+          height: 1,
+        );
+        final ox = origin.x * res;
+        final oy = (1 - origin.y) * res;
+        final reachX = math.max(origin.x, 1 - origin.x) * res;
+        final reachY = math.max(origin.y, 1 - origin.y) * res;
+        for (var i = kVisioRectangularGradientSteps; i >= 0; i--) {
+          final t = i / kVisioRectangularGradientSteps;
+          final color = _gradientStopColor(colors, stops, t);
+          if (t <= 1e-12) {
+            canvas.drawCircle(Offset(ox, oy), 0.5, Paint()..color = color);
+            continue;
+          }
+          canvas.drawRect(
+            Rect.fromLTRB(
+              ox - t * reachX,
+              oy - t * reachY,
+              ox + t * reachX,
+              oy + t * reachY,
+            ),
+            Paint()..color = color,
+          );
+        }
+        final picture = recorder.endRecording();
+        final img = picture.toImageSync(res, res);
+        picture.dispose();
+        return img;
+      });
+    } catch (_) {
+      return null;
+    }
+    final sx = bounds.width / res;
+    final sy = -bounds.height / res;
+    final mat = Float64List.fromList(<double>[
+      sx,
+      0,
+      0,
+      0,
+      0,
+      sy,
+      0,
+      0,
+      0,
+      0,
+      1,
+      0,
+      bounds.left,
+      bounds.bottom,
+      0,
+      1,
+    ]);
+    return ui.ImageShader(image, ui.TileMode.clamp, ui.TileMode.clamp, mat);
+  }
+
+  Color _gradientStopColor(List<Color> colors, List<double> stops, double t) {
+    final u = t.clamp(0.0, 1.0);
+    if (u <= stops.first) return colors.first;
+    if (u >= stops.last) return colors.last;
+    for (var i = 1; i < stops.length; i++) {
+      if (u > stops[i]) continue;
+      final span = stops[i] - stops[i - 1];
+      final f = span.abs() < 1e-12 ? 0.0 : (u - stops[i - 1]) / span;
+      return Color.lerp(colors[i - 1], colors[i], f)!;
+    }
+    return colors.last;
   }
 
   void _drawReflection(

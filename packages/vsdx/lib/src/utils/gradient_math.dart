@@ -3,8 +3,14 @@ library;
 
 import 'dart:math' as math;
 
+/// Concentric-rectangle steps matching ODF `draw:style=rectangular`.
+const kVisioRectangularGradientSteps = 48;
+
 /// Visio `FillGradientDir` / `LineGradientDir` 1–7 → radial origin within
 /// an axis-aligned box. `4` / `null` / unknown → centre.
+///
+/// Rectangular FillPattern 35 / dirs 8–12 also use this: 10 (and 4) are
+/// centre; 1–7 keep the same corner / side presets as radial.
 ({double x, double y}) radialGradientOrigin({
   int? dir,
   required double minX,
@@ -25,14 +31,47 @@ import 'dart:math' as math;
     5 => (x: left, y: bottom),
     6 => (x: cx, y: bottom),
     7 => (x: right, y: bottom),
-    _ => (x: cx, y: cy), // 4 / null / legacy
+    _ => (x: cx, y: cy), // 4 / 8–12 / null / legacy
   };
 }
 
-/// Sample canvas / SVG `_buildGradientShader` at a point in the same
-/// user-space inches (Y-up). Linear uses the box centre ± 0.6×longest side
-/// along [angleRad]; radial / rectangular / path use [radialGradientOrigin]
-/// and the same radius.
+/// Chebyshev / box parameter for ODF rectangular (FillPattern 35).
+///
+/// `t=0` at [radialGradientOrigin], `t=1` at the farthest axis-aligned
+/// edge. Mid-side and corner of a concentric rectangle share the same `t`,
+/// unlike a radial disc.
+double rectangularGradientT(
+  double x,
+  double y, {
+  required double minX,
+  required double minY,
+  required double width,
+  required double height,
+  int? dir,
+}) {
+  final origin = radialGradientOrigin(
+    dir: dir,
+    minX: minX,
+    minY: minY,
+    width: width,
+    height: height,
+  );
+  final left = minX;
+  final right = minX + width;
+  final top = minY;
+  final bottom = minY + height;
+  final reachX = math.max((origin.x - left).abs(), (right - origin.x).abs());
+  final reachY = math.max((origin.y - top).abs(), (bottom - origin.y).abs());
+  final tx = reachX <= 1e-18 ? 0.0 : (x - origin.x).abs() / reachX;
+  final ty = reachY <= 1e-18 ? 0.0 : (y - origin.y).abs() / reachY;
+  return math.max(tx, ty);
+}
+
+/// Sample canvas / SVG gradient paint at a point in the same user-space
+/// inches (Y-up). Linear uses the box centre ± 0.6×longest side along
+/// [angleRad]; radial / path use [radialGradientOrigin] and that same
+/// radius; rectangular uses Chebyshev so isolines match LibreOffice
+/// `_fillAndShadowProperties` `draw:style=rectangular`.
 ({int r, int g, int b, int a}) sampleVisioGradientRgba({
   required double x,
   required double y,
@@ -43,6 +82,7 @@ import 'dart:math' as math;
   required bool linear,
   required double angleRad,
   int? dir,
+  bool rectangular = false,
   required List<({double position, int r, int g, int b, int a})> stops,
 }) {
   final t = linear
@@ -55,16 +95,26 @@ import 'dart:math' as math;
           height: height,
           angleRad: angleRad,
         )
-      : _radialGradientT(
-          x,
-          y,
-          minX: minX,
-          minY: minY,
-          width: width,
-          height: height,
-          dir: dir,
-        );
-  return _lerpGradientStops(stops, t);
+      : rectangular
+          ? rectangularGradientT(
+              x,
+              y,
+              minX: minX,
+              minY: minY,
+              width: width,
+              height: height,
+              dir: dir,
+            )
+          : _radialGradientT(
+              x,
+              y,
+              minX: minX,
+              minY: minY,
+              width: width,
+              height: height,
+              dir: dir,
+            );
+  return lerpVisioGradientStops(stops, t);
 }
 
 double _linearGradientT(
@@ -113,7 +163,8 @@ double _radialGradientT(
   return math.sqrt(dx * dx + dy * dy) / reach;
 }
 
-({int r, int g, int b, int a}) _lerpGradientStops(
+/// Interpolate [stops] at parameter [t] (0 at start colour, 1 at end).
+({int r, int g, int b, int a}) lerpVisioGradientStops(
   List<({double position, int r, int g, int b, int a})> stops,
   double t,
 ) {

@@ -9337,6 +9337,7 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
       linear: linear,
       angleRad: angle,
       dir: dir,
+      rectangular: gradient.type == VsdxGradientType.rectangular,
       stops: stops,
     );
   };
@@ -9561,6 +9562,7 @@ List<List<Offset2D>> _softEdgesStrokeRibbonPolygons(VsdxShape shape) {
         linear: linear,
         angleRad: gradient.angleRad,
         dir: gradient.dir,
+        rectangular: gradient.type == VsdxGradientType.rectangular,
         stops: stops,
       );
     };

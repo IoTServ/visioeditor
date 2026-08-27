@@ -2658,6 +2658,71 @@ class VsdxToSvgSerializer {
     return (points: pts, closed: closed);
   }
 
+  /// ODF / FillPattern 35 concentric rectangles. SVG has no rectangular
+  /// gradient primitive, so isolines are stacked `<rect>`s in a pattern.
+  void _writeRectangularGradientPattern(
+    StringBuffer defs, {
+    required String id,
+    required VsdxGradient gradient,
+    required VsdxTheme theme,
+    required ({double minX, double minY, double width, double height}) bounds,
+    double extraTransparency = 0,
+  }) {
+    final extra = 1 - extraTransparency.clamp(0.0, 1.0);
+    final stopList = <({double position, int r, int g, int b, int a})>[];
+    for (final s in gradient.stops) {
+      final c = _resolveColor(s.color, s.themeColorIndex, theme) ??
+          const VsdxColor(0xFF000000);
+      final op = (_combinedOpacity(c, s.transparency) * extra).clamp(0.0, 1.0);
+      stopList.add((
+        position: s.position,
+        r: c.red,
+        g: c.green,
+        b: c.blue,
+        a: (op * 255).round().clamp(0, 255),
+      ));
+    }
+    if (stopList.isEmpty) {
+      defs.write('<pattern id="$id"/>');
+      return;
+    }
+    final origin = radialGradientOrigin(
+      dir: gradient.dir,
+      minX: bounds.minX,
+      minY: bounds.minY,
+      width: bounds.width,
+      height: bounds.height,
+    );
+    final ox = origin.x - bounds.minX;
+    final oy = origin.y - bounds.minY;
+    final reachX = math.max(ox.abs(), (bounds.width - ox).abs());
+    final reachY = math.max(oy.abs(), (bounds.height - oy).abs());
+    defs.write(
+      '<pattern id="$id" patternUnits="userSpaceOnUse" '
+      'x="${_n(bounds.minX)}" y="${_n(bounds.minY)}" '
+      'width="${_n(bounds.width)}" height="${_n(bounds.height)}">',
+    );
+    for (var i = kVisioRectangularGradientSteps; i >= 0; i--) {
+      final t = i / kVisioRectangularGradientSteps;
+      final c = lerpVisioGradientStops(stopList, t);
+      final hex = _hex(VsdxColor.argb(255, c.r, c.g, c.b));
+      final opacity = c.a / 255.0;
+      if (t <= 1e-12) {
+        defs.write(
+          '<circle cx="${_n(ox)}" cy="${_n(oy)}" r="0.001" '
+          'fill="$hex" fill-opacity="${_n(opacity)}"/>',
+        );
+        continue;
+      }
+      defs.write(
+        '<rect x="${_n(ox - t * reachX)}" y="${_n(oy - t * reachY)}" '
+        'width="${_n(2 * t * reachX)}" height="${_n(2 * t * reachY)}" '
+        'fill="$hex" fill-opacity="${_n(opacity)}"/>',
+      );
+    }
+    defs.write('</pattern>');
+  }
+
   String _fillAttr(
     VsdxShape shape,
     VsdxTheme theme,
@@ -2697,8 +2762,17 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
+      } else if (g.type == VsdxGradientType.rectangular) {
+        _writeRectangularGradientPattern(
+          defs,
+          id: id,
+          gradient: g,
+          theme: theme,
+          bounds: bounds,
+          extraTransparency: fill.foregroundTransparency,
+        );
       } else {
-        // Radial / rectangular / path: match canvas radial disc + FillGradientDir.
+        // Radial / path: match canvas radial disc + FillGradientDir.
         final origin = radialGradientOrigin(
           dir: g.dir,
           minX: bounds.minX,
@@ -2888,8 +2962,17 @@ class VsdxToSvgSerializer {
           'x2="${_n(cx + dx)}" y2="${_n(cy + dy)}">'
           '$stops</linearGradient>',
         );
+      } else if (g.type == VsdxGradientType.rectangular) {
+        _writeRectangularGradientPattern(
+          defs,
+          id: id,
+          gradient: g,
+          theme: theme,
+          bounds: bounds,
+          extraTransparency: line.transparency,
+        );
       } else {
-        // Radial / rectangular / path: match canvas radial disc + LineGradientDir.
+        // Radial / path: match canvas radial disc + LineGradientDir.
         final origin = radialGradientOrigin(
           dir: g.dir,
           minX: bounds.minX,

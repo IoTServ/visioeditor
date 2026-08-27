@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillPattern 35 / rectangular FillGradient now paints concentric
+  rectangles, matching LibreOffice. `_fillAndShadowProperties` emits
+  ODF `draw:style=rectangular` (`svg:cx/cy` at the box centre for id
+  35); canvas / SVG used a radial disc (`ui.Gradient.radial` + clamp)
+  so a wide box washed its short sides first while Draw kept Chebyshev
+  isolines (mid-side and corner of a concentric rectangle share a
+  colour). Sampling, SoftEdges PNG plates, canvas clip-fill and SVG
+  stacked `<rect>` patterns now use that box metric. Radial 36–40 and
+  linear 25–34 stay discs / ramps.
 - Corner radial LineGradient now strokes the full path in LibreOffice.
   Two-colour washes become a filled ribbon whose FillPattern 36–39
   `_fillAndShadowProperties` clips to an ODF circle (`svg:cx/cy` at a

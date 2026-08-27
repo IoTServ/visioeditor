@@ -14544,7 +14544,9 @@ void main() {
     expect(svg, contains('linearGradient'),
         reason: 'classic FillPattern 25–34 are linear');
     expect(svg, contains('radialGradient'),
-        reason: 'classic FillPattern 35–40 are radial');
+        reason: 'classic FillPattern 36–40 are radial');
+    expect(svg, contains('patternUnits="userSpaceOnUse"'),
+        reason: 'FillPattern 35 is ODF rectangular (concentric rects)');
     expect(
       RegExp(r'stroke-dasharray="').allMatches(svg).length,
       greaterThanOrEqualTo(22),
@@ -15346,7 +15348,9 @@ void main() {
     expect(svg, contains('<pattern'), reason: 'hatch FillPattern 2–24');
     expect(svg, contains('linearGradient'),
         reason: 'linear classic / FillGradient');
-    expect(svg, contains('radialGradient'), reason: 'FillPattern 35–40');
+    expect(svg, contains('radialGradient'), reason: 'FillPattern 36–40');
+    expect(svg, contains('patternUnits="userSpaceOnUse"'),
+        reason: 'FillPattern 35 is ODF rectangular (concentric rects)');
     expect(svg, contains('stroke-dasharray="'), reason: 'LinePattern 2–23');
     expect(svg, contains('<marker'), reason: 'BeginArrow / EndArrow');
     expect(RegExp(r'\bQ ').hasMatch(svg), isTrue, reason: 'Rounding fillets');
