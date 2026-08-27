@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- BPMN terminate events now keep the filled inner disk in LibreOffice.
+  Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched a ring. The factory now strokes the outer circle and fills
+  the inner disk. A second save does not restore two filled ellipses.
 - Begin/EndArrow 35 now keeps the filled circle-plus-bar in LibreOffice.
   `_linePropertiesMarkerPath` case 35 starts at `m-106-318` inside default
   viewBox `0 0 20 30` and closes extra plus-arms, so Draw painted the

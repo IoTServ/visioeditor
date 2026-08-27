@@ -3213,6 +3213,10 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
+    // Two NoFill=0 ellipses become one evenodd path in canvas, SVG and
+    // libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), which
+    // punches the inner disk into a ring. Outer stroke + inner fill keeps
+    // the filled terminate marker Draw will collect.
     return VsdxShape(
       id: id,
       name: name ?? 'Sheet.$id',
@@ -3221,9 +3225,13 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          EllipseCmd(cx: w / 2, cy: h / 2, aX: w, aY: h / 2, bX: w / 2, bY: 0),
-        ]),
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: w / 2, cy: h / 2, aX: w, aY: h / 2, bX: w / 2, bY: 0),
+          ],
+        ),
         VsdxGeometry(commands: <VsdxPathCommand>[
           EllipseCmd(
             cx: w / 2,
