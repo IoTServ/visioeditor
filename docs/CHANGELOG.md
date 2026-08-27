@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 8 now keeps the filled sweep in LibreOffice.
+  `_linePropertiesMarkerPath` case 8 is labelled filled but the SVG
+  path has no `z`, so Draw painted a smaller head while canvas / SVG
+  already alias 8 to id 6's closed sweep. A save bakes that Geometry
+  and drops the native marker. Factory 1-D Height=0 would clip a
+  filled polygon to the XForm box, so the head expands to a
+  LineWeight ribbon like open ids. Id 6 stays native. A second save
+  does not restack.
 - Begin/EndArrow 1, 3 and 12 now keep open heads in LibreOffice.
   `_linePropertiesMarkerPath` labels them Open but closes the SVG
   with `z` and no hole, so Draw filled a solid triangle while canvas

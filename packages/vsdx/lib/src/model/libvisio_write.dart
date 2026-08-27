@@ -121,7 +121,9 @@
 /// silhouette (id 7 reuses 19's unfilled quadratic instead of an open
 /// chevron). Open ids 1 / 3 / 12 close with `z` and Draw fills them
 /// like a solid triangle; canvas / SVG already stroke the hollow /
-/// V / swept heads, so those bake too. Open arrow ids become filled ribbons of the original
+/// V / swept heads, so those bake too. Id 8 is labelled filled but the
+/// SVG path has no `z`, so Draw shrinks it; canvas aliases 8 to 6's
+/// filled sweep. Open arrow ids become filled ribbons of the original
 /// weight so they survive a CompoundType rail rewrite. Character Highlight
 /// is skipped by
 /// `readCharIX` but `TextBkgnd` is collected and painted as
@@ -11955,15 +11957,19 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// Marker ids whose LibreOffice path is a TODO stub in
 /// `VSDContentCollector::_linePropertiesMarkerPath` (copies a sibling),
 /// or whose "complete" path is still the wrong silhouette for canvas /
-/// SVG: ids 7 and 19 share one unfilled quadratic (both already stroke
+/// SVG (ids 7 and 19 share one unfilled quadratic; both already stroke
 /// as an open V); ids 1, 3 and 12 close with `z` and Draw fills them
 /// like a solid triangle (canvas / SVG already stroke a hollow short
-/// head, an open V, and a swept open head).
+/// head, an open V, and a swept open head). Id 8 is labelled filled
+/// but omits `z`, so Draw shrinks it while canvas aliases 8 to id 6.
+/// Filled 1-D bakes expand to a LineWeight ribbon — Draw clips fill to
+/// the XForm box, and factory `line` Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
   switch (arrowId) {
     case 1:
     case 3:
     case 7:
+    case 8:
     case 12:
     case 19:
     case 26:
@@ -12514,7 +12520,13 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
             tip.y + p.x * mw * uy + p.y * mw * ux,
           ),
       ];
-      if (spec.filled) {
+      // Draw clips 1-D fill to the XForm box. Factory `line` uses
+      // Height=ΔY, so a horizontal connector is Height=0 and a filled
+      // polygon at ±arrowSize vanishes. Open heads already expand to a
+      // LineWeight ribbon; filled 1-D uses the same ribbon.
+      final collapsed1d = shape.is1D &&
+          (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9);
+      if (spec.filled && !collapsed1d) {
         if (world.length < 3) continue;
         out.add(
           VsdxGeometry(
