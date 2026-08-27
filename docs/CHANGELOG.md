@@ -592,12 +592,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   rectangle, similar ellipses on an ellipse). A save bakes that plate
   for LibreOffice. Centre radial 40 stays native. A second save does
   not restack.
-- Three-stop linear FillGradient whose ends match (BG–FG–BG) now writes
-  FillPattern 26 / 29 with the **middle** stop as FillForegnd, matching
-  libvisio's ODF `draw:style=axial` (start-color at the centre). Using
-  the first/last stops made a white–colour–white wash an all-white
-  axial in Draw. Canvas / SVG already paint the three-stop linear. A
-  three-stop linear whose ends differ still bakes a PNG.
+- Three-stop linear FillGradient / LineGradient whose ends match
+  (BG–FG–BG) now writes FillPattern 26 / 29 with the **middle** stop as
+  FillForegnd, matching libvisio's ODF `draw:style=axial` (start-color
+  at the centre). Using the first/last stops made a white–colour–white
+  wash or stroke ribbon an all-white axial in Draw. Canvas / SVG already
+  paint the three-stop linear. A three-stop linear whose ends differ
+  still bakes a PNG.
 - Centre rectangular FillPattern 35 / `FillGradientDir` 10 now keeps
   Visio Chebyshev isolines in LibreOffice. Canvas / SVG already hit
   t=1 on all four sides of a wide box; Draw's

@@ -239,6 +239,54 @@ void main() {
     expect(after.fill.background, VsdxColor.white);
   });
 
+  test('axial LineGradient ribbon writes FillPattern 26 with the centre colour',
+      () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const wash = VsdxGradient(
+      stops: [
+        VsdxGradientStop(position: 0, color: VsdxColor.white),
+        VsdxGradientStop(position: 0.5, color: mag),
+        VsdxGradientStop(position: 1, color: VsdxColor.white),
+      ],
+    );
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4,
+      height: 1,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        pattern: 1,
+        weightInches: 0.18,
+        gradient: wash,
+      ),
+    );
+    expect(libvisioGradientIsAxialWash(shape.line.gradient), isTrue);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isFalse);
+    expect(shapeNeedsLibvisioStrokeRibbon(shape), isTrue);
+    final write = libvisioShapeWrite(shape);
+    expect(write.fill.pattern, 26);
+    expect(write.fill.foreground, mag,
+        reason: 'ODF axial start-color is the centre, not the first stop');
+    expect(write.fill.background, VsdxColor.white);
+    expect(write.line.pattern, 0);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final after = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(1)!;
+    expect(after.fill.pattern, 26);
+    expect(after.fill.foreground, mag);
+    expect(after.fill.background, VsdxColor.white);
+    expect(after.line.pattern, 0);
+  });
+
   test('three-stop linear whose ends differ bakes instead of FillPattern 26',
       () {
     const fill = VsdxFill(

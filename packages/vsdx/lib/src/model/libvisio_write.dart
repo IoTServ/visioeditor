@@ -60,7 +60,10 @@
 /// that same fill PNG. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
-/// Opaque LineGradient stops with more than two unique colours cannot use
+/// A three-stop linear whose ends match (BG–FG–BG) is that same
+/// FillPattern 26 / 29 axial; FillForegnd must be the middle stop or a
+/// white–colour–white stroke ribbon becomes all-white in Draw. Opaque
+/// LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
 /// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
 /// corner radial dirs 1/2/4/5/6/7, rectangular 8/9/11/12, centre
@@ -8781,6 +8784,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// A LineGradient whose opaque stops use more than two unique colours
 /// bakes the stroke ring the same way (1-D as a 2-D ribbon plate) so
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
+/// A three-stop linear whose ends match stays the FillPattern 26 / 29
+/// ribbon (centre = FillForegnd); ends that differ still bake.
 /// Two-colour corner radial LineGradient is the same missing paint: that
 /// ribbon would be FillPattern 36–39 and Draw clips it to a circle.
 /// InfiniteLine washes clip to the shape box so that plate keeps every stop.
@@ -12520,15 +12525,28 @@ VsdxFill? _fillFromLineStroke(
     final gradient = line.gradient!;
     VsdxColor? firstColor;
     VsdxColor? lastColor;
+    VsdxColor? peakColor;
+    var peakDelta = 1.0;
     var saw = false;
+    int? edgeKey;
     for (final stop in gradient.stops) {
+      if (stop.transparency > 1 - 1e-9) continue;
       final color = _gradientStopRgbForLibvisioWrite(stop, theme);
       if (color == null) continue;
+      final key = color.value & 0x00FFFFFF;
       if (!saw) {
         firstColor = color;
+        edgeKey = key;
         saw = true;
       }
       lastColor = color;
+      if (edgeKey != null && key != edgeKey) {
+        final delta = (stop.position - 0.5).abs();
+        if (peakColor == null || delta < peakDelta) {
+          peakColor = color;
+          peakDelta = delta;
+        }
+      }
     }
     if (!saw) {
       firstColor = line.color ??
@@ -12542,13 +12560,16 @@ VsdxFill? _fillFromLineStroke(
           const VsdxColor(0xFF000000);
       lastColor = firstColor;
     }
-    return VsdxFill(
-      foreground: firstColor,
-      background: lastColor,
-      pattern: 1,
-      gradient: gradient,
-      foregroundTransparency: transparency,
-      backgroundTransparency: transparency,
+    final axial = libvisioGradientIsAxialWash(gradient);
+    return fillForLibvisioWrite(
+      VsdxFill(
+        foreground: axial ? (peakColor ?? firstColor) : firstColor,
+        background: lastColor,
+        pattern: 1,
+        gradient: gradient,
+        foregroundTransparency: transparency,
+        backgroundTransparency: transparency,
+      ),
     );
   }
   if (transparency <= 1e-9) return null;
