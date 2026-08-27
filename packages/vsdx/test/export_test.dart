@@ -2416,6 +2416,11 @@ void main() {
       contains('d="M 0 9 L 10 1 M 5 0 V 10"'),
       reason: 'native marker 23 keeps the open backslash tick',
     );
+    expect(
+      sourceSvg,
+      contains('d="M 7 1 V 9" fill="none"'),
+      reason: 'native marker 24 keeps the single CF one hash',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2432,6 +2437,11 @@ void main() {
       svg,
       isNot(contains('d="M 0 9 L 10 1 M 5 0 V 10"')),
       reason: 'id 23 bakes the open backslash as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 7 1 V 9" fill="none"')),
+      reason: 'id 24 bakes the CF one hash as Geometry for LibreOffice',
     );
     expect(
       svg,
