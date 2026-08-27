@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mockup radio buttons now keep the filled centre disc in LibreOffice.
+  Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched a ring. The factory now strokes the outer circle and fills
+  the inner disc. A second save does not restore two filled ellipses.
 - Floorplan beds now keep a solid mattress in LibreOffice.
   Two `NoFill=0` rectangles become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw

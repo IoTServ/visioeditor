@@ -158,4 +158,50 @@ void main() {
     expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
         reason: 'a second save must not restore two filled rectangles');
   });
+
+  test('mockup radio keeps a filled centre disc for LibreOffice', () {
+    final shape = VsdxShapeFactory.mockupRadio(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.8,
+      height: 1.8,
+    );
+    expect(shape.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'two filled ellipses evenodd into a ring in Draw');
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [shape],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.mockupRadio(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.8,
+          height: 1.8,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'a second save must not restore two filled ellipses');
+  });
 }

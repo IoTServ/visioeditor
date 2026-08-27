@@ -5273,10 +5273,17 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = w / 2;
     final cy = h / 2;
+    // Two NoFill=0 ellipses become one evenodd path in canvas, SVG and
+    // libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), which
+    // punches the centre into a ring. Outer stroke + inner fill keeps the
+    // selected disc Draw will collect.
     final geos = <VsdxGeometry>[
-      VsdxGeometry(commands: <VsdxPathCommand>[
-        EllipseCmd(cx: cx, cy: cy, aX: w, aY: cy, bX: cx, bY: 0),
-      ]),
+      VsdxGeometry(
+        noFill: true,
+        commands: <VsdxPathCommand>[
+          EllipseCmd(cx: cx, cy: cy, aX: w, aY: cy, bX: cx, bY: 0),
+        ],
+      ),
     ];
     if (selected) {
       geos.add(VsdxGeometry(commands: <VsdxPathCommand>[
