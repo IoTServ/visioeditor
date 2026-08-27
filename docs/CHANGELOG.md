@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Floorplan plants now keep a solid foliage disc in LibreOffice.
+  Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched the pot into a hole. The factory now fills the foliage and
+  strokes the inner disc. A second save does not restore two filled
+  ellipses.
 - Mockup progress bars now keep the filled portion in LibreOffice.
   Two `NoFill=0` rectangles become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
