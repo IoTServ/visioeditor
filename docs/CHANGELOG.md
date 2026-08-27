@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 18 now keeps the open swept head in LibreOffice.
+  `_linePropertiesMarkerPath` case 18 is the holed convex
+  `m20 0-20 40q…z` inside viewBox `0 0 20 20`, so Draw clipped the
+  quadratic bulge onto unfilled 16. Canvas / SVG already stroke 12's
+  open sweep. A save bakes that Geometry ribbon and drops the native
+  marker. Id 16 stays native. A second save does not restack.
 - Begin/EndArrow 13 now keeps the filled spear in LibreOffice.
   `_linePropertiesMarkerPath` case 13 is `m10 0-10 30h20z` inside
   viewBox `0 0 20 30`, but Draw scales that taller box into the same

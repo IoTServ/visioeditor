@@ -2428,6 +2428,11 @@ void main() {
     );
     expect(
       sourceSvg,
+      contains('d="M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z" fill="none"'),
+      reason: 'native marker 18 keeps the open swept head',
+    );
+    expect(
+      sourceSvg,
       contains('d="M 1.5 -0.5 L 10 5 L 1.5 10.5 Z"'),
       reason: 'native marker 14 keeps the wide overflow triangle',
     );
@@ -2504,6 +2509,11 @@ void main() {
       svg,
       isNot(contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="none"')),
       reason: 'id 15 bakes the open narrow triangle as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 0 0.5 L 10 5 L 0 9.5 L 2.5 5 Z" fill="none"')),
+      reason: 'id 18 bakes the open swept head as Geometry for LibreOffice',
     );
     expect(
       svg,

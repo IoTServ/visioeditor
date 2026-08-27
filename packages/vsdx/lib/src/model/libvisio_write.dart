@@ -121,7 +121,10 @@
 /// silhouette (id 7 reuses 19's unfilled quadratic instead of an open
 /// chevron). Open ids 1 / 3 / 12 close with `z` and Draw fills them
 /// like a solid triangle; canvas / SVG already stroke the hollow /
-/// V / swept heads, so those bake too. Id 8 is labelled filled but the
+/// V / swept heads, so those bake too. Id 18 is labelled Convex
+/// Unfilled (`m20 0-20 40q…z` plus a hole) inside viewBox `0 0 20 20`,
+/// so Draw clips the quadratic bulge and paints the same holed triangle
+/// as id 16; canvas / SVG already stroke 12's open sweep. Id 8 is labelled filled but the
 /// SVG path has no `z`, so Draw shrinks it; canvas aliases 8 to 6's
 /// filled sweep. Id 14's unfilled-long path lives in viewBox
 /// `110 200 200 300`, so Draw collapses it onto id 16; canvas / SVG
@@ -11967,7 +11970,10 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// SVG (ids 7 and 19 share one unfilled quadratic; both already stroke
 /// as an open V); ids 1, 3 and 12 close with `z` and Draw fills them
 /// like a solid triangle (canvas / SVG already stroke a hollow short
-/// head, an open V, and a swept open head). Id 8 is labelled filled
+/// head, an open V, and a swept open head). Id 18's convex hole lives
+/// in viewBox `0 0 20 20` while the path runs to y=40, so Draw clips
+/// it onto holed 16; canvas / SVG already stroke 12's open sweep.
+/// Id 8 is labelled filled
 /// but omits `z`, so Draw shrinks it while canvas aliases 8 to id 6.
 /// Id 9 closes a filled parallelogram inside viewBox `0 0 20 10` while
 /// the path runs to ~y=23; canvas / SVG already stroke the overflow
@@ -12009,6 +12015,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 13:
     case 14:
     case 15:
+    case 18:
     case 19:
     case 23:
     case 24:
