@@ -2579,7 +2579,7 @@ class VsdxPainter extends CustomPainter {
   };
 
   void _paintImage(Canvas canvas, VsdxShape shape, Rect bounds) {
-    final src = images.findByPart(shape.imagePartName!);
+    final src = imageForShapeRender(images, shape);
     if (src == null) {
       _paintPlaceholderBox(canvas, bounds.width, bounds.height);
       return;

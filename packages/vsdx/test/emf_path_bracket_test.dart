@@ -236,9 +236,7 @@ void main() {
 
     final saved = writer.write(originalBytes: blank, edited: document);
     final reopened = parser.parse(saved);
-    final reopenedPicture = reopened.pages.first.findShapeById(picture.id)!;
-    final reopenedImage =
-        reopened.images.findByPart(reopenedPicture.imagePartName!)!;
+    final reopenedImage = reopened.images.findByPart(part)!;
     expect(reopenedImage.bytes, payload);
     expect(parseEmfDrawing(reopenedImage.bytes), isNotNull);
   });

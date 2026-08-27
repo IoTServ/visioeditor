@@ -38,13 +38,11 @@ const _legacyUnitFieldTexts = <String>[
   'Example testing text',
 ];
 
-List<String> _visiblePageTexts(VsdxDocument document) => document
-    .pages
-    .first
-    .shapes
-    .map((shape) => shape.richText.plainText)
-    .where((text) => text.trim().isNotEmpty)
-    .toList();
+List<String> _visiblePageTexts(VsdxDocument document) =>
+    document.pages.first.shapes
+        .map((shape) => shape.richText.plainText)
+        .where((text) => text.trim().isNotEmpty)
+        .toList();
 
 Uint8List _withLegacyVisioVersion(Uint8List source, int version) {
   final bytes = Uint8List.fromList(source);
@@ -196,8 +194,7 @@ void main() {
         visit(shape);
       }
       final withArrows = shapes
-          .where((shape) =>
-              shape.line.hasBeginArrow || shape.line.hasEndArrow)
+          .where((shape) => shape.line.hasBeginArrow || shape.line.hasEndArrow)
           .toList();
       expect(withArrows, isNotEmpty);
       expect(
@@ -353,12 +350,28 @@ void main() {
               closeTo(original.line.endArrowSizeInches, 1e-12));
         }
       }
+      int synthFillPattern(VsdxShape shape) {
+        if (shape.fill.pattern == 0 || shape.fill.hasGradient) {
+          return shape.fill.pattern;
+        }
+        if (shape.geometries.any((g) => !g.noShow && !g.noFill)) {
+          return shape.fill.pattern;
+        }
+        // Writer drops leftover FillPattern when no path can collect a fill,
+        // so Edraw does not paint a Width×Height plate on 1-D / NoFill
+        // geometry. The binary model still keeps the inherited cell.
+        return 0;
+      }
+
       expect(
         <int, int>{
           for (final shape in again.pages.first.shapes)
-            shape.id: shape.fill.pattern,
+            if (!isLibvisioBakePlate(shape)) shape.id: shape.fill.pattern,
         },
-        fillPatterns,
+        <int, int>{
+          for (final shape in result.document.pages.first.shapes)
+            shape.id: synthFillPattern(shape),
+        },
       );
       expect(
         again.pages.first.shapes.where((s) => s.is1D).any((s) => s.height < 0),
@@ -408,8 +421,8 @@ void main() {
       expect(doc.pages, isNotEmpty);
       expect(doc.pages.first.pageSheet.pageScaleUnit, 'IN');
       expect(doc.pages.first.pageSheet.drawingScaleUnit, 'CM');
-      expect(doc.pages.every((page) => page.pageSheet.lineJumpCode == 0),
-          isTrue);
+      expect(
+          doc.pages.every((page) => page.pageSheet.lineJumpCode == 0), isTrue);
       String? plainOf(VsdxShape s) =>
           s.richText.runs.isNotEmpty ? s.richText.plainText : s.text;
       final texts = <String>[];
@@ -420,6 +433,7 @@ void main() {
           walk(c);
         }
       }
+
       for (final s in doc.pages.first.shapes) {
         walk(s);
       }
@@ -499,6 +513,7 @@ void main() {
             walk(child);
           }
         }
+
         for (final page in document.pages) {
           for (final shape in page.shapes) {
             walk(shape);
@@ -654,6 +669,7 @@ void main() {
           index(child);
         }
       }
+
       for (final shape in reopened6.pages.first.shapes) {
         index(shape);
       }
@@ -680,6 +696,7 @@ void main() {
           compareRows(child);
         }
       }
+
       for (final shape in parsed6.pages.first.shapes) {
         compareRows(shape);
       }
@@ -690,8 +707,8 @@ void main() {
       final beforeTrailing = parsed6.pages.first.findShapeById(38)!;
       final afterTrailing = reopened6.pages.first.findShapeById(38)!;
       expect(beforeTrailing.richText.plainText, endsWith('   '));
-      expect(afterTrailing.richText.plainText,
-          beforeTrailing.richText.plainText);
+      expect(
+          afterTrailing.richText.plainText, beforeTrailing.richText.plainText);
     });
 
     test('text fields expand Multidimensional area units', () {
@@ -718,9 +735,8 @@ void main() {
       final bytes = _loadSample('tdf154379-DrawingUnits-type.vsd');
       if (bytes == null) return;
       final shapes = parseVisio(bytes).document.pages.first.shapes;
-      final withText = shapes
-          .where((s) => s.richText.plainText.trim().isNotEmpty)
-          .toList();
+      final withText =
+          shapes.where((s) => s.richText.plainText.trim().isNotEmpty).toList();
       expect(withText, isNotEmpty);
       for (final s in withText) {
         for (final r in s.richText.runs) {
@@ -846,8 +862,8 @@ void main() {
       expect(again.pages.first.shapes.length, page.shapes.length);
       expect(again.pages.first.shapes.firstWhere((s) => s.id == 1).name,
           '"L" Room');
-      expect(again.pages.first.shapes.firstWhere((s) => s.id == 2).name,
-          'Wall');
+      expect(
+          again.pages.first.shapes.firstWhere((s) => s.id == 2).name, 'Wall');
       expect(again.pages.first.shapes.firstWhere((s) => s.id == 38).name,
           'Dimension line');
       expect(
@@ -882,9 +898,11 @@ void main() {
           .expand((s) => s.richText.runs)
           .map((r) => r.paraStyle.horizontalAlign)
           .toSet();
-      expect(aligns.contains(VsdxHorzAlign.center) ||
-          aligns.contains(VsdxHorzAlign.right) ||
-          aligns.contains(VsdxHorzAlign.left), isTrue);
+      expect(
+          aligns.contains(VsdxHorzAlign.center) ||
+              aligns.contains(VsdxHorzAlign.right) ||
+              aligns.contains(VsdxHorzAlign.left),
+          isTrue);
 
       // VSD6 ParaIX has a shorter fixed layout than VSD11. Reading it as
       // VSD11 used the flags/reserved bytes as a denormal bullet size and
@@ -938,8 +956,8 @@ void main() {
       // Dimension labels live in shape text (ANSI on VSD5/6), not Name.
       final texts =
           doc.pages.first.shapes.map((s) => s.richText.plainText).toList();
-      expect(texts.any((t) => t.contains('sq. ft.') || t.contains("'-")),
-          isTrue);
+      expect(
+          texts.any((t) => t.contains('sq. ft.') || t.contains("'-")), isTrue);
       expect(texts.any((t) => t.contains('桃') || t.contains('〸')), isFalse);
     });
 
@@ -989,8 +1007,7 @@ void main() {
       if (bytes == null) return;
       final result = parseVisio(bytes);
       final page = result.document.pages.first;
-      final withCtrl =
-          page.shapes.where((s) => s.controls.isNotEmpty).toList();
+      final withCtrl = page.shapes.where((s) => s.controls.isNotEmpty).toList();
       expect(withCtrl, isNotEmpty);
       final c0 = withCtrl.first.controls.first;
       expect(c0.x.isFinite, isTrue);
@@ -1001,7 +1018,8 @@ void main() {
           page.shapes.where((s) => s.userProperties.isNotEmpty).toList();
       expect(withProp, isNotEmpty);
       final wall = withProp.firstWhere(
-        (s) => s.userProperties.any((p) => p.label?.contains('Thickness') == true),
+        (s) =>
+            s.userProperties.any((p) => p.label?.contains('Thickness') == true),
         orElse: () => withProp.first,
       );
       expect(
@@ -1014,7 +1032,8 @@ void main() {
       );
 
       final again = const DocumentParser().parse(result.originalBytes);
-      final againShape = again.pages.first.shapes.firstWhere((s) => s.id == wall.id);
+      final againShape =
+          again.pages.first.shapes.firstWhere((s) => s.id == wall.id);
       expect(againShape.controls, isNotEmpty);
       expect(againShape.userProperties, isNotEmpty);
       expect(
@@ -1034,6 +1053,7 @@ void main() {
           walk(c, fn);
         }
       }
+
       final withScratch = <VsdxShape>[];
       final withUser = <VsdxShape>[];
       final withAct = <VsdxShape>[];
@@ -1052,13 +1072,13 @@ void main() {
 
       final again = const DocumentParser().parse(result.originalBytes);
       final sid = withScratch.first.id;
-      final againShape =
-          again.pages.first.shapes.expand((s) sync* {
-            yield s;
-            for (final c in s.children) {
-              yield c;
-            }
-          }).firstWhere((s) => s.id == sid, orElse: () => again.pages.first.shapes.first);
+      final againShape = again.pages.first.shapes.expand((s) sync* {
+        yield s;
+        for (final c in s.children) {
+          yield c;
+        }
+      }).firstWhere((s) => s.id == sid,
+          orElse: () => again.pages.first.shapes.first);
       expect(againShape.scratch, isNotEmpty);
     });
 
@@ -1073,6 +1093,7 @@ void main() {
             walk(c);
           }
         }
+
         for (final s in result.document.pages.first.shapes) {
           walk(s);
         }
@@ -1085,6 +1106,7 @@ void main() {
             walkAgain(c);
           }
         }
+
         for (final s in again.pages.first.shapes) {
           walkAgain(s);
         }
@@ -1289,7 +1311,8 @@ void main() {
       final page = result.document.pages.first;
       expect(page.shapes, isNotEmpty);
       final first = page.shapes.first;
-      final moved = first.copyWith(pinX: first.pinX + 0.5, pinY: first.pinY + 0.25);
+      final moved =
+          first.copyWith(pinX: first.pinX + 0.5, pinY: first.pinY + 0.25);
       final editedPage = page.copyWith(
         shapes: [
           moved,
@@ -1302,8 +1325,8 @@ void main() {
         edited: edited,
       );
       final again = const DocumentParser().parse(saved);
-      final againFirst = again.pages.first.shapes
-          .firstWhere((s) => s.id == first.id);
+      final againFirst =
+          again.pages.first.shapes.firstWhere((s) => s.id == first.id);
       expect(againFirst.pinX, closeTo(moved.pinX, 1e-4));
       expect(againFirst.pinY, closeTo(moved.pinY, 1e-4));
     });
@@ -1349,8 +1372,8 @@ void main() {
     test('resolves page name and TextXForm when present', () {
       final named = _loadSample('tdf76829-datetime-format.vsd') ??
           (File('../../third_party/libvisio/src/test/data/'
-                  'tdf76829-datetime-format.vsd')
-              .existsSync()
+                      'tdf76829-datetime-format.vsd')
+                  .existsSync()
               ? File('../../third_party/libvisio/src/test/data/'
                       'tdf76829-datetime-format.vsd')
                   .readAsBytesSync()
@@ -1446,8 +1469,8 @@ void main() {
           final afterStop = after.fill.gradient!.stops[i];
           expect(afterStop.position, closeTo(beforeStop.position, 1e-9));
           expect(afterStop.color, beforeStop.color);
-          expect(afterStop.transparency,
-              closeTo(beforeStop.transparency, 1e-9));
+          expect(
+              afterStop.transparency, closeTo(beforeStop.transparency, 1e-9));
         }
       }
     });
@@ -1499,6 +1522,7 @@ void main() {
           walk(c);
         }
       }
+
       for (final s in doc.pages.first.shapes) {
         walk(s);
       }
@@ -1589,6 +1613,7 @@ void main() {
           walk(c);
         }
       }
+
       for (final s
           in const VsdDocumentParser().parse(bytes).pages.first.shapes) {
         walk(s);
@@ -1613,6 +1638,7 @@ void main() {
           walk(c);
         }
       }
+
       for (final p in doc.pages) {
         for (final s in p.shapes) {
           walk(s);
@@ -1633,6 +1659,7 @@ void main() {
           walk2(c);
         }
       }
+
       for (final s in reopened.pages.first.shapes) {
         walk2(s);
       }
@@ -1660,6 +1687,7 @@ void main() {
             walk(c);
           }
         }
+
         for (final s
             in const VsdDocumentParser().parse(formatLine).pages.first.shapes) {
           walk(s);
@@ -1680,6 +1708,7 @@ void main() {
           walk2(c);
         }
       }
+
       for (final s in doc.pages.first.shapes) {
         walk2(s);
       }
@@ -1700,6 +1729,7 @@ void main() {
           walk3(c);
         }
       }
+
       for (final s in reopened.pages.first.shapes) {
         walk3(s);
       }
@@ -1719,6 +1749,7 @@ void main() {
           collectXf(c);
         }
       }
+
       for (final s in unitsBefore.pages.first.shapes) {
         collectXf(s);
       }
@@ -1736,6 +1767,7 @@ void main() {
           verifyXf(c);
         }
       }
+
       for (final s in unitsAfter.pages.first.shapes) {
         verifyXf(s);
       }

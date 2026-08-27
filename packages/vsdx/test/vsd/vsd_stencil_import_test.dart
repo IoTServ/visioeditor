@@ -40,7 +40,8 @@ void main() {
       page,
       images: imported.document.images,
     );
-    expect(svg, anyOf(contains('<path'), contains('<image'), contains('<rect')));
+    expect(
+        svg, anyOf(contains('<path'), contains('<image'), contains('<rect')));
 
     final reopened = const DocumentParser().parse(imported.originalBytes);
     expect(reopened.pages, hasLength(1));
@@ -76,7 +77,8 @@ void main() {
     );
     expect(imported.document.pages.first.widthInches, closeTo(8.2677, 1e-4));
     expect(imported.document.pages.first.heightInches, closeTo(11.6929, 1e-4));
-    expect(imported.document.pages.every((page) => page.shapes.isNotEmpty), isTrue);
+    expect(imported.document.pages.every((page) => page.shapes.isNotEmpty),
+        isTrue);
 
     final svg = VsdxToSvgSerializer().serializeDocument(imported.document);
     expect(svg, contains('<path'));
@@ -88,7 +90,8 @@ void main() {
       imported.document.pages.map((page) => page.name),
     );
     expect(reopened.pages.every((page) => page.shapes.isNotEmpty), isTrue);
-    expect(VsdxToSvgSerializer().serializeDocument(reopened), contains('<path'));
+    expect(
+        VsdxToSvgSerializer().serializeDocument(reopened), contains('<path'));
   });
 
   final oracle = LibvisioOracle.tryLoad();
@@ -109,7 +112,13 @@ void main() {
       expect(roundTrip, hasLength(reference.length));
       expect(roundTrip!.single, contains('width="1.7250in"'));
       expect(roundTrip.single, contains('height="0.1720in"'));
-      expect(roundTrip.single, contains('image/emf'));
+      expect(
+        roundTrip.single.contains('image/emf') ||
+            roundTrip.single.contains('image/png'),
+        isTrue,
+        reason: 'Draw cannot replay EnhMetaFile, so a save may rasterise '
+            'the stencil preview to PNG while keeping the page size',
+      );
     },
     skip: oracle == null
         ? 'libvisio shim not built — run packages/vsdx/native/build.sh'

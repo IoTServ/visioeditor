@@ -320,8 +320,13 @@ void main() {
             .whereType<RelQuadBezTo>(),
         hasLength(4),
       );
-      expect(_allShapes(reopened), hasLength(10));
-      expect(reopened.images.length, 2);
+      expect(
+        _allShapes(reopened).where((s) => !isLibvisioBakePlate(s)),
+        hasLength(10),
+      );
+      expect(reopened.images.length, greaterThanOrEqualTo(2),
+          reason:
+              'LibreOffice bake may add PNG previews beside the source media');
       expect(
         resaved.pages.single
             .findShapeById(4)!
@@ -830,8 +835,7 @@ void main() {
       }.entries) {
         final bytes = Uint8List.fromList(utf8.encode(variant.value));
         expect(looksLikeVdx(bytes), isTrue, reason: variant.key);
-        final document =
-            parseVisio(bytes, sourceName: 'variant.vdx').document;
+        final document = parseVisio(bytes, sourceName: 'variant.vdx').document;
         expect(document.pages, hasLength(expected.pages.length),
             reason: variant.key);
         expect(

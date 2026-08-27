@@ -3533,8 +3533,37 @@ class VsdxToSvgSerializer {
     MetafileDrawing? vectorDrawing,
     int? backgroundArgb,
   })? _resolveForeignImage(VsdxShape shape) {
-    final src = _images.findByPart(shape.imagePartName ?? '');
+    final src = imageForShapeRender(_images, shape);
     if (!embedImages || src == null) return null;
+    // A BITBLT sequence still contains an embedded DIB, so
+    // rasterForRendering() would flatten every record into one image.
+    // Replay the display list when there is more than one bitmap op;
+    // a single wrapped DIB (typical Visio / OLE preview) stays a raster.
+    final foreignType = VsdxImage.foreignTypeFor(
+      mimeType: src.mimeType,
+      partName: src.partName,
+    );
+    if (foreignType == 'EnhMetaFile' ||
+        foreignType == 'MetaFile' ||
+        foreignType == 'Object') {
+      final metafileBytes = Uint8List.fromList(src.bytes);
+      final drawing = parseMetafileDrawing(
+        metafileBytes,
+        mimeType: src.mimeType,
+        partName: src.partName,
+      );
+      final bitmapOps = drawing?.ops.whereType<MetafileBitmapOp>().length ?? 0;
+      if (drawing != null && !drawing.isEmpty && bitmapOps > 1) {
+        return (
+          mime: null,
+          bytes: null,
+          vectorDrawing: drawing,
+          backgroundArgb: isOleWorkbook(metafileBytes)
+              ? libreOfficeOleWorkbookBackgroundArgb
+              : null,
+        );
+      }
+    }
     final bitmap = src.rasterForRendering();
     if (bitmap != null) {
       return (
@@ -4502,7 +4531,7 @@ class VsdxToSvgSerializer {
     VsdxShape shape, {
     required String indent,
   }) {
-    final source = _images.findByPart(shape.imagePartName ?? '');
+    final source = imageForShapeRender(_images, shape);
     final mime = source?.mimeType.toLowerCase() ?? '';
     if (mime == 'object/ole' || mime.startsWith('object/')) {
       final opacity = (1.0 - shape.imageTransparency).clamp(0.0, 1.0);

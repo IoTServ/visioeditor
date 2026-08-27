@@ -149,26 +149,26 @@ void main() {
     expect(picAfter.imageBlur, closeTo(0, 1e-6));
 
     final rectAfter = after.findShapeById(rectId)!;
-    expect(rectAfter.fill.themeForegroundIndex, ThemeSlot.accent1);
-    expect(rectAfter.fill.themeBackgroundIndex, ThemeSlot.accent3);
+    Iterable<VsdxShape> groupTree() =>
+        after.shapes.expand((s) => <VsdxShape>[s, ...s.children]);
+    expect(rectAfter.fill.pattern, 0,
+        reason: 'SoftEdgesSize is not a token; hatch composites into a PNG');
     expect(rectAfter.line.themeColorIndex, ThemeSlot.accent2);
-    expect(rectAfter.line.softEdgesInches, closeTo(0.05, 1e-6));
+    expect(rectAfter.line.softEdgesInches, 0,
+        reason: 'Draw paints the feather on a sibling PNG plate');
     expect(rectAfter.line.compoundType, 0);
-    expect(rectAfter.geometries.where((g) => !g.noLine).length, greaterThan(1));
-    expect(rectAfter.glow.enabled, isFalse,
-        reason: 'Glow on a filled stroke bakes a sibling halo');
     expect(
-      after.shapes
-          .expand((s) => <VsdxShape>[s, ...s.children])
-          .where(isLibvisioGlowPlate),
+      groupTree().where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(
+      groupTree().where(isLibvisioGlowPlate),
       hasLength(1),
     );
     expect(rectAfter.shadow.enabled, isFalse,
         reason: 'ShadowBlur is not a token; Draw paints a PNG sibling');
     expect(
-      after.shapes
-          .expand((s) => <VsdxShape>[s, ...s.children])
-          .where(isLibvisioShadowPlate),
+      groupTree().where(isLibvisioShadowPlate),
       hasLength(1),
     );
     expect(rectAfter.richText.textBlock.verticalAlign, VsdxVertAlign.top);

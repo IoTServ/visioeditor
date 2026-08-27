@@ -1202,6 +1202,31 @@ VsdxImage? _imageForLibvisioWrite(ImageRegistry images, String? part) {
       images.findByPart(part.startsWith('/') ? part.substring(1) : '/$part');
 }
 
+/// Picture bytes to paint. A LibreOffice save points [shape] at a PNG
+/// preview; the original EMF / WMF / OLE part is named on
+/// [VsdxShape.userLibvisioSourceImage] so canvas and SVG can still replay
+/// records after a round-trip.
+VsdxImage? imageForShapeRender(ImageRegistry images, VsdxShape shape) {
+  return _imageForLibvisioWrite(images, shape.libvisioSourceImagePart) ??
+      _imageForLibvisioWrite(images, shape.imagePartName);
+}
+
+/// Stamp [sourcePart] the first time a bake replaces ForeignData. Later
+/// steps in the chain (OLE unwrap then EMF→PNG) keep the authoring part.
+VsdxShape _rememberLibvisioSourceImage(VsdxShape shape, String? sourcePart) {
+  if (sourcePart == null || sourcePart.isEmpty) return shape;
+  if (shape.libvisioSourceImagePart != null) return shape;
+  return shape.copyWith(
+    userCells: <VsdxUserCell>[
+      ...shape.userCells,
+      VsdxUserCell(
+        name: VsdxShape.userLibvisioSourceImage,
+        value: sourcePart,
+      ),
+    ],
+  );
+}
+
 /// Local box of a Reflection PNG plate: the mirrored, `ReflectionSize`-clipped
 /// band shifted down by `ReflectionDist`, grown by [padInches] on every side
 /// so the blur halo and the outer stroke half are not clipped.
@@ -8286,16 +8311,19 @@ VsdxDocument bakeMetafileBitmapsForLibvisioWrite(VsdxDocument document) {
           }
         }
         if (bakedPart != null) {
-          next = shape.copyWith(
-            imagePartName: bakedPart,
-            foreignType: VsdxImage.foreignTypeFor(
-              mimeType: 'image/png',
-              partName: bakedPart,
+          next = _rememberLibvisioSourceImage(
+            shape.copyWith(
+              imagePartName: bakedPart,
+              foreignType: VsdxImage.foreignTypeFor(
+                mimeType: 'image/png',
+                partName: bakedPart,
+              ),
+              foreignCompressionType: VsdxImage.compressionTypeFor(
+                mimeType: 'image/png',
+                partName: bakedPart,
+              ),
             ),
-            foreignCompressionType: VsdxImage.compressionTypeFor(
-              mimeType: 'image/png',
-              partName: bakedPart,
-            ),
+            source.partName,
           );
           changed = true;
         }
@@ -8435,16 +8463,19 @@ VsdxDocument bakeUnsupportedBitmapsForLibvisioWrite(VsdxDocument document) {
         }
       }
       if (bakedPart != null) {
-        next = shape.copyWith(
-          imagePartName: bakedPart,
-          foreignType: VsdxImage.foreignTypeFor(
-            mimeType: 'image/png',
-            partName: bakedPart,
+        next = _rememberLibvisioSourceImage(
+          shape.copyWith(
+            imagePartName: bakedPart,
+            foreignType: VsdxImage.foreignTypeFor(
+              mimeType: 'image/png',
+              partName: bakedPart,
+            ),
+            foreignCompressionType: VsdxImage.compressionTypeFor(
+              mimeType: 'image/png',
+              partName: bakedPart,
+            ),
           ),
-          foreignCompressionType: VsdxImage.compressionTypeFor(
-            mimeType: 'image/png',
-            partName: bakedPart,
-          ),
+          source.partName,
         );
         changed = true;
       }
@@ -8576,16 +8607,19 @@ VsdxDocument bakeOlePreviewsForLibvisioWrite(VsdxDocument document) {
         }
         if (bakedPart != null) {
           final bakedImage = registry.findByPart(bakedPart)!;
-          next = shape.copyWith(
-            imagePartName: bakedPart,
-            foreignType: VsdxImage.foreignTypeFor(
-              mimeType: bakedImage.mimeType,
-              partName: bakedPart,
+          next = _rememberLibvisioSourceImage(
+            shape.copyWith(
+              imagePartName: bakedPart,
+              foreignType: VsdxImage.foreignTypeFor(
+                mimeType: bakedImage.mimeType,
+                partName: bakedPart,
+              ),
+              foreignCompressionType: VsdxImage.compressionTypeFor(
+                mimeType: bakedImage.mimeType,
+                partName: bakedPart,
+              ),
             ),
-            foreignCompressionType: VsdxImage.compressionTypeFor(
-              mimeType: bakedImage.mimeType,
-              partName: bakedPart,
-            ),
+            source.partName,
           );
           changed = true;
         }

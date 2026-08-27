@@ -987,6 +987,21 @@ class VsdxShape {
   /// across `.vsdx` saves without affecting Visio rendering.
   static const String userTooltip = 'veTooltip';
 
+  /// Original EMF / WMF / OLE / WebP part a LibreOffice bake replaced with
+  /// PNG ForeignData. Draw needs the bitmap; canvas and SVG still replay
+  /// the source when it remains in the package. Editor-owned.
+  static const String userLibvisioSourceImage = 'veLibvisioSourceImage';
+
+  /// Media part [userLibvisioSourceImage] names, or `null` when absent.
+  String? get libvisioSourceImagePart {
+    for (final c in userCells) {
+      if (c.name != userLibvisioSourceImage) continue;
+      final value = c.value?.trim() ?? '';
+      return value.isEmpty ? null : value;
+    }
+    return null;
+  }
+
   /// Stored expanded height (inches) while [collapsed], so unfold restores size.
   static const String userExpandedHeight = 'veExpandedHeight';
 
@@ -1819,7 +1834,8 @@ class VsdxShape {
       _restoreLibvisioWriteHide(userCollapsedHidden);
 
   /// Hide a covered table cell so Draw does not paint the 0.01" park box.
-  VsdxShape hideForLibvisioCovered() => _hideForLibvisioWrite(userCoveredHidden);
+  VsdxShape hideForLibvisioCovered() =>
+      _hideForLibvisioWrite(userCoveredHidden);
 
   /// Reverse [hideForLibvisioCovered] on this shape (Unmerge / layout).
   VsdxShape restoreLibvisioCoveredHidden() =>
@@ -1875,7 +1891,8 @@ class VsdxShape {
 
   VsdxShape _restoreLibvisioWriteHide(String payloadName) {
     final kids = <VsdxShape>[
-      for (final child in children) child._restoreLibvisioWriteHide(payloadName),
+      for (final child in children)
+        child._restoreLibvisioWriteHide(payloadName),
     ];
     var kidsChanged = kids.length != children.length;
     if (!kidsChanged) {
@@ -1903,12 +1920,10 @@ class VsdxShape {
     final hideText = parts.length > 2 && parts[2] == '1';
     final fillPat = parts.length > 3 ? int.tryParse(parts[3]) : null;
     final linePat = parts.length > 4 ? int.tryParse(parts[4]) : null;
-    final imgW = parts.length > 5 && parts[5] != '-'
-        ? double.tryParse(parts[5])
-        : null;
-    final imgH = parts.length > 6 && parts[6] != '-'
-        ? double.tryParse(parts[6])
-        : null;
+    final imgW =
+        parts.length > 5 && parts[5] != '-' ? double.tryParse(parts[5]) : null;
+    final imgH =
+        parts.length > 6 && parts[6] != '-' ? double.tryParse(parts[6]) : null;
     final geos = <VsdxGeometry>[
       for (var i = 0; i < geometries.length; i++)
         geometries[i].copyWith(

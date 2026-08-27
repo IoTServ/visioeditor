@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Saving no longer deletes the original EMF / WMF / OLE media a LibreOffice
+  bake replaced with a PNG. `documentForLibvisioWrite` still repoints the
+  picture at a `ForeignType=Bitmap` preview so Draw does not fill Blue 2,
+  but the writer records the source on `User.veLibvisioSourceImage` and
+  keeps that part plus its page relationship. A second save and
+  `images.findByPart` still replay the vector records; replaceImage and
+  delete-picture still prune unused media. Canvas and SVG prefer the
+  source when it is present. SVG keeps a multi-record BITBLT display list
+  instead of flattening it to the wrapped DIB `rasterForRendering`
+  would extract.
 - Radiation signs now keep a solid centre disc in LibreOffice.
   Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw

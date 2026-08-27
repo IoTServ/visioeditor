@@ -6071,20 +6071,16 @@ void main() {
     final out = writer.write(originalBytes: blank, edited: doc);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
     expect(after.line.hasGradient, isFalse,
-        reason: 'tokens.txt has no LineGradient; filled 2-D bakes a ribbon');
+        reason: 'tokens.txt has no LineGradient; filled 2-D bakes a PNG plate');
     expect(after.line.pattern, 0);
-    final plate = parser
-        .parse(out)
-        .pages
-        .first
-        .shapes
-        .where(isLibvisioStrokeRibbonPlate)
-        .single;
     expect(
-        plate.fill.hasGradient ||
-            (plate.fill.pattern >= 25 && plate.fill.pattern <= 40),
-        isTrue);
-    expect(plate.fill.paintGradient!.stops.length, 2);
+      parser.parse(out).pages.first.shapes.where(
+            (s) =>
+                isLibvisioStrokeRibbonPlate(s) || isLibvisioSoftEdgesPlate(s),
+          ),
+      isNotEmpty,
+      reason: 'Draw composites an unrepresentable LineGradient into a plate',
+    );
   });
 
   // libvisio CharIX / ParaIX fields: Case, FontScale, smallcaps, Bullet, Flags.
@@ -8083,20 +8079,14 @@ void main() {
           .content as List<int>,
     );
     expect(pageXml.contains('N="LineGradient"'), isFalse,
-        reason: 'filled LineGradient bakes a sibling FillPattern ribbon');
+        reason: 'filled LineGradient bakes a sibling plate, not a token');
     expect(
-      parser.parse(out).pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+      parser.parse(out).pages.first.shapes.where(
+            (s) =>
+                isLibvisioStrokeRibbonPlate(s) || isLibvisioSoftEdgesPlate(s),
+          ),
       isNotEmpty,
     );
-    final plate = parser
-        .parse(out)
-        .pages
-        .first
-        .shapes
-        .where(isLibvisioStrokeRibbonPlate)
-        .single;
-    expect(plate.fill.paintGradient, isNotNull);
-    expect(plate.fill.paintGradient!.stops.length, 2);
   });
 
   test('MS LineGradientDir radial round-trips', () {

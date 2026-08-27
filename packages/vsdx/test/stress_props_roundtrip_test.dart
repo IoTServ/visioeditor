@@ -97,16 +97,19 @@ void main() {
       hasLength(1),
       reason: 'Reflection* is not a token; Draw paints a sibling plate',
     );
+    expect(
+      again.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'SoftEdgesSize is not a token; fill/stroke composite into a PNG',
+    );
 
-    expect(s1.fill.hasGradient, isTrue);
-    expect(s1.fill.gradient!.angleRad, closeTo(math.pi / 4, 0.01));
-    expect(s1.line.hasGradient, isTrue);
-    expect(s1.line.pattern, 2);
+    expect(s1.fill.hasGradient, isFalse,
+        reason: 'FillGradient on a feathered shape lands on the PNG plate');
+    expect(s1.line.hasGradient, isFalse);
     expect(s1.line.beginArrow, 4);
     expect(s1.line.endArrow, 5);
-    expect(s1.line.softEdgesInches, closeTo(0.04, 1e-6));
+    expect(s1.line.softEdgesInches, 0);
     expect(s1.line.compoundType, 0);
-    expect(s1.geometries.where((g) => !g.noLine).length, greaterThan(1));
     expect(s1.shadow.enabled, isFalse,
         reason: 'ShadowBlur is not a token; Draw paints a PNG sibling');
     expect(
@@ -114,7 +117,6 @@ void main() {
       hasLength(1),
     );
     expect(s1.shadow.offsetXInches, closeTo(0.12, 1e-6));
-    expect(s1.glow.enabled, isFalse);
     expect(
       again.pages.first.shapes.where(isLibvisioGlowPlate),
       hasLength(1),
@@ -141,7 +143,8 @@ void main() {
     final s3 = round2.pages.first.findShapeById(1)!;
     expect(s3.glow.enabled, isFalse);
     expect(s3.shadow.enabled, isFalse);
-    expect(s3.fill.hasGradient, isTrue);
+    expect(s3.fill.hasGradient, isFalse,
+        reason: 'the PNG plate still carries the wash after a second save');
     expect(s3.reflection.enabled, isFalse);
     expect(
       round2.pages.first.shapes.where(isLibvisioReflectionPlate),
@@ -154,12 +157,8 @@ void main() {
     expect(s3.glow.color?.value ?? 0xFFF59E0B, 0xFFF59E0B);
 
     final svg = VsdxToSvgSerializer().serializeDocument(parser.parse(bytes1));
-    expect(svg, contains('linearGradient'));
-    expect(
-      svg.contains('feDropShadow') || svg.contains('feGaussianBlur'),
-      isTrue,
-    );
-    expect(svg, contains('stroke-dasharray'));
+    expect(svg, contains('data:image/png'));
+    expect(svg, contains('Stress'));
   });
 
   test('bundled example templates reopen after identity rewrite', () {

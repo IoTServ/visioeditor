@@ -277,7 +277,7 @@ int _drawableCount(String svg) => RegExp(
 int _shapeCount(VsdxDocument document) {
   var total = 0;
   void walk(VsdxShape shape) {
-    total++;
+    if (!isLibvisioBakePlate(shape)) total++;
     for (final child in shape.children) {
       walk(child);
     }

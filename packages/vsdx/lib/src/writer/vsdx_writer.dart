@@ -91,6 +91,17 @@ class VsdxWriter {
     // Hops and image tone are not VSDX tokens. Materialise them so Draw
     // paints the same picture Visio shows, then patch against that model.
     final writable = documentForLibvisioWrite(edited);
+    // Media the bake rasterised into a derived PNG. The shapes now point at
+    // that PNG for Draw, so the vector source has to be carried separately or
+    // the prune below would delete it and a save would flatten the drawing.
+    final bakedSourceMedia = _mediaPartsByPage(edited);
+    for (final entry in _mediaPartsByPage(writable).entries) {
+      bakedSourceMedia[entry.key]?.removeAll(entry.value);
+    }
+    bakedSourceMedia.removeWhere((_, parts) => parts.isEmpty);
+    final allBakedSourceMedia = <String>{
+      for (final parts in bakedSourceMedia.values) ...parts,
+    };
     final pkg = VsdxPackage.open(originalBytes);
     final resolver = RelationshipResolver(pkg);
     final patched = <String, Uint8List>{}; // archive name (no slash) -> bytes
@@ -155,6 +166,10 @@ class VsdxWriter {
         patched: patched,
         ctXml: ctXml,
         markCtDirty: () => ctDirty = true,
+        sourceParts: <String>{
+          ...?bakedSourceMedia[ep.id],
+          ..._libvisioSourceImageParts(ep),
+        },
       );
       if (_patchPage(
         xml,
@@ -252,6 +267,10 @@ class VsdxWriter {
         patched: patched,
         ctXml: ctXml,
         markCtDirty: () => ctDirty = true,
+        sourceParts: <String>{
+          ...?bakedSourceMedia[ep.id],
+          ..._libvisioSourceImageParts(ep),
+        },
       );
       patched[partName] = Uint8List.fromList(
         utf8.encode(
@@ -303,6 +322,7 @@ class VsdxWriter {
       edited: writable,
       removed: removed,
       patched: patched,
+      sourceParts: allBakedSourceMedia,
     );
 
     if (ctDirty && ctXml != null) {
@@ -315,13 +335,25 @@ class VsdxWriter {
 
   /// Mark unreferenced `visio/media/*` parts for removal. Returns whether any
   /// were queued. Masters are scanned so shared stencil media is kept.
+  ///
+  /// [sourceParts] are media the authoring document still owns. A LibreOffice
+  /// bake repoints a picture at a derived PNG, which would otherwise make the
+  /// EMF / WMF / OLE / WebP it was rasterised from look unused and delete it —
+  /// a save would then destroy the vector records canvas and SVG replay.
+  /// [VsdxShape.userLibvisioSourceImage] is walked as a live reference so a
+  /// second save (when both models already point at the PNG) still keeps it.
+  /// The image registry is not kept wholesale: replaceImage / delete-picture
+  /// must still prune the orphaned part.
   bool _pruneUnreferencedMedia({
     required VsdxPackage pkg,
     required VsdxDocument edited,
     required Set<String> removed,
     required Map<String, Uint8List> patched,
+    Set<String> sourceParts = const <String>{},
   }) {
-    final referenced = <String>{};
+    final referenced = <String>{
+      for (final part in sourceParts) _noSlash(part),
+    };
     void consider(String? part) {
       if (part == null || part.isEmpty) return;
       referenced.add(_noSlash(part));
@@ -329,6 +361,7 @@ class VsdxWriter {
 
     void walk(VsdxShape s) {
       consider(s.imagePartName);
+      consider(s.libvisioSourceImagePart);
       for (final c in s.children) {
         walk(c);
       }
@@ -1254,6 +1287,48 @@ class VsdxWriter {
     return out;
   }
 
+  /// Media parts each page's pictures reference, keyed by page id.
+  ///
+  /// Diffing the authoring model against the LibreOffice-writable one names
+  /// the sources a bake replaced, per page, so each can be kept alive on the
+  /// rels part that already owned it.
+  static Map<int, Set<String>> _mediaPartsByPage(VsdxDocument document) {
+    final out = <int, Set<String>>{};
+    for (final page in document.pages) {
+      final parts = <String>{};
+      void walk(VsdxShape shape) {
+        final part = shape.imagePartName;
+        if (part != null && part.isNotEmpty) parts.add(part);
+        for (final child in shape.children) {
+          walk(child);
+        }
+      }
+
+      for (final shape in page.shapes) {
+        walk(shape);
+      }
+      out[page.id] = parts;
+    }
+    return out;
+  }
+
+  /// [VsdxShape.userLibvisioSourceImage] parts on [page], including children.
+  static Set<String> _libvisioSourceImageParts(VsdxPage page) {
+    final parts = <String>{};
+    void walk(VsdxShape shape) {
+      final source = shape.libvisioSourceImagePart;
+      if (source != null && source.isNotEmpty) parts.add(source);
+      for (final child in shape.children) {
+        walk(child);
+      }
+    }
+
+    for (final shape in page.shapes) {
+      walk(shape);
+    }
+    return parts;
+  }
+
   /// Picture shapes the writer will emit fresh `<ForeignData>` for: newly
   /// inserted ids, reparented pictures, or pictures whose media part changed
   /// ([replaceImage]).
@@ -1297,6 +1372,11 @@ class VsdxWriter {
   /// rels part, then return the `{mediaPart -> rId}` map to stamp onto the new
   /// `<ForeignData>` elements. Mutates [patched] (media bytes + rels part) and
   /// [ctXml] (a content-type default per media extension).
+  ///
+  /// [sourceParts] are media the authoring document still owns even though no
+  /// serialised shape points at them any more — the EMF / WMF / WebP a
+  /// LibreOffice bake replaced with a derived PNG. They get bytes and a
+  /// relationship so [ImageParser] finds them again after a reopen.
   Map<String, String> _prepareImageParts({
     required VsdxPackage pkg,
     required VsdxDocument edited,
@@ -1305,8 +1385,11 @@ class VsdxWriter {
     required Map<String, Uint8List> patched,
     required XmlDocument? ctXml,
     required void Function() markCtDirty,
+    Set<String> sourceParts = const <String>{},
   }) {
-    if (rebuiltImageShapes.isEmpty) return const <String, String>{};
+    if (rebuiltImageShapes.isEmpty && sourceParts.isEmpty) {
+      return const <String, String>{};
+    }
 
     final relsPart = _relsPartFor(pagePart);
     final relsNoSlash = _noSlash(relsPart);
@@ -1343,9 +1426,12 @@ class VsdxWriter {
 
     var nextRId = _maxRelId(relsXml) + 1;
     var relsDirty = false;
-    for (final s in rebuiltImageShapes) {
-      final part = s.imagePartName;
-      if (part == null) continue;
+    final parts = <String>[
+      for (final s in rebuiltImageShapes)
+        if (s.imagePartName != null) s.imagePartName!,
+      ...sourceParts,
+    ];
+    for (final part in parts) {
       if (!relByPart.containsKey(part)) {
         final rId = 'rId$nextRId';
         nextRId++;
