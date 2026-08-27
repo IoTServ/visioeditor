@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Floorplan beds now keep a solid mattress in LibreOffice.
+  Two `NoFill=0` rectangles become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched a pillow-shaped hole. The factory now fills the mattress and
+  strokes the pillow. A second save does not restore two filled
+  rectangles.
 - BPMN terminate events now keep the filled inner disk in LibreOffice.
   Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw

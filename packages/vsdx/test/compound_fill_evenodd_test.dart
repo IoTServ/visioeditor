@@ -112,4 +112,50 @@ void main() {
     expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
         reason: 'a second save must not restore two filled ellipses');
   });
+
+  test('floorplan bed keeps a solid mattress for LibreOffice', () {
+    final shape = VsdxShapeFactory.floorplanBed(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2.4,
+      height: 1.6,
+    );
+    expect(shape.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'two filled rectangles evenodd into a pillow hole in Draw');
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [shape],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.floorplanBed(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2.4,
+          height: 1.6,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'a second save must not restore two filled rectangles');
+  });
 }

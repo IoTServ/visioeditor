@@ -8161,6 +8161,10 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
+    // Two NoFill=0 rectangles become one evenodd path in canvas, SVG and
+    // libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), which
+    // punches the pillow into a mattress hole. Stroke the pillow on a
+    // filled mattress so Draw keeps the bed solid.
     return VsdxShape(
       id: id,
       name: name ?? 'Sheet.$id',
@@ -8176,13 +8180,16 @@ abstract final class VsdxShapeFactory {
           LineTo(0, h),
           LineTo(0, 0),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.15 * w, 0.7 * h),
-          LineTo(0.85 * w, 0.7 * h),
-          LineTo(0.85 * w, 0.9 * h),
-          LineTo(0.15 * w, 0.9 * h),
-          LineTo(0.15 * w, 0.7 * h),
-        ]),
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0.15 * w, 0.7 * h),
+            LineTo(0.85 * w, 0.7 * h),
+            LineTo(0.85 * w, 0.9 * h),
+            LineTo(0.15 * w, 0.9 * h),
+            LineTo(0.15 * w, 0.7 * h),
+          ],
+        ),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(0, 0.55 * h),
           LineTo(w, 0.55 * h),
