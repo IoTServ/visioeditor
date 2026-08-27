@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 13 now keeps the filled spear in LibreOffice.
+  `_linePropertiesMarkerPath` case 13 is `m10 0-10 30h20z` inside
+  viewBox `0 0 20 30`, but Draw scales that taller box into the same
+  marker slot as filled 4, so the long triangle collapsed. Canvas /
+  SVG already fill a 1.4-reach spear. A save bakes that Geometry
+  ribbon (Height=0 1-D would clip a filled polygon) and drops the
+  native marker. Id 4 stays native. A second save does not restack.
 - Begin/EndArrow 15 now keeps the open narrow triangle in LibreOffice.
   `_linePropertiesMarkerPath` case 15 is the holed sibling of 2's
   `m10 0-10 10h20z` triangle inside viewBox `0 0 20 10`, so Draw

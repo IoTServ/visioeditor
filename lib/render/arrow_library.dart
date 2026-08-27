@@ -448,8 +448,9 @@ ArrowDescriptor _openArrowSwept() {
 }
 
 ArrowDescriptor _spear() {
-  // libvisio marker 13 is a 20-by-30 filled long triangle. Keep the 1.4
-  // endpoint reach used by marker sizing and preserve its 1:3 half-width.
+  // libvisio marker 13 is a 20-by-30 filled long triangle, but Draw scales
+  // that taller viewBox into id 4's marker slot. Keep the 1.4 endpoint
+  // reach used by marker sizing and preserve its 1:3 half-width.
   final p = Path()
     ..moveTo(0, 0)
     ..lineTo(-1.4, -1.4 / 3)

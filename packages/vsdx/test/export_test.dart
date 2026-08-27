@@ -2413,6 +2413,11 @@ void main() {
     );
     expect(
       sourceSvg,
+      contains('d="M 0 1.667 L 10 5 L 0 8.333 Z" fill="#'),
+      reason: 'native marker 13 keeps the filled spear',
+    );
+    expect(
+      sourceSvg,
       contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="#'),
       reason: 'native marker 2 keeps the filled narrow triangle',
     );
@@ -2484,6 +2489,11 @@ void main() {
       svg,
       isNot(contains('d="M 0 -6 L 10 16 M 5 -6 V 16"')),
       reason: 'id 9 bakes the overflow tick as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 0 1.667 L 10 5 L 0 8.333 Z" fill="#')),
+      reason: 'id 13 bakes the filled spear as Geometry for LibreOffice',
     );
     expect(
       svg,
