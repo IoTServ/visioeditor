@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Hatch FillBkgndTrans now keeps opaque strokes in LibreOffice.
+  `_fillAndShadowProperties` hatch-solid uses
+  `draw:opacity = 1 - max(fg,bg)`, so a faded FillBkgnd with opaque
+  hatch lines still faded the strokes (magenta became pink on white).
+  Canvas / SVG only fade the gaps. A save freezes FillBkgnd toward
+  white (and composites strokes over that gap) with Trans=0. Hollow
+  (`FillBkgndTrans=1`) and fully opaque hatches stay native. A second
+  save does not restack.
 - FillGradient / LineGradient stop **positions** now keep their authored
   inset in LibreOffice. FillPattern 25–40 interpolates two colours across
   the whole box (axial 26 / 29 always peaks at the centre); `FillGradient`

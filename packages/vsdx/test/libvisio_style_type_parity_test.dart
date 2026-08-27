@@ -7089,6 +7089,36 @@ void main() {
       isFalse,
       reason: 'hollow opaque strokes already map to hatch-solid=false',
     );
+    expect(
+      fillNeedsLibvisioHatchTransBake(
+        const VsdxFill(
+          foreground: mag,
+          background: blue,
+          pattern: 6,
+          backgroundTransparency: 0.5,
+        ),
+      ),
+      isTrue,
+      reason: 'partial FillBkgndTrans would fade opaque hatch strokes',
+    );
+    final fadedBg = fillHatchTransForLibvisioWrite(
+      const VsdxFill(
+        foreground: mag,
+        background: blue,
+        pattern: 6,
+        backgroundTransparency: 0.5,
+      ),
+    );
+    expect(fadedBg.pattern, 6);
+    expect(fadedBg.foregroundTransparency, closeTo(0, 1e-9));
+    expect(fadedBg.backgroundTransparency, closeTo(0, 1e-9));
+    expect(fadedBg.foreground?.value, mag.value,
+        reason: 'opaque hatch lines stay FillForegnd');
+    expect(
+      fadedBg.background?.value,
+      colourForLibvisioAlpha(blue, 0.5).value,
+    );
+    expect(fillNeedsLibvisioHatchTransBake(fadedBg), isFalse);
 
     const slot = ThemeSlot.accent2;
     final themeFg = fillHatchTransForLibvisioWrite(
@@ -7164,6 +7194,55 @@ void main() {
           ?.value,
       after.fill.foreground?.value,
       reason: 'a second save must not restack hatch FillForegndTrans',
+    );
+
+    var bgDoc = parser.parse(blank);
+    bgDoc = bgDoc.replacePage(
+      0,
+      bgDoc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3,
+          height: 2,
+          name: 'HatchBgFade',
+          fill: const VsdxFill(
+            foreground: mag,
+            background: blue,
+            pattern: 6,
+            backgroundTransparency: 0.5,
+          ),
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
+    final bgSaved = writer.write(originalBytes: blank, edited: bgDoc);
+    final bgAfter = parser.parse(bgSaved).pages.first.findShapeById(1)!;
+    expect(bgAfter.fill.pattern, 6);
+    expect(bgAfter.fill.foregroundTransparency, closeTo(0, 1e-9));
+    expect(bgAfter.fill.backgroundTransparency, closeTo(0, 1e-9));
+    expect(bgAfter.fill.foreground?.value, mag.value);
+    expect(
+      bgAfter.fill.background?.value,
+      colourForLibvisioAlpha(blue, 0.5).value,
+    );
+    expect(
+      parser
+          .parse(
+            writer.write(
+              originalBytes: bgSaved,
+              edited: parser.parse(bgSaved),
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(1)!
+          .fill
+          .background
+          ?.value,
+      bgAfter.fill.background?.value,
+      reason: 'a second save must not restack hatch FillBkgndTrans',
     );
   });
 

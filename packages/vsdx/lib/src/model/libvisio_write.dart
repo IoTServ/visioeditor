@@ -48,13 +48,15 @@
 /// bakes that PNG too — including a fully transparent stop that 25–40
 /// would skip, stretching the remaining opaque colours from the box
 /// edge. Two-colour opaque washes stay 25–40. FillPattern 2–24 hatch
-/// FillForegndTrans is the same missing paint: `_fillAndShadowProperties`
-/// drops `draw:opacity` when FillBkgndTrans is 1 and otherwise fades the
-/// whole hatch-solid box from `max(fg,bg)`, so Draw keeps hard strokes
-/// or turns an opaque FillBkgnd into glass while canvas / SVG only fade
-/// the hatch lines. A save freezes those cells into FillForegnd /
-/// FillBkgnd (toward the hatch background, or white when the background
-/// is fully transparent) and writes Trans=0. Opaque hatches stay native.
+/// FillForegndTrans / a partial FillBkgndTrans is the same missing paint:
+/// `_fillAndShadowProperties` drops `draw:opacity` when FillBkgndTrans is 1
+/// and otherwise fades the whole hatch-solid box from `max(fg,bg)`, so
+/// Draw keeps hard strokes or turns an opaque FillBkgnd into glass —
+/// and fades opaque hatch lines when only the background is translucent
+/// — while canvas / SVG only fade the hatch lines / gaps. A save freezes
+/// those cells into FillForegnd / FillBkgnd (toward the hatch background,
+/// or white when the background is fully transparent) and writes Trans=0.
+/// Opaque hatches and hollow opaque strokes stay native.
 /// Curve
 /// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
 /// sampled so that plate follows the painted path — endpoint-only
@@ -13355,24 +13357,29 @@ VsdxDocument bakeThemeRgbCacheForLibvisioWrite(VsdxDocument document) {
   );
 }
 
-/// `true` when FillPattern 2–24 FillForegndTrans cannot survive Draw's
-/// hatch mapping. `_fillAndShadowProperties` emits `draw:fill=hatch`;
+/// `true` when FillPattern 2–24 Fill*Trans cannot survive Draw's hatch
+/// mapping. `_fillAndShadowProperties` emits `draw:fill=hatch`;
 /// FillBkgndTrans==1 becomes `hatch-solid=false` with **no**
 /// `draw:opacity`, and a solid background becomes one `draw:opacity`
-/// from `1 - max(fg,bg)` that fades the whole box.
+/// from `1 - max(fg,bg)` that fades the whole box — including opaque
+/// hatch strokes when only FillBkgndTrans is set.
 bool fillNeedsLibvisioHatchTransBake(VsdxFill fill) {
   if (libvisioHatchSpec(fill.pattern) == null) return false;
-  return fill.foregroundTransparency > 1e-9;
+  if (fill.foregroundTransparency > 1e-9) return true;
+  final bgT = fill.backgroundTransparency;
+  return bgT > 1e-9 && bgT < 1 - 1e-9;
 }
 
-/// Hatch FillForegnd / FillBkgnd Draw will paint when FillForegndTrans
-/// cannot become ODF hatch opacity.
+/// Hatch FillForegnd / FillBkgnd Draw will paint when Fill*Trans cannot
+/// become ODF hatch opacity.
 ///
 /// Hollow hatch (`FillBkgndTrans==1`) keeps the transparent background
 /// so page colour still shows through the gaps, and freezes paler
 /// strokes toward white. Solid hatch composites the strokes over
 /// FillBkgnd (then toward white when that cell is also translucent)
 /// and writes both Trans cells 0 so Draw does not fade the box.
+/// Partial FillBkgndTrans with opaque strokes freezes the same way —
+/// Draw would otherwise apply `max(fg,bg)` to the hatch colour.
 VsdxFill fillHatchTransForLibvisioWrite(
   VsdxFill fill, [
   VsdxTheme theme = VsdxTheme.empty,
@@ -13405,7 +13412,7 @@ VsdxFill fillHatchTransForLibvisioWrite(
   );
 }
 
-/// Freeze hatch FillForegndTrans into RGB cells Draw will paint.
+/// Freeze hatch Fill*Trans into RGB cells Draw will paint.
 VsdxDocument bakeHatchTransForLibvisioWrite(VsdxDocument document) {
   final theme = document.theme;
   var pagesChanged = false;
