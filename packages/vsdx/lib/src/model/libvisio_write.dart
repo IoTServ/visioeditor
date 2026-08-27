@@ -12004,7 +12004,10 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// wide as id 4 / 16. Canvas / SVG already fill / stroke a narrow
 /// head. Id 13 is a 20-by-30 filled long triangle (`m10 0-10 30h20z`)
 /// but Draw scales that taller viewBox into the same marker slot as
-/// id 4; canvas / SVG already fill a 1.4-reach spear. Filled 1-D bakes expand to a LineWeight
+/// id 4; canvas / SVG already fill a 1.4-reach spear. Id 17's holed
+/// concave `m100 0-100 200q100-50 200 0z` fits viewBox `0 0 200 200`,
+/// so Draw strokes a hollow triangle with a quadratic base bar
+/// instead of canvas `_stealthOpen`'s four-point V. Filled 1-D bakes expand to a LineWeight
 /// ribbon — Draw clips fill to the XForm box, and factory `line`
 /// Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
@@ -12020,6 +12023,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 13:
     case 14:
     case 15:
+    case 17:
     case 18:
     case 19:
     case 23:
