@@ -177,6 +177,97 @@ void main() {
     expect(svg, contains('url(#grad-'));
   });
 
+  test(
+      'axial FillGradient writes FillPattern 26 with the centre as FillForegnd',
+      () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const fill = VsdxFill(
+      pattern: 1,
+      gradient: VsdxGradient(
+        stops: [
+          VsdxGradientStop(position: 0, color: VsdxColor.white),
+          VsdxGradientStop(position: 0.5, color: mag),
+          VsdxGradientStop(position: 1, color: VsdxColor.white),
+        ],
+      ),
+    );
+    expect(libvisioGradientIsAxialWash(fill.gradient), isTrue);
+    expect(fillPatternForLibvisioWrite(fill), 26);
+    final write = fillForLibvisioWrite(fill);
+    expect(write.pattern, 26);
+    expect(write.foreground, mag,
+        reason: 'ODF axial start-color is the centre, not the first stop');
+    expect(write.background, VsdxColor.white);
+    expect(
+        shapeNeedsLibvisioGeometrySoftEdgesBake(
+          VsdxShapeFactory.rectangle(
+            id: 1,
+            pinX: 2,
+            pinY: 2,
+            width: 4,
+            height: 1,
+            fill: fill,
+            line: const VsdxLine(pattern: 0),
+          ),
+        ),
+        isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 4,
+          height: 1,
+          fill: fill,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+    );
+    final after = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(1)!;
+    expect(after.fill.pattern, 26);
+    expect(after.fill.foreground, mag);
+    expect(after.fill.background, VsdxColor.white);
+  });
+
+  test('three-stop linear whose ends differ bakes instead of FillPattern 26',
+      () {
+    const fill = VsdxFill(
+      pattern: 1,
+      gradient: VsdxGradient(
+        stops: [
+          VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 0.5, color: VsdxColor(0xFFFF0000)),
+          VsdxGradientStop(position: 1, color: VsdxColor(0xFF0000FF)),
+        ],
+      ),
+    );
+    expect(libvisioGradientIsAxialWash(fill.gradient), isFalse);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 4,
+          height: 1,
+          fill: fill,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isTrue,
+    );
+  });
+
   test('geometry-less FillPattern=1 writes 0 so Edraw cannot fill the text box',
       () {
     final shape = VsdxShapeFactory.rectangle(

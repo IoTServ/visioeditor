@@ -16,8 +16,12 @@
 /// Opaque stops with more than two unique colours cannot use those two
 /// cells, so a save bakes the same SoftEdges fill PNG at sigma 0 and
 /// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
-/// unfilled-ribbon path and LineColor covers that plate. Corner radial
-/// FillPattern 36–39 (and modern radial dirs 1/2/4/5/6/7 plus
+/// unfilled-ribbon path and LineColor covers that plate. A three-stop
+/// linear whose ends match (BG–FG–BG) is FillPattern 26 / 29
+/// (`draw:style=axial`); FillForegnd must be the middle stop — first/last
+/// are the edges, so a white–colour–white wash would otherwise become an
+/// all-white axial. A three-stop linear whose ends differ still bakes.
+/// Corner radial FillPattern 36–39 (and modern radial dirs 1/2/4/5/6/7 plus
 /// rectangular 8/9/11/12) are the
 /// same missing paint: `_fillAndShadowProperties` emits ODF
 /// `draw:style=radial` whose `svg:cx/cy` clips to a circle, or
@@ -8857,6 +8861,18 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
   if (keys.length > 2) return true;
   for (final stop in gradient.stops) {
     if (stop.transparency > 1e-9) return true;
+  }
+  // FillPattern 26/29 is ODF axial (centre = FillForegnd). A three-stop
+  // linear whose ends do not match cannot use that, and 25–34 only store
+  // two colours at the box edges.
+  if (gradient.type == VsdxGradientType.linear &&
+      keys.length == 2 &&
+      !libvisioGradientIsAxialWash(gradient)) {
+    final opaque = <VsdxGradientStop>[
+      for (final stop in gradient.stops)
+        if (stop.transparency < 1 - 1e-9) stop,
+    ];
+    if (opaque.length >= 3) return true;
   }
   return false;
 }

@@ -310,7 +310,60 @@ VsdxFill withLibvisioClassicGradient(VsdxFill fill) {
 /// token map has no `FillGradient` / `FillGradientEnabled`, so a modern
 /// two-stop fill with `FillPattern=1` becomes a solid. Writing the nearest
 /// classic id keeps Draw filling the shape while Visio still honours the
-/// `FillGradient` section when `FillGradientEnabled=1`.
+/// `FillGradient` section when `FillGradientEnabled=1`. Three-stop
+/// BG–FG–BG linears become FillPattern 26 / 29 (`draw:style=axial`).
+int? _libvisioStopColorKey(VsdxGradientStop stop) {
+  if (stop.transparency > 1 - 1e-9) return null;
+  final color = stop.color;
+  if (color != null) return color.value & 0x00FFFFFF;
+  final slot = stop.themeColorIndex;
+  if (slot == null) return null;
+  return 0x1000000 | (slot & 0xFFFFFF);
+}
+
+List<VsdxGradientStop> _libvisioOpaqueStops(List<VsdxGradientStop> stops) =>
+    <VsdxGradientStop>[
+      for (final stop in stops)
+        if (stop.transparency < 1 - 1e-9) stop,
+    ];
+
+/// libvisio FillPattern 26 / 29 (`draw:style=axial`): edges share a colour
+/// and a different colour sits at the middle. Canvas paints that as a
+/// three-stop linear (BG–FG–BG); Draw's start-color is the centre.
+bool libvisioGradientIsAxialWash(VsdxGradient? gradient) {
+  if (gradient == null || gradient.type != VsdxGradientType.linear) {
+    return false;
+  }
+  final opaque = _libvisioOpaqueStops(gradient.stops);
+  if (opaque.length < 3) return false;
+  final edge = _libvisioStopColorKey(opaque.first);
+  final last = _libvisioStopColorKey(opaque.last);
+  if (edge == null || last == null || edge != last) return false;
+  return opaque.any((stop) => _libvisioStopColorKey(stop) != edge);
+}
+
+VsdxGradientStop? _libvisioAxialEdgeStop(List<VsdxGradientStop> stops) {
+  final opaque = _libvisioOpaqueStops(stops);
+  return opaque.isEmpty ? null : opaque.first;
+}
+
+VsdxGradientStop? _libvisioAxialPeakStop(List<VsdxGradientStop> stops) {
+  final opaque = _libvisioOpaqueStops(stops);
+  if (opaque.length < 3) return null;
+  final edge = _libvisioStopColorKey(opaque.first);
+  VsdxGradientStop? best;
+  var bestDelta = 1.0;
+  for (final stop in opaque) {
+    if (_libvisioStopColorKey(stop) == edge) continue;
+    final delta = (stop.position - 0.5).abs();
+    if (best == null || delta < bestDelta) {
+      best = stop;
+      bestDelta = delta;
+    }
+  }
+  return best;
+}
+
 int? libvisioClassicPatternFor(VsdxGradient gradient) {
   switch (gradient.type) {
     case VsdxGradientType.rectangular:
@@ -327,7 +380,7 @@ int? libvisioClassicPatternFor(VsdxGradient gradient) {
     case VsdxGradientType.linear:
       break;
   }
-  if (gradient.stops.length >= 3) {
+  if (libvisioGradientIsAxialWash(gradient)) {
     final degrees = _normDegrees(gradient.angleRad * 180 / math.pi);
     return _degreeDelta(degrees, 0) <= _degreeDelta(degrees, 90) ? 26 : 29;
   }
@@ -387,15 +440,28 @@ VsdxFill fillForLibvisioWrite(VsdxFill fill) {
   var backgroundTheme = fill.themeBackgroundIndex;
   if (fill.hasGradient) {
     final stops = fill.gradient!.stops;
-    if (foreground == null && foregroundTheme == null) {
-      final stop = _libvisioWriteFillStop(stops, last: false);
-      foreground = stop?.color;
-      foregroundTheme = stop?.themeColorIndex;
-    }
-    if (background == null && backgroundTheme == null) {
-      final stop = _libvisioWriteFillStop(stops, last: true);
-      background = stop?.color;
-      backgroundTheme = stop?.themeColorIndex;
+    if (pattern == 26 || pattern == 29) {
+      final peak = _libvisioAxialPeakStop(stops);
+      final edge = _libvisioAxialEdgeStop(stops);
+      if (peak != null) {
+        foreground = peak.color;
+        foregroundTheme = peak.themeColorIndex;
+      }
+      if (edge != null) {
+        background = edge.color;
+        backgroundTheme = edge.themeColorIndex;
+      }
+    } else {
+      if (foreground == null && foregroundTheme == null) {
+        final stop = _libvisioWriteFillStop(stops, last: false);
+        foreground = stop?.color;
+        foregroundTheme = stop?.themeColorIndex;
+      }
+      if (background == null && backgroundTheme == null) {
+        final stop = _libvisioWriteFillStop(stops, last: true);
+        background = stop?.color;
+        backgroundTheme = stop?.themeColorIndex;
+      }
     }
   }
   if (pattern == fill.pattern &&
