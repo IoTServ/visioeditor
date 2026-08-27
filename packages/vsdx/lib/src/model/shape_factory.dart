@@ -5448,6 +5448,10 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
+    // Two NoFill=0 rectangles become one evenodd path in canvas, SVG and
+    // libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), which
+    // punches the 55% overlap into an inverted empty track. Stroke the
+    // full track and fill the progress so Draw keeps the bar.
     return VsdxShape(
       id: id,
       name: name ?? 'Sheet.$id',
@@ -5456,13 +5460,16 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0, 0),
-          LineTo(w, 0),
-          LineTo(w, h),
-          LineTo(0, h),
-          LineTo(0, 0),
-        ]),
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0),
+            LineTo(w, 0),
+            LineTo(w, h),
+            LineTo(0, h),
+            LineTo(0, 0),
+          ],
+        ),
         VsdxGeometry(commands: <VsdxPathCommand>[
           MoveTo(0, 0),
           LineTo(0.55 * w, 0),

@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Mockup progress bars now keep the filled portion in LibreOffice.
+  Two `NoFill=0` rectangles become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched the 55% overlap into an inverted empty track. The factory now
+  strokes the full track and fills the progress. A second save does not
+  restore two filled rectangles.
 - Mockup radio buttons now keep the filled centre disc in LibreOffice.
   Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
