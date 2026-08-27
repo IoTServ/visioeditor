@@ -6276,15 +6276,20 @@ abstract final class VsdxShapeFactory {
         VsdxGeometry(commands: <VsdxPathCommand>[
           EllipseCmd(cx: cx, cy: cy, aX: w, aY: cy, bX: cx, bY: 0),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          EllipseCmd(
-              cx: cx,
-              cy: cy,
-              aX: cx + 0.12 * w,
-              aY: cy,
-              bX: cx,
-              bY: cy + 0.12 * h),
-        ]),
+        // Inner disc used to be NoFill=0, which evenodd-punched a hole through
+        // the trefoil in canvas, SVG and libvisio `_fillAndShadowProperties`.
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: cx,
+                cy: cy,
+                aX: cx + 0.12 * w,
+                aY: cy,
+                bX: cx,
+                bY: cy + 0.12 * h),
+          ],
+        ),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(cx, cy + 0.12 * h),
           LineTo(cx, 0.92 * h),

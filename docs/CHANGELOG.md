@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Radiation signs now keep a solid centre disc in LibreOffice.
+  Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched the trefoil centre into a hole. The factory now fills the
+  disc and strokes the inner circle. A second save does not restore two
+  filled ellipses.
 - Mockup toggles now keep a solid track in LibreOffice.
   A `NoFill=0` thumb inside a filled capsule becomes one evenodd path
   in canvas, SVG and libvisio `_fillAndShadowProperties`
