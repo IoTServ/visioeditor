@@ -116,9 +116,9 @@
 /// no libvisio `CompressionType` (WebP, ICO, headerless DIB) become
 /// `image/bmp` and vanish; a save re-encodes those as PNG. A second
 /// save does not stack another PNG. Marker ids whose
-/// `_linePropertiesMarkerPath` is still a TODO stub (including id 7's
-/// Open path, which is id 19's unfilled quadratic) bake as Geometry so
-/// Draw does not reuse a sibling silhouette. Unknown
+/// `_linePropertiesMarkerPath` is still a TODO stub, plus ids 7 and 19
+/// whose shared unfilled quadratic is not the canvas V chevron, bake as
+/// Geometry so Draw does not reuse a sibling silhouette. Unknown
 /// `FillPattern` ids above 40 snap to solid `1`.
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
 /// `_lineProperties` would otherwise emit miter from LineCap. Bevel joins
@@ -10334,6 +10334,7 @@ void main() {
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {
     for (final id in <int>[
       7,
+      19,
       26,
       31,
       32,
@@ -10366,8 +10367,6 @@ void main() {
           reason: 'TODO stub $id must emit a polygon');
     }
     expect(libvisioMarkerPathIsIncomplete(4), isFalse);
-    expect(libvisioMarkerPathIsIncomplete(19), isFalse,
-        reason: 'id 19 is the unfilled quadratic libvisio treats as complete');
     expect(libvisioMarkerPathIsIncomplete(25), isFalse);
     expect(libvisioMarkerPathIsIncomplete(35), isFalse);
     expect(libvisioMarkerPathIsIncomplete(39), isFalse);
@@ -10394,6 +10393,23 @@ void main() {
       0,
       doc.pages.first.addShape(
         VsdxShapeFactory.line(
+          id: 19,
+          ax: 1,
+          ay: 1.5,
+          bx: 3,
+          by: 1.5,
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.04,
+            endArrow: 19,
+          ),
+        ),
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(
           id: 40,
           ax: 1,
           ay: 2,
@@ -10410,7 +10426,7 @@ void main() {
     final after = parser.parse(
       writer.write(originalBytes: writer.emptyDocument(), edited: doc),
     );
-    for (final id in <int>[1, 40]) {
+    for (final id in <int>[1, 19, 40]) {
       final shape = after.pages.first.findShapeById(id)!;
       expect(shape.line.endArrow, 0, reason: 'id $id leftover has no marker');
       expect(shape.geometries.any((g) => !g.noFill), isTrue,

@@ -11951,11 +11951,14 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 }
 
 /// Marker ids whose LibreOffice path is a TODO stub in
-/// `VSDContentCollector::_linePropertiesMarkerPath` (copies a sibling,
-/// or id 7's "Open" path which is id 19's unfilled quadratic).
+/// `VSDContentCollector::_linePropertiesMarkerPath` (copies a sibling),
+/// or whose "complete" path is still the wrong silhouette for canvas /
+/// SVG (ids 7 and 19 share one unfilled quadratic; both already stroke
+/// as an open V chevron here).
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
   switch (arrowId) {
     case 7:
+    case 19:
     case 26:
     case 31:
     case 32:
