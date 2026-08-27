@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 15 now keeps the open narrow triangle in LibreOffice.
+  `_linePropertiesMarkerPath` case 15 is the holed sibling of 2's
+  `m10 0-10 10h20z` triangle inside viewBox `0 0 20 10`, so Draw
+  painted it almost as wide as unfilled 16. Canvas / SVG already
+  stroke a narrow head. A save bakes that Geometry ribbon and drops
+  the native marker. Id 16 stays native. A second save does not
+  restack.
 - Begin/EndArrow 2 now keeps the filled narrow triangle in LibreOffice.
   `_linePropertiesMarkerPath` case 2 is the same `m10 0-10 10h20z`
   triangle as unfilled 15 inside viewBox `0 0 20 10`, so Draw painted

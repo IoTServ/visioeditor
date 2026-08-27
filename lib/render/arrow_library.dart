@@ -146,6 +146,8 @@ ArrowDescriptor _openTriangle() {
 }
 
 ArrowDescriptor _openTriangleNarrow() {
+  // libvisio marker 15 is the holed sibling of 2's 20×10 triangle, so Draw
+  // paints it almost as wide as id 16. Keep the narrow open head.
   final p = Path()
     ..moveTo(0, 0)
     ..lineTo(-1, -0.25)
