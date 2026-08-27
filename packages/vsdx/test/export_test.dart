@@ -2423,6 +2423,11 @@ void main() {
     );
     expect(
       sourceSvg,
+      contains('d="M 0 1 L 10 5 L 0 9 L 3 5 Z" fill="#'),
+      reason: 'native marker 5 keeps the filled concave stealth',
+    );
+    expect(
+      sourceSvg,
       contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="#'),
       reason: 'native marker 2 keeps the filled narrow triangle',
     );
@@ -2514,6 +2519,11 @@ void main() {
       svg,
       isNot(contains('d="M 0 1 L 10 5 L 0 9 Q 7 5 0 1 Z" fill="#')),
       reason: 'id 6 bakes the filled swept head as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 0 1 L 10 5 L 0 9 L 3 5 Z" fill="#')),
+      reason: 'id 5 bakes the filled stealth as Geometry for LibreOffice',
     );
     expect(
       svg,

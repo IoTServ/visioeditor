@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 5 now keeps the filled stealth head in LibreOffice.
+  `_linePropertiesMarkerPath` case 5 is `m10 0-10 20q10,-5 20,0z` inside
+  viewBox `0 0 20 20`, so Draw painted a near-equilateral filled
+  triangle (centerline solid like id 4) instead of canvas `_stealth`.
+  A save bakes that Geometry ribbon (Height=0 1-D would clip a filled
+  polygon) and drops the native marker. Id 4 stays native. A second
+  save does not restack.
 - Begin/EndArrow 17 now keeps the open stealth head in LibreOffice.
   `_linePropertiesMarkerPath` case 17 is the holed concave
   `m100 0-100 200q100-50 200 0z` inside viewBox `0 0 200 200`, so
