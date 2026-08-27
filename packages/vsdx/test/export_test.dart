@@ -2426,6 +2426,14 @@ void main() {
       contains('d="M 7 1 V 9 M 4.5 1 V 9" fill="none"'),
       reason: 'native marker 25 keeps two CF hashes',
     );
+    expect(
+      sourceSvg,
+      matches(RegExp(
+        r'<marker id="arrow-start-[^"]+"[^>]*refX="10"[^>]*>'
+        r'<path d="M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9"',
+      )),
+      reason: 'native start crow-foot uses the reversed libvisio anchor',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2455,11 +2463,8 @@ void main() {
     );
     expect(
       svg,
-      matches(RegExp(
-        r'<marker id="arrow-start-[^"]+"[^>]*refX="10"[^>]*>'
-        r'<path d="M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9"',
-      )),
-      reason: 'start crow-foot uses the reversed libvisio anchor',
+      isNot(contains('d="M 10 5 L 2 1 M 10 5 L 2 5 M 10 5 L 2 9"')),
+      reason: 'id 27 bakes the open crow-foot as Geometry for LibreOffice',
     );
     expect(
       svg,
