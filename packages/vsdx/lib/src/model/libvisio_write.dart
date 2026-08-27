@@ -119,7 +119,9 @@
 /// whose `_linePropertiesMarkerPath` is still a TODO stub (7, 26, 31–34,
 /// 36–38, 40, 43–45) bake at any size so Draw does not reuse a sibling
 /// silhouette (id 7 reuses 19's unfilled quadratic instead of an open
-/// chevron). Open arrow ids become filled ribbons of the original
+/// chevron). Open ids 1 / 3 / 12 close with `z` and Draw fills them
+/// like a solid triangle; canvas / SVG already stroke the hollow /
+/// V / swept heads, so those bake too. Open arrow ids become filled ribbons of the original
 /// weight so they survive a CompoundType rail rewrite. Character Highlight
 /// is skipped by
 /// `readCharIX` but `TextBkgnd` is collected and painted as
@@ -11953,11 +11955,16 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// Marker ids whose LibreOffice path is a TODO stub in
 /// `VSDContentCollector::_linePropertiesMarkerPath` (copies a sibling),
 /// or whose "complete" path is still the wrong silhouette for canvas /
-/// SVG (ids 7 and 19 share one unfilled quadratic; both already stroke
-/// as an open V chevron here).
+/// SVG: ids 7 and 19 share one unfilled quadratic (both already stroke
+/// as an open V); ids 1, 3 and 12 close with `z` and Draw fills them
+/// like a solid triangle (canvas / SVG already stroke a hollow short
+/// head, an open V, and a swept open head).
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
   switch (arrowId) {
+    case 1:
+    case 3:
     case 7:
+    case 12:
     case 19:
     case 26:
     case 31:
@@ -12013,6 +12020,13 @@ List<Offset2D> _regularPolygon({
 _ArrowBakeSpec _arrowBakeSpec(int arrowId) {
   switch (arrowId) {
     case 1:
+      return const _ArrowBakeSpec(
+        polylines: [
+          [Offset2D(0, 0), Offset2D(-1, -0.4), Offset2D(-1, 0.4)],
+        ],
+        closed: true,
+        filled: false,
+      );
     case 3:
       return const _ArrowBakeSpec(
         polylines: [

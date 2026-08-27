@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 1, 3 and 12 now keep open heads in LibreOffice.
+  `_linePropertiesMarkerPath` labels them Open but closes the SVG
+  with `z` and no hole, so Draw filled a solid triangle while canvas
+  / SVG already stroke a hollow short head, an open V, and a swept
+  open head. A save bakes those Geometry ribbons and drops the native
+  marker. Ids 16 / 18 stay native (they already cut a hole). A second
+  save does not restack.
 - Begin/EndArrow 19 now keeps an open chevron in LibreOffice.
   `_linePropertiesMarkerPath` case 19 is labelled complete Unfilled
   but emits the same quadratic as TODO Open 7, so Draw painted a
