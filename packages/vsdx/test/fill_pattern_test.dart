@@ -840,4 +840,110 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('Width=0 1-D LineGradient bakes because Draw clips fill to XForm', () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const wash = VsdxGradient(
+      stops: [
+        VsdxGradientStop(position: 0, color: mag),
+        VsdxGradientStop(position: 1, color: VsdxColor.white),
+      ],
+    );
+    const stroke = VsdxLine(
+      pattern: 1,
+      weightInches: 0.18,
+      gradient: wash,
+    );
+    final horizontal = VsdxShapeFactory.line(
+      id: 1,
+      ax: 1.5,
+      ay: 5.5,
+      bx: 7,
+      by: 5.5,
+      line: stroke,
+    );
+    final vertical = VsdxShapeFactory.line(
+      id: 1,
+      ax: 4.25,
+      ay: 2,
+      bx: 4.25,
+      by: 8,
+      line: stroke,
+    );
+    expect(horizontal.width.abs(), greaterThan(1e-9));
+    expect(horizontal.height.abs(), lessThan(1e-9));
+    expect(vertical.width.abs(), lessThan(1e-9));
+    expect(vertical.height.abs(), greaterThan(1e-9));
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(horizontal), isFalse);
+    expect(shapeNeedsLibvisioStrokeRibbon(horizontal), isTrue);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(vertical), isTrue);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(vertical));
+    final baked = documentForLibvisioWrite(doc);
+    final leftover = baked.pages.first.findShapeById(1)!;
+    expect(leftover.line.pattern, 0);
+    expect(leftover.line.hasGradient, isFalse);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.is1D, isFalse);
+    expect(plate.width, greaterThan(0.15),
+        reason: 'plate must be the stroke AABB, not the Width=0 XForm');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not restack the collapsed-width plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved);
+    expect(after.pages.first.findShapeById(1)!.line.pattern, 0);
+    expect(
+      after.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+  });
+
+  test('Width=0 1-D LineColorTrans bakes because Draw clips fill to XForm', () {
+    const faded = VsdxLine(
+      pattern: 1,
+      weightInches: 0.18,
+      color: VsdxColor(0xFFFF00FF),
+      transparency: 0.5,
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.line(
+          id: 1,
+          ax: 1.5,
+          ay: 5.5,
+          bx: 7,
+          by: 5.5,
+          line: faded,
+        ),
+      ),
+      isFalse,
+      reason: 'horizontal Height=0 1-D still paints a FillForegndTrans ribbon',
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.line(
+          id: 1,
+          ax: 4.25,
+          ay: 2,
+          bx: 4.25,
+          by: 8,
+          line: faded,
+        ),
+      ),
+      isTrue,
+    );
+  });
 }

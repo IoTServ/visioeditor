@@ -87,7 +87,12 @@
 /// LineGradient stays a 25–40 ribbon. Opaque
 /// LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
-/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
+/// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). A 1-D
+/// whose Width is 0 (factory `line` uses ΔX×ΔY, so a vertical connector
+/// is Width=0) cannot keep that ribbon: Draw clips fill to the XForm box
+/// and the wash collapses to a hairline. A save bakes the same 2-D
+/// plate. Horizontal Height=0 1-D (Visio's usual box) stays a ribbon.
+/// Two-colour
 /// corner radial dirs 1/2/4/5/6/7, rectangular 8/9/11/12, centre
 /// rectangular 35 / dir 10, and path 13 are the same missing paint: the
 /// filled ribbon would become FillPattern 36–39 (clipped circle), 35
@@ -9001,6 +9006,18 @@ bool _shapeNeedsLibvisioPageSpaceStrokeBake(VsdxShape shape) {
   return !_lineHasLibvisioUnrepresentableGradient(shape.line);
 }
 
+/// Draw clips a filled 25–40 / FillForegndTrans ribbon to the XForm box.
+/// Factory 1-D uses Width=ΔX, Height=ΔY, Angle=0, so a vertical connector
+/// has Width=0 and the wash becomes a hairline.
+bool _shapeNeedsLibvisioCollapsedXformStrokeBake(VsdxShape shape) {
+  if (shape.width.abs() > 1e-9) return false;
+  if (!shape.line.hasLine) return false;
+  if (shape.line.hasGradient && shape.line.gradient!.stops.length >= 2) {
+    return true;
+  }
+  return shape.line.transparency > 1e-9;
+}
+
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!_softEdgesGeometryOk(shape)) return false;
   if (shape.line.softEdgesInches <= 1e-6 &&
@@ -9050,7 +9067,8 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   }
   if (_openArrowheadsBlockStrokeBake(shape) &&
       !_lineHasLibvisioUnrepresentableGradient(shape.line) &&
-      !_shapeNeedsLibvisioPageSpaceStrokeBake(shape)) {
+      !_shapeNeedsLibvisioPageSpaceStrokeBake(shape) &&
+      !_shapeNeedsLibvisioCollapsedXformStrokeBake(shape)) {
     return false;
   }
   if (shape.line.compoundType != 0) {
@@ -9062,6 +9080,7 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   if (_softEdgesStrokeSilhouetteKind(shape) != null) return true;
   if (_lineHasLibvisioUnrepresentableGradient(shape.line) ||
       _shapeNeedsLibvisioPageSpaceStrokeBake(shape) ||
+      _shapeNeedsLibvisioCollapsedXformStrokeBake(shape) ||
       isLibvisioSketchPlate(shape)) {
     return _solidStrokeRibbonPolygons(shape).isNotEmpty;
   }
@@ -9071,11 +9090,18 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
 bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
   final unrepresentable = _lineHasLibvisioUnrepresentableGradient(shape.line);
   final pageSpace = _shapeNeedsLibvisioPageSpaceStrokeBake(shape);
-  if (!_softEdgesGeometryOk(shape, allow1d: unrepresentable || pageSpace)) {
+  final collapsed = _shapeNeedsLibvisioCollapsedXformStrokeBake(shape);
+  if (!_softEdgesGeometryOk(
+    shape,
+    allow1d: unrepresentable || pageSpace || collapsed,
+  )) {
     return false;
   }
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) return false;
-  if (shape.line.softEdgesInches <= 1e-6 && !unrepresentable && !pageSpace) {
+  if (shape.line.softEdgesInches <= 1e-6 &&
+      !unrepresentable &&
+      !pageSpace &&
+      !collapsed) {
     return false;
   }
   return _shapeHasBakeableSoftEdgesStroke(shape);
@@ -9086,7 +9112,8 @@ bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeHasBakeableSoftEdgesStroke(shape) &&
     (shape.line.softEdgesInches > 1e-6 ||
         _lineHasLibvisioUnrepresentableGradient(shape.line) ||
-        _shapeNeedsLibvisioPageSpaceStrokeBake(shape));
+        _shapeNeedsLibvisioPageSpaceStrokeBake(shape) ||
+        _shapeNeedsLibvisioCollapsedXformStrokeBake(shape));
 
 List<VsdxGeometry> _softEdgesFillGeometries(VsdxShape shape) {
   return <VsdxGeometry>[

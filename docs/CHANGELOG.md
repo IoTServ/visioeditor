@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Width=0 1-D LineGradient / LineColorTrans now keeps stroke thickness in
+  LibreOffice. Factory `line` uses Width=ΔX, Height=ΔY, Angle=0, so a
+  vertical connector has Width=0. Draw clips the 25–40 / FillForegndTrans
+  ribbon to that XForm box and the wash collapsed to a hairline (solid
+  LineWeight still drew). Canvas / SVG already paint the ribbon AABB.
+  A save bakes that PNG. Horizontal Height=0 1-D (Visio's usual box)
+  stays a ribbon. A second save does not restack.
 - Rotated two-stop LineGradient now keeps its local wash in LibreOffice.
   An unfilled LineGradient becomes a FillPattern 25–40 ribbon, and
   Draw's `draw:angle` is page-space, so a 90° wide bar kept a vertical
