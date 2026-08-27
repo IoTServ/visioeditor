@@ -126,6 +126,8 @@ ArrowDescriptor _filledTriangle() {
 }
 
 ArrowDescriptor _filledTriangleNarrow() {
+  // libvisio marker 2 uses the same 20×10 triangle as unfilled 15, so Draw
+  // paints it almost as wide as id 4. Keep the narrow filled head.
   final p = Path()
     ..moveTo(0, 0)
     ..lineTo(-1, -0.25)
