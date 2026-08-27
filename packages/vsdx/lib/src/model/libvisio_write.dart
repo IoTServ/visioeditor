@@ -18,9 +18,14 @@
 /// marks leftover Geometry NoFill — otherwise CompoundType 2–4 takes the
 /// unfilled-ribbon path and LineColor covers that plate. A three-stop
 /// linear whose ends match (BG–FG–BG) is FillPattern 26 / 29
-/// (`draw:style=axial`); FillForegnd must be the middle stop — first/last
-/// are the edges, so a white–colour–white wash would otherwise become an
-/// all-white axial. A three-stop linear whose ends differ still bakes.
+/// (`draw:style=axial`) only when the angle is horizontal or vertical;
+/// FillForegnd must be the middle stop — first/last are the edges, so a
+/// white–colour–white wash would otherwise become an all-white axial.
+/// ODF axial is only `draw:angle` 0 / 90, so a diagonal three-stop
+/// linear bakes. A three-stop linear whose ends differ still bakes.
+/// Two-stop linear 25–34 stay native at those eight compass points;
+/// an off-cardinal `FillGradientAngle` (15°, …) would snap to the
+/// nearest id and bakes.
 /// Corner radial FillPattern 36–39 (and modern radial dirs 1/2/4/5/6/7 plus
 /// rectangular 8/9/11/12) are the
 /// same missing paint: `_fillAndShadowProperties` emits ODF
@@ -30,7 +35,7 @@
 /// Path `FillGradientDir` 13 is the same missing paint: there is no ODF
 /// path style, so the classic fallback is FillPattern 40 (a circle)
 /// while canvas / SVG fill concentric similar copies of the geometry.
-/// Centre radial 40 and linear 25–34 stay native. Centre rectangular 35
+/// Centre radial 40 and on-compass linear 25–34 stay native. Centre rectangular 35
 /// bakes: Draw's `getRectangularGradientAlpha` limo-stretches the long
 /// axis, so a wide box keeps the start colour along that edge while
 /// canvas / SVG Chebyshev (Visio similar copies) hits t=1 on all four
@@ -61,8 +66,10 @@
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// A three-stop linear whose ends match (BG–FG–BG) is that same
-/// FillPattern 26 / 29 axial; FillForegnd must be the middle stop or a
-/// white–colour–white stroke ribbon becomes all-white in Draw. Opaque
+/// FillPattern 26 / 29 axial at 0° / 90°; FillForegnd must be the middle
+/// stop or a white–colour–white stroke ribbon becomes all-white in Draw.
+/// A diagonal axial, or a two-stop LineGradient off those eight linear
+/// compass points, bakes the stroke PNG instead. Opaque
 /// LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
 /// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
@@ -8886,8 +8893,8 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
 /// the shape. Canvas / SVG fill the path (`ui.Gradient.radial` + clamp).
 /// MS-VSDX centre radial is dir 3 (FillPattern 40); 1/2/4/5/6/7 clip.
 /// Rectangular FillPattern 35 is always `svg:cx/cy=0.5`; dirs 8/9/11/12
-/// would collapse to that centre. Linear 25–34 and centre radial 40 stay
-/// native. Centre rectangular 35 still limo-stretches (see
+/// would collapse to that centre. On-compass linear 25–34 and centre
+/// radial 40 stay native. Centre rectangular 35 still limo-stretches (see)
 /// [_gradientHasLibvisioLimoRectangular]).
 bool _dirIsLibvisioNonCentreGradientOrigin(int? dir) => switch (dir) {
       1 || 2 || 4 || 5 || 6 || 7 || 8 || 9 || 11 || 12 => true,
@@ -8931,6 +8938,7 @@ bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
   if (_fillHasLibvisioClippedRadial(fill)) return true;
   if (_gradientHasLibvisioPathWash(gradient)) return true;
   if (_gradientHasLibvisioLimoRectangular(gradient)) return true;
+  if (!libvisioGradientAngleFitsClassic(gradient)) return true;
   if (gradient == null || gradient.stops.length < 2) return false;
   // FillPattern 25–40 drop `draw:opacity`; Draw ignores the replacement
   // `librevenge:start-opacity` / `end-opacity` from Fill*Trans.
@@ -8943,6 +8951,7 @@ bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) {
   if (_gradientHasLibvisioClippedRadial(line.gradient)) return true;
   if (_gradientHasLibvisioPathWash(line.gradient)) return true;
   if (_gradientHasLibvisioLimoRectangular(line.gradient)) return true;
+  if (!libvisioGradientAngleFitsClassic(line.gradient)) return true;
   if (line.gradient == null || line.gradient!.stops.length < 2) return false;
   return line.transparency > 1e-9;
 }

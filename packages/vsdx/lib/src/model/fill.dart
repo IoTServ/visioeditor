@@ -382,7 +382,16 @@ int? libvisioClassicPatternFor(VsdxGradient gradient) {
   }
   if (libvisioGradientIsAxialWash(gradient)) {
     final degrees = _normDegrees(gradient.angleRad * 180 / math.pi);
-    return _degreeDelta(degrees, 0) <= _degreeDelta(degrees, 90) ? 26 : 29;
+    // Axial is symmetric: 180° is the same wash as 0°, 270° as 90°.
+    final horiz = math.min(
+      _degreeDelta(degrees, 0),
+      _degreeDelta(degrees, 180),
+    );
+    final vert = math.min(
+      _degreeDelta(degrees, 90),
+      _degreeDelta(degrees, 270),
+    );
+    return horiz <= vert ? 26 : 29;
   }
   // Inverse of `angleRad = π/2 − drawDegrees × π/180` in the 25–34 table.
   final drawDegrees = _normDegrees(90 - gradient.angleRad * 180 / math.pi);
@@ -406,6 +415,41 @@ int? libvisioClassicPatternFor(VsdxGradient gradient) {
     }
   }
   return best;
+}
+
+/// Whether Draw can paint [gradient]'s linear angle as FillPattern 25–34 / 26 / 29.
+///
+/// `_fillAndShadowProperties` only emits ODF `draw:style=axial` at
+/// `draw:angle` 0 / 90 (FillPattern 29 / 26) and eight linear compass
+/// points (25 / 27 / 28 / 30–34). `FillGradientAngle` is not a token, so
+/// a 45° three-stop wash or a 15° two-stop ramp would otherwise snap to
+/// the nearest of those ids while canvas / SVG keep the authored angle.
+bool libvisioGradientAngleFitsClassic(VsdxGradient? gradient) {
+  if (gradient == null || gradient.type != VsdxGradientType.linear) {
+    return true;
+  }
+  if (gradient.stops.length < 2) return true;
+  const maxDelta = 5.0;
+  if (libvisioGradientIsAxialWash(gradient)) {
+    final degrees = _normDegrees(gradient.angleRad * 180 / math.pi);
+    final horiz = math.min(
+      _degreeDelta(degrees, 0),
+      _degreeDelta(degrees, 180),
+    );
+    final vert = math.min(
+      _degreeDelta(degrees, 90),
+      _degreeDelta(degrees, 270),
+    );
+    return math.min(horiz, vert) <= maxDelta;
+  }
+  final drawDegrees = _normDegrees(90 - gradient.angleRad * 180 / math.pi);
+  const table = <double>[270, 90, 180, 0, 225, 135, 315, 45];
+  var best = 360.0;
+  for (final slot in table) {
+    final delta = _degreeDelta(drawDegrees, slot);
+    if (delta < best) best = delta;
+  }
+  return best <= maxDelta;
 }
 
 /// `FillPattern` LibreOffice's libvisio importer will actually collect.

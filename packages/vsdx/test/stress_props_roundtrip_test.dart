@@ -175,8 +175,11 @@ void main() {
       final out = writer.write(originalBytes: raw, edited: d);
       final d2 = parser.parse(out);
       expect(d2.pages.length, d.pages.length, reason: name);
-      expect(d2.pages.first.shapes.length, d.pages.first.shapes.length,
-          reason: name);
+      expect(
+        d2.pages.first.shapes.where((s) => !isLibvisioBakePlate(s)).length,
+        d.pages.first.shapes.where((s) => !isLibvisioBakePlate(s)).length,
+        reason: name,
+      );
       // SVG export must not throw on starter templates.
       expect(
         () => VsdxToSvgSerializer().serializeDocument(d2),

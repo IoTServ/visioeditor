@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Off-axis linear FillGradient / LineGradient now keep their authored
+  angle in LibreOffice. `_fillAndShadowProperties` only emits ODF axial
+  at `draw:angle` 0 / 90 (FillPattern 29 / 26) and eight linear compass
+  points (25 / 27 / 28 / 30–34); `FillGradientAngle` is not a token, so
+  a 45° white–colour–white wash became a horizontal axial and a 15°
+  two-stop ramp snapped to 0°. Canvas / SVG already paint the angle.
+  A save bakes that PNG. On-compass 25–34 and axis-aligned 26 / 29 stay
+  native. A second save does not restack.
 - Path `FillGradientDir` 13 now fills concentric similar copies of the
   geometry, matching Visio. `_fillAndShadowProperties` has no ODF path
   style, so the classic fallback was FillPattern 40 (a circle) and
