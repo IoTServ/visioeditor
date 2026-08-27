@@ -11962,14 +11962,18 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// like a solid triangle (canvas / SVG already stroke a hollow short
 /// head, an open V, and a swept open head). Id 8 is labelled filled
 /// but omits `z`, so Draw shrinks it while canvas aliases 8 to id 6.
-/// Filled 1-D bakes expand to a LineWeight ribbon — Draw clips fill to
-/// the XForm box, and factory `line` Height=ΔY is 0 on a horizontal.
+/// Id 9 closes a filled parallelogram inside viewBox `0 0 20 10` while
+/// the path runs to ~y=23; canvas / SVG already stroke the overflow
+/// dimension tick (`overflow=visible`). Filled 1-D bakes expand to a
+/// LineWeight ribbon — Draw clips fill to the XForm box, and factory
+/// `line` Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
   switch (arrowId) {
     case 1:
     case 3:
     case 7:
     case 8:
+    case 9:
     case 12:
     case 19:
     case 26:

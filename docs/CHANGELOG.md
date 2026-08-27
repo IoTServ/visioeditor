@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 9 now keeps the architectural dimension tick in
+  LibreOffice. `_linePropertiesMarkerPath` case 9 closes a filled
+  parallelogram (`…z`) inside viewBox `0 0 20 10` while the path runs
+  to ~y=23, so Draw painted a short filled blob while canvas / SVG
+  already stroke an open overflow tick (`overflow=visible`). A save
+  bakes that Geometry ribbon and drops the native marker. A second
+  save does not restack.
 - Begin/EndArrow 8 now keeps the filled sweep in LibreOffice.
   `_linePropertiesMarkerPath` case 8 is labelled filled but the SVG
   path has no `z`, so Draw painted a smaller head while canvas / SVG

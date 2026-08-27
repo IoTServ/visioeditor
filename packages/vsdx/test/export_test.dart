@@ -2405,6 +2405,12 @@ void main() {
       for (var arrowId = 1; arrowId <= 45; arrowId++)
         libvisioMarkerPathIsIncomplete(arrowId) ? 0 : arrowId,
     ]);
+    final sourceSvg = VsdxToSvgSerializer().serializePage(doc.pages.first);
+    expect(
+      sourceSvg,
+      contains('d="M 0 -6 L 10 16 M 5 -6 V 16"'),
+      reason: 'native marker 9 keeps libvisio dimension-tick viewBox overflow',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2414,8 +2420,8 @@ void main() {
     expect(RegExp(r'marker-end=').allMatches(svg), hasLength(nativeCount));
     expect(
       svg,
-      contains('d="M 0 -6 L 10 16 M 5 -6 V 16"'),
-      reason: 'marker 9 keeps libvisio dimension-tick viewBox overflow',
+      isNot(contains('d="M 0 -6 L 10 16 M 5 -6 V 16"')),
+      reason: 'id 9 bakes the overflow tick as Geometry for LibreOffice',
     );
     expect(
       svg,
