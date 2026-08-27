@@ -2450,6 +2450,14 @@ void main() {
       ),
       reason: 'native marker 29 keeps an open circle plus crow-foot',
     );
+    expect(
+      sourceSvg,
+      contains(
+        'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+        'M 3 1 V 9',
+      ),
+      reason: 'native marker 30 keeps an open circle plus one hash',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2495,6 +2503,14 @@ void main() {
         'M 6 5 L 10 1 M 6 5 L 10 5 M 6 5 L 10 9',
       )),
       reason: 'id 29 bakes circle-plus-crow-foot as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains(
+        'M 6 5 m -1.8,0 a 1.8,1.8 0 1,0 3.6,0 a 1.8,1.8 0 1,0 -3.6,0 '
+        'M 3 1 V 9',
+      )),
+      reason: 'id 30 bakes circle-plus-one as Geometry for LibreOffice',
     );
   });
 

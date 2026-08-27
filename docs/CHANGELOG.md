@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 30 now keeps optional-one in LibreOffice.
+  `_linePropertiesMarkerPath` case 30 adds filled plus-arms around a
+  holed circle, so Draw painted a circle-plus while canvas / SVG
+  already stroke an open circle and a single hash. A save bakes that
+  Geometry ribbon and drops the native marker. A second save does not
+  restack.
 - Begin/EndArrow 29 now keeps optional-many crow-foot in LibreOffice.
   `_linePropertiesMarkerPath` case 29 appends 27's filled triangle to a
   holed circle, so Draw painted a solid arrow while canvas / SVG

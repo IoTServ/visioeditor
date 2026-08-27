@@ -11976,7 +11976,9 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// (`h1500v-200h-3000…z`); canvas / SVG already stroke the crow-foot
 /// plus a “one” hash. Id 29 appends 27's filled triangle to a holed
 /// circle; canvas / SVG already stroke an open circle plus crow-foot
-/// past the endpoint. Filled 1-D bakes expand to a LineWeight
+/// past the endpoint. Id 30 adds filled plus-arms around a holed
+/// circle (`…zM1700 1400v100h1500…`); canvas / SVG already stroke an
+/// open circle plus a single “one” hash. Filled 1-D bakes expand to a LineWeight
 /// ribbon — Draw clips fill to the XForm box, and factory `line`
 /// Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
@@ -11995,6 +11997,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 27:
     case 28:
     case 29:
+    case 30:
     case 31:
     case 32:
     case 33:
