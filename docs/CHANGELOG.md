@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 7 now keeps an open chevron in LibreOffice.
+  `_linePropertiesMarkerPath` case 7 is still `TODO Open` and emits
+  id 19's unfilled quadratic, so Draw painted a hollow curved arrow
+  while canvas / SVG already stroke a V. A save bakes that Geometry
+  ribbon and drops the native marker. Id 19 stays native. A second
+  save does not restack.
 - Width=0 1-D LineGradient / LineColorTrans now keeps stroke thickness in
   LibreOffice. Factory `line` uses Width=ΔX, Height=ΔY, Angle=0, so a
   vertical connector has Width=0. Draw clips the 25–40 / FillForegndTrans

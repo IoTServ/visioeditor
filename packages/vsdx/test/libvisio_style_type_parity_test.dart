@@ -116,7 +116,8 @@
 /// no libvisio `CompressionType` (WebP, ICO, headerless DIB) become
 /// `image/bmp` and vanish; a save re-encodes those as PNG. A second
 /// save does not stack another PNG. Marker ids whose
-/// `_linePropertiesMarkerPath` is still a TODO stub bake as Geometry so
+/// `_linePropertiesMarkerPath` is still a TODO stub (including id 7's
+/// Open path, which is id 19's unfilled quadratic) bake as Geometry so
 /// Draw does not reuse a sibling silhouette. Unknown
 /// `FillPattern` ids above 40 snap to solid `1`.
 /// Explicit round joins on a square/flat cap bake RelQuadBezTo —
@@ -10331,7 +10332,21 @@ void main() {
   });
 
   test('incomplete libvisio marker ids bake as Geometry for LibreOffice', () {
-    for (final id in <int>[26, 31, 32, 33, 34, 36, 37, 38, 40, 43, 44, 45]) {
+    for (final id in <int>[
+      7,
+      26,
+      31,
+      32,
+      33,
+      34,
+      36,
+      37,
+      38,
+      40,
+      43,
+      44,
+      45,
+    ]) {
       expect(libvisioMarkerPathIsIncomplete(id), isTrue, reason: 'id $id');
       final shape = VsdxShapeFactory.line(
         id: id,
@@ -10351,6 +10366,8 @@ void main() {
           reason: 'TODO stub $id must emit a polygon');
     }
     expect(libvisioMarkerPathIsIncomplete(4), isFalse);
+    expect(libvisioMarkerPathIsIncomplete(19), isFalse,
+        reason: 'id 19 is the unfilled quadratic libvisio treats as complete');
     expect(libvisioMarkerPathIsIncomplete(25), isFalse);
     expect(libvisioMarkerPathIsIncomplete(35), isFalse);
     expect(libvisioMarkerPathIsIncomplete(39), isFalse);
@@ -10368,20 +10385,37 @@ void main() {
           line: const VsdxLine(
             color: VsdxColor.black,
             weightInches: 0.04,
+            endArrow: 7,
+          ),
+        ),
+      ),
+    );
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.line(
+          id: 40,
+          ax: 1,
+          ay: 2,
+          bx: 3,
+          by: 2,
+          line: const VsdxLine(
+            color: VsdxColor.black,
+            weightInches: 0.04,
             endArrow: 40,
           ),
         ),
       ),
     );
-    final after = parser
-        .parse(
-          writer.write(originalBytes: writer.emptyDocument(), edited: doc),
-        )
-        .pages
-        .first
-        .findShapeById(1)!;
-    expect(after.line.endArrow, 0);
-    expect(after.geometries.any((g) => !g.noFill), isTrue);
+    final after = parser.parse(
+      writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+    );
+    for (final id in <int>[1, 40]) {
+      final shape = after.pages.first.findShapeById(id)!;
+      expect(shape.line.endArrow, 0, reason: 'id $id leftover has no marker');
+      expect(shape.geometries.any((g) => !g.noFill), isTrue,
+          reason: 'id $id must bake a filled ribbon / polygon');
+    }
   });
 
   test('picture SoftEdges bakes into PNG for LibreOffice', () {

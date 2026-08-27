@@ -116,9 +116,10 @@
 /// marker on every open rail. A plain stroke whose authored
 /// BeginArrowSize disagrees with `_lineProperties`' line-weight formula
 /// bakes the same way (`tokens.txt` has no BeginArrowSize). Marker ids
-/// whose `_linePropertiesMarkerPath` is still a TODO stub (26, 31–34,
+/// whose `_linePropertiesMarkerPath` is still a TODO stub (7, 26, 31–34,
 /// 36–38, 40, 43–45) bake at any size so Draw does not reuse a sibling
-/// silhouette. Open arrow ids become filled ribbons of the original
+/// silhouette (id 7 reuses 19's unfilled quadratic instead of an open
+/// chevron). Open arrow ids become filled ribbons of the original
 /// weight so they survive a CompoundType rail rewrite. Character Highlight
 /// is skipped by
 /// `readCharIX` but `TextBkgnd` is collected and painted as
@@ -11950,9 +11951,11 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 }
 
 /// Marker ids whose LibreOffice path is a TODO stub in
-/// `VSDContentCollector::_linePropertiesMarkerPath` (copies a sibling).
+/// `VSDContentCollector::_linePropertiesMarkerPath` (copies a sibling,
+/// or id 7's "Open" path which is id 19's unfilled quadratic).
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
   switch (arrowId) {
+    case 7:
     case 26:
     case 31:
     case 32:
