@@ -692,4 +692,81 @@ void main() {
     expect(shape.fill.pattern, 1);
     expect(libvisioShapeWrite(shape).fill.pattern, 0);
   });
+
+  test('rotated hatch / FillPattern 25 bake because Draw fill is page-space',
+      () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const hatch = VsdxFill(
+      pattern: 6,
+      foreground: mag,
+      background: VsdxColor.white,
+    );
+    const fp25 = VsdxFill(
+      pattern: 25,
+      foreground: mag,
+      background: VsdxColor.white,
+    );
+    VsdxShape box(VsdxFill fill, {double angle = 0, bool flipX = false}) =>
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2.4,
+          height: 2.4,
+          fill: fill,
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(angleRad: angle, flipX: flipX);
+
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(hatch)), isFalse);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(fp25)), isFalse);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(box(hatch, angle: math.pi / 2)),
+      isTrue,
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(box(fp25, angle: math.pi / 2)),
+      isTrue,
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(box(hatch, flipX: true)),
+      isTrue,
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        box(const VsdxFill(pattern: 1, foreground: mag), angle: math.pi / 2),
+      ),
+      isFalse,
+      reason: 'solid FillPattern 1 is invariant under Angle',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(box(hatch, angle: math.pi / 2)),
+    );
+    final baked = documentForLibvisioWrite(doc);
+    expect(baked.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not restack the page-space fill plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved);
+    expect(after.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    expect(
+        after.pages.first.shapes.where(isLibvisioSoftEdgesPlate), hasLength(1));
+  });
 }

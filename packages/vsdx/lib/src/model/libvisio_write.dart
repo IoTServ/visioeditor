@@ -56,7 +56,13 @@
 /// — while canvas / SVG only fade the hatch lines / gaps. A save freezes
 /// those cells into FillForegnd / FillBkgnd (toward the hatch background,
 /// or white when the background is fully transparent) and writes Trans=0.
-/// Opaque hatches and hollow opaque strokes stay native.
+/// Opaque hatches and hollow opaque strokes stay native when axis-aligned.
+/// Angle / FlipX / FlipY is the same missing paint: Draw hatch
+/// `draw:rotation` and 25–40 `draw:angle` stay page-space, so a 90°
+/// FillPattern 6 box kept horizontal lines and FillPattern 25 kept a
+/// vertical mag strip while canvas / SVG already rotate the wash. A
+/// save bakes that PNG. Solid FillPattern 1 is invariant and stays
+/// native. Axis-aligned unflipped 2–24 / 25–34 / 40 stay native.
 /// Curve
 /// commands (EllipticalArcTo, RelEllipticalArcTo, NURBS, spline, …) are
 /// sampled so that plate follows the painted path — endpoint-only
@@ -8781,12 +8787,15 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// whose opaque stops use more than two unique colours uses that same
 /// plate at sigma 0: FillPattern 25–40 only interpolates two colours.
 /// Corner radial 36–39 clip to an ODF circle, so those two-colour
-/// washes use that plate; centre 40 stays native. Rectangular
-/// FillGradientDir 8/9/11/12 would become centre FillPattern 35,
-/// so those wash that plate too. Centre rectangular 35 also bakes:
-/// Draw's `getRectangularGradientAlpha` limo-stretches the long axis
-/// while canvas / SVG Chebyshev (Visio similar copies) hits t=1 on
-/// all four sides.
+/// washes use that plate; centre 40 stays native when the box is
+/// unrotated. Rectangular FillGradientDir 8/9/11/12 would become
+/// centre FillPattern 35, so those wash that plate too. Centre
+/// rectangular 35 also bakes: Draw's `getRectangularGradientAlpha`
+/// limo-stretches the long axis while canvas / SVG Chebyshev (Visio
+/// similar copies) hits t=1 on all four sides. Angle / FlipX / FlipY
+/// on an otherwise native hatch or 25–40 wash uses that plate too:
+/// Draw's fill style is page-space, while canvas / SVG paint in the
+/// shape box.
 /// Multiple NoFill=0 Geometry sections punch even-odd holes in that
 /// plate — libvisio emits `svg:fill-rule=evenodd`, so a two-ring frame
 /// must not bake as a solid Width×Height rectangle. Leftover source
@@ -8962,10 +8971,23 @@ bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) {
   return line.transparency > 1e-9;
 }
 
+/// Draw hatch `draw:rotation` / 25–40 `draw:angle` do not follow shape
+/// Angle or Flip*. Canvas / SVG paint those washes in the local box.
+bool _shapeNeedsLibvisioPageSpaceFillBake(VsdxShape shape) {
+  if (shape.angleRad.abs() <= 1e-9 && !shape.flipX && !shape.flipY) {
+    return false;
+  }
+  if (libvisioHatchSpec(shape.fill.pattern) != null) return true;
+  final gradient = shape.fill.paintGradient;
+  if (gradient == null || gradient.stops.length < 2) return false;
+  return !_fillHasLibvisioUnrepresentableGradient(shape.fill);
+}
+
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!_softEdgesGeometryOk(shape)) return false;
   if (shape.line.softEdgesInches <= 1e-6 &&
-      !_fillHasLibvisioUnrepresentableGradient(shape.fill)) {
+      !_fillHasLibvisioUnrepresentableGradient(shape.fill) &&
+      !_shapeNeedsLibvisioPageSpaceFillBake(shape)) {
     return false;
   }
   if (!shape.fill.hasFill) return false;

@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Rotated hatch / classic 25–40 fills now keep their local wash in
+  LibreOffice. `_fillAndShadowProperties` hatch `draw:rotation` and
+  gradient `draw:angle` are page-space, so a 90° FillPattern 6 box
+  kept horizontal lines and FillPattern 25 kept a vertical mag strip
+  while canvas / SVG already rotate the wash. A save bakes that PNG.
+  Axis-aligned unflipped 2–24 / 25–34 / 40 and solid FillPattern 1
+  stay native. A second save does not restack.
 - Hatch FillBkgndTrans now keeps opaque strokes in LibreOffice.
   `_fillAndShadowProperties` hatch-solid uses
   `draw:opacity = 1 - max(fg,bg)`, so a faded FillBkgnd with opaque
