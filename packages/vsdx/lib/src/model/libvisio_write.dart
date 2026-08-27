@@ -124,7 +124,9 @@
 /// V / swept heads, so those bake too. Id 18 is labelled Convex
 /// Unfilled (`m20 0-20 40q…z` plus a hole) inside viewBox `0 0 20 20`,
 /// so Draw clips the quadratic bulge and paints the same holed triangle
-/// as id 16; canvas / SVG already stroke 12's open sweep. Id 8 is labelled filled but the
+/// as id 16; canvas / SVG already stroke 12's open sweep. Id 6 closes a
+/// filled convex `q10,5` bulge that Draw paints like a fat 4; canvas
+/// already fills 8's swept notch (`_filledArrowSwept`). Id 8 is labelled filled but the
 /// SVG path has no `z`, so Draw shrinks it; canvas aliases 8 to 6's
 /// filled sweep. Id 14's unfilled-long path lives in viewBox
 /// `110 200 200 300`, so Draw collapses it onto id 16; canvas / SVG
@@ -11973,6 +11975,8 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// head, an open V, and a swept open head). Id 18's convex hole lives
 /// in viewBox `0 0 20 20` while the path runs to y=40, so Draw clips
 /// it onto holed 16; canvas / SVG already stroke 12's open sweep.
+/// Id 6 closes a filled convex `q10,5` bulge, so Draw paints a fat
+/// triangle; canvas already fills 8's swept notch.
 /// Id 8 is labelled filled
 /// but omits `z`, so Draw shrinks it while canvas aliases 8 to id 6.
 /// Id 9 closes a filled parallelogram inside viewBox `0 0 20 10` while
@@ -12008,6 +12012,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 1:
     case 2:
     case 3:
+    case 6:
     case 7:
     case 8:
     case 9:

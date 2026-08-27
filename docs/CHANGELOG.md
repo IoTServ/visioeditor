@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 6 now keeps the filled swept head in LibreOffice.
+  `_linePropertiesMarkerPath` case 6 is `m10 0-10 20q10,5 20,0z` inside
+  viewBox `0 0 20 20`, so Draw painted a fat filled triangle instead of
+  canvas `_filledArrowSwept`. A save bakes that Geometry ribbon
+  (Height=0 1-D would clip a filled polygon) and drops the native
+  marker. Id 4 stays native. A second save does not restack.
 - Begin/EndArrow 18 now keeps the open swept head in LibreOffice.
   `_linePropertiesMarkerPath` case 18 is the holed convex
   `m20 0-20 40q…z` inside viewBox `0 0 20 20`, so Draw clipped the

@@ -119,7 +119,8 @@
 /// `_linePropertiesMarkerPath` is still a TODO stub, plus ids 7 and 19
 /// whose shared unfilled quadratic is not the canvas V chevron, and
 /// Open ids 1 / 3 / 12 whose closed `z` path Draw fills like a solid
-/// triangle, id 18 whose convex hole Draw clips onto holed 16, plus id 8
+/// triangle, id 18 whose convex hole Draw clips onto holed 16, id 6
+/// whose convex `q` Draw paints as a fat triangle, plus id 8
 /// whose unclosed “filled” path Draw shrinks,
 /// bake as Geometry so Draw does not reuse a sibling
 /// silhouette. Unknown
@@ -10340,6 +10341,7 @@ void main() {
       1,
       2,
       3,
+      6,
       7,
       8,
       9,
@@ -10389,8 +10391,6 @@ void main() {
     }
     expect(libvisioMarkerPathIsIncomplete(4), isFalse,
         reason: 'id 4 already closes a filled equilateral triangle');
-    expect(libvisioMarkerPathIsIncomplete(6), isFalse,
-        reason: 'id 6 already closes the filled sweep with z');
     expect(libvisioMarkerPathIsIncomplete(16), isFalse,
         reason: 'id 16 already has a holed unfilled triangle path');
     expect(libvisioMarkerPathIsIncomplete(35), isFalse);
@@ -10415,7 +10415,7 @@ void main() {
 
     var doc = parser.parse(writer.emptyDocument());
     var y = 1.0;
-    for (final id in <int>[1, 2, 3, 7, 8, 9, 12, 13, 14, 15, 18, 19, 23, 24, 25, 27, 28, 29, 30, 40]) {
+    for (final id in <int>[1, 2, 3, 6, 7, 8, 9, 12, 13, 14, 15, 18, 19, 23, 24, 25, 27, 28, 29, 30, 40]) {
       doc = doc.replacePage(
         0,
         doc.pages.first.addShape(
@@ -10438,7 +10438,7 @@ void main() {
     final after = parser.parse(
       writer.write(originalBytes: writer.emptyDocument(), edited: doc),
     );
-    for (final id in <int>[1, 2, 3, 7, 8, 9, 12, 13, 14, 15, 18, 19, 23, 24, 25, 27, 28, 29, 30, 40]) {
+    for (final id in <int>[1, 2, 3, 6, 7, 8, 9, 12, 13, 14, 15, 18, 19, 23, 24, 25, 27, 28, 29, 30, 40]) {
       final shape = after.pages.first.findShapeById(id)!;
       expect(shape.line.endArrow, 0, reason: 'id $id leftover has no marker');
       expect(shape.geometries.any((g) => !g.noFill), isTrue,
