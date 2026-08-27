@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 25 now keeps two Chen ER hashes in LibreOffice.
+  `_linePropertiesMarkerPath` case 25 copies 24's plus and adds another
+  along-line pair, so Draw painted a double plus while canvas / SVG
+  already stroke two hashes. A save bakes that Geometry ribbon and
+  drops the native marker. A second save does not restack.
 - Begin/EndArrow 24 now keeps the Chen ER “one” hash in LibreOffice.
   `_linePropertiesMarkerPath` case 24 closes a perpendicular bar plus
   two bars along the carrier, so Draw painted a plus while canvas /

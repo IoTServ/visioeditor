@@ -11968,7 +11968,9 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// parallelogram plus stem (`…zM11 0v33…`); canvas / SVG already
 /// stroke an open backslash. Id 24 closes a perpendicular hash plus
 /// two bars along the carrier (`…zM1 0h-20…`); canvas / SVG already
-/// stroke a single CF “one” hash. Filled 1-D bakes expand to a LineWeight
+/// stroke a single CF “one” hash. Id 25 is the same extra along-line
+/// arms on two hashes (`…zM1-18h-20…`); canvas / SVG already stroke
+/// two CF hashes. Filled 1-D bakes expand to a LineWeight
 /// ribbon — Draw clips fill to the XForm box, and factory `line`
 /// Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
@@ -11982,6 +11984,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 19:
     case 23:
     case 24:
+    case 25:
     case 26:
     case 31:
     case 32:

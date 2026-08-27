@@ -2421,6 +2421,11 @@ void main() {
       contains('d="M 7 1 V 9" fill="none"'),
       reason: 'native marker 24 keeps the single CF one hash',
     );
+    expect(
+      sourceSvg,
+      contains('d="M 7 1 V 9 M 4.5 1 V 9" fill="none"'),
+      reason: 'native marker 25 keeps two CF hashes',
+    );
     final svg = VsdxToSvgSerializer().serializePage(reopened.pages.first);
     final nativeCount = [
       for (var arrowId = 1; arrowId <= 45; arrowId++)
@@ -2442,6 +2447,11 @@ void main() {
       svg,
       isNot(contains('d="M 7 1 V 9" fill="none"')),
       reason: 'id 24 bakes the CF one hash as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains('d="M 7 1 V 9 M 4.5 1 V 9" fill="none"')),
+      reason: 'id 25 bakes two CF hashes as Geometry for LibreOffice',
     );
     expect(
       svg,
