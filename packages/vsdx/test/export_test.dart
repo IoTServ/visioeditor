@@ -2428,6 +2428,14 @@ void main() {
     );
     expect(
       sourceSvg,
+      contains(
+        'd="M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+        'M 0 0 V 10 H 2 V 0 Z" fill="#',
+      ),
+      reason: 'native marker 35 keeps the filled circle plus one bar',
+    );
+    expect(
+      sourceSvg,
       contains('d="M 0 2.5 L 10 5 L 0 7.5 Z" fill="#'),
       reason: 'native marker 2 keeps the filled narrow triangle',
     );
@@ -2524,6 +2532,14 @@ void main() {
       svg,
       isNot(contains('d="M 0 1 L 10 5 L 0 9 L 3 5 Z" fill="#')),
       reason: 'id 5 bakes the filled stealth as Geometry for LibreOffice',
+    );
+    expect(
+      svg,
+      isNot(contains(
+        'd="M 6 5 m -4,0 a 4,4 0 1,0 8,0 a 4,4 0 1,0 -8,0 '
+        'M 0 0 V 10 H 2 V 0 Z" fill="#',
+      )),
+      reason: 'id 35 bakes the filled circle-plus-bar as Geometry for LibreOffice',
     );
     expect(
       svg,

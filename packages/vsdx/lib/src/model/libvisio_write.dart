@@ -12010,7 +12010,11 @@ bool shapeNeedsLibvisioLineGradientRibbon(VsdxShape shape) =>
 /// instead of canvas `_stealthOpen`'s four-point V. Id 5's filled
 /// concave `m10 0-10 20q10,-5 20,0z` fits viewBox `0 0 20 20`, so Draw
 /// paints a near-equilateral filled triangle (centerline solid like
-/// id 4) instead of canvas `_stealth`'s four-point V. Filled 1-D bakes expand to a LineWeight
+/// id 4) instead of canvas `_stealth`'s four-point V. Id 35's filled
+/// circle-plus-bar path starts at `m-106-318` inside default viewBox
+/// `0 0 20 30` and closes extra plus-arms, so Draw paints the same
+/// terminator circle as id 42 instead of canvas `_filledCircleWithBars(1)`.
+/// Filled 1-D bakes expand to a LineWeight
 /// ribbon — Draw clips fill to the XForm box, and factory `line`
 /// Height=ΔY is 0 on a horizontal.
 bool libvisioMarkerPathIsIncomplete(int arrowId) {
@@ -12042,6 +12046,7 @@ bool libvisioMarkerPathIsIncomplete(int arrowId) {
     case 32:
     case 33:
     case 34:
+    case 35:
     case 36:
     case 37:
     case 38:

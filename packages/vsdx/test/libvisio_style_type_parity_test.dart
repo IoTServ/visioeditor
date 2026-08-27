@@ -10365,6 +10365,7 @@ void main() {
       32,
       33,
       34,
+      35,
       36,
       37,
       38,
@@ -10395,7 +10396,6 @@ void main() {
         reason: 'id 4 already closes a filled equilateral triangle');
     expect(libvisioMarkerPathIsIncomplete(16), isFalse,
         reason: 'id 16 already has a holed unfilled triangle path');
-    expect(libvisioMarkerPathIsIncomplete(35), isFalse);
     expect(libvisioMarkerPathIsIncomplete(39), isFalse);
 
     final collapsed = VsdxShapeFactory.line(
@@ -10417,7 +10417,7 @@ void main() {
 
     var doc = parser.parse(writer.emptyDocument());
     var y = 1.0;
-    for (final id in <int>[1, 2, 3, 5, 6, 7, 8, 9, 12, 13, 14, 15, 17, 18, 19, 23, 24, 25, 27, 28, 29, 30, 40]) {
+    for (final id in <int>[1, 2, 3, 5, 6, 7, 8, 9, 12, 13, 14, 15, 17, 18, 19, 23, 24, 25, 27, 28, 29, 30, 35, 40]) {
       doc = doc.replacePage(
         0,
         doc.pages.first.addShape(
@@ -10440,7 +10440,7 @@ void main() {
     final after = parser.parse(
       writer.write(originalBytes: writer.emptyDocument(), edited: doc),
     );
-    for (final id in <int>[1, 2, 3, 5, 6, 7, 8, 9, 12, 13, 14, 15, 17, 18, 19, 23, 24, 25, 27, 28, 29, 30, 40]) {
+    for (final id in <int>[1, 2, 3, 5, 6, 7, 8, 9, 12, 13, 14, 15, 17, 18, 19, 23, 24, 25, 27, 28, 29, 30, 35, 40]) {
       final shape = after.pages.first.findShapeById(id)!;
       expect(shape.line.endArrow, 0, reason: 'id $id leftover has no marker');
       expect(shape.geometries.any((g) => !g.noFill), isTrue,

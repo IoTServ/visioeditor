@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Begin/EndArrow 35 now keeps the filled circle-plus-bar in LibreOffice.
+  `_linePropertiesMarkerPath` case 35 starts at `m-106-318` inside default
+  viewBox `0 0 20 30` and closes extra plus-arms, so Draw painted the
+  same terminator circle as id 42 instead of canvas
+  `_filledCircleWithBars(1)`. A save bakes that Geometry ribbon
+  (Height=0 1-D would clip a filled polygon) and drops the native
+  marker. Id 42 stays native. A second save does not restack.
 - Begin/EndArrow 5 now keeps the filled stealth head in LibreOffice.
   `_linePropertiesMarkerPath` case 5 is `m10 0-10 20q10,-5 20,0z` inside
   viewBox `0 0 20 20`, so Draw painted a near-equilateral filled
