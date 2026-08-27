@@ -769,4 +769,75 @@ void main() {
     expect(
         after.pages.first.shapes.where(isLibvisioSoftEdgesPlate), hasLength(1));
   });
+
+  test('rotated two-stop LineGradient bakes because Draw fill is page-space',
+      () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const wash = VsdxGradient(
+      stops: [
+        VsdxGradientStop(position: 0, color: mag),
+        VsdxGradientStop(position: 1, color: VsdxColor.white),
+      ],
+    );
+    const stroke = VsdxLine(
+      pattern: 1,
+      weightInches: 0.18,
+      gradient: wash,
+    );
+    VsdxShape bar({double angle = 0, bool flipX = false}) =>
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 3.2,
+          height: 0.5,
+          fill: const VsdxFill(pattern: 0),
+          line: stroke,
+        ).copyWith(angleRad: angle, flipX: flipX);
+
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(bar()), isFalse);
+    expect(shapeNeedsLibvisioStrokeRibbon(bar()), isTrue);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(bar(angle: math.pi / 2)),
+      isTrue,
+    );
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(bar(flipX: true)),
+      isTrue,
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(bar(angle: math.pi / 2)),
+    );
+    final baked = documentForLibvisioWrite(doc);
+    final leftover = baked.pages.first.findShapeById(1)!;
+    expect(leftover.line.pattern, 0);
+    expect(leftover.line.hasGradient, isFalse);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not restack the page-space stroke plate',
+    );
+
+    final saved = writer.write(originalBytes: blank, edited: doc);
+    final after = parser.parse(saved);
+    expect(after.pages.first.findShapeById(1)!.line.pattern, 0);
+    expect(
+      after.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+  });
 }

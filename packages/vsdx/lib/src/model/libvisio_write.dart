@@ -79,7 +79,12 @@
 /// FillPattern 26 / 29 axial at 0° / 90°; FillForegnd must be the middle
 /// stop or a white–colour–white stroke ribbon becomes all-white in Draw.
 /// A diagonal axial, or a two-stop LineGradient off those eight linear
-/// compass points, bakes the stroke PNG instead. Opaque
+/// compass points, bakes the stroke PNG instead. Angle / FlipX / FlipY on
+/// an otherwise native two-stop ribbon is the same missing paint: Draw
+/// 25–40 `draw:angle` stays page-space, so a 90° wide bar kept a vertical
+/// mag strip down the whole stroke while canvas / SVG already rotate the
+/// AABB wash. A save bakes that PNG. Axis-aligned unflipped two-stop
+/// LineGradient stays a 25–40 ribbon. Opaque
 /// LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
 /// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
@@ -8806,6 +8811,8 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// Draw does not drop the middle colour onto a two-stop FillPattern ribbon.
 /// A three-stop linear whose ends match stays the FillPattern 26 / 29
 /// ribbon (centre = FillForegnd); ends that differ still bake.
+/// Angle / FlipX / FlipY on an otherwise native two-stop LineGradient
+/// uses that stroke plate too: Draw's 25–40 ribbon is page-space.
 /// Two-colour corner radial LineGradient is the same missing paint: that
 /// ribbon would be FillPattern 36–39 and Draw clips it to a circle.
 /// InfiniteLine washes clip to the shape box so that plate keeps every stop.
@@ -8983,6 +8990,17 @@ bool _shapeNeedsLibvisioPageSpaceFillBake(VsdxShape shape) {
   return !_fillHasLibvisioUnrepresentableGradient(shape.fill);
 }
 
+/// Native two-stop LineGradient becomes a 25–40 ribbon whose `draw:angle`
+/// is page-space. Canvas shaders the path AABB then applies Angle / Flip.
+bool _shapeNeedsLibvisioPageSpaceStrokeBake(VsdxShape shape) {
+  if (shape.angleRad.abs() <= 1e-9 && !shape.flipX && !shape.flipY) {
+    return false;
+  }
+  if (!shape.line.hasGradient) return false;
+  if (shape.line.gradient!.stops.length < 2) return false;
+  return !_lineHasLibvisioUnrepresentableGradient(shape.line);
+}
+
 bool _shapeNeedsLibvisioFillSoftEdgesBake(VsdxShape shape) {
   if (!_softEdgesGeometryOk(shape)) return false;
   if (shape.line.softEdgesInches <= 1e-6 &&
@@ -9031,7 +9049,8 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
     return false;
   }
   if (_openArrowheadsBlockStrokeBake(shape) &&
-      !_lineHasLibvisioUnrepresentableGradient(shape.line)) {
+      !_lineHasLibvisioUnrepresentableGradient(shape.line) &&
+      !_shapeNeedsLibvisioPageSpaceStrokeBake(shape)) {
     return false;
   }
   if (shape.line.compoundType != 0) {
@@ -9042,6 +9061,7 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
   }
   if (_softEdgesStrokeSilhouetteKind(shape) != null) return true;
   if (_lineHasLibvisioUnrepresentableGradient(shape.line) ||
+      _shapeNeedsLibvisioPageSpaceStrokeBake(shape) ||
       isLibvisioSketchPlate(shape)) {
     return _solidStrokeRibbonPolygons(shape).isNotEmpty;
   }
@@ -9050,9 +9070,14 @@ bool _shapeHasBakeableSoftEdgesStroke(VsdxShape shape) {
 
 bool _shapeNeedsLibvisioStrokeSoftEdgesBake(VsdxShape shape) {
   final unrepresentable = _lineHasLibvisioUnrepresentableGradient(shape.line);
-  if (!_softEdgesGeometryOk(shape, allow1d: unrepresentable)) return false;
+  final pageSpace = _shapeNeedsLibvisioPageSpaceStrokeBake(shape);
+  if (!_softEdgesGeometryOk(shape, allow1d: unrepresentable || pageSpace)) {
+    return false;
+  }
   if (_shapeNeedsLibvisioFillSoftEdgesBake(shape)) return false;
-  if (shape.line.softEdgesInches <= 1e-6 && !unrepresentable) return false;
+  if (shape.line.softEdgesInches <= 1e-6 && !unrepresentable && !pageSpace) {
+    return false;
+  }
   return _shapeHasBakeableSoftEdgesStroke(shape);
 }
 
@@ -9060,7 +9085,8 @@ bool _shapeNeedsLibvisioFillStrokeSoftEdgesBake(VsdxShape shape) =>
     _shapeNeedsLibvisioFillSoftEdgesBake(shape) &&
     _shapeHasBakeableSoftEdgesStroke(shape) &&
     (shape.line.softEdgesInches > 1e-6 ||
-        _lineHasLibvisioUnrepresentableGradient(shape.line));
+        _lineHasLibvisioUnrepresentableGradient(shape.line) ||
+        _shapeNeedsLibvisioPageSpaceStrokeBake(shape));
 
 List<VsdxGeometry> _softEdgesFillGeometries(VsdxShape shape) {
   return <VsdxGeometry>[

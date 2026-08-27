@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Rotated two-stop LineGradient now keeps its local wash in LibreOffice.
+  An unfilled LineGradient becomes a FillPattern 25–40 ribbon, and
+  Draw's `draw:angle` is page-space, so a 90° wide bar kept a vertical
+  mag strip down the whole stroke while canvas / SVG already rotate
+  the AABB wash. A save bakes that PNG. Axis-aligned unflipped two-stop
+  LineGradient stays a 25–40 ribbon. A second save does not restack.
 - Rotated hatch / classic 25–40 fills now keep their local wash in
   LibreOffice. `_fillAndShadowProperties` hatch `draw:rotation` and
   gradient `draw:angle` are page-space, so a 90° FillPattern 6 box
