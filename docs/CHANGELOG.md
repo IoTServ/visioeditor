@@ -590,25 +590,34 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   sides first. Sampling, SoftEdges PNG plates, canvas clip-fill and SVG
   stacked scaled `<path>`s now follow the outline (Chebyshev on a
   rectangle, similar ellipses on an ellipse). A save bakes that plate
-  for LibreOffice. Centre radial 40 / rectangular 35 stay native. A
-  second save does not restack.
+  for LibreOffice. Centre radial 40 stays native. A second save does
+  not restack.
+- Centre rectangular FillPattern 35 / `FillGradientDir` 10 now keeps
+  Visio Chebyshev isolines in LibreOffice. Canvas / SVG already hit
+  t=1 on all four sides of a wide box; Draw's
+  `getRectangularGradientAlpha` limo-stretches the long axis
+  (`fAbsX = (fAbsX-1)*aspect+1`), so native ODF rectangular kept the
+  start colour along that edge. A save bakes the Chebyshev PNG.
+  Linear 25–34 and centre radial 40 stay native. A second save does
+  not restack.
 - FillGradientDir 8/9/11/12 rectangular fills now keep their MS-VSDX
   corner origin, matching Visio. `radialGradientOrigin` treated 8–12
   as centre (only FillPattern 35 / dir 10 is centre); dirs 1–7 now
   follow MS-VSDX 2.4.4.122 (classic 36–40 remap onto 7/6/2/1/3 so
   ODF 36 stays top-left). `_fillAndShadowProperties` still emits
   FillPattern 35 with `svg:cx/cy=0.5`, so a save bakes the Chebyshev
-  plate for 8/9/11/12 (and radial edge dirs 4/5). Centre 35/40 stay
-  native. A second save does not restack.
+  plate for 8/9/11/12 (and radial edge dirs 4/5). Centre 40 stays
+  native; centre 35 bakes as above. A second save does not restack.
 - FillPattern 35 / rectangular FillGradient now paints concentric
-  rectangles, matching LibreOffice. `_fillAndShadowProperties` emits
+  rectangles, matching Visio. `_fillAndShadowProperties` emits
   ODF `draw:style=rectangular` (`svg:cx/cy` at the box centre for id
   35); canvas / SVG used a radial disc (`ui.Gradient.radial` + clamp)
-  so a wide box washed its short sides first while Draw kept Chebyshev
-  isolines (mid-side and corner of a concentric rectangle share a
-  colour). Sampling, SoftEdges PNG plates, canvas clip-fill and SVG
-  stacked `<rect>` patterns now use that box metric. Radial 36–40 and
-  linear 25–34 stay discs / ramps.
+  so a wide box washed its short sides first. Sampling, SoftEdges PNG
+  plates, canvas clip-fill and SVG stacked `<rect>` patterns now use
+  Chebyshev isolines (mid-side and corner of a concentric rectangle
+  share a colour). Draw then limo-stretches that metric, so a save
+  bakes the plate (see above). Radial 36–40 and linear 25–34 stay
+  discs / ramps.
 - Corner radial LineGradient now strokes the full path in LibreOffice.
   Two-colour washes become a filled ribbon whose FillPattern 36–39
   `_fillAndShadowProperties` clips to an ODF circle (`svg:cx/cy` at a

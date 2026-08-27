@@ -36,11 +36,13 @@ const kVisioRectangularGradientSteps = 48;
   };
 }
 
-/// Chebyshev / box parameter for ODF rectangular (FillPattern 35).
+/// Chebyshev / box parameter for Visio rectangular (FillPattern 35).
 ///
 /// `t=0` at [radialGradientOrigin], `t=1` at the farthest axis-aligned
 /// edge. Mid-side and corner of a concentric rectangle share the same `t`,
-/// unlike a radial disc.
+/// unlike a radial disc. LibreOffice `getRectangularGradientAlpha`
+/// limo-stretches the long axis after this metric, so a save bakes
+/// FillPattern 35 for Draw.
 double rectangularGradientT(
   double x,
   double y, {

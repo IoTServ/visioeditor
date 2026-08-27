@@ -12,7 +12,8 @@
 /// opaque — including a fully transparent stop 25–40 would replace
 /// with the next opaque colour — bakes a PNG plate instead; corner
 /// radial FillPattern 36–39 clip to an ODF circle so those two-colour
-/// washes bake that plate too; EllipticalArcTo silhouettes
+/// washes bake that plate too; centre rectangular FillPattern 35 /
+/// dir 10 bakes because Draw limo-stretches the long axis; EllipticalArcTo silhouettes
 /// are sampled so a pie is not a triangle and a rounded rectangle is not
 /// the Width×Height box; multiple NoFill=0 Geometry sections punch
 /// even-odd holes so a frame is not a solid plate), baked RelQuadBezTo corners, parallel Geometry
@@ -20,8 +21,9 @@
 /// LineColorTrans (2-D and 1-D) whose FillForegndTrans libvisio *does*
 /// collect. A LineGradient with more than two unique opaque colours
 /// bakes a PNG plate instead (two-colour non-centre radial dirs
-/// 1/2/4/5/6/7 and rectangular 8/9/11/12 too — a 25–40 ribbon clips
-/// to an ODF circle or collapses to centre FillPattern 35). Arrowed 1-D connectors that also need rails or a ribbon bake
+/// 1/2/4/5/6/7, rectangular 8/9/11/12, and centre rectangular 35 /
+/// dir 10 too — a 25–40 ribbon clips to an ODF circle, collapses to
+/// centre FillPattern 35, or limo-stretches that 35). Arrowed 1-D connectors that also need rails or a ribbon bake
 /// Begin/EndArrow as Geometry so Draw does not hang a marker on
 /// every open rail, and so BeginArrowSize (not a token) still has a size.
 /// A plain stroke whose size disagrees with `_lineProperties`' line-weight
@@ -5123,7 +5125,7 @@ void main() {
     );
   });
 
-  test('FillGradientDir 8–12 rectangular corners bake; 10 stays native', () {
+  test('FillGradientDir 8–12 rectangular corners bake; 10 bakes limo', () {
     VsdxShape box(int id, int? dir) => VsdxShapeFactory.rectangle(
           id: id,
           pinX: 4.25,
@@ -5143,9 +5145,9 @@ void main() {
           ),
           line: const VsdxLine(pattern: 0),
         );
-    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(1, 10)), isFalse,
-        reason: 'FillPattern 35 is centre rectangular');
-    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(2, null)), isFalse,
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(1, 10)), isTrue,
+        reason: 'Draw limo-stretches centre rectangular FillPattern 35');
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(box(2, null)), isTrue,
         reason: 'default rectangular dir is 10');
     for (final dir in <int>[8, 9, 11, 12]) {
       expect(
@@ -5222,6 +5224,92 @@ void main() {
           .where(isLibvisioSoftEdgesPlate),
       hasLength(1),
       reason: 'a second save must not stack another rectangular plate',
+    );
+  });
+
+  test(
+      'FillPattern 35 centre rectangular bakes a Chebyshev PNG for LibreOffice',
+      () {
+    const wash = VsdxGradient(
+      type: VsdxGradientType.rectangular,
+      dir: 10,
+      stops: <VsdxGradientStop>[
+        VsdxGradientStop(position: 0, color: VsdxColor(0xFFFF00FF)),
+        VsdxGradientStop(position: 1, color: VsdxColor.white),
+      ],
+    );
+    VsdxShape box(
+            {required int id, required String name, required VsdxFill fill}) =>
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 4.25,
+          pinY: 5.5,
+          width: 2.6,
+          height: 1.0,
+          name: name,
+          fill: fill,
+          line: const VsdxLine(pattern: 0),
+        );
+    final modern = box(
+      id: 1,
+      name: 'Rect10',
+      fill: const VsdxFill(pattern: 1, gradient: wash),
+    );
+    final classic = box(
+      id: 2,
+      name: 'Fill35',
+      fill: const VsdxFill(
+        foreground: VsdxColor(0xFFFF00FF),
+        background: VsdxColor.white,
+        pattern: 35,
+      ),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(modern), isTrue,
+        reason: 'Draw limo-stretches centre rectangular FillPattern 35');
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(classic), isTrue,
+        reason: 'classic 35 is the same ODF rectangular wash');
+
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(modern));
+    final baked = documentForLibvisioWrite(doc);
+    expect(baked.pages.first.findShapeById(1)!.fill.hasFill, isFalse);
+    final plate =
+        baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate).single;
+    expect(plate.hasImage, isTrue);
+    final png = baked.images.findByPart(plate.imagePartName!);
+    expect(png, isNotNull);
+    final decoded = raster.decodePng(png!.bytes)!;
+    final centre = decoded.getPixel(decoded.width ~/ 2, decoded.height ~/ 2);
+    final midTop = decoded.getPixel(decoded.width ~/ 2, 2);
+    final midSide = decoded.getPixel(decoded.width - 3, decoded.height ~/ 2);
+    expect(centre.r, greaterThan(160));
+    expect(centre.b, greaterThan(160));
+    expect(centre.g, lessThan(140),
+        reason: 'rectangular origin is FillForegnd magenta; centre=$centre');
+    expect(midTop.g, greaterThan(centre.g + 40),
+        reason: 'short edge is t=1 (white), not a radial disc; midTop=$midTop');
+    expect(midSide.g, greaterThan(centre.g + 40),
+        reason: 'long edge is t=1 (Visio Chebyshev), not Draw limo; '
+            'midSide=$midSide');
+    expect(
+      documentForLibvisioWrite(baked)
+          .pages
+          .first
+          .shapes
+          .where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another rectangular plate',
+    );
+
+    var classicDoc = parser.parse(blank);
+    classicDoc =
+        classicDoc.replacePage(0, classicDoc.pages.first.addShape(classic));
+    final classicBaked = documentForLibvisioWrite(classicDoc);
+    expect(classicBaked.pages.first.findShapeById(2)!.fill.hasFill, isFalse);
+    expect(
+      classicBaked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
     );
   });
 
@@ -10939,7 +11027,7 @@ void main() {
     expect(rightMagenta, 0, reason: 'intersect clip must drop the right half');
   });
 
-  test('Object OLE preview bakes to MetaFile for LibreOffice', () {
+  test('Object OLE preview bakes to PNG for LibreOffice', () {
     const part = '/visio/media/probe.bin';
     final wmf = _rgbDibWmf(width: 32, height: 16);
     expect(looksLikeWmf(wmf), isTrue);
@@ -10967,11 +11055,13 @@ void main() {
     final baked = documentForLibvisioWrite(doc);
     final bakedShape = baked.pages.first.findShapeById(1)!;
     expect(shapeNeedsLibvisioOlePreviewBake(bakedShape), isFalse);
-    expect(bakedShape.foreignType, 'MetaFile');
+    expect(bakedShape.foreignType, 'Bitmap',
+        reason: 'OlePres WMF unwraps then bakes PNG Draw can paint');
     expect(bakedShape.imagePartName, isNot(part));
     final preview = baked.images.findByPart(bakedShape.imagePartName!);
     expect(preview, isNotNull);
-    expect(looksLikeWmf(preview!.bytes), isTrue);
+    expect(preview!.mimeType, 'image/png');
+    expect(looksLikeWmf(preview.bytes), isFalse);
     expect(extractOlePresentationMetafile(preview.bytes), isNull);
 
     expect(
@@ -10989,12 +11079,12 @@ void main() {
       edited: doc,
     );
     final after = parser.parse(saved).pages.first.findShapeById(1)!;
-    expect(after.foreignType, 'MetaFile');
+    expect(after.foreignType, 'Bitmap');
     expect(after.imagePartName, isNot(part));
-    final savedWmf =
+    final savedPng =
         parser.parse(saved).images.findByPart(after.imagePartName!);
-    expect(savedWmf, isNotNull);
-    expect(looksLikeWmf(savedWmf!.bytes), isTrue);
+    expect(savedPng, isNotNull);
+    expect(savedPng!.mimeType, 'image/png');
   });
 
   test('cropped picture SoftEdges composites into the frame for LibreOffice',
@@ -15887,6 +15977,19 @@ void main() {
         (s) =>
             isLibvisioSoftEdgesPlate(s) &&
             libvisioSoftEdgesSourceId(s) == fill36.id,
+      ),
+      hasLength(1),
+    );
+    final fill35 =
+        savedDoc.pages.first.shapes.firstWhere((s) => s.name == 'Fill35');
+    expect(fill35.fill.pattern, 0,
+        reason: 'Draw limo-stretches centre rectangular FillPattern 35');
+    expect(fill35.fill.hasFill, isFalse);
+    expect(
+      savedDoc.pages.first.shapes.where(
+        (s) =>
+            isLibvisioSoftEdgesPlate(s) &&
+            libvisioSoftEdgesSourceId(s) == fill35.id,
       ),
       hasLength(1),
     );

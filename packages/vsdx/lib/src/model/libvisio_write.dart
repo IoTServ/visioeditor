@@ -26,7 +26,11 @@
 /// Path `FillGradientDir` 13 is the same missing paint: there is no ODF
 /// path style, so the classic fallback is FillPattern 40 (a circle)
 /// while canvas / SVG fill concentric similar copies of the geometry.
-/// Centre radial 40 / rectangular 35 and linear 25–34 stay native. Per-stop alpha
+/// Centre radial 40 and linear 25–34 stay native. Centre rectangular 35
+/// bakes: Draw's `getRectangularGradientAlpha` limo-stretches the long
+/// axis, so a wide box keeps the start colour along that edge while
+/// canvas / SVG Chebyshev (Visio similar copies) hits t=1 on all four
+/// sides. Per-stop alpha
 /// and FillForegndTrans / FillBkgndTrans on a 25–40 wash are the same
 /// missing paint: `_fillAndShadowProperties` drops `draw:opacity` and
 /// Draw ignores `librevenge:start-opacity` / `end-opacity`, so a save
@@ -55,10 +59,10 @@
 /// Opaque LineGradient stops with more than two unique colours cannot use
 /// those two cells, so a save bakes the same SoftEdges stroke PNG at
 /// sigma 0 (1-D uses a 2-D plate sized to the stroke ribbon). Two-colour
-/// corner radial dirs 1/2/4/5/6/7, rectangular 8/9/11/12, and path 13
-/// are the same missing paint: the
+/// corner radial dirs 1/2/4/5/6/7, rectangular 8/9/11/12, centre
+/// rectangular 35 / dir 10, and path 13 are the same missing paint: the
 /// filled ribbon would become FillPattern 36–39 (clipped circle), 35
-/// (centre Chebyshev), or 40 (a circle instead of scaled copies). Per-stop
+/// (Draw limo, not Visio Chebyshev), or 40 (a circle instead of scaled copies). Per-stop
 /// alpha and LineColorTrans on a two-colour wash would otherwise stay
 /// opaque on that 25–40 ribbon. InfiniteLine
 /// samples are clipped to the shape box first — perimeter sampling otherwise
@@ -8761,7 +8765,10 @@ VsdxDocument bakeImageAdjustmentsForLibvisioWrite(VsdxDocument document) {
 /// Corner radial 36–39 clip to an ODF circle, so those two-colour
 /// washes use that plate; centre 40 stays native. Rectangular
 /// FillGradientDir 8/9/11/12 would become centre FillPattern 35,
-/// so those wash that plate too.
+/// so those wash that plate too. Centre rectangular 35 also bakes:
+/// Draw's `getRectangularGradientAlpha` limo-stretches the long axis
+/// while canvas / SVG Chebyshev (Visio similar copies) hits t=1 on
+/// all four sides.
 /// Multiple NoFill=0 Geometry sections punch even-odd holes in that
 /// plate — libvisio emits `svg:fill-rule=evenodd`, so a two-ring frame
 /// must not bake as a solid Width×Height rectangle. Leftover source
@@ -8858,8 +8865,9 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
 /// the shape. Canvas / SVG fill the path (`ui.Gradient.radial` + clamp).
 /// MS-VSDX centre radial is dir 3 (FillPattern 40); 1/2/4/5/6/7 clip.
 /// Rectangular FillPattern 35 is always `svg:cx/cy=0.5`; dirs 8/9/11/12
-/// would collapse to that centre. Linear 25–34 and centre 35/40 stay
-/// native.
+/// would collapse to that centre. Linear 25–34 and centre radial 40 stay
+/// native. Centre rectangular 35 still limo-stretches (see
+/// [_gradientHasLibvisioLimoRectangular]).
 bool _dirIsLibvisioNonCentreGradientOrigin(int? dir) => switch (dir) {
       1 || 2 || 4 || 5 || 6 || 7 || 8 || 9 || 11 || 12 => true,
       _ => false,
@@ -8879,6 +8887,20 @@ bool _gradientHasLibvisioPathWash(VsdxGradient? gradient) {
   return gradient.type == VsdxGradientType.path;
 }
 
+/// Centre rectangular (FillPattern 35 / dir 10).
+///
+/// `_fillAndShadowProperties` emits ODF `draw:style=rectangular`.
+/// LibreOffice `getRectangularGradientAlpha` then limo-stretches the
+/// long axis (`fAbsX = (fAbsX-1)*aspect+1` when aspect>1), so a wide
+/// box keeps the start colour along the long edge. Canvas / SVG use
+/// Chebyshev similar copies (mid-side and mid-top share t=1). Corner
+/// dirs 8/9/11/12 already bake via [_gradientHasLibvisioClippedRadial].
+bool _gradientHasLibvisioLimoRectangular(VsdxGradient? gradient) {
+  if (gradient == null || gradient.stops.length < 2) return false;
+  if (gradient.type != VsdxGradientType.rectangular) return false;
+  return !_dirIsLibvisioNonCentreGradientOrigin(gradient.dir);
+}
+
 bool _fillHasLibvisioClippedRadial(VsdxFill fill) =>
     _gradientHasLibvisioClippedRadial(fill.paintGradient);
 
@@ -8887,6 +8909,7 @@ bool _fillHasLibvisioUnrepresentableGradient(VsdxFill fill) {
   if (_gradientHasLibvisioUnrepresentableStops(gradient)) return true;
   if (_fillHasLibvisioClippedRadial(fill)) return true;
   if (_gradientHasLibvisioPathWash(gradient)) return true;
+  if (_gradientHasLibvisioLimoRectangular(gradient)) return true;
   if (gradient == null || gradient.stops.length < 2) return false;
   // FillPattern 25–40 drop `draw:opacity`; Draw ignores the replacement
   // `librevenge:start-opacity` / `end-opacity` from Fill*Trans.
@@ -8898,6 +8921,7 @@ bool _lineHasLibvisioUnrepresentableGradient(VsdxLine line) {
   if (_gradientHasLibvisioUnrepresentableStops(line.gradient)) return true;
   if (_gradientHasLibvisioClippedRadial(line.gradient)) return true;
   if (_gradientHasLibvisioPathWash(line.gradient)) return true;
+  if (_gradientHasLibvisioLimoRectangular(line.gradient)) return true;
   if (line.gradient == null || line.gradient!.stops.length < 2) return false;
   return line.transparency > 1e-9;
 }
@@ -9341,8 +9365,8 @@ Uint8List? _softEdgesPngForLibvisioWrite(VsdxShape shape, VsdxTheme theme) {
   if (stops.isEmpty) return null;
   final linear = gradient.type == VsdxGradientType.linear;
   final path = gradient.type == VsdxGradientType.path;
-  final rectangular = gradient.type == VsdxGradientType.rectangular ||
-      (path && !pathEllipse);
+  final rectangular =
+      gradient.type == VsdxGradientType.rectangular || (path && !pathEllipse);
   final angle = gradient.angleRad;
   final dir = gradient.dir;
   return (xPx, yPx, widthPx, heightPx) {

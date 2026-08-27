@@ -1541,7 +1541,9 @@ class VsdxPainter extends CustomPainter {
   }
 
   /// Clip to [path] and fill concentric rectangles, matching
-  /// `rectangularGradientT` / LibreOffice `draw:style=rectangular`.
+  /// `rectangularGradientT` (Visio similar copies). Draw's ODF
+  /// `draw:style=rectangular` limo-stretches the long axis, so a save
+  /// bakes this wash for LibreOffice.
   void _drawRectangularGradientFill(
     Canvas canvas,
     Path path,

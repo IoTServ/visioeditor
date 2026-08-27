@@ -459,7 +459,7 @@ void main() {
         VsdxHorzAlign.center);
   });
 
-  test('Paragraph full alignment writes and reopens as HorzAlign 4', () {
+  test('Paragraph full alignment writes HorzAlign 3 LibreOffice paints', () {
     final blank = writer.emptyDocument();
     var doc = parser.parse(blank);
     final id = doc.pages.first.nextFreeShapeId();
@@ -485,11 +485,12 @@ void main() {
     final pageXml = VsdxPackage.open(out)
         .readPartXml('/visio/pages/page1.xml')!
         .toXmlString();
-    expect(pageXml, contains('N="HorzAlign" V="4"'));
+    expect(pageXml, contains('N="HorzAlign" V="3"'),
+        reason: 'Draw falls back HorzAlign=4 to left; justify is token 3');
     final reopened = parser.parse(out).pages.first.findShapeById(id)!;
     expect(
       reopened.richText.runs.first.paraStyle.horizontalAlign,
-      VsdxHorzAlign.full,
+      VsdxHorzAlign.justify,
     );
   });
 
@@ -1799,23 +1800,19 @@ void main() {
     );
     final reopened = parser.parse(output);
     final after = reopened.pages.first.findShapeById(target.id)!;
-    expect(after.line.pattern, 3);
-    expect(after.line.beginArrow, 1);
-    expect(after.line.endArrow, 5);
-    expect(after.line.beginArrowSizeInches, closeTo(0.225, 1e-4));
-    expect(after.line.endArrowSizeInches, closeTo(0.375, 1e-4));
+    expect(after.line.pattern, 0,
+        reason: 'LineColorTrans on a filled stroke bakes a sibling ribbon');
+    expect(
+      reopened.pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+      isNotEmpty,
+    );
+    expect(after.line.beginArrow, 0);
+    expect(after.line.endArrow, 0);
     expect(after.line.cap, LineCap.square);
     expect(after.line.transparency, closeTo(0, 1e-4));
     expect(
-      after.line.color?.value,
-      colourForLibvisioAlpha(
-        target.line.color ?? VsdxColor.black,
-        0.4,
-      ).value,
-    );
+        after.line.color?.value, (target.line.color ?? VsdxColor.black).value);
     expect(after.fill.foregroundTransparency, closeTo(0.25, 1e-4));
-    expect(after.fill.background?.value, 0xFF00AA00);
-    expect(after.fill.backgroundTransparency, closeTo(0.1, 1e-4));
   });
 
   test('LayerMember + User cells round-trip on new shape', () {
@@ -5839,10 +5836,13 @@ void main() {
     expect(styled.flipX, isTrue);
     expect(styled.shadow.enabled, isTrue);
     expect(styled.fill.foregroundTransparency, closeTo(0.5, 1e-4));
+    expect(styled.line.pattern, 0,
+        reason: 'filled LineColorTrans bakes a sibling ribbon');
     expect(styled.line.transparency, closeTo(0, 1e-4));
+    expect(styled.line.color?.value, VsdxColor.black.value);
     expect(
-      styled.line.color?.value,
-      colourForLibvisioAlpha(VsdxColor.black, 0.25).value,
+      rp.shapes.where(isLibvisioStrokeRibbonPlate),
+      isNotEmpty,
     );
     expect(styled.effectiveLocPinX, closeTo(0.25, 1e-4));
     expect(styled.effectiveLocPinY, closeTo(0.75, 1e-4));
@@ -6070,9 +6070,21 @@ void main() {
     doc = doc.replacePage(0, doc.pages.first.addShape(rect));
     final out = writer.write(originalBytes: blank, edited: doc);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.line.hasGradient, isTrue);
-    expect(after.line.gradient!.stops.length, 2);
-    expect(after.line.gradient!.angleRad, closeTo(0.5, 1e-6));
+    expect(after.line.hasGradient, isFalse,
+        reason: 'tokens.txt has no LineGradient; filled 2-D bakes a ribbon');
+    expect(after.line.pattern, 0);
+    final plate = parser
+        .parse(out)
+        .pages
+        .first
+        .shapes
+        .where(isLibvisioStrokeRibbonPlate)
+        .single;
+    expect(
+        plate.fill.hasGradient ||
+            (plate.fill.pattern >= 25 && plate.fill.pattern <= 40),
+        isTrue);
+    expect(plate.fill.paintGradient!.stops.length, 2);
   });
 
   // libvisio CharIX / ParaIX fields: Case, FontScale, smallcaps, Bullet, Flags.
@@ -7603,8 +7615,11 @@ void main() {
     expect(after.fill.gradient!.type, VsdxGradientType.radial);
     expect(after.fill.gradient!.dir, 3);
 
-    // Rectangular centre preset 10 and path 13.
-    doc = parser.parse(out);
+    // Rectangular centre 10 and path 13 bake: Draw limo-stretches 35
+    // and has no ODF path style (classic fallback is FillPattern 40).
+    final afterRadial = out;
+    final stops = after.fill.gradient!.stops;
+    doc = parser.parse(afterRadial);
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
@@ -7614,18 +7629,22 @@ void main() {
             gradient: VsdxGradient(
               type: VsdxGradientType.rectangular,
               dir: 10,
-              stops: s.fill.gradient!.stops,
+              stops: stops,
             ),
           ),
         ),
       ),
     );
-    out = writer.write(originalBytes: out, edited: doc);
+    out = writer.write(originalBytes: afterRadial, edited: doc);
     after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.fill.gradient!.type, VsdxGradientType.rectangular);
-    expect(after.fill.gradient!.dir, 10);
+    expect(after.fill.hasFill, isFalse,
+        reason: 'Draw limo-stretches centre rectangular FillPattern 35');
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      isNotEmpty,
+    );
 
-    doc = parser.parse(out);
+    doc = parser.parse(afterRadial);
     doc = doc.replacePage(
       0,
       doc.pages.first.updateShapeById(
@@ -7635,13 +7654,13 @@ void main() {
             gradient: VsdxGradient(
               type: VsdxGradientType.path,
               dir: 13,
-              stops: s.fill.gradient!.stops,
+              stops: stops,
             ),
           ),
         ),
       ),
     );
-    out = writer.write(originalBytes: out, edited: doc);
+    out = writer.write(originalBytes: afterRadial, edited: doc);
     pageXml = utf8.decode(
       ZipDecoder()
           .decodeBytes(out)
@@ -8063,16 +8082,21 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('N="LineGradient"'), isTrue);
+    expect(pageXml.contains('N="LineGradient"'), isFalse,
+        reason: 'filled LineGradient bakes a sibling FillPattern ribbon');
     expect(
-      RegExp(r'N="GradientStopColor"[^>]*F="THEMEVAL').hasMatch(pageXml) ||
-          RegExp(r'F="THEMEVAL\(\)"[^>]*N="GradientStopColor"')
-              .hasMatch(pageXml),
-      isTrue,
+      parser.parse(out).pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+      isNotEmpty,
     );
-    final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.line.gradient!.stops.first.themeColorIndex, 2);
-    expect(after.line.gradient!.stops.last.themeColorIndex, 5);
+    final plate = parser
+        .parse(out)
+        .pages
+        .first
+        .shapes
+        .where(isLibvisioStrokeRibbonPlate)
+        .single;
+    expect(plate.fill.paintGradient, isNotNull);
+    expect(plate.fill.paintGradient!.stops.length, 2);
   });
 
   test('MS LineGradientDir radial round-trips', () {
@@ -8110,11 +8134,18 @@ void main() {
           .firstWhere((f) => f.name.contains('pages/page1.xml'))
           .content as List<int>,
     );
-    expect(pageXml.contains('N="LineGradientDir" V="4"'), isTrue);
+    expect(pageXml.contains('N="LineGradientDir" V="4"'), isFalse,
+        reason: 'MS dir 4 clips to an ODF circle; a save bakes the stroke');
     expect(pageXml.contains('N="LineGradientDir" V="35"'), isFalse);
     final after = parser.parse(out).pages.first.findShapeById(id)!;
-    expect(after.line.gradient!.type, VsdxGradientType.radial);
-    expect(after.line.gradient!.dir, 4);
+    expect(after.line.hasGradient, isFalse);
+    expect(
+      parser.parse(out).pages.first.shapes.where(
+            (s) =>
+                isLibvisioStrokeRibbonPlate(s) || isLibvisioSoftEdgesPlate(s),
+          ),
+      isNotEmpty,
+    );
   });
 
   test('glow colour edited then disabled survives single save', () {
@@ -8698,8 +8729,13 @@ void main() {
               e.name.local == 'Cell' &&
               e.getAttribute('N') == 'LineGradientEnabled',
         );
-    expect(cell.getAttribute('V'), '1');
+    expect(cell.getAttribute('V'), '0',
+        reason: 'filled LineGradient bakes a ribbon; leftover Enabled is off');
     expect(cell.getAttribute('F'), isNull);
+    expect(
+      parser.parse(out).pages.first.shapes.where(isLibvisioStrokeRibbonPlate),
+      isNotEmpty,
+    );
   });
 
   test('ShadowPattern V=1 F=Inh scrubs while shadow stays on', () {
