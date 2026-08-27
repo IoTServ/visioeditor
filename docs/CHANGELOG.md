@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Network hubs now keep a solid disc in LibreOffice.
+  Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw
+  punched the hub centre into a hole. The factory now fills the disc
+  and strokes the inner circle. A second save does not restore two
+  filled ellipses.
 - Saving no longer deletes the original EMF / WMF / OLE media a LibreOffice
   bake replaced with a PNG. `documentForLibvisioWrite` still repoints the
   picture at a `ForeignType=Bitmap` preview so Draw does not fill Blue 2,

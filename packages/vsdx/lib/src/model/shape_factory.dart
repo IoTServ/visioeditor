@@ -5126,15 +5126,20 @@ abstract final class VsdxShapeFactory {
           EllipseCmd(cx: cx, cy: cy, aX: w, aY: cy, bX: cx, bY: 0),
         ]),
         VsdxGeometry(noFill: true, commands: spokes),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          EllipseCmd(
-              cx: cx,
-              cy: cy,
-              aX: cx + 0.12 * w,
-              aY: cy,
-              bX: cx,
-              bY: cy + 0.12 * h),
-        ]),
+        // Inner disc used to be NoFill=0, which evenodd-punched a hole through
+        // the hub in canvas, SVG and libvisio `_fillAndShadowProperties`.
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: cx,
+                cy: cy,
+                aX: cx + 0.12 * w,
+                aY: cy,
+                bX: cx,
+                bY: cy + 0.12 * h),
+          ],
+        ),
       ],
       fill: fill,
       line: line,
