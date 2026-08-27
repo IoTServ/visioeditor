@@ -25,7 +25,9 @@
 /// linear bakes. A three-stop linear whose ends differ still bakes.
 /// Two-stop linear 25–34 stay native at those eight compass points;
 /// an off-cardinal `FillGradientAngle` (15°, …) would snap to the
-/// nearest id and bakes.
+/// nearest id and bakes. Authored stop positions that are not 0→1
+/// (or axial 0 / 0.5 / 1) snap the same way — FillPattern 25–40 has
+/// no stop-position cells — and bake.
 /// Corner radial FillPattern 36–39 (and modern radial dirs 1/2/4/5/6/7 plus
 /// rectangular 8/9/11/12) are the
 /// same missing paint: `_fillAndShadowProperties` emits ODF
@@ -8886,7 +8888,9 @@ bool _gradientHasLibvisioUnrepresentableStops(VsdxGradient? gradient) {
     ];
     if (opaque.length >= 3) return true;
   }
-  return false;
+  // 25–40 always run 0→1 (axial peaks at 0.5). Inset or shifted stops
+  // would snap while canvas / SVG keep Position.
+  return !libvisioGradientStopsFitClassic(gradient);
 }
 
 /// Draw's ODF radial with a non-centre `svg:cx/cy` paints a circle, not

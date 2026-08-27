@@ -452,6 +452,31 @@ bool libvisioGradientAngleFitsClassic(VsdxGradient? gradient) {
   return best <= maxDelta;
 }
 
+/// Whether Draw can paint [gradient]'s stop positions as FillPattern 25–40.
+///
+/// Classic linear 25–34 and radial / rectangular 35–40 interpolate
+/// FillBkgnd→FillForegnd across the whole box. Axial 26 / 29 always
+/// peaks at the centre. `FillGradient` stop `Position` is not a token, so
+/// inset two-stops (0.25→0.75) or an off-centre axial peak would snap to
+/// that layout while canvas / SVG keep the authored positions.
+bool libvisioGradientStopsFitClassic(VsdxGradient? gradient) {
+  if (gradient == null || gradient.stops.length < 2) return true;
+  final opaque = _libvisioOpaqueStops(gradient.stops);
+  if (opaque.length < 2) return true;
+  const eps = 0.05;
+  if (libvisioGradientIsAxialWash(gradient)) {
+    if (opaque.first.position > eps) return false;
+    if (opaque.last.position < 1 - eps) return false;
+    final peak = _libvisioAxialPeakStop(gradient.stops);
+    if (peak == null) return false;
+    if ((peak.position - 0.5).abs() > eps) return false;
+    return opaque.length <= 3;
+  }
+  if (opaque.first.position > eps) return false;
+  if (opaque.last.position < 1 - eps) return false;
+  return true;
+}
+
 /// `FillPattern` LibreOffice's libvisio importer will actually collect.
 ///
 /// Ids above 40 fall through `_fillAndShadowProperties` to a solid

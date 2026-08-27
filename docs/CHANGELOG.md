@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- FillGradient / LineGradient stop **positions** now keep their authored
+  inset in LibreOffice. FillPattern 25–40 interpolates two colours across
+  the whole box (axial 26 / 29 always peaks at the centre); `FillGradient`
+  `Position` is not a token, so 0.25→0.75 and an off-centre three-stop
+  peak snapped to 0→1 / 0.5 while canvas / SVG already paint the stops.
+  A save bakes that PNG. Edge-to-edge 25–34 and centred 26 / 29 stay
+  native. A second save does not restack.
 - Off-axis linear FillGradient / LineGradient now keep their authored
   angle in LibreOffice. `_fillAndShadowProperties` only emits ODF axial
   at `draw:angle` 0 / 90 (FillPattern 29 / 26) and eight linear compass

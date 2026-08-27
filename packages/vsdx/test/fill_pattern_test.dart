@@ -507,6 +507,175 @@ void main() {
     );
   });
 
+  test('inset two-stop FillGradient bakes; 0→1 stays FillPattern 25–34', () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const full = VsdxFill(
+      pattern: 1,
+      gradient: VsdxGradient(
+        stops: [
+          VsdxGradientStop(position: 0, color: mag),
+          VsdxGradientStop(position: 1, color: VsdxColor.white),
+        ],
+      ),
+    );
+    expect(libvisioGradientStopsFitClassic(full.gradient), isTrue);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 2,
+          fill: full,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isFalse,
+    );
+
+    const inset = VsdxFill(
+      pattern: 1,
+      gradient: VsdxGradient(
+        stops: [
+          VsdxGradientStop(position: 0.25, color: mag),
+          VsdxGradientStop(position: 0.75, color: VsdxColor.white),
+        ],
+      ),
+    );
+    expect(libvisioGradientStopsFitClassic(inset.gradient), isFalse);
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 4.8,
+      height: 1.2,
+      fill: inset,
+      line: const VsdxLine(pattern: 0),
+    );
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(baked.pages.first.findShapeById(1)!.fill.pattern, 0);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+    final again = documentForLibvisioWrite(baked);
+    expect(
+      again.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+      reason: 'a second save must not stack another inset-stop plate',
+    );
+  });
+
+  test('off-centre axial FillGradient bakes; peak at 0.5 stays FillPattern 26',
+      () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const centred = VsdxFill(
+      pattern: 1,
+      gradient: VsdxGradient(
+        stops: [
+          VsdxGradientStop(position: 0, color: VsdxColor.white),
+          VsdxGradientStop(position: 0.5, color: mag),
+          VsdxGradientStop(position: 1, color: VsdxColor.white),
+        ],
+      ),
+    );
+    expect(libvisioGradientIsAxialWash(centred.gradient), isTrue);
+    expect(libvisioGradientStopsFitClassic(centred.gradient), isTrue);
+    expect(fillPatternForLibvisioWrite(centred), 26);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 2,
+          height: 2,
+          fill: centred,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isFalse,
+    );
+
+    const shifted = VsdxFill(
+      pattern: 1,
+      gradient: VsdxGradient(
+        stops: [
+          VsdxGradientStop(position: 0, color: VsdxColor.white),
+          VsdxGradientStop(position: 0.2, color: mag),
+          VsdxGradientStop(position: 1, color: VsdxColor.white),
+        ],
+      ),
+    );
+    expect(libvisioGradientIsAxialWash(shifted.gradient), isTrue);
+    expect(libvisioGradientStopsFitClassic(shifted.gradient), isFalse);
+    expect(
+      shapeNeedsLibvisioGeometrySoftEdgesBake(
+        VsdxShapeFactory.rectangle(
+          id: 1,
+          pinX: 2,
+          pinY: 2,
+          width: 4.8,
+          height: 1.2,
+          fill: shifted,
+          line: const VsdxLine(pattern: 0),
+        ),
+      ),
+      isTrue,
+    );
+  });
+
+  test('inset two-stop LineGradient bakes a PNG for LibreOffice', () {
+    const mag = VsdxColor(0xFFFF00FF);
+    const wash = VsdxGradient(
+      stops: [
+        VsdxGradientStop(position: 0.25, color: mag),
+        VsdxGradientStop(position: 0.75, color: VsdxColor.white),
+      ],
+    );
+    final shape = VsdxShape(
+      id: 1,
+      name: 'LineInset',
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 4,
+      height: 0.4,
+      fill: const VsdxFill(pattern: 0),
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[MoveTo(0, 0.2), LineTo(4, 0.2)],
+        ),
+      ],
+      line: const VsdxLine(
+        pattern: 1,
+        weightInches: 0.18,
+        gradient: wash,
+      ),
+    );
+    expect(libvisioGradientStopsFitClassic(shape.line.gradient), isFalse);
+    expect(shapeNeedsLibvisioGeometrySoftEdgesBake(shape), isTrue);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final baked = documentForLibvisioWrite(doc);
+    expect(baked.pages.first.findShapeById(1)!.line.pattern, 0);
+    expect(baked.pages.first.findShapeById(1)!.line.hasGradient, isFalse);
+    expect(
+      baked.pages.first.shapes.where(isLibvisioSoftEdgesPlate),
+      hasLength(1),
+    );
+  });
+
   test('geometry-less FillPattern=1 writes 0 so Edraw cannot fill the text box',
       () {
     final shape = VsdxShapeFactory.rectangle(
