@@ -424,16 +424,16 @@ class NestedStencil {
     if (!(w > 0) || !(h > 0)) return;
     const direction = shape && shape.style ? shape.style.direction : null;
     const aspect = this.computeAspect(shape && shape.style, x, y, w, h, direction);
-    this.drawChildren(canvas, this.bgNode, aspect);
-    this.drawChildren(canvas, this.fgNode, aspect);
+    this.drawChildren(canvas, this.bgNode, aspect, shape);
+    this.drawChildren(canvas, this.fgNode, aspect, shape);
   }
 
-  drawChildren(canvas, node, aspect) {
+  drawChildren(canvas, node, aspect, shape) {
     if (!node) return;
-    for (const child of node.children) this.drawNode(canvas, child, aspect);
+    for (const child of node.children) this.drawNode(canvas, child, aspect, shape);
   }
 
-  drawNode(canvas, node, aspect) {
+  drawNode(canvas, node, aspect, shape) {
     const name = node.name;
     const x0 = aspect.x;
     const y0 = aspect.y;
@@ -446,7 +446,7 @@ class NestedStencil {
     else if (name === 'restore') canvas.restore();
     else if (name === 'path') {
       canvas.begin();
-      for (const child of node.children) this.drawNode(canvas, child, aspect);
+      for (const child of node.children) this.drawNode(canvas, child, aspect, shape);
     } else if (name === 'close') canvas.close();
     else if (name === 'move') canvas.moveTo(X('x'), Y('y'));
     else if (name === 'line') canvas.lineTo(X('x'), Y('y'));
@@ -490,14 +490,27 @@ class NestedStencil {
       const nested = stencilMap[String(node.attrs.name || '').toLowerCase()];
       if (nested) {
         nested.drawShape(
-          canvas, null, X('x'), Y('y'),
+          canvas, shape, X('x'), Y('y'),
           attrNum(node, 'w') * sx, attrNum(node, 'h') * sy,
         );
       }
     } else if (name === 'fillstroke' || name === 'fillstrokecolor') canvas.fillAndStroke();
     else if (name === 'fill') canvas.fill();
     else if (name === 'stroke') canvas.stroke();
-    else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
+    else if (name === 'fillcolor') {
+      // mxStencil.parseColor: only 'none' / 'fill' / 'stroke' change
+      // NoFill vs fill. Hex palette colours stay the project fill so
+      // LibreOffice still paints FillForegnd.
+      const color = node.attrs.color;
+      if (color === 'none') canvas.setFillColor(null);
+      else if (color === 'stroke' && shape) canvas.setFillColor(shape.stroke);
+      else if (color === 'fill' && shape) canvas.setFillColor(shape.fill);
+    } else if (name === 'strokecolor') {
+      const color = node.attrs.color;
+      if (color === 'none') canvas.setStrokeColor(null);
+      else if (color === 'fill' && shape) canvas.setStrokeColor(shape.fill);
+      else if (color === 'stroke' && shape) canvas.setStrokeColor(shape.stroke);
+    } else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
     else if (name === 'dashpattern') canvas.setDashed(true);
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
     else if (name === 'fontstyle') canvas.setFontStyle(attrNum(node, 'style'));
@@ -1220,9 +1233,21 @@ const noPainterEntries = [];
 const paintErrors = [];
 const paintErrorCounts = {};
 function isGenericStyle(style) {
+  // Raster pictures stay out of the vector catalog. Empty / rectangle /
+  // label / rect vertices are official mxRectangleShape (rounded, dashed,
+  // fillColor=none) so LibreOffice's VisioDocument::parse can paint them.
   const name = style && style.shape;
-  return name == null || name === '' || name === 'rectangle' ||
-    name === 'label' || name === 'image' || name === 'rect';
+  return name === 'image';
+}
+
+function vertexPainter(style) {
+  const name = style && style.shape;
+  if (name && registry[name]) return registry[name];
+  if (name == null || name === '' || name === 'rectangle' ||
+      name === 'label' || name === 'rect') {
+    return registry[mxConstants.SHAPE_RECTANGLE];
+  }
+  return null;
 }
 
 function recordingCanvas() {
@@ -1655,7 +1680,7 @@ function renderEntry(entry) {
       unregisteredShapes[key] = (unregisteredShapes[key] || 0) + 1;
       return null;
     }
-    const ctor = registry[style.shape];
+    const ctor = vertexPainter(style);
     if (!ctor) {
       renderStats.unregistered++;
       const key = String(style.shape || '(none)');
@@ -1671,6 +1696,7 @@ function renderEntry(entry) {
     }
     width = Math.max(1, Number(entry.width) || 100);
     height = Math.max(1, Number(entry.height) || 100);
+    if (!style.shape) style = {...style, shape: mxConstants.SHAPE_RECTANGLE};
     shape = paintRegistered(style, width, height, canvas);
     if (!shape) return null;
   } else if (entry.kind === 'data' && entry.data) {

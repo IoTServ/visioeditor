@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(218));
+    expect(dynamic, hasLength(219));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      5016,
+      5245,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1210,6 +1210,90 @@ void main() {
             .expand((geometry) => geometry.commands)
             .any((command) => command is EllipseCmd),
         isTrue,
+      );
+    },
+  );
+
+  test(
+    'mxRectangleShape default vertices stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final process = stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Process',
+      ).build(110, 3, 3);
+      expect(
+        process.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+        reason: 'rounded=1;absoluteArcSize=1 is mxRectangleShape roundrect',
+      );
+      expect(
+        process.geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo),
+        isTrue,
+        reason: 'arcSize=14 must not collapse to a sharp four-line rect',
+      );
+
+      final zone = stencil(
+        'Draw.io JS / AWS4 / AWS / Groups',
+        'Availability Zone',
+      ).build(111, 3, 3);
+      expect(
+        zone.geometries.every((geometry) => geometry.noFill),
+        isTrue,
+        reason: 'fillColor=none group box must not leave a fill plate',
+      );
+      expect(
+        zone.line.pattern,
+        2,
+        reason: 'dashed=1 Availability Zone is LinePattern 2 in tokens.txt',
+      );
+
+      final security = stencil(
+        'Draw.io JS / AWS4 / AWS / Groups',
+        'Security group',
+      ).build(112, 3, 3);
+      expect(
+        security.geometries.every((geometry) => geometry.noFill),
+        isTrue,
+      );
+      expect(security.line.pattern, 1);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final processId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Process',
+      ).build(processId, 3, 3));
+      final zoneId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / AWS4 / AWS / Groups',
+        'Availability Zone',
+      ).build(zoneId, 5, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(processId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isTrue,
+      );
+      expect(
+        leftover.findShapeById(zoneId)!.line.pattern,
+        2,
       );
     },
   );

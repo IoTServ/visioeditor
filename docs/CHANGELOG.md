@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io default rectangles now stay native in LibreOffice. Capture treated
+  empty `shape`, `rectangle`, `label` and `rect` as unregistered, so Flowchart
+  Process and AWS Availability Zone never reached `VisioDocument::parse`.
+  Those vertices now use official `mxRectangleShape.paintBackground` (rounded
+  / dashed / `fillColor=none`). Nested stencil `fillcolor=none` /
+  `strokecolor=none` also match `mxStencil.parseColor`. A second save keeps
+  the roundrect and dashed hollow box.
 - draw.io `link` and `flexArrow` connectors now stay native in LibreOffice.
   Capture inherited a polyline `paintEdgeShape`, so BPMN Conversation Link
   and Lean Mapping shipments never reached `VisioDocument::parse` as the
