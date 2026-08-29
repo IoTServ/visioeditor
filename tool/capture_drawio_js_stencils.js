@@ -1003,7 +1003,18 @@ function parseXml(xml) {
   const re = /<(\/)?([A-Za-z_][\w:.-]*)([^>]*?)(\/)?>|([^<]+)/g;
   let match;
   while ((match = re.exec(cleaned))) {
-    if (match[5] != null) continue;
+    if (match[5] != null) {
+      const raw = match[5];
+      if (/\S/.test(raw)) {
+        stack[stack.length - 1].children.push({
+          name: '#text',
+          attrs: {},
+          children: [],
+          text: decodeXml(raw),
+        });
+      }
+      continue;
+    }
     if (match[1]) {
       if (stack.length > 1) stack.pop();
       continue;
@@ -1214,6 +1225,10 @@ function svgPresentation(node, inherited, css) {
   }
   if (node.attrs['stroke-miterlimit'] != null) {
     style['stroke-miterlimit'] = node.attrs['stroke-miterlimit'];
+  }
+  if (node.attrs['font-size'] != null) style['font-size'] = node.attrs['font-size'];
+  if (node.attrs['font-family'] != null) {
+    style['font-family'] = node.attrs['font-family'];
   }
   return style;
 }
@@ -1617,8 +1632,83 @@ function paintSvgPath(canvas, d) {
 const svgSkip = new Set([
   'defs', 'title', 'desc', 'metadata', 'namedview', 'rdf', 'work', 'clippath',
   'filter', 'lineargradient', 'radialgradient', 'stop', 'style', 'script',
-  'marker', 'text', 'tspan',
+  'marker',
 ]);
+
+function svgTextContent(node) {
+  const parts = [];
+  const walk = (n) => {
+    if (n && n.name === '#text' && n.text) parts.push(String(n.text));
+    for (const child of (n && n.children) || []) walk(child);
+  };
+  walk(node);
+  return parts.join('');
+}
+
+function svgHasTextPath(node) {
+  if (!node) return false;
+  if (xmlLocalName(node.name) === 'textpath') return true;
+  return (node.children || []).some(svgHasTextPath);
+}
+
+function svgFontFamily(raw) {
+  const mapped = htmlFontFamily(raw);
+  if (mapped) return mapped;
+  const first = String(raw || '').split(',')[0].trim().replace(/^["']+|["']+$/g, '');
+  if (!first) return null;
+  if (/^arial/i.test(first)) return 'Arial';
+  return first;
+}
+
+// SVG <text>/<tspan> (Cumulus DDos Server). y is baseline; mxXmlCanvas2D
+// valign=bottom puts that point at the box bottom so collectCharIX Size
+// / fo:color match the glyph. Skip textPath (IBM Key Mgmt follows a curve).
+function paintSvgText(canvas, node, inherited, css) {
+  if (svgHasTextPath(node)) return false;
+  const style = svgPresentation(node, inherited, css);
+  const x0 = svgLength(node.attrs.x, 0);
+  const y0 = svgLength(node.attrs.y, 0);
+  const paintRun = (raw, st, x, y) => {
+    const str = String(raw || '').replace(/\s+/g, ' ');
+    if (!str.trim()) return false;
+    const size = svgLength(st['font-size'], NaN);
+    if (Number.isFinite(size) && size > 0 && canvas.setFontSize) {
+      canvas.setFontSize(size * canvasMinScale(canvas));
+    }
+    const family = svgFontFamily(st['font-family'] || '');
+    if (family && canvas.setFontFamily) canvas.setFontFamily(family);
+    const fill = st.fill;
+    if (fill && !svgPaintIsNone(fill) && canvas.setFontColor) {
+      if (!/^currentcolor$/i.test(fill) && !/^url\(/i.test(fill)) {
+        canvas.setFontColor(htmlCssColorToHex(fill) || fill);
+      }
+    }
+    // SVG y is baseline. Pass a box whose bottom sits on y so
+    // collectTextBlock svg:height is wide enough that Draw does not wrap
+    // "DDos" (pdftotext was splitting DDo/s on a zero-size glyph pin).
+    const fs = Number(canvas.state.fontSize) || 12;
+    const bw = Math.max(fs * 1.2, str.length * fs * 0.75);
+    const bh = fs * 1.4;
+    canvas.text(x, y - bh, bw, bh, str, 'left', 'bottom');
+    return true;
+  };
+  const kids = node.children || [];
+  const spans = kids.filter((child) => xmlLocalName(child.name) === 'tspan');
+  if (!spans.length) return paintRun(svgTextContent(node), style, x0, y0);
+  let painted = false;
+  for (const child of kids) {
+    if (child.name === '#text') {
+      if (paintRun(child.text, style, x0, y0)) painted = true;
+      continue;
+    }
+    if (xmlLocalName(child.name) !== 'tspan') continue;
+    const st = svgPresentation(child, style, css);
+    const x = child.attrs.x != null ? svgLength(child.attrs.x, x0) : x0;
+    const y = child.attrs.y != null ? svgLength(child.attrs.y, y0) : y0;
+    if (paintRun(svgTextContent(child), st, x, y)) painted = true;
+  }
+  return painted;
+}
 
 function findSvgById(node, id) {
   if (!node || !id) return null;
@@ -1632,13 +1722,16 @@ function findSvgById(node, id) {
 
 function paintSvgNode(canvas, node, inherited, root, css) {
   const name = xmlLocalName(node.name);
-  if (svgSkip.has(name)) return false;
+  if (name === '#text' || svgSkip.has(name)) return false;
   const transformed = applySvgTransform(
     canvas, node.attrs && node.attrs.transform,
   );
   try {
     const style = svgPresentation(node, inherited, css);
     let painted = false;
+    if (name === 'text' || name === 'tspan') {
+      return paintSvgText(canvas, node, inherited, css);
+    }
     if (name === 'use') {
       const href = node.attrs.href || node.attrs['xlink:href'] || '';
       const id = String(href).replace(/^#/, '');

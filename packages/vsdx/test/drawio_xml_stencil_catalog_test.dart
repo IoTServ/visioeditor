@@ -4898,6 +4898,69 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG text stays Char cells for LibreOffice',
+    () {
+      VsdxShape? labelOf(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = labelOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final ddos = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Cumulus / Cumulus',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'DDos Server')
+          .build(137, 3, 3);
+      final glyph = labelOf(ddos, 'DDos');
+      expect(
+        glyph,
+        isNotNull,
+        reason: 'ddos_server.svg <tspan>DDos</tspan> must reach collectCharIX, '
+            'not only the sidebar IP label',
+      );
+      expect(
+        glyph!.richText.runs.first.charStyle.color,
+        VsdxColor.white,
+        reason: 'fill="#fff" must stay Char Color that collectCharIX maps '
+            'to fo:color',
+      );
+      expect(
+        glyph.richText.runs.first.charStyle.fontSizeInches,
+        greaterThan(0.04),
+        reason: 'tspan font-size=5.333 scaled into the icon must exceed '
+            'Visio\'s 0.5pt Char.Size floor',
+      );
+      expect(labelOf(ddos, '192.168.0.32'), isNotNull);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(ddos.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        labelOf(leftover, 'DDos'),
+        isNotNull,
+        reason: 'a second save must keep the SVG text glyph',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

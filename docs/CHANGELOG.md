@@ -847,6 +847,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   scales `stroke-width` / `stroke-linecap` / `stroke-linejoin` with
   the SVG `map()` scale into the same stencil units as MoveTo.
   A second save keeps LineWeight.
+- draw.io mxImageShape SVG `<text>` now stays native in
+  LibreOffice. Official Cumulus DDos Server paints `DDos` through
+  `<text>/<tspan>` (y is baseline, `font-size` on the tspan), but
+  capture skipped those elements and dropped text nodes from
+  `parseXml`, so `collectCharIX` never saw the glyph — only the
+  sidebar IP label. Capture now keeps character data, scales
+  `font-size` with the SVG `map()` transform, and freezes
+  `fo:font-size` / `fo:color` / `style:font-name`. `textPath` is
+  still skipped. A second save keeps the run.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
