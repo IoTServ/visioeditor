@@ -778,6 +778,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `collectCharIX` maps to `fo:font-size`. Table `font-size:1.5em` (Orders
   `IN`) now inherits onto the cell runs. CSS `font-size: 11px` stays a
   length. A second save keeps Size.
+- draw.io mxText html `text-wrap: nowrap` now stays native in LibreOffice.
+  Official `mxText` paints CSS `text-wrap: nowrap` (SAP Diagram Title)
+  as a non-wrapping HTML span, but capture kept cell `whiteSpace=wrap`,
+  so the long description wrapped inside the 500px box. `collectTextBlock`
+  has no wrap token (`veWordWrap` is a User row LibreOffice never
+  collects); omitting wrap lets a save expand TxtWidth (`svg:width`) so
+  Draw keeps each `<br>` line unwrapped. A second save keeps the wide
+  text frame.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

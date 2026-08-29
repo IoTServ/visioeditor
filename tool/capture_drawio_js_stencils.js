@@ -424,6 +424,10 @@ class CanvasRecorder {
     const p = this.map(x, y);
     const rot = (Number(rotation) || 0) + this.rotTheta;
     const htmlOn = format === 'html' || /<[a-zA-Z][\s\S]*>/.test(s);
+    // CSS text-wrap/white-space nowrap on html=1 (SAP Diagram Title)
+    // must win over cell whiteSpace=wrap. collectTextBlock has no wrap
+    // token; veWordWrap bake expands TxtWidth when wrap stays off.
+    const htmlNowrap = htmlOn && htmlHasNowrap(s);
     const cellAlign = horiz.includes('center')
       ? 'center'
       : horiz.includes('right')
@@ -470,6 +474,7 @@ class CanvasRecorder {
       let wrapOn = !!this.state.wrap;
       if (wrap === true || wrap === 1 || wrap === '1') wrapOn = true;
       else if (wrap === false || wrap === 0 || wrap === '0') wrapOn = false;
+      if (htmlNowrap) wrapOn = false;
       if (wrapOn) attrs.push('wrap="1"');
     }
     if (this.state.verticalText) attrs.push('vertical="1"');
@@ -3105,6 +3110,12 @@ function htmlFontFamily(raw) {
     }
   }
   return fallback;
+}
+
+function htmlHasNowrap(html) {
+  const source = String(html || '');
+  return /text-wrap\s*:\s*nowrap/i.test(source)
+    || /white-space\s*:\s*nowrap/i.test(source);
 }
 
 function htmlAlignToken(raw) {

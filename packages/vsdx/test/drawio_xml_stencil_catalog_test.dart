@@ -2948,6 +2948,63 @@ void main() {
   );
 
   test(
+    'mxText html text-wrap nowrap stays unwrapped for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if ((child.text ?? '').contains(text)) return child;
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final title = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / Essentials',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Diagram Title (2)')
+          .build(459, 3, 3);
+      final glyph = glyphContaining(title, 'Diagram Level L1')!;
+      expect(
+        glyph.wordWrap,
+        isFalse,
+        reason: 'html text-wrap:nowrap wins over whiteSpace=wrap so '
+            'veWordWrap bake can expand TxtWidth Draw collects as svg:width',
+      );
+      expect(
+        glyphContaining(title, 'Keep it short')!.wordWrap,
+        isFalse,
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(title.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverGlyph = glyphContaining(leftover, 'Diagram Level L1')!;
+      expect(
+        leftoverGlyph.richText.textBlock.widthInches,
+        greaterThan(title.width + 0.2),
+        reason: 'a second save must widen TxtWidth so LibreOffice does not '
+            'wrap the nowrap description to the 500px cell',
+      );
+    },
+  );
+
+  test(
     'mxCell xml placeholder labels stay substituted Text for LibreOffice',
     () {
       String allText(VsdxShape shape) {
