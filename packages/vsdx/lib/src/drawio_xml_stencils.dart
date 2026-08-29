@@ -375,6 +375,12 @@ class _DrawioXmlShapeDecoder {
             text: str,
             x: _number(node, 'x'),
             y: _number(node, 'y'),
+            boxWidth: _number(node, 'w'),
+            boxHeight: _number(node, 'h'),
+            spacingLeft: _number(node, 'spacing-left'),
+            spacingRight: _number(node, 'spacing-right'),
+            spacingTop: _number(node, 'spacing-top'),
+            spacingBottom: _number(node, 'spacing-bottom'),
             align: node.getAttribute('align') ?? 'left',
             valign: node.getAttribute('valign') ?? 'top',
             vertical: node.getAttribute('vertical') == '1',
@@ -985,23 +991,37 @@ class _DrawioXmlShapeDecoder {
     required int id,
     required _DrawioStencilLabel label,
   }) {
-    final fontInches =
-        math.max(0.04, label.fontSize * math.min(scaleX, scaleY));
-    final width =
-        math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
-    final height = fontInches * 1.4;
-    final x = _x(label.x);
-    final y = _y(label.y);
-    final pinX = switch (label.align) {
-      'left' => x + width / 2,
-      'right' => x - width / 2,
-      _ => x,
-    };
-    final pinY = switch (label.valign) {
-      'bottom' => y + height / 2,
-      'middle' => y,
-      _ => y - height / 2,
-    };
+    final scale = math.min(scaleX.abs(), scaleY.abs());
+    final fontInches = math.max(0.04, label.fontSize * scale);
+    // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
+    // keep a tight pin; cell values (Ammeter A, Bootstrap Alert) fill
+    // the frame collectTextBlock maps to svg:width / fo:padding-*.
+    final hasBox = label.boxWidth > 0 && label.boxHeight > 0;
+    final width = hasBox
+        ? math.max(label.boxWidth * scaleX.abs(), fontInches * 0.5)
+        : math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
+    final height = hasBox
+        ? math.max(label.boxHeight * scaleY.abs(), fontInches * 0.5)
+        : fontInches * 1.4;
+    late final double pinX;
+    late final double pinY;
+    if (hasBox) {
+      pinX = _x(label.x + label.boxWidth / 2);
+      pinY = _y(label.y + label.boxHeight / 2);
+    } else {
+      final x = _x(label.x);
+      final y = _y(label.y);
+      pinX = switch (label.align) {
+        'left' => x + width / 2,
+        'right' => x - width / 2,
+        _ => x,
+      };
+      pinY = switch (label.valign) {
+        'bottom' => y + height / 2,
+        'middle' => y,
+        _ => y - height / 2,
+      };
+    }
     final horz = switch (label.align) {
       'center' => VsdxHorzAlign.center,
       'right' => VsdxHorzAlign.right,
@@ -1021,6 +1041,8 @@ class _DrawioXmlShapeDecoder {
       pinY: pinY,
       width: width,
       height: height,
+      locPinXInches: width / 2,
+      locPinYInches: height / 2,
       text: label.text,
       richText: VsdxRichText(
         runs: <VsdxTextRun>[
@@ -1034,6 +1056,7 @@ class _DrawioXmlShapeDecoder {
                 italic: (label.fontStyle & 2) != 0,
               ),
               underline: (label.fontStyle & 4) != 0,
+              strikethrough: (label.fontStyle & 8) != 0,
               color: label.color,
             ),
             paraStyle: VsdxParaStyle(horizontalAlign: horz),
@@ -1041,10 +1064,10 @@ class _DrawioXmlShapeDecoder {
         ],
         textBlock: VsdxTextBlock(
           verticalAlign: vert,
-          marginLeftInches: 0,
-          marginRightInches: 0,
-          marginTopInches: 0,
-          marginBottomInches: 0,
+          marginLeftInches: hasBox ? label.spacingLeft * scale : 0,
+          marginRightInches: hasBox ? label.spacingRight * scale : 0,
+          marginTopInches: hasBox ? label.spacingTop * scale : 0,
+          marginBottomInches: hasBox ? label.spacingBottom * scale : 0,
           angleRad: angle,
           backgroundColor: label.background,
         ),
@@ -1076,6 +1099,12 @@ class _DrawioStencilLabel {
     required this.text,
     required this.x,
     required this.y,
+    this.boxWidth = 0,
+    this.boxHeight = 0,
+    this.spacingLeft = 0,
+    this.spacingRight = 0,
+    this.spacingTop = 0,
+    this.spacingBottom = 0,
     required this.align,
     required this.valign,
     required this.vertical,
@@ -1090,6 +1119,12 @@ class _DrawioStencilLabel {
   final String text;
   final double x;
   final double y;
+  final double boxWidth;
+  final double boxHeight;
+  final double spacingLeft;
+  final double spacingRight;
+  final double spacingTop;
+  final double spacingBottom;
   final String align;
   final String valign;
   final bool vertical;

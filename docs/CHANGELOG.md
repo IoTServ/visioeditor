@@ -592,6 +592,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Authored sizes and colours now freeze on the Text children; label
   plates become `TextBkgnd` that `collectTextBlock` maps to
   `fo:background-color`. A second save keeps the cells.
+- draw.io mxText cell labels now keep the box and spacing in LibreOffice.
+  Official `mxXmlCanvas2D.text` writes `w`/`h` and `mxText.apply` adds
+  `spacing` to `spacingLeft`/`Right`/`Top`/`Bottom` (default 2, so
+  Bootstrap Alert `spacingLeft=10` pads 12). Capture dropped the box,
+  so Ammeter `A` pinned to the parent top-left in a tight glyph frame
+  and `collectTextBlock` never saw `LeftMargin` → `fo:padding-*`. Cell
+  values now fill the template; stencil glyphs that pass `w=h=0` stay
+  tight. A second save keeps Pin / Width / LeftMargin.
 - draw.io mxStencil `fontfamily` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
   valves call `c.setFontFamily('Helvetica')`, but capture stubbed

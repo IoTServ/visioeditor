@@ -1222,6 +1222,135 @@ void main() {
     );
   });
 
+  test('mxText label box and spacing stay TextBlock cells for LibreOffice', () {
+    VsdxShape? glyphShape(VsdxShape shape, String text) {
+      for (final child in shape.children) {
+        if (child.text == text) return child;
+        final nested = glyphShape(child, text);
+        if (nested != null) return nested;
+      }
+      return null;
+    }
+
+    final ammeter = dynamic
+        .singleWhere(
+          (group) =>
+              group.name == 'Draw.io JS / Electrical / Electrical / Instruments',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Ammeter')
+        .build(95, 3, 3);
+    final ammeterGlyph = glyphShape(ammeter, 'A');
+    expect(ammeterGlyph, isNotNull, reason: 'Ammeter cell value A is a Text child');
+    expect(
+      ammeterGlyph!.width,
+      closeTo(ammeter.width, 0.02),
+      reason: 'mxXmlCanvas2D.text w/h fills the 90px cell, not a tight glyph box',
+    );
+    expect(
+      ammeterGlyph.height,
+      closeTo(ammeter.height, 0.02),
+    );
+    expect(
+      ammeterGlyph.pinX,
+      closeTo(ammeter.width / 2, 0.02),
+      reason: 'the label pin is the cell centre so collectTextBlock svg:x is centred',
+    );
+    expect(
+      ammeterGlyph.pinY,
+      closeTo(ammeter.height / 2, 0.02),
+    );
+    expect(
+      ammeterGlyph.richText.textBlock.verticalAlign,
+      VsdxVertAlign.middle,
+    );
+
+    final alert = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Alert')
+        .build(96, 3, 3);
+    final alertGlyph = glyphShape(alert, 'A simple primary alert!');
+    expect(alertGlyph, isNotNull, reason: 'Bootstrap Alert keeps the cell value');
+    expect(
+      alertGlyph!.width,
+      closeTo(alert.width, 0.02),
+      reason: 'the 800px Alert plate is the TextBlock svg:width Draw pads',
+    );
+    // mxText.apply: spacingLeft=10 + default spacing 2. Same min(scale)
+    // as Char.Size (1.5 in / 800 px).
+    const alertScale = 1.5 / 800;
+    expect(
+      alertGlyph.richText.textBlock.marginLeftInches,
+      closeTo(12 * alertScale, 0.002),
+      reason: 'spacingLeft=10 must reach collectTextBlock LeftMargin / fo:padding-left',
+    );
+    expect(
+      alertGlyph.richText.textBlock.marginRightInches,
+      closeTo(2 * alertScale, 0.002),
+      reason: 'omitted spacingRight still gets the mxText default spacing of 2',
+    );
+    expect(
+      alertGlyph.richText.runs.first.paraStyle.horizontalAlign,
+      VsdxHorzAlign.left,
+    );
+
+    final andGate = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Electrical / Iec Logic Gates',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'AND')
+        .build(97, 3, 3);
+    final andGlyph = glyphShape(andGate, 'AND');
+    expect(andGlyph, isNotNull, reason: 'IEC AND stencil glyph stays a child');
+    expect(
+      andGlyph!.width,
+      lessThan(andGate.width * 0.8),
+      reason: 'NestedStencil text(w=0,h=0) must stay a tight glyph, not a cell box',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Alert')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    final leftoverGlyph = glyphShape(leftover, 'A simple primary alert!')!;
+    expect(
+      leftoverGlyph.width,
+      closeTo(alert.width, 0.02),
+      reason: 'a second save must keep the Alert TextBlock width',
+    );
+    expect(
+      leftoverGlyph.richText.textBlock.marginLeftInches,
+      closeTo(12 * alertScale, 0.002),
+      reason: 'a second save must keep LeftMargin',
+    );
+    expect(
+      leftoverGlyph.pinX,
+      closeTo(alert.width / 2, 0.02),
+      reason: 'a second save must keep the cell-centre pin',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

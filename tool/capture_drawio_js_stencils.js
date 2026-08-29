@@ -170,6 +170,10 @@ class CanvasRecorder {
       shadowAlpha: 1,
       shadowDx: 2,
       shadowDy: 3,
+      spacingLeft: 0,
+      spacingRight: 0,
+      spacingTop: 0,
+      spacingBottom: 0,
     };
   }
 
@@ -401,6 +405,21 @@ class CanvasRecorder {
       `align="${horiz.includes('center') ? 'center' : horiz.includes('right') ? 'right' : 'left'}"`,
       `valign="${vert.includes('middle') ? 'middle' : vert.includes('bottom') ? 'bottom' : 'top'}"`,
     ];
+    // mxXmlCanvas2D.text: w/h is the cell box. Stencil glyphs pass 0.
+    // LibreOffice collectTextBlock paints fo:padding on that frame.
+    const bw = Number(w) * this.sx;
+    const bh = Number(h) * this.sy;
+    if (bw > 0 && bh > 0) {
+      attrs.push(`w="${number(bw)}"`, `h="${number(bh)}"`);
+      const sl = Number(this.state.spacingLeft);
+      const sr = Number(this.state.spacingRight);
+      const st = Number(this.state.spacingTop);
+      const sb = Number(this.state.spacingBottom);
+      if (Number.isFinite(sl) && sl !== 0) attrs.push(`spacing-left="${number(sl)}"`);
+      if (Number.isFinite(sr) && sr !== 0) attrs.push(`spacing-right="${number(sr)}"`);
+      if (Number.isFinite(st) && st !== 0) attrs.push(`spacing-top="${number(st)}"`);
+      if (Number.isFinite(sb) && sb !== 0) attrs.push(`spacing-bottom="${number(sb)}"`);
+    }
     if (Number.isFinite(rot) && rot !== 0) attrs.push(`rotation="${number(rot)}"`);
     this.operations.push(`<text ${attrs.join(' ')}/>`);
   }
@@ -2719,6 +2738,14 @@ function applyTextStyle(canvas, style) {
     const fs = Number(style.fontStyle);
     canvas.setFontStyle(Number.isFinite(fs) ? fs : 0);
   }
+  // mxText.apply: spacing + spacingLeft/Right/Top/Bottom. Default spacing
+  // is 2 so an omitted key still pads like configureCanvas.
+  const spacing = parseInt(style.spacing != null ? style.spacing : 2, 10);
+  const sp = Number.isFinite(spacing) ? spacing : 2;
+  canvas.state.spacingLeft = (parseInt(style.spacingLeft, 10) || 0) + sp;
+  canvas.state.spacingRight = (parseInt(style.spacingRight, 10) || 0) + sp;
+  canvas.state.spacingTop = (parseInt(style.spacingTop, 10) || 0) + sp;
+  canvas.state.spacingBottom = (parseInt(style.spacingBottom, 10) || 0) + sp;
 }
 
 function paintTemplateLabel(entry, style, width, height, canvas) {
