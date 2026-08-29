@@ -1098,8 +1098,78 @@ function loadSvgSource(src) {
   return text.includes('<svg') ? text : null;
 }
 
-function svgPresentation(node, inherited) {
-  const style = {...inherited};
+// SVG <style> class / id rules (GCP Vertex AI `.st0{fill:#b5cbf9}`).
+// parseXml drops text nodes, so read the raw XML. Presentation attributes
+// still win over the stylesheet, matching SVG.
+function parseSvgCssDeclarations(body) {
+  const style = {};
+  for (const part of String(body || '').split(';')) {
+    const split = part.indexOf(':');
+    if (split < 0) continue;
+    const key = part.slice(0, split).trim().toLowerCase();
+    const val = part.slice(split + 1).trim();
+    if (key && val) style[key] = val;
+  }
+  return style;
+}
+
+function parseSvgStyleSheet(xml) {
+  const classes = {};
+  const ids = {};
+  const re = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
+  let match;
+  while ((match = re.exec(String(xml || '')))) {
+    let css = match[1]
+      .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+      .replace(/<!--[\s\S]*?-->/g, '')
+      .replace(/\/\*[\s\S]*?\*\//g, '');
+    css = decodeXml(css);
+    const ruleRe = /([^{}]+)\{([^{}]*)\}/g;
+    let rule;
+    while ((rule = ruleRe.exec(css))) {
+      const decls = parseSvgCssDeclarations(rule[2]);
+      if (!Object.keys(decls).length) continue;
+      for (const sel of rule[1].split(',')) {
+        const token = sel.trim();
+        const cls = /^\.([A-Za-z_][\w-]*)/.exec(token);
+        const id = /^#([A-Za-z_][\w-]*)/.exec(token);
+        if (cls) {
+          classes[cls[1]] = {...(classes[cls[1]] || {}), ...decls};
+        } else if (id) {
+          ids[id[1]] = {...(ids[id[1]] || {}), ...decls};
+        }
+      }
+    }
+  }
+  return {classes, ids};
+}
+
+function svgCssForNode(node, css) {
+  if (!css) return {};
+  const style = {};
+  const classAttr = String(node.attrs.class || '');
+  for (const name of classAttr.split(/\s+/)) {
+    if (!name) continue;
+    Object.assign(style, css.classes[name]);
+  }
+  const id = node.attrs.id;
+  if (id && css.ids[id]) Object.assign(style, css.ids[id]);
+  return style;
+}
+
+function svgCssAlpha(raw) {
+  if (raw == null || raw === '') return null;
+  const token = String(raw).trim();
+  if (/%$/.test(token)) {
+    const n = parseFloat(token);
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n / 100)) : null;
+  }
+  const n = parseFloat(token);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
+}
+
+function svgPresentation(node, inherited, css) {
+  const style = {...inherited, ...svgCssForNode(node, css)};
   for (const part of String(node.attrs.style || '').split(';')) {
     const token = part.trim();
     if (!token) continue;
@@ -1121,13 +1191,19 @@ function svgPaintIsNone(value) {
 
 function applySvgPaint(canvas, style, kind) {
   canvas.save();
+  const op = svgCssAlpha(style.opacity);
+  if (op != null) canvas.setAlpha(op);
+  const fillOp = svgCssAlpha(style['fill-opacity']);
+  if (fillOp != null) canvas.setFillAlpha(fillOp);
+  const strokeOp = svgCssAlpha(style['stroke-opacity']);
+  if (strokeOp != null) canvas.setStrokeAlpha(strokeOp);
   if (kind === 'fill' || kind === 'fillstroke') {
     if (svgPaintIsNone(style.fill)) {
       canvas.setFillColor(null);
     } else if (style.fill != null && style.fill !== '') {
       const fill = String(style.fill).trim();
       if (!/^currentcolor$/i.test(fill) && !/^url\(/i.test(fill)) {
-        canvas.setFillColor(fill);
+        canvas.setFillColor(htmlCssColorToHex(fill) || fill);
       }
     }
   } else {
@@ -1138,7 +1214,7 @@ function applySvgPaint(canvas, style, kind) {
     else if (style.stroke != null && style.stroke !== '') {
       const stroke = String(style.stroke).trim();
       if (!/^currentcolor$/i.test(stroke) && !/^url\(/i.test(stroke)) {
-        canvas.setStrokeColor(stroke);
+        canvas.setStrokeColor(htmlCssColorToHex(stroke) || stroke);
       }
     }
   } else {
@@ -1299,10 +1375,10 @@ function findSvgById(node, id) {
   return null;
 }
 
-function paintSvgNode(canvas, node, inherited, root) {
+function paintSvgNode(canvas, node, inherited, root, css) {
   const name = xmlLocalName(node.name);
   if (svgSkip.has(name)) return false;
-  const style = svgPresentation(node, inherited);
+  const style = svgPresentation(node, inherited, css);
   let painted = false;
   if (name === 'use') {
     const href = node.attrs.href || node.attrs['xlink:href'] || '';
@@ -1313,7 +1389,7 @@ function paintSvgNode(canvas, node, inherited, root) {
     const ox = Number(node.attrs.x) || 0;
     const oy = Number(node.attrs.y) || 0;
     if (ox || oy) canvas.translate(ox, oy);
-    painted = paintSvgNode(canvas, target, style, root);
+    painted = paintSvgNode(canvas, target, style, root, css);
     canvas.restore();
     return painted;
   }
@@ -1328,7 +1404,7 @@ function paintSvgNode(canvas, node, inherited, root) {
   }
   if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
     for (const child of node.children || []) {
-      if (paintSvgNode(canvas, child, style, root)) painted = true;
+      if (paintSvgNode(canvas, child, style, root, css)) painted = true;
     }
     return painted;
   }
@@ -1413,7 +1489,9 @@ function paintSvgImage(canvas, x, y, w, h, src, preserveAspect) {
   canvas.translate(dx, dy);
   canvas.scale(dw / vw, dh / vh);
   canvas.translate(-vx, -vy);
-  const painted = paintSvgNode(canvas, root, {}, root);
+  const painted = paintSvgNode(
+    canvas, root, {}, root, parseSvgStyleSheet(xml),
+  );
   canvas.restore();
   return painted;
 }

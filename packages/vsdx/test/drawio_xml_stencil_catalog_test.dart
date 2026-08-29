@@ -4594,6 +4594,80 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG class fills stay FillForegnd for LibreOffice',
+    () {
+      VsdxShape? labelOf(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = labelOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      Iterable<VsdxColor> descendantFills(VsdxShape shape) sync* {
+        if (shape.fill.hasFill && shape.fill.foreground != null) {
+          yield shape.fill.foreground!;
+        }
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      final vertex = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / GCP2 / GCP Icons / AI and Machine Learning',
+          )
+          .stencils
+          .map((entry) => entry.build(133, 3, 3))
+          .firstWhere(
+            (shape) => labelOf(shape, 'Vertex AI') != null,
+            orElse: () => throw StateError('Vertex AI icon missing'),
+          );
+      final fills = descendantFills(vertex).toSet();
+      expect(
+        fills,
+        containsAll(<VsdxColor>[
+          VsdxColor.tryParse('#B5CBF9')!,
+          VsdxColor.tryParse('#769EF5')!,
+          VsdxColor.tryParse('#5986F2')!,
+        ]),
+        reason: 'SVG .st0/.st1/.st2 fills must reach collectFill as '
+            'FillForegnd, not the path default black',
+      );
+      expect(
+        fills.contains(VsdxColor.black),
+        isFalse,
+        reason: 'class stylesheet fills must replace the #000 path default',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(0, doc.pages.first.addShape(vertex.copyWith(id: id)));
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantFills(leftover).toSet(),
+        containsAll(<VsdxColor>[
+          VsdxColor.tryParse('#B5CBF9')!,
+          VsdxColor.tryParse('#769EF5')!,
+          VsdxColor.tryParse('#5986F2')!,
+        ]),
+        reason: 'a second save must keep the SVG class FillForegnd hex',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

@@ -814,6 +814,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   (Salesforce Header inner `<font>`) still clears the UA bold; inner
   `font-size:14px` still wins. SysML `margin:0px` is unchanged. A
   second save keeps Size and Style.
+- draw.io mxImageShape SVG `<style>` class fills now stay native in
+  LibreOffice. Official GCP icons (Vertex AI `.st0{fill:#b5cbf9}` /
+  `.st1` / `.st2`) paint through `mxImageShape`, but capture skipped
+  `<style>` and defaulted class-only paths to black, so
+  `collectFillAndShadow` never saw those FillForegnd hexes. Capture now
+  applies the stylesheet (and `fill-opacity`) before presentation
+  attributes. A second save keeps the three blues.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
