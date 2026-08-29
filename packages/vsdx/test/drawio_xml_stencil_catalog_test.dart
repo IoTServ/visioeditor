@@ -1149,6 +1149,79 @@ void main() {
     );
   });
 
+  test('mxText style fontSize and fontColor stay Char cells for LibreOffice', () {
+    VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+      for (final child in shape.children) {
+        if (child.text == text && child.richText.runs.isNotEmpty) {
+          return child.richText.runs.first;
+        }
+        final nested = glyphRun(child, text);
+        if (nested != null) return nested;
+      }
+      return null;
+    }
+
+    final ammeter = dynamic
+        .singleWhere(
+          (group) =>
+              group.name == 'Draw.io JS / Electrical / Electrical / Instruments',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Ammeter')
+        .build(93, 3, 3);
+    final ammeterRun = glyphRun(ammeter, 'A');
+    expect(ammeterRun, isNotNull, reason: 'Ammeter cell value A is a Text child');
+    expect(
+      ammeterRun!.charStyle.fontSizeInches,
+      closeTo(50 * 1.5 / 90, 0.02),
+      reason: 'fontSize=50 at 90px → 1.5 in must reach collectCharIX Size, '
+          'not the 12 pt canvas default',
+    );
+
+    final alert = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Alert')
+        .build(94, 3, 3);
+    final alertRun = glyphRun(alert, 'A simple primary alert!');
+    expect(alertRun, isNotNull, reason: 'Bootstrap Alert keeps the cell value');
+    expect(
+      alertRun!.charStyle.color,
+      VsdxColor.tryParse('#004583'),
+      reason: 'fontColor=#004583 must reach collectCharIX Color',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name ==
+                  'Draw.io JS / Electrical / Electrical / Instruments',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Ammeter')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      glyphRun(leftover, 'A')!.charStyle.fontSizeInches,
+      closeTo(50 * 1.5 / 90, 0.02),
+      reason: 'a second save must keep Char.Size',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

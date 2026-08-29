@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText cell labels now keep Size / Color / TextBkgnd in LibreOffice.
+  Official `mxText.configureCanvas` calls `setFontSize` / `setFontColor` /
+  `setFontBackgroundColor` from the cell style, but capture painted
+  template values with the canvas defaults, so an Electrical Ammeter
+  (`fontSize=50`) and Bootstrap Alert (`fontColor=#004583`) used 12 pt
+  black that `collectCharIX` still maps to `fo:font-size` / `fo:color`.
+  Authored sizes and colours now freeze on the Text children; label
+  plates become `TextBkgnd` that `collectTextBlock` maps to
+  `fo:background-color`. A second save keeps the cells.
 - draw.io mxStencil `fontfamily` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
   valves call `c.setFontFamily('Helvetica')`, but capture stubbed

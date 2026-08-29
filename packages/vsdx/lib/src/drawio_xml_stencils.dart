@@ -88,6 +88,7 @@ class _DrawioXmlShapeDecoder {
   int _fontStyle = 0;
   String? _fontFamily;
   VsdxColor? _fontColor;
+  VsdxColor? _fontBackground;
   VsdxColor? _fillColor;
   VsdxFill? _fillOverride;
   VsdxColor? _strokeColor;
@@ -358,6 +359,9 @@ class _DrawioXmlShapeDecoder {
       case 'fontcolor':
         _applyMxFont(node.getAttribute('color'));
         break;
+      case 'fontbackgroundcolor':
+        _applyMxFontBackground(node.getAttribute('color'));
+        break;
       case 'strokewidth':
         final width = _number(node, 'width');
         if (width > 0) {
@@ -379,6 +383,7 @@ class _DrawioXmlShapeDecoder {
             fontStyle: _fontStyle,
             fontFamily: _fontFamily,
             color: _fontColor,
+            background: _fontBackground,
           ));
         }
         break;
@@ -401,6 +406,8 @@ class _DrawioXmlShapeDecoder {
       // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
       // `fontfamily` follows mxStencil.drawNode setFontFamily onto Char.Font
       // that collectCharIX maps to style:font-name.
+      // `fontbackgroundcolor` follows mxText.configureCanvas onto TextBkgnd
+      // that collectTextBlock maps to fo:background-color.
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -576,6 +583,16 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     _fontColor = _mxGraphPaintColor(token);
+  }
+
+  void _applyMxFontBackground(String? raw) {
+    final token = (raw ?? '').trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'default' || lower == 'none') {
+      _fontBackground = null;
+      return;
+    }
+    _fontBackground = _mxGraphPaintColor(token);
   }
 
   /// mxShape.configureCanvas setShadow + mxSvgCanvas2D.createShadow.
@@ -1029,6 +1046,7 @@ class _DrawioXmlShapeDecoder {
           marginTopInches: 0,
           marginBottomInches: 0,
           angleRad: angle,
+          backgroundColor: label.background,
         ),
       ),
       geometries: <VsdxGeometry>[
@@ -1066,6 +1084,7 @@ class _DrawioStencilLabel {
     required this.fontStyle,
     this.fontFamily,
     this.color,
+    this.background,
   });
 
   final String text;
@@ -1079,6 +1098,7 @@ class _DrawioStencilLabel {
   final int fontStyle;
   final String? fontFamily;
   final VsdxColor? color;
+  final VsdxColor? background;
 }
 
 class _DrawioColoredPart {

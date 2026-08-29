@@ -130,6 +130,8 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._fontFamilyToken = null;
+    this._fontBgToken = 'none';
+    this._fontBorderToken = 'none';
     this._strokeWidthToken = 1;
     this._dashedToken = null;
     this._dashToken = null;
@@ -147,6 +149,8 @@ class CanvasRecorder {
       fontStyle: 0,
       fontFamily: null,
       fontColor: null,
+      fontBackgroundColor: null,
+      fontBorderColor: null,
       strokeWidth: 1,
       gradientColor: null,
       gradientDir: null,
@@ -354,8 +358,24 @@ class CanvasRecorder {
     );
   }
   setFillStyle() {}
-  setFontBackgroundColor() {}
-  setFontBorderColor() {}
+  // mxText.configureCanvas / mxXmlCanvas2D: fontbackgroundcolor / fontbordercolor.
+  // LibreOffice collectTextBlock maps TextBkgnd onto fo:background-color.
+  setFontBackgroundColor(value) {
+    const none = isNoneColor(value);
+    this.state.fontBackgroundColor = none ? null : value;
+    const token = none ? 'none' : String(value);
+    if (token === this._fontBgToken) return;
+    this._fontBgToken = token;
+    this._emitPaint('fontbackgroundcolor', token);
+  }
+  setFontBorderColor(value) {
+    const none = isNoneColor(value);
+    this.state.fontBorderColor = none ? null : value;
+    const token = none ? 'none' : String(value);
+    if (token === this._fontBorderToken) return;
+    this._fontBorderToken = token;
+    this._emitPaint('fontbordercolor', token);
+  }
   setTitle() {}
   setLink() {}
   text(x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation) {
@@ -392,6 +412,8 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._fontFamilyToken = null;
+    this._fontBgToken = 'none';
+    this._fontBorderToken = 'none';
     this._strokeWidthToken = 1;
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
@@ -465,6 +487,7 @@ class CanvasRecorder {
       this.finishPath();
       this.operations.push(`<fontfamily family="${xmlEscape(ff || '')}"/>`);
     }
+    this._reemitFontPlate();
     const sw = Number(this.state.strokeWidth);
     if (Number.isFinite(sw) && sw !== this._strokeWidthToken) {
       this._strokeWidthToken = sw;
@@ -474,6 +497,23 @@ class CanvasRecorder {
     this._reemitAlpha();
     this._reemitLineStyle();
     this._reemitShadow();
+  }
+
+  _reemitFontPlate() {
+    const bg = this.state.fontBackgroundColor == null
+      ? 'none'
+      : String(this.state.fontBackgroundColor);
+    if (bg !== this._fontBgToken) {
+      this._fontBgToken = bg;
+      this._emitPaint('fontbackgroundcolor', bg);
+    }
+    const border = this.state.fontBorderColor == null
+      ? 'none'
+      : String(this.state.fontBorderColor);
+    if (border !== this._fontBorderToken) {
+      this._fontBorderToken = border;
+      this._emitPaint('fontbordercolor', border);
+    }
   }
 
   _reemitLineStyle() {
@@ -2654,9 +2694,37 @@ function cellLabel(value) {
   return stripped;
 }
 
+function applyTextStyle(canvas, style) {
+  if (!canvas || !style) return;
+  // mxText.configureCanvas: cell labels are not paintVertexShape.
+  // LibreOffice collectCharIX / collectTextBlock only see Char.Size /
+  // Color / Font and TextBkgnd on the Text children we emit here.
+  if (style.fontColor != null && canvas.setFontColor) {
+    canvas.setFontColor(style.fontColor);
+  }
+  if (style.labelBackgroundColor != null && canvas.setFontBackgroundColor) {
+    canvas.setFontBackgroundColor(style.labelBackgroundColor);
+  }
+  if (style.labelBorderColor != null && canvas.setFontBorderColor) {
+    canvas.setFontBorderColor(style.labelBorderColor);
+  }
+  if (style.fontFamily != null && canvas.setFontFamily) {
+    canvas.setFontFamily(style.fontFamily);
+  }
+  const size = Number(style.fontSize);
+  if (Number.isFinite(size) && size > 0 && canvas.setFontSize) {
+    canvas.setFontSize(size);
+  }
+  if (style.fontStyle != null && canvas.setFontStyle) {
+    const fs = Number(style.fontStyle);
+    canvas.setFontStyle(Number.isFinite(fs) ? fs : 0);
+  }
+}
+
 function paintTemplateLabel(entry, style, width, height, canvas) {
   const label = cellLabel(entry && entry.value);
   if (!label) return;
+  applyTextStyle(canvas, style);
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
   canvas.text(0, 0, width, height, label, align, valign);
@@ -2910,7 +2978,10 @@ function paintCellTree(cells, canvas, width, height) {
       }
       const label = cellLabel(cell.value);
       if (label) {
-        canvas.text(x, y, cellWidth, cellHeight, label, 'center', 'middle');
+        applyTextStyle(canvas, cellStyle);
+        const align = String(cellStyle.align || 'center');
+        const valign = String(cellStyle.verticalAlign || 'middle');
+        canvas.text(x, y, cellWidth, cellHeight, label, align, valign);
         painted = true;
       }
       const next = [...(cell.children || [])];
