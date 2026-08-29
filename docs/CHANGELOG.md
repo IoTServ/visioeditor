@@ -799,6 +799,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   0.04in (~2.88pt), so title and body hit the same `fo:font-size`
   collectCharIX emits. The floor is Visio's 0.5pt so 14px vs 9px stay
   distinct. A second save keeps Size.
+- draw.io mxText html UA `<p>`/`<h3>` margin now stays native in
+  LibreOffice. Official `mxText` html=1 keeps the browser block margins
+  (Salesforce Header `spacingTop=-20` cancels `<h3>` 1em), but capture
+  only read CSS `margin`, so title and body stacked with no SpBefore
+  that `collectParaIX` maps to `fo:margin-top`. Adjacent blocks collapse
+  like CSS. SysML `margin:0px` still zeroes the UA slot. A second save
+  keeps Para spacing.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

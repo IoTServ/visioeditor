@@ -2459,6 +2459,101 @@ void main() {
   );
 
   test(
+    'mxText html UA block margin stays Para spacing for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final header = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Salesforce / Salesforce / Components',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Header')
+          .build(449, 3, 3);
+      // 930×160 cell, catalog scale 1.5 / 930. defaultVertex fontSize 12.
+      const headerScale = 1.5 / 930;
+      const h3Margin = 12 * 1.17;
+      const pMargin = 12.0;
+      final title = runContaining(header, 'Diagram Title Goes Here')!;
+      final body = runContaining(header, 'Lorem ipsum')!;
+      expect(
+        title.paraStyle.spaceBeforeInches,
+        closeTo(h3Margin * headerScale, 0.002),
+        reason: 'html h3 UA 1em (of 1.17em) is collectParaIX SpBefore that '
+            'libvisio maps to fo:margin-top',
+      );
+      expect(
+        title.paraStyle.spaceAfterInches,
+        closeTo(0, 0.002),
+        reason: 'adjoining h3/p margins collapse; the gap is not summed',
+      );
+      expect(
+        body.paraStyle.spaceBeforeInches,
+        closeTo(h3Margin * headerScale, 0.002),
+        reason: 'collapsed max(h3 1em, p 1em) lands on the body SpBefore',
+      );
+      expect(
+        body.paraStyle.spaceAfterInches,
+        closeTo(pMargin * headerScale, 0.002),
+        reason: 'the trailing p UA margin-bottom is SpAfter / fo:margin-bottom',
+      );
+
+      final actor = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Actor (2)')
+          .build(450, 3, 3);
+      // 160×80 cell. Bare <p> with no CSS margin.
+      const actorScale = 1.5 / 160;
+      expect(
+        runContaining(actor, '<<actor>>')!.paraStyle.spaceBeforeInches,
+        closeTo(12 * actorScale, 0.01),
+        reason: 'SysML Actor <p> keeps the 1em UA margin SysML elsewhere '
+            'zeroes with margin:0px',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(header.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Diagram Title Goes Here')!
+            .paraStyle
+            .spaceBeforeInches,
+        closeTo(h3Margin * headerScale, 0.002),
+        reason: 'a second save must keep Para SpBefore from html h3 UA margin',
+      );
+      expect(
+        runContaining(leftover, 'Lorem ipsum')!.paraStyle.spaceBeforeInches,
+        closeTo(h3Margin * headerScale, 0.002),
+      );
+    },
+  );
+
+  test(
     'mxText html font size attribute stays Char Size for LibreOffice',
     () {
       VsdxTextRun? runContaining(VsdxShape shape, String text) {

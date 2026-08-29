@@ -3234,6 +3234,7 @@ function applyHtmlCss(next, attrs, tag) {
   // map to fo:margin-left / fo:margin-top. Inline tags inherit left/right
   // and only the first run in the block keeps margin-top.
   if (tag === 'p' || tag === 'div' || tag === 'li' || /^h[1-6]$/.test(tag || '')) {
+    htmlUaBlockMargins(next, tag);
     htmlApplyMargins(next, attrs);
     next.paraStart = true;
   }
@@ -3325,6 +3326,35 @@ function htmlFontSizeAttrPx(raw, currentPx) {
   const n = parseFloat(token);
   if (!Number.isFinite(n) || n < 1 || n > 7 || n !== Math.round(n)) return null;
   return htmlFontSizeTablePx(n);
+}
+
+// HTML UA block margins (html.spec.whatwg.org rendering). mxText html=1
+// foreignObject keeps them; SysML authors `margin:0px` to cancel. Bare
+// Salesforce <h3>/<p> would otherwise miss SpBefore that collectParaIX
+// maps to fo:margin-top. Heading size/weight stay on the inner <font>.
+const kHtmlHeadingUa = {
+  h1: {sizeEm: 2, marginEm: 0.67},
+  h2: {sizeEm: 1.5, marginEm: 0.83},
+  h3: {sizeEm: 1.17, marginEm: 1},
+  h4: {sizeEm: 1, marginEm: 1.33},
+  h5: {sizeEm: 0.83, marginEm: 1.67},
+  h6: {sizeEm: 0.67, marginEm: 2.33},
+};
+
+function htmlUaBlockMargins(next, tag) {
+  const parentPx = Number(next.fontSize);
+  const base = Number.isFinite(parentPx) && parentPx > 0 ? parentPx : 12;
+  const heading = kHtmlHeadingUa[tag];
+  if (heading) {
+    const m = base * heading.sizeEm * heading.marginEm;
+    next.marginTop = m;
+    next.marginBottom = m;
+    return;
+  }
+  if (tag === 'p') {
+    next.marginTop = base;
+    next.marginBottom = base;
+  }
 }
 
 function htmlApplyMargins(next, attrs) {
@@ -3491,12 +3521,17 @@ function htmlRunAttrs(run) {
 function parseHtmlLabel(html, base) {
   const runs = [];
   const stack = [cloneHtmlStyle(base)];
+  let pendingBlockMarginAfter = 0;
   const current = () => stack[stack.length - 1];
   const pushRun = (text) => {
     if (!text) return;
     const style = current();
     const emit = cloneHtmlStyle(style);
     if (!style.paraStart) emit.marginTop = 0;
+    // SpAfter belongs on the last run of the block (or the leftover
+    // pending after CSS collapse). Inner <font>/<b> clones would
+    // otherwise put margin-bottom on every run.
+    emit.marginBottom = 0;
     if (text === '\n') {
       emit.marginTop = 0;
       emit.marginRight = 0;
@@ -3527,9 +3562,11 @@ function parseHtmlLabel(html, base) {
     }
     if (match[1]) {
       // </p> still ends the line; styles were pushed on the open tag.
+      // CSS adjoining vertical margins collapse; stash margin-bottom so
+      // the next block's SpBefore is max(prev, next), not the sum
+      // collectParaIX would stack into fo:margin-top + fo:margin-bottom.
       if (block && runs.length) {
-        const mb = Number(current().marginBottom) || 0;
-        if (Math.abs(mb) > 1e-9) runs[runs.length - 1].marginBottom = mb;
+        pendingBlockMarginAfter = Number(current().marginBottom) || 0;
         if (!String(runs[runs.length - 1].str).endsWith('\n')) {
           pushRun('\n');
         }
@@ -3550,7 +3587,21 @@ function parseHtmlLabel(html, base) {
     else if (tag === 'sup') next.position = 1;
     else if (tag === 'sub') next.position = 2;
     applyHtmlCss(next, attrs, tag);
+    if (block && pendingBlockMarginAfter) {
+      next.marginTop = Math.max(
+        Number(next.marginTop) || 0, pendingBlockMarginAfter,
+      );
+      pendingBlockMarginAfter = 0;
+    }
     stack.push(next);
+  }
+  if (pendingBlockMarginAfter) {
+    for (let i = runs.length - 1; i >= 0; i--) {
+      if (String(runs[i].str) !== '\n') {
+        runs[i].marginBottom = pendingBlockMarginAfter;
+        break;
+      }
+    }
   }
   return runs;
 }
