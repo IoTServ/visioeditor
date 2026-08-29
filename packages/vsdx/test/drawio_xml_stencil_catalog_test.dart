@@ -1477,23 +1477,32 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == shapeName);
 
-      final note = stencil('Draw.io JS / General / general', 'Note').build(140, 3, 3);
+      final note =
+          stencil('Draw.io JS / General / general', 'Note').build(140, 3, 3);
       expect(
-        note.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        note.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(8),
         reason: 'shape=note is a dog-eared page, not a four-line rectangle',
       );
 
-      final cube = stencil('Draw.io JS / General / general', 'Cube').build(141, 3, 3);
+      final cube =
+          stencil('Draw.io JS / General / general', 'Cube').build(141, 3, 3);
       expect(
         cube.geometries.length,
         greaterThanOrEqualTo(3),
         reason: 'shape=cube paints isometric faces, not a single rectangle',
       );
 
-      final callout = stencil('Draw.io JS / General / general', 'Callout').build(142, 3, 3);
+      final callout =
+          stencil('Draw.io JS / General / general', 'Callout').build(142, 3, 3);
       expect(
-        callout.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        callout.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(6),
         reason: 'shape=callout is a speech bubble, not a rectangle',
       );
@@ -1503,7 +1512,10 @@ void main() {
         'Double Ellipse',
       ).build(143, 3, 3);
       expect(
-        doubleEllipse.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        doubleEllipse.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>()
+            .length,
         2,
         reason: 'ellipse;shape=doubleEllipse is two ovals',
       );
@@ -1521,7 +1533,8 @@ void main() {
       );
       final calloutId = page.nextFreeShapeId();
       page = page.addShape(
-        stencil('Draw.io JS / General / general', 'Callout').build(calloutId, 7, 3),
+        stencil('Draw.io JS / General / general', 'Callout')
+            .build(calloutId, 7, 3),
       );
       doc = doc.replacePage(0, page);
       final leftover = parser
@@ -1571,11 +1584,16 @@ void main() {
 
       final umlClass = stencil(group, 'Class').build(200, 3, 3);
       expect(
-        umlClass.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        umlClass.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(8),
-        reason: 'UML Class is a swimlane plus stacked compartments, not a rectangle',
+        reason:
+            'UML Class is a swimlane plus stacked compartments, not a rectangle',
       );
-      expect(umlClass.children, hasLength(3), reason: 'Class stacks name, field and method');
+      expect(umlClass.children, hasLength(3),
+          reason: 'Class stacks name, field and method');
       expect(
         umlClass.children.map((child) => child.text).toList(),
         ['Classname', '+ field: type', '+ method(type): type'],
@@ -1583,7 +1601,10 @@ void main() {
 
       final useCase = stencil(group, 'Use Case').build(201, 3, 3);
       expect(
-        useCase.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        useCase.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>()
+            .length,
         1,
         reason: 'ellipse;shape=useCase is one oval',
       );
@@ -1595,32 +1616,47 @@ void main() {
         reason: 'shape=umlLifeline paints a header box and the dashed axis',
       );
       expect(
-        lifeline.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        lifeline.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(5),
       );
 
       final actorLifeline = stencil(group, 'Actor Lifeline').build(203, 3, 4);
       expect(
-        actorLifeline.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        actorLifeline.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>()
+            .length,
         1,
         reason: 'participant=umlActor must paint the stick-figure head',
       );
 
       final package = stencil(group, 'Package').build(204, 3, 3);
       expect(
-        package.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        package.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(6),
         reason: 'shape=folder is a tabbed package, not a rectangle',
       );
 
       final actor = stencil(group, 'Actor').build(205, 3, 3);
       expect(
-        actor.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        actor.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>()
+            .length,
         1,
         reason: 'shape=umlActor is a stick figure with a head',
       );
       expect(
-        actor.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        actor.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(4),
       );
 
@@ -1631,7 +1667,10 @@ void main() {
         reason: 'mxLabel.paintImage must vectorise the gear, not a hollow rect',
       );
       expect(
-        item2.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        item2.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(20),
         reason: 'Item 2 is a named-style label with a gear icon',
       );
@@ -1640,7 +1679,8 @@ void main() {
       const parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
       final classId = doc.pages.first.nextFreeShapeId();
-      var page = doc.pages.first.addShape(stencil(group, 'Class').build(classId, 3, 3));
+      var page = doc.pages.first
+          .addShape(stencil(group, 'Class').build(classId, 3, 3));
       final useCaseId = page.nextFreeShapeId();
       page = page.addShape(stencil(group, 'Use Case').build(useCaseId, 5, 3));
       final lifelineId = page.nextFreeShapeId();
@@ -1658,7 +1698,10 @@ void main() {
 
       final leftoverClass = leftover.findShapeById(classId)!;
       expect(
-        leftoverClass.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        leftoverClass.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(8),
       );
       expect(
@@ -1726,20 +1769,28 @@ void main() {
         reason: 'Chen weak entity is a double rectangle, not a single box',
       );
       expect(
-        weak.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        weak.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(8),
       );
 
-      final identifying = stencil(group, 'Identifying Relationship').build(301, 3, 3);
+      final identifying =
+          stencil(group, 'Identifying Relationship').build(301, 3, 3);
       expect(
         identifying.geometries,
         hasLength(2),
         reason: 'Identifying relationship is a double diamond',
       );
 
-      final multivalue = stencil(group, 'Multivalue Attribute').build(302, 3, 3);
+      final multivalue =
+          stencil(group, 'Multivalue Attribute').build(302, 3, 3);
       expect(
-        multivalue.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        multivalue.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>()
+            .length,
         2,
         reason: 'Multivalue attribute is a double ellipse',
       );
@@ -1751,21 +1802,29 @@ void main() {
         reason: 'ERoneToMany is a stroked crow\'s foot, not a filled triangle',
       );
       expect(
-        oneToMany.geometries.expand((geometry) => geometry.commands).whereType<MoveTo>().length,
+        oneToMany.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
         greaterThanOrEqualTo(3),
         reason: 'crow\'s foot plus the perpendicular bar need extra moves',
       );
 
       final many = stencil(group, 'Many').build(304, 4, 1);
       expect(
-        many.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        many.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
         greaterThanOrEqualTo(3),
         reason: 'ERmany is the crow\'s foot, not a single connector',
       );
 
       final zeroToMany = stencil(group, '0 to Many Optional').build(305, 4, 1);
       expect(
-        zeroToMany.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>(),
+        zeroToMany.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>(),
         isNotEmpty,
         reason: 'ERzeroToMany paints the optional participation circle',
       );
@@ -1774,7 +1833,8 @@ void main() {
       final parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
       final weakId = doc.pages.first.nextFreeShapeId();
-      var page = doc.pages.first.addShape(stencil(group, 'Weak Entity').build(weakId, 3, 3));
+      var page = doc.pages.first
+          .addShape(stencil(group, 'Weak Entity').build(weakId, 3, 3));
       final identifyingId = page.nextFreeShapeId();
       page = page.addShape(
         stencil(group, 'Identifying Relationship').build(identifyingId, 5, 3),
@@ -1784,7 +1844,8 @@ void main() {
         stencil(group, 'Multivalue Attribute').build(multiId, 7, 3),
       );
       final oneToManyId = page.nextFreeShapeId();
-      page = page.addShape(stencil(group, '1 to Many').build(oneToManyId, 9, 3));
+      page =
+          page.addShape(stencil(group, '1 to Many').build(oneToManyId, 9, 3));
       final zeroId = page.nextFreeShapeId();
       page = page.addShape(
         stencil(group, '0 to Many Optional').build(zeroId, 11, 3),
@@ -1895,7 +1956,8 @@ void main() {
       );
       expect(
         clipart.every(
-          (group) => group.stencils.every((entry) => entry.build(1, 3, 3).hasImage),
+          (group) =>
+              group.stencils.every((entry) => entry.build(1, 3, 3).hasImage),
         ),
         isTrue,
         reason: 'every clipart icon is a bitmap libvisio can ForeignData',
@@ -1923,7 +1985,8 @@ void main() {
         expect(
           shape.fill.hasFill,
           isFalse,
-          reason: '${sample.$2} should show only the bitmap, not a filled frame',
+          reason:
+              '${sample.$2} should show only the bitmap, not a filled frame',
         );
       }
 
@@ -1947,6 +2010,69 @@ void main() {
         leftover.images.findByPart(leftoverShape.imagePartName!),
         isNotNull,
         reason: 'a second save must keep the clipart PNG media part',
+      );
+    },
+  );
+
+  test(
+    'sidebar vertex values stay Text children for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final instrument = stencil(
+        'Draw.io JS / PID / Process Engineering / Instruments',
+        'Discrete Instrument (control room)',
+      ).build(410, 3, 3);
+      expect(
+        instrument.children.map((child) => child.text ?? '').join(),
+        contains('TI'),
+        reason: 'P&ID HTML table value must reach collectText',
+      );
+      expect(
+        instrument.children.map((child) => child.text ?? '').join(),
+        contains('##'),
+      );
+
+      final button = stencil(
+        'Draw.io JS / Basic / basic',
+        'Button',
+      ).build(411, 3, 3);
+      expect(
+        button.children.any((child) => child.text == 'Button'),
+        isTrue,
+      );
+
+      final cloud = stencil(
+        'Draw.io JS / AWS4 / AWS / Groups',
+        'AWS Cloud',
+      ).build(412, 3, 3);
+      expect(
+        cloud.children.any((child) => child.text == 'AWS Cloud'),
+        isTrue,
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(stencil(
+          'Draw.io JS / PID / Process Engineering / Instruments',
+          'Discrete Instrument (control room)',
+        ).build(id, 3, 3)),
+      );
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverShape = leftover.pages.first.findShapeById(id)!;
+      expect(
+        leftoverShape.children.map((child) => child.text ?? '').join(),
+        contains('TI'),
+        reason: 'a second save must keep the instrument letters',
       );
     },
   );

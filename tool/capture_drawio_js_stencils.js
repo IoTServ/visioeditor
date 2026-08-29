@@ -2103,16 +2103,26 @@ function cellLabel(value) {
   const source = String(value ?? '');
   if (!source) return '';
   const stripped = source
-    .replace(/<br\s*\/?>/gi, ' ')
-    .replace(/<[^>]+>/g, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
+    .replace(/<[^>]+>/g, ' ')
     .replace(/&nbsp;/g, ' ')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/\s+/g, ' ')
+    .replace(/[^\S\n]+/g, ' ')
+    .replace(/ *\n[ \n]*/g, '\n')
     .trim();
   return stripped;
+}
+
+function paintTemplateLabel(entry, style, width, height, canvas) {
+  const label = cellLabel(entry && entry.value);
+  if (!label) return;
+  const align = String((style && style.align) || 'center');
+  const valign = String((style && style.verticalAlign) || 'middle');
+  canvas.text(0, 0, width, height, label, align, valign);
 }
 
 function cellsFromMxGraphXml(xml) {
@@ -2443,6 +2453,10 @@ function renderEntry(entry) {
       }
     }
     if (!shape) return null;
+    // createVertexTemplateEntry's 4th arg is the cell value (P&ID TI/##,
+    // AWS group titles, Basic Button). paintVertexShape never draws it;
+    // LibreOffice's text collector only sees Text children.
+    paintTemplateLabel(entry, style, width, height, canvas);
   } else if (entry.kind === 'data' && entry.data) {
     ({width, height} = entrySize(entry));
     const xml = decompressDrawio(entry.data);
@@ -2465,6 +2479,7 @@ function renderEntry(entry) {
     geometry.setTerminalPoint({x: width, y: 0}, false);
     geometry.relative = true;
     paintEdge(style, width, height, canvas, 0, 0, geometry);
+    paintTemplateLabel(entry, style, width, height, canvas);
   } else if (entry.kind === 'edge-cells' && Array.isArray(entry.cells)) {
     ({width, height} = entrySize(entry));
     if (!paintCellTree(entry.cells, canvas, width, height)) {

@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io sidebar cell values now stay native in LibreOffice. Capture
+  painted `paintVertexShape` but dropped `createVertexTemplateEntry`'s
+  value, so P&ID `TI`/`##`, Basic Button and AWS group titles never
+  reached libvisio `collectText`. Those labels now become Text children.
+  A second save keeps the letters.
 - draw.io clipart libraries now stay native in LibreOffice.
   `Sidebar.js` `init` calls `addImagePalette` for Computer, Finance, Various,
   Networking, People and Telecommunication under `img/lib/clip_art`, but
