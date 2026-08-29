@@ -3732,6 +3732,39 @@ function entrySize(entry) {
   };
 }
 
+// Sidebar fillColor/strokeColor on the <shape> so inherit `fill` / `stroke`
+// tokens decode to that hex. applyStencilStyle would otherwise wash C4
+// Person #083F75 into kStencilPrimary #DAE8FC that collectFill maps to
+// svg:fill. Extra fillcolor ops stay siblings (radio dots, AWS glyphs).
+function cssHexAttr(value) {
+  if (value == null || isNoneColor(value)) return '';
+  const token = String(value).trim();
+  if (!token || token.toLowerCase() === 'default' || token.toLowerCase() === 'inherit') {
+    return '';
+  }
+  if (token[0] === '#') return token;
+  if (/^[0-9a-fA-F]{6}$/.test(token)) return `#${token}`;
+  return '';
+}
+
+function entryPaintColors(entry, style) {
+  let fill = style && style.fillColor;
+  let stroke = style && style.strokeColor;
+  const cell = Array.isArray(entry.cells) && entry.cells[0];
+  if (cell && (fill == null || stroke == null)) {
+    const parsed = parseStyle(
+      cell.style,
+      cell.edge ? namedStyles.defaultEdge : namedStyles.defaultVertex,
+    );
+    if (fill == null) fill = parsed.fillColor;
+    if (stroke == null) stroke = parsed.strokeColor;
+  }
+  return {
+    fill: cssHexAttr(stylePaintColor(fill, null)),
+    stroke: cssHexAttr(stylePaintColor(stroke, null)),
+  };
+}
+
 function missVertex(kind, entry) {
   renderStats.notVertex++;
   const key = kind || 'unknown';
@@ -3859,7 +3892,12 @@ function renderEntry(entry) {
       if (items.length) connections = `<connections>${items.join('')}</connections>`;
     } catch (_) {}
   }
-  return {width, height, body: connections + `<foreground>${canvas.operations.join('')}</foreground>`};
+  return {
+    width,
+    height,
+    body: connections + `<foreground>${canvas.operations.join('')}</foreground>`,
+    ...entryPaintColors(entry, style),
+  };
 }
 
 const libraries = [];
@@ -3878,7 +3916,9 @@ for (const family of captured) {
       const count = (names.get(base) || 0) + 1;
       names.set(base, count);
       const name = count === 1 ? base : `${base} (${count})`;
-      shapes.push(`<shape aspect="variable" h="${number(rendered.height)}" name="${xmlEscape(name)}" strokewidth="inherit" w="${number(rendered.width)}">${rendered.body}</shape>`);
+      const fillAttr = rendered.fill ? ` fill="${xmlEscape(rendered.fill)}"` : '';
+      const strokeAttr = rendered.stroke ? ` stroke="${xmlEscape(rendered.stroke)}"` : '';
+      shapes.push(`<shape aspect="variable" h="${number(rendered.height)}" name="${xmlEscape(name)}" strokewidth="inherit" w="${number(rendered.width)}"${fillAttr}${strokeAttr}>${rendered.body}</shape>`);
       renderedEntries++;
     }
     if (shapes.length) {

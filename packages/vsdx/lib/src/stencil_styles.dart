@@ -697,16 +697,24 @@ VsdxShape applyStencilStyle(
   }
 
   if (fillColor != null && fill.hasFill) {
-    fill = fill.withSolidForeground(fillColor);
+    final fg = fill.foreground;
+    // Factory white and unresolved theme slots take the palette. Authored
+    // hex (C4 Person #083F75) must stay so collectFill does not wash it.
+    if (fg == null || fg == VsdxColor.white) {
+      fill = fill.withSolidForeground(fillColor);
+    }
   }
   if (lineColor != null && line.hasLine) {
-    line = line.withSolidColor(lineColor);
-    // mxStencil <strokewidth> already froze LineWeight in stencil
-    // units. Overwriting it with the palette default would drop the
-    // checkmark / IEC rail that libvisio collectLine collects.
-    if ((line.weightInches - VsdxLine.defaultLine.weightInches).abs() <
-        1e-9) {
-      line = line.copyWith(weightInches: lineWeightInches);
+    final c = line.color;
+    if (c == null || c == VsdxColor.black) {
+      line = line.withSolidColor(lineColor);
+      // mxStencil <strokewidth> already froze LineWeight in stencil
+      // units. Overwriting it with the palette default would drop the
+      // checkmark / IEC rail that libvisio collectLine collects.
+      if ((line.weightInches - VsdxLine.defaultLine.weightInches).abs() <
+          1e-9) {
+        line = line.copyWith(weightInches: lineWeightInches);
+      }
     }
   }
   if (identical(fill, shape.fill) && identical(line, shape.line)) {

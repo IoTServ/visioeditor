@@ -699,6 +699,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   sat on the dots that `collectXFormData` maps to `svg:x`. Cell labels
   now freeze one Text child per td (`textColor2` on Layer 3 stays
   Char Color). A second save keeps the column pins.
+- draw.io JS Canvas style fill/stroke now stay native in LibreOffice.
+  Official `mxShape.configureCanvas` paints `fillColor=#083F75`, but
+  capture left a `fill` inherit token and `applyStencilStyle` washed a
+  C4 Person into defaultFill `#DAE8FC` that `collectFill` maps to
+  `svg:fill`. Captured `<shape fill>` / `stroke` now seed FillForegnd /
+  LineColor; palette wash skips authored hex. A second save keeps the
+  navy.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

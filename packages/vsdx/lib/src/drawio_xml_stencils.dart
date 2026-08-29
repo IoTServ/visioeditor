@@ -92,6 +92,10 @@ class _DrawioXmlShapeDecoder {
   VsdxColor? _fillColor;
   VsdxFill? _fillOverride;
   VsdxColor? _strokeColor;
+  late final VsdxColor? _styleFill =
+      _mxGraphPaintColor(element.getAttribute('fill'));
+  late final VsdxColor? _styleStroke =
+      _mxGraphPaintColor(element.getAttribute('stroke'));
   bool _fillIsNone = false;
   bool _strokeIsNone = false;
   double _overallAlpha = 1;
@@ -211,11 +215,16 @@ class _DrawioXmlShapeDecoder {
     final parentFill =
         _rasterPart != null || (!inheritFill && children.isNotEmpty)
             ? const VsdxFill(pattern: 0)
-            : VsdxFill.defaultFill;
+            : (_styleFill != null
+                ? VsdxFill(pattern: 1, foreground: _styleFill)
+                : VsdxFill.defaultFill);
     var parentLine =
         _rasterPart != null || (!inheritLine && children.isNotEmpty)
             ? const VsdxLine(pattern: 0)
             : _paintLine(stroke: true);
+    if (inheritLine && _styleStroke != null && parentLine.hasLine) {
+      parentLine = parentLine.withSolidColor(_styleStroke!);
+    }
     if (inheritLine && _parentStrokeWidth != null) {
       // restore() re-emits the pre-save strokewidth (often 1) after the
       // contour. collectLine is shape-level, so keep the width that was

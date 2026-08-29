@@ -2369,6 +2369,64 @@ void main() {
     },
   );
 
+  test(
+    'mxGraph style fillColor stays FillForegnd for LibreOffice',
+    () {
+      bool hasForeground(VsdxShape shape, int argb) {
+        if (shape.fill.hasFill && shape.fill.foreground?.value == argb) {
+          return true;
+        }
+        return shape.children.any((child) => hasForeground(child, argb));
+      }
+
+      bool hasLine(VsdxShape shape, int argb) {
+        if (shape.line.hasLine && shape.line.color?.value == argb) {
+          return true;
+        }
+        return shape.children.any((child) => hasLine(child, argb));
+      }
+
+      final person = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / C4 / C4')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Person')
+          .build(448, 3, 3);
+      expect(
+        hasForeground(person, 0xFF083F75),
+        isTrue,
+        reason: 'fillColor=#083F75 must reach collectFill svg:fill, not '
+            'defaultFill #DAE8FC after applyStencilStyle',
+      );
+      expect(
+        hasLine(person, 0xFF06315C),
+        isTrue,
+        reason: 'strokeColor=#06315C must reach collectLine svg:stroke',
+      );
+      expect(hasForeground(person, 0xFFDAE8FC), isFalse);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(person.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasForeground(leftover, 0xFF083F75),
+        isTrue,
+        reason: 'a second save must keep the C4 navy FillForegnd',
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(
