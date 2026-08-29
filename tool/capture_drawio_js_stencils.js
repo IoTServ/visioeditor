@@ -11,11 +11,21 @@ const webapp = path.resolve(process.argv[2]);
 const sidebarRoot = path.join(webapp, 'js/diagramly/sidebar');
 const shapeRoot = path.join(webapp, 'shapes');
 
+// mxStylesheet.getCellStyle: a token without '=' is a named style from
+// styles/default.xml (swimlane, ellipse, rhombus, triangle, line, …).
+const namedStyles = {};
+
 function parseStyle(source) {
   const style = {};
   for (const part of String(source || '').split(';')) {
-    const split = part.indexOf('=');
-    if (split >= 0) style[part.slice(0, split)] = part.slice(split + 1);
+    const token = part.trim();
+    if (!token) continue;
+    const split = token.indexOf('=');
+    if (split >= 0) {
+      style[token.slice(0, split)] = token.slice(split + 1);
+    } else if (namedStyles[token]) {
+      Object.assign(style, namedStyles[token]);
+    }
   }
   return style;
 }
@@ -331,6 +341,42 @@ function parseXml(xml) {
   return root;
 }
 
+function loadNamedStyles(xmlPath) {
+  const parsed = parseXml(fs.readFileSync(xmlPath, 'utf8'));
+  const sheet = parsed.children.find((node) => node.name === 'mxStylesheet') || parsed;
+  const raw = {};
+  for (const node of sheet.children) {
+    if (node.name !== 'add' || !node.attrs.as) continue;
+    const style = {};
+    for (const child of node.children) {
+      if (child.name === 'add' && child.attrs.as) {
+        style[child.attrs.as] = child.attrs.value;
+      }
+    }
+    raw[node.attrs.as] = {style, extend: node.attrs.extend};
+  }
+  const resolved = {};
+  const resolving = new Set();
+  function resolve(name) {
+    if (resolved[name]) return resolved[name];
+    const entry = raw[name];
+    if (!entry) return {};
+    if (resolving.has(name)) return {};
+    resolving.add(name);
+    const base = entry.extend ? resolve(entry.extend) : {};
+    resolving.delete(name);
+    resolved[name] = {...base, ...entry.style};
+    return resolved[name];
+  }
+  for (const name of Object.keys(raw)) resolve(name);
+  return resolved;
+}
+
+Object.assign(
+  namedStyles,
+  loadNamedStyles(path.join(webapp, 'styles/default.xml')),
+);
+
 function attrNum(node, key, fallback = 0) {
   const value = Number(node.attrs[key]);
   return Number.isFinite(value) ? value : fallback;
@@ -578,6 +624,7 @@ mxShape.prototype.paintVertexShape = function(c, x, y, w, h) {
   this.paintForeground(c, x, y, w, h);
 };
 mxShape.prototype.isHorizontal = function() { return true; };
+mxShape.prototype.paintGlassEffect = function() {};
 mxShape.prototype.createMarker = function() { return null; };
 mxShape.prototype.paintEdgeShape = function(c, pts) {
   if (!pts || pts.length < 2) return;
@@ -753,7 +800,7 @@ function createBaseShape(name) {
     };
     BaseShape.prototype.isRoundable = function() { return true; };
   } else if (
-    name === 'mxLabel' || name === 'mxSwimlane' ||
+    name === 'mxLabel' ||
     name === 'mxConnector' || name === 'mxPolyline' ||
     name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape'
   ) {
@@ -917,6 +964,20 @@ function loadJs(file, source) {
     loadErrors.push({file, error: String(error)});
   }
 }
+// Official mxSwimlane.paintVertexShape (title bar + body + divider). The
+// capture stub used to fill the whole box, so BPMN/UML lanes never reached
+// VisioDocument::parse as the contours LibreOffice Draw paints.
+try {
+  vm.runInContext(
+    fs.readFileSync(path.join(webapp, 'mxgraph/src/shape/mxSwimlane.js'), 'utf8') +
+      '\nthis.mxSwimlane = mxSwimlane;',
+    shapeContext,
+    {filename: 'mxgraph/src/shape/mxSwimlane.js'},
+  );
+} catch (error) {
+  loadErrors.push({file: 'mxgraph/src/shape/mxSwimlane.js', error: String(error)});
+}
+registerShape(mxConstants.SHAPE_SWIMLANE, shapeContext.mxSwimlane);
 loadJs(
   'js/grapheditor/Shapes.js',
   path.join(webapp, 'js/grapheditor/Shapes.js'),
@@ -1186,6 +1247,9 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.rotation = Number(style.rotation) || 0;
   shape.flipH = style.flipH == 1;
   shape.flipV = style.flipV == 1;
+  shape.laneFill = mxUtils.getValue(
+    style, mxConstants.STYLE_SWIMLANE_FILLCOLOR, mxConstants.NONE,
+  );
   if (shape.direction === mxConstants.DIRECTION_NORTH ||
       shape.direction === mxConstants.DIRECTION_SOUTH) {
     const tmp = shape.flipH;

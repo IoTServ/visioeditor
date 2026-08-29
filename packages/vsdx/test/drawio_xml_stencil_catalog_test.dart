@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(217));
+    expect(dynamic, hasLength(218));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      4960,
+      5016,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -983,6 +983,154 @@ void main() {
             .findShapeById(processId)!
             .geometries
             .any((geometry) => geometry.noFill && !geometry.noLine),
+        isTrue,
+      );
+    },
+  );
+
+  test(
+    'named styles and mxSwimlane title bars stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      double spanX(VsdxGeometry geometry) {
+        var min = double.infinity;
+        var max = -double.infinity;
+        for (final command in geometry.commands) {
+          final x = switch (command) {
+            MoveTo(:final x) => x,
+            LineTo(:final x) => x,
+            _ => null,
+          };
+          if (x == null) continue;
+          if (x < min) min = x;
+          if (x > max) max = x;
+        }
+        return max - min;
+      }
+
+      double spanY(VsdxGeometry geometry) {
+        var min = double.infinity;
+        var max = -double.infinity;
+        for (final command in geometry.commands) {
+          final y = switch (command) {
+            MoveTo(:final y) => y,
+            LineTo(:final y) => y,
+            _ => null,
+          };
+          if (y == null) continue;
+          if (y < min) min = y;
+          if (y > max) max = y;
+        }
+        return max - min;
+      }
+
+      final vertical = stencil(
+        'Draw.io JS / BPMN / BPMN 2.0  General',
+        'Vertical Swimlane',
+      ).build(98, 3, 3);
+      expect(
+        vertical.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+        reason: 'mxSwimlane fills the startSize title, not the whole box',
+      );
+      expect(
+        vertical.geometries
+            .where((geometry) => geometry.noFill && !geometry.noLine)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'body + divider stay strokes so evenodd cannot punch the title',
+      );
+      expect(
+        spanY(vertical.geometries.firstWhere((geometry) => !geometry.noFill)),
+        lessThan(vertical.height * 0.2),
+      );
+
+      final horizontal = stencil(
+        'Draw.io JS / BPMN / BPMN 2.0  General',
+        'Horizontal Swimlane',
+      ).build(99, 3, 3);
+      expect(
+        horizontal.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+      );
+      expect(
+        spanX(
+          horizontal.geometries.firstWhere((geometry) => !geometry.noFill),
+        ),
+        lessThan(horizontal.width * 0.2),
+      );
+
+      final collection = stencil(
+        'Draw.io JS / BPMN / BPMN 2.0  General',
+        'Horizontal Lane (3)',
+      ).build(100, 3, 3);
+      expect(
+        collection.geometries.last.commands.whereType<MoveTo>().length,
+        3,
+        reason: 'mxgraph.bpmn.swimlane paints collection ticks after the lane',
+      );
+
+      final icon = stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Icon',
+      ).build(101, 3, 3);
+      expect(
+        icon.geometries.expand((geometry) => geometry.commands).any(
+              (command) => command is EllipseCmd,
+            ),
+        isTrue,
+        reason: 'naked ellipse; named style must not stay an unregistered rect',
+      );
+
+      final rhombus = stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Choice / Merge Node / Decision Node',
+      ).build(102, 3, 3);
+      expect(
+        rhombus.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        4,
+        reason: 'naked rhombus; named style uses mxRhombus, not a rectangle',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final verticalId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / BPMN / BPMN 2.0  General',
+        'Vertical Swimlane',
+      ).build(verticalId, 3, 3));
+      final iconId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Icon',
+      ).build(iconId, 5, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(verticalId)!
+            .geometries
+            .where((geometry) => !geometry.noFill),
+        hasLength(1),
+      );
+      expect(
+        leftover
+            .findShapeById(iconId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is EllipseCmd),
         isTrue,
       );
     },

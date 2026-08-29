@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io named styles and swimlanes now stay native in LibreOffice. Capture
+  dropped tokens without `=` (`swimlane;`, `ellipse;`, `rhombus;`) and
+  painted `mxSwimlane` as a full rectangle, so BPMN lanes and UML ellipses
+  never reached `VisioDocument::parse` as the title bar / oval Draw paints.
+  Tokens now merge `styles/default.xml` like `mxStylesheet.getCellStyle`,
+  and capture loads official `mxSwimlane.paintVertexShape` (startSize
+  title, body, divider, collection ticks). A second save keeps the geometry.
 - draw.io Internal Storage and Predefined Process now keep their inner
   rails in LibreOffice. Capture overrode `mxRectangleShape.paintVertexShape`
   with a sharp rectangle, so subclasses that only paint in `paintForeground`
