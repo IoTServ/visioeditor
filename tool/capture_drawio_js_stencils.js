@@ -358,6 +358,14 @@ mxShape.prototype.paintVertexShape = function(c, x, y, w, h) {
   this.paintForeground(c, x, y, w, h);
 };
 mxShape.prototype.isHorizontal = function() { return true; };
+mxShape.prototype.createMarker = function() { return null; };
+mxShape.prototype.paintEdgeShape = function(c, pts) {
+  if (!pts || pts.length < 2) return;
+  c.begin();
+  c.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) c.lineTo(pts[i].x, pts[i].y);
+  c.stroke();
+};
 
 const baseNames = [
   'mxActor', 'mxArrow', 'mxArrowConnector', 'mxCloud', 'mxConnector',
@@ -490,6 +498,12 @@ const shapeContext = {
     createSvgImage() { return {src: ''}; },
     prototype: {
       getPreferredSizeForCell() { return null; },
+      getTableLines() { return []; },
+      paintTableCellLines() {},
+      isTableRow() { return false; },
+      isTable() { return false; },
+      isTableCell() { return false; },
+      getCellGeometry() { return null; },
     },
   }),
   document: {createElement: () => ({style: {}, getElementsByTagName: () => []})},
@@ -549,6 +563,9 @@ loadJs(
   'js/grapheditor/Shapes.js',
   path.join(webapp, 'js/grapheditor/Shapes.js'),
 );
+mxShape.prototype.getTitleSize = function() {
+  return mxUtils.getNumber(this.style, mxConstants.STYLE_STARTSIZE, 0);
+};
 if (!registry['mxgraph.basic.rect']) registerShape('mxgraph.basic.rect', RectShape);
 if (!registry.note) registerShape('note', RectShape);
 if (!registry.folder) registerShape('folder', RectShape);
@@ -717,6 +734,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
   shape.style = style;
   shape.scale = 1;
+  shape.bounds = {x, y, width, height};
   shape.state = {
     style,
     view: {
@@ -725,6 +743,12 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
         isCellCollapsed() { return false; },
         isCellConnected() { return false; },
         isSwimlane() { return false; },
+        getTableLines() { return []; },
+        paintTableCellLines() {},
+        isTableRow() { return false; },
+        isTable() { return false; },
+        isTableCell() { return false; },
+        getCellGeometry() { return null; },
         getModel() { return {getChildCount() { return 0; }, getChildAt() { return null; }}; },
       },
     },
@@ -914,7 +938,9 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
     const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
     shape.style = style;
     shape.scale = 1;
+    shape.bounds = {x, y, width, height};
     try {
+      if (style.dashed === '1') canvas.operations.push('<dashed dashed="1"/>');
       shape.paintEdgeShape(canvas, pts);
       canvas.finish();
       return true;

@@ -546,4 +546,70 @@ void main() {
         .findShapeById(id)!;
     expect(leftover.geometries, isNotEmpty);
   });
+
+  test('electrical wire and mockup tables capture native geometry', () {
+    Stencil stencil(String groupName, String shapeName) => dynamic
+        .singleWhere((group) => group.name == groupName)
+        .stencils
+        .singleWhere((entry) => entry.name == shapeName);
+
+    final wire = stencil(
+      'Draw.io JS / Electrical / Electrical / Transmission Paths',
+      'Dashed Wire',
+    ).build(60, 3, 3);
+    expect(
+      wire.geometries.where((g) => g.noFill && !g.noLine),
+      isNotEmpty,
+      reason: 'shape=wire paintEdgeShape must stroke, not a filled rectangle',
+    );
+    expect(
+      wire.line.pattern,
+      2,
+      reason: 'Dashed Wire style dashed=1 is LinePattern 2 in tokens.txt',
+    );
+
+    final table = stencil(
+      'Draw.io JS / Mockup / Mockup Text',
+      'Table',
+    ).build(61, 3, 3);
+    expect(
+      table.geometries.length,
+      greaterThan(2),
+      reason: 'table/tableRow need getTitleSize so cells stay native geometry',
+    );
+    expect(
+      table.children.where((child) => (child.text ?? '').isNotEmpty).length,
+      greaterThan(2),
+      reason: 'header and body cell labels must stay Text for LibreOffice',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final wireId = doc.pages.first.nextFreeShapeId();
+    var page = doc.pages.first.addShape(stencil(
+      'Draw.io JS / Electrical / Electrical / Transmission Paths',
+      'Dashed Wire',
+    ).build(wireId, 2, 4));
+    final tableId = page.nextFreeShapeId();
+    page = page.addShape(stencil(
+      'Draw.io JS / Mockup / Mockup Text',
+      'Table',
+    ).build(tableId, 5, 4));
+    doc = doc.replacePage(0, page);
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first;
+    expect(
+      leftover.findShapeById(wireId)!.geometries,
+      isNotEmpty,
+    );
+    expect(
+      leftover.findShapeById(tableId)!.children.any(
+            (child) => (child.text ?? '').isNotEmpty,
+          ),
+      isTrue,
+    );
+  });
 }

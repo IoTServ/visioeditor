@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io table cells and electrical wires now stay in LibreOffice.
+  `table` / `tableRow` painters call `getTitleSize` and `shape=wire`
+  calls `createMarker`; capture had neither, so those types threw and
+  Draw never saw them through `VisioDocument::parse`. The stubs match
+  mxGraph (`startSize` title, polyline edge paint, empty table lines),
+  dashed wires keep LinePattern 2, and a second save keeps the geometry.
 - draw.io sidebar edges and mxStencil path ops now stay in LibreOffice.
   `createEdgeTemplateEntry` palettes (Arrows 2 wedge, IBM/ER connectors)
   were skipped as non-vertices, and Cisco Truck's cab crease is a
