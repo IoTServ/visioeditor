@@ -1326,7 +1326,19 @@ const shapeContext = {
     this.dx = dx || 0; this.dy = dy || 0;
   },
   mxClient: {IS_FF: false, IS_SF: false},
-  mxMarker: {addMarker() {}},
+  // Real registry so Shapes.js / mxER.js `addMarker('ERmany', …)` stick.
+  // A no-op stub discarded crow's-foot factories, and LibreOffice only
+  // calls VisioDocument::parse, so Draw never saw those arrow heads.
+  mxMarker: {
+    markers: Object.create(null),
+    addMarker(type, funct) { this.markers[type] = funct; },
+    createMarker(canvas, shape, type, pe, unitX, unitY, size, source, sw, filled) {
+      const funct = this.markers[type];
+      return funct != null
+        ? funct(canvas, shape, type, pe, unitX, unitY, size, source, sw, filled)
+        : null;
+    },
+  },
   mxStencilRegistry: {
     addStencil(name, stencil) { stencilMap[String(name).toLowerCase()] = stencil; },
     getStencil(name) {
@@ -1433,9 +1445,18 @@ loadOfficialCtor('mxArrow.js', 'mxArrow');
 loadOfficialCtor('mxArrowConnector.js', 'mxArrowConnector');
 loadOfficialCtor('mxSwimlane.js', 'mxSwimlane');
 loadJs('mxgraph/src/shape/mxMarker.js', path.join(webapp, 'mxgraph/src/shape/mxMarker.js'));
+// Official mxConnector.paintEdgeShape calls mxMarker.createMarker after the
+// stroke. The capture stub inherited mxShape's polyline, and defaultEdge is
+// `shape=connector`, so ER crow's feet (and classic/block/oval markers)
+// never reached VisioDocument::parse.
+loadOfficialCtor('mxPolyline.js', 'mxPolyline');
+loadOfficialCtor('mxConnector.js', 'mxConnector');
 registerShape(mxConstants.SHAPE_ARROW, shapeContext.mxArrow);
 registerShape(mxConstants.SHAPE_ARROW_CONNECTOR, shapeContext.mxArrowConnector);
 registerShape(mxConstants.SHAPE_SWIMLANE, shapeContext.mxSwimlane);
+registerShape(mxConstants.SHAPE_CONNECTOR, shapeContext.mxConnector);
+registerShape('connector', shapeContext.mxConnector);
+registerShape('polyline', shapeContext.mxPolyline);
 loadJs(
   'js/grapheditor/Shapes.js',
   path.join(webapp, 'js/grapheditor/Shapes.js'),
@@ -2064,7 +2085,9 @@ function paintConnectorLine(style, pts, canvas) {
 function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) {
   const pts = edgePoints(style, width, height, x, y, geometry);
   const name = style && style.shape;
-  const ctor = name ? registry[name] : null;
+  // defaultEdge is shape=connector. Fall back to official mxConnector so
+  // mxMarker factories (ERoneToMany, classic, oval, …) paint.
+  const ctor = (name && registry[name]) || shapeContext.mxConnector;
   if (ctor && typeof ctor.prototype.paintEdgeShape === 'function') {
     const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
     shape.style = style;
@@ -2079,7 +2102,9 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
       if (style.dashed === '1') canvas.setDashed(true);
       if (canvas.setFillColor) canvas.setFillColor(shape.fill);
       if (canvas.setStrokeColor) canvas.setStrokeColor(shape.stroke);
-      shape.paintEdgeShape(canvas, pts);
+      // createMarker shortens the endpoint mxPoints in place.
+      const paintPts = pts.map((pt) => new shapeContext.mxPoint(pt.x, pt.y));
+      shape.paintEdgeShape(canvas, paintPts);
       canvas.finish();
       return true;
     } catch (error) {

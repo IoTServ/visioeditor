@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Entity Relation crow's-foot markers now stay native in LibreOffice.
+  Capture stubbed `mxMarker.addMarker` and painted `shape=connector` as a
+  polyline plus a generic triangle, so `ERoneToMany` / `ERzeroToMany` /
+  `ERmany` never reached `VisioDocument::parse`. Official `mxPolyline` /
+  `mxConnector` now call the same `mxMarker` factories `mxER.js` registers,
+  including the optional participation circle. A second save keeps the
+  double rectangle, double diamond, double ellipse and crow's foot.
 - draw.io classic UML palettes now stay native in LibreOffice. Capture only
   loaded `Sidebar-*.js`, so Class, Lifeline, Use Case and Package in
   `grapheditor/Sidebar.js` `addUmlPalette` never reached

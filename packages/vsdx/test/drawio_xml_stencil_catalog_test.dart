@@ -1703,4 +1703,133 @@ void main() {
       );
     },
   );
+
+  test(
+    'grapheditor ER palettes keep Chen vertices and crow\'s-foot markers for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      const group = 'Draw.io JS / ER / entityRelation';
+      expect(
+        dynamic.singleWhere((entry) => entry.name == group).stencils,
+        hasLength(50),
+        reason: 'addErPalette templates must reach VisioDocument::parse',
+      );
+
+      final weak = stencil(group, 'Weak Entity').build(300, 3, 3);
+      expect(
+        weak.geometries,
+        hasLength(2),
+        reason: 'Chen weak entity is a double rectangle, not a single box',
+      );
+      expect(
+        weak.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(8),
+      );
+
+      final identifying = stencil(group, 'Identifying Relationship').build(301, 3, 3);
+      expect(
+        identifying.geometries,
+        hasLength(2),
+        reason: 'Identifying relationship is a double diamond',
+      );
+
+      final multivalue = stencil(group, 'Multivalue Attribute').build(302, 3, 3);
+      expect(
+        multivalue.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        2,
+        reason: 'Multivalue attribute is a double ellipse',
+      );
+
+      final oneToMany = stencil(group, '1 to Many').build(303, 4, 1);
+      expect(
+        oneToMany.geometries.where((geometry) => !geometry.noFill),
+        isEmpty,
+        reason: 'ERoneToMany is a stroked crow\'s foot, not a filled triangle',
+      );
+      expect(
+        oneToMany.geometries.expand((geometry) => geometry.commands).whereType<MoveTo>().length,
+        greaterThanOrEqualTo(3),
+        reason: 'crow\'s foot plus the perpendicular bar need extra moves',
+      );
+
+      final many = stencil(group, 'Many').build(304, 4, 1);
+      expect(
+        many.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(3),
+        reason: 'ERmany is the crow\'s foot, not a single connector',
+      );
+
+      final zeroToMany = stencil(group, '0 to Many Optional').build(305, 4, 1);
+      expect(
+        zeroToMany.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>(),
+        isNotEmpty,
+        reason: 'ERzeroToMany paints the optional participation circle',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final weakId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(group, 'Weak Entity').build(weakId, 3, 3));
+      final identifyingId = page.nextFreeShapeId();
+      page = page.addShape(
+        stencil(group, 'Identifying Relationship').build(identifyingId, 5, 3),
+      );
+      final multiId = page.nextFreeShapeId();
+      page = page.addShape(
+        stencil(group, 'Multivalue Attribute').build(multiId, 7, 3),
+      );
+      final oneToManyId = page.nextFreeShapeId();
+      page = page.addShape(stencil(group, '1 to Many').build(oneToManyId, 9, 3));
+      final zeroId = page.nextFreeShapeId();
+      page = page.addShape(
+        stencil(group, '0 to Many Optional').build(zeroId, 11, 3),
+      );
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+
+      expect(
+        leftover.findShapeById(weakId)!.geometries,
+        hasLength(2),
+      );
+      expect(
+        leftover.findShapeById(identifyingId)!.geometries,
+        hasLength(2),
+      );
+      expect(
+        leftover
+            .findShapeById(multiId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>()
+            .length,
+        2,
+      );
+      expect(
+        leftover
+            .findShapeById(oneToManyId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(3),
+      );
+      expect(
+        leftover
+            .findShapeById(zeroId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty,
+      );
+    },
+  );
 }
