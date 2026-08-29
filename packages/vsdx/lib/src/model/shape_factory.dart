@@ -9196,9 +9196,13 @@ abstract final class VsdxShapeFactory {
       );
 
   /// Message square; [x]/[y] are bottom-left corners in local inches.
+  ///
+  /// NoFill: libvisio concatenates every NoFill=0 Geometry with
+  /// `svg:fill-rule=evenodd`, so a filled square inside [_eipOuterBox]
+  /// would punch a hole in Draw.
   static VsdxGeometry _eipMessageSquare(
       double x, double y, double sideX, double sideY) {
-    return VsdxGeometry(commands: <VsdxPathCommand>[
+    return VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
       MoveTo(x, y),
       LineTo(x + sideX, y),
       LineTo(x + sideX, y + sideY),
@@ -9209,7 +9213,8 @@ abstract final class VsdxShapeFactory {
 
   static VsdxGeometry _eipArrowRight(
       double tipX, double midY, double len, double half) {
-    return VsdxGeometry(commands: <VsdxPathCommand>[
+    // Stroke only — a filled triangle evenodd-punches the outer box.
+    return VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
       MoveTo(tipX - len, midY - half),
       LineTo(tipX - len, midY + half),
       LineTo(tipX, midY),
@@ -9292,7 +9297,7 @@ abstract final class VsdxShapeFactory {
     final rr = 0.28 * h;
     return base.copyWith(geometries: <VsdxGeometry>[
       ...base.geometries,
-      VsdxGeometry(commands: <VsdxPathCommand>[
+      VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: cx,
             cy: cy,
@@ -9403,7 +9408,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     VsdxGeometry dot(double cx, double cy) {
       final r = 4 / 150 * w;
-      return VsdxGeometry(commands: <VsdxPathCommand>[
+      return VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: cx, cy: cy, aX: cx + r, aY: cy, bX: cx, bY: cy + r),
       ]);
@@ -9466,7 +9471,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(xOf(50), yOf(70)),
           LineTo(xOf(100), yOf(70)),
           LineTo(xOf(86), yOf(45)),
@@ -9509,14 +9514,14 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(xOf(15), leftY),
           LineTo(xOf(15) + panelW, leftY),
           LineTo(xOf(15) + panelW, leftY + panelH),
           LineTo(xOf(15), leftY + panelH),
           LineTo(xOf(15), leftY),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(xOf(95), rightY),
           LineTo(xOf(95) + panelW, rightY),
           LineTo(xOf(95) + panelW, rightY + panelH),
@@ -9573,7 +9578,7 @@ abstract final class VsdxShapeFactory {
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
         _eipMessageSquare(10 / 150 * w, (1 - 53 / 90) * h, sx, sy),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(115 / 150 * w, (1 - 53 / 90) * h),
           LineTo(115 / 150 * w + ex, (1 - 53 / 90) * h),
           LineTo(115 / 150 * w + ex, (1 - 53 / 90) * h + ey),
@@ -9617,7 +9622,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(109 / 150 * w, (1 - 82 / 90) * h),
           LineTo(136 / 150 * w, (1 - 82 / 90) * h),
           LineTo(136 / 150 * w, (1 - 8 / 90) * h),
@@ -9629,7 +9634,7 @@ abstract final class VsdxShapeFactory {
           LineTo(56 / 150 * w, 0.5 * h),
         ]),
         _eipArrowRight(70 / 150 * w, 0.5 * h, 14 / 150 * w, 7 / 90 * h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(80 / 150 * w, 0.35 * h),
           LineTo(105 / 150 * w, 0.5 * h),
           LineTo(80 / 150 * w, 0.65 * h),
@@ -9700,7 +9705,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: cx, cy: cy, aX: cx + r, aY: cy, bX: cx, bY: cy + r),
         ]),
@@ -9710,7 +9715,7 @@ abstract final class VsdxShapeFactory {
           MoveTo(cx, cy),
           LineTo(cx, 15 / 90 * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(cx - 6 / 150 * w, 20 / 90 * h),
           LineTo(cx + 6 / 150 * w, 20 / 90 * h),
           LineTo(cx, 8 / 90 * h),
@@ -9829,14 +9834,14 @@ abstract final class VsdxShapeFactory {
           LineTo(56 / 150 * w, 0.5 * h),
         ]),
         _eipArrowRight(68 / 150 * w, 0.5 * h, 14 / 150 * w, 7 / 90 * h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(124 / 150 * w, 0.5 * h),
           LineTo(132 / 150 * w, (1 - 37 / 90) * h),
           LineTo(140 / 150 * w, 0.5 * h),
           LineTo(132 / 150 * w, (1 - 53 / 90) * h),
           LineTo(124 / 150 * w, 0.5 * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(102 / 150 * w, (1 - 39 / 90) * h),
           LineTo(102 / 150 * w, (1 - 51 / 90) * h),
           LineTo(115 / 150 * w, 0.5 * h),
@@ -9872,14 +9877,14 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(15 / 150 * w, cy - t),
           LineTo(55 / 150 * w, cy - t),
           LineTo(55 / 150 * w, cy + t),
           LineTo(15 / 150 * w, cy + t),
           LineTo(15 / 150 * w, cy - t),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(95 / 150 * w, cy - t),
           LineTo(135 / 150 * w, cy - t),
           LineTo(135 / 150 * w, cy + t),
@@ -9925,7 +9930,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: cx, cy: cy, aX: cx + r, aY: cy, bX: cx, bY: cy + r),
         ]),
@@ -9976,7 +9981,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(10 / 150 * w, (1 - 53 / 90) * h),
           LineTo(10 / 150 * w + lx, (1 - 53 / 90) * h),
           LineTo(10 / 150 * w + lx, (1 - 53 / 90) * h + ly),
@@ -9990,7 +9995,7 @@ abstract final class VsdxShapeFactory {
         ]),
         _eipArrowRight(100 / 150 * w, 0.5 * h, 13 / 150 * w, 6 / 90 * h),
         // Claim ticket (simplified stub).
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(118 / 150 * w, 12 / 90 * h),
           LineTo(142 / 150 * w, 12 / 90 * h),
           LineTo(146 / 150 * w, 18 / 90 * h),
@@ -10118,7 +10123,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(10 / 150 * w, (1 - 53 / 90) * h),
           LineTo(10 / 150 * w + lx, (1 - 53 / 90) * h),
           LineTo(10 / 150 * w + lx, (1 - 53 / 90) * h + ly),
@@ -10207,7 +10212,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     VsdxGeometry dot(double cx, double cy) {
       final r = 4 / 150 * w;
-      return VsdxGeometry(commands: <VsdxPathCommand>[
+      return VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: cx, cy: cy, aX: cx + r, aY: cy, bX: cx, bY: cy + r),
       ]);
@@ -10281,7 +10286,7 @@ abstract final class VsdxShapeFactory {
               controlY: h),
           LineTo(0.8 * w, (1 - 23 / 35) * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: 0.5 * w,
               cy: (1 - 18 / 35) * h,
@@ -10311,7 +10316,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     VsdxGeometry dot(double cx, double cy) {
       final r = 4 / 150 * w;
-      return VsdxGeometry(commands: <VsdxPathCommand>[
+      return VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: cx, cy: cy, aX: cx + r, aY: cy, bX: cx, bY: cy + r),
       ]);
@@ -10386,7 +10391,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(x0, y0),
           LineTo(x0 + ew, y0),
           LineTo(x0 + ew, y0 + eh),
@@ -10483,7 +10488,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(left, top),
           EllipticalArcTo(
               x: right, y: top, controlX: cx, controlY: top + ry),
@@ -10531,7 +10536,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: 18 / 150 * w,
               cy: (1 - 27 / 90) * h,
@@ -10540,14 +10545,14 @@ abstract final class VsdxShapeFactory {
               bX: 18 / 150 * w,
               bY: (1 - 27 / 90) * h + r),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(25 / 150 * w, 0.5 * h),
           LineTo(33 / 150 * w, (1 - 37 / 90) * h),
           LineTo(41 / 150 * w, 0.5 * h),
           LineTo(33 / 150 * w, (1 - 53 / 90) * h),
           LineTo(25 / 150 * w, 0.5 * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(10 / 150 * w, (1 - 71 / 90) * h),
           LineTo(26 / 150 * w, (1 - 71 / 90) * h),
           LineTo(18 / 150 * w, (1 - 55 / 90) * h),
@@ -10598,7 +10603,7 @@ abstract final class VsdxShapeFactory {
               controlY: 0.5 * h),
         ]),
         _eipArrowRight(68 / 150 * w, 0.5 * h, 14 / 150 * w, 7 / 90 * h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(124 / 150 * w, 0.5 * h),
           LineTo(132 / 150 * w, (1 - 37 / 90) * h),
           LineTo(140 / 150 * w, 0.5 * h),
@@ -10687,7 +10692,7 @@ abstract final class VsdxShapeFactory {
           MoveTo(100 / 150 * w, cy),
           LineTo(130 / 150 * w, cy),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(124 / 150 * w, cy),
           LineTo(132 / 150 * w, cy + 8 / 90 * h),
           LineTo(140 / 150 * w, cy),
@@ -10729,7 +10734,7 @@ abstract final class VsdxShapeFactory {
           LineTo(105 / 150 * w, 0.5 * h),
         ]),
         _eipArrowRight(68 / 150 * w, 0.5 * h, 14 / 150 * w, 7 / 90 * h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(61 / 150 * w, 0.5 * h),
           LineTo(69 / 150 * w, (1 - 37 / 90) * h),
           LineTo(77 / 150 * w, 0.5 * h),
@@ -10737,7 +10742,7 @@ abstract final class VsdxShapeFactory {
           LineTo(61 / 150 * w, 0.5 * h),
         ]),
         _eipArrowRight(120 / 150 * w, 0.5 * h, 13 / 150 * w, 6 / 90 * h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(124 / 150 * w, 0.5 * h),
           LineTo(132 / 150 * w, (1 - 37 / 90) * h),
           LineTo(140 / 150 * w, 0.5 * h),
@@ -10765,7 +10770,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     VsdxGeometry dot(double cx, double cy) {
       final r = 4 / 70 * w;
-      return VsdxGeometry(commands: <VsdxPathCommand>[
+      return VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: cx, cy: cy, aX: cx + r, aY: cy, bX: cx, bY: cy + r),
       ]);
@@ -10805,7 +10810,7 @@ abstract final class VsdxShapeFactory {
           MoveTo(0.5 * w, (1 - 54 / 90) * h),
           LineTo(0.5 * w, (1 - 63 / 90) * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(0.5 * w - 4 / 70 * w, (1 - 33 / 90) * h),
           LineTo(0.5 * w + 4 / 70 * w, (1 - 33 / 90) * h),
           LineTo(0.5 * w, (1 - 39 / 90) * h),
@@ -10845,7 +10850,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: cx,
               cy: cy,
@@ -10854,7 +10859,7 @@ abstract final class VsdxShapeFactory {
               bX: cx,
               bY: cy + ry),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(88 / 150 * w, (1 - 58 / 90) * h),
           LineTo(88 / 150 * w + sx, (1 - 58 / 90) * h),
           LineTo(88 / 150 * w + sx, (1 - 58 / 90) * h + sy),
@@ -10896,14 +10901,14 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(xOf(50), yOf(20)),
           LineTo(xOf(100), yOf(20)),
           LineTo(xOf(85), yOf(70)),
           LineTo(xOf(65), yOf(70)),
           LineTo(xOf(50), yOf(20)),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(xOf(65), yOf(70)),
           LineTo(xOf(50), yOf(20)),
           LineTo(xOf(85), yOf(20)),
@@ -10941,7 +10946,7 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         _eipOuterBox(w, h),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: 18 / 150 * w,
               cy: 0.5 * h,
@@ -11024,7 +11029,7 @@ abstract final class VsdxShapeFactory {
     final cy = 0.5 * h;
     return base.copyWith(geometries: <VsdxGeometry>[
       ...base.geometries,
-      VsdxGeometry(commands: <VsdxPathCommand>[
+      VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         MoveTo(cx, cy + 0.22 * h),
         LineTo(cx - 0.18 * h, cy - 0.18 * h),
         LineTo(cx + 0.18 * h, cy - 0.18 * h),

@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- EIP icons now keep a solid tile in LibreOffice.
+  Message squares, arrows and inner glyphs used `NoFill=0` inside the
+  outer box, so libvisio `_fillAndShadowProperties`
+  (`svg:fill-rule=evenodd`) punched them as holes in Draw. Those details
+  are now stroked on a filled tile; a second save does not restore the
+  extra fills. Channel pipes, adapters and control-bus bodies stay
+  filled.
 - Network servers now keep a solid chassis in LibreOffice.
   A `NoFill=0` LED square inside the rack becomes one evenodd path in
   canvas, SVG and libvisio `_fillAndShadowProperties`

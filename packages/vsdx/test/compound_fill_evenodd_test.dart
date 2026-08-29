@@ -481,6 +481,117 @@ void main() {
         reason: 'a second save must not restore a filled lens');
   });
 
+  test('EIP tiles keep a single fill for LibreOffice', () {
+    int filled(VsdxShape s) =>
+        s.geometries.where((g) => !g.noFill && !g.noShow).length;
+    expect(
+      filled(VsdxShapeFactory.eipAggregator(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.1,
+      )),
+      1,
+      reason: 'message squares evenodd into holes in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.eipMessageFilter(
+        id: 2,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.1,
+      )),
+      1,
+      reason: 'funnel evenodd into a flask hole in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.eipWireTap(
+        id: 3,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.1,
+      )),
+      1,
+    );
+    expect(
+      filled(VsdxShapeFactory.eipContentBasedRouter(
+        id: 4,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.1,
+      )),
+      1,
+    );
+    expect(
+      filled(VsdxShapeFactory.eipMessageChannel(
+        id: 5,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 0.45,
+      )),
+      1,
+      reason: 'channel pipe itself stays filled',
+    );
+    expect(
+      filled(VsdxShapeFactory.eipChannelAdapter(
+        id: 6,
+        pinX: 2,
+        pinY: 2,
+        width: 0.7,
+        height: 1.2,
+      )),
+      1,
+      reason: 'adapter wedge is the outer body',
+    );
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [
+          VsdxShapeFactory.eipAggregator(
+            id: 1,
+            pinX: 2,
+            pinY: 2,
+            width: 1.8,
+            height: 1.1,
+          ),
+        ],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.eipAggregator(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.8,
+          height: 1.1,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(filled(leftover), 1,
+        reason: 'a second save must not restore filled message squares');
+  });
+
   test('radiation sign keeps a solid centre disc for LibreOffice', () {
     final shape = VsdxShapeFactory.signRadiation(
       id: 1,
