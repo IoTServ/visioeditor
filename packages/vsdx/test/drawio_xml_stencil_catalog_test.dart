@@ -2153,6 +2153,107 @@ void main() {
     },
   );
 
+  test(
+    'mxCell xml placeholder labels stay substituted Text for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final c4 = dynamic.singleWhere(
+        (group) => group.name == 'Draw.io JS / C4 / C4',
+      );
+      final person = c4.stencils
+          .singleWhere((entry) => entry.name == 'Person')
+          .build(445, 3, 3);
+      final personText = allText(person);
+      expect(
+        personText,
+        isNot(contains('[object Object]')),
+        reason: 'Graph.convertValueToString reads the XML label, not '
+            'Object.prototype.toString',
+      );
+      expect(
+        personText,
+        contains('Person name'),
+        reason: '%c4Name% is Graph.replacePlaceholders that collectText '
+            'maps to text:p',
+      );
+      expect(personText, contains('[Person]'));
+      expect(personText, contains('Description of person.'));
+      expect(
+        runContaining(person, 'Person name')!.charStyle.style.bold,
+        isTrue,
+        reason: 'html <b>%c4Name%</b> must reach collectCharIX Style.bold',
+      );
+      expect(
+        runContaining(person, '[Person]')!.charStyle.style.bold,
+        isFalse,
+      );
+      expect(
+        runContaining(person, 'Description of person.')!.charStyle.color?.value,
+        0xFFCCCCCC,
+        reason: '<font color="#cccccc"> is Char Color collectCharIX maps '
+            'to fo:color',
+      );
+
+      final data = c4.stencils
+          .singleWhere((entry) => entry.name == 'Data Container')
+          .build(446, 3, 3);
+      final dataText = allText(data);
+      expect(dataText, contains('Container name'));
+      expect(dataText, contains('e.g. Oracle Database 12'));
+      expect(
+        dataText,
+        contains('Description of storage type container role/responsibility.'),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(person.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        allText(leftover),
+        contains('Person name'),
+        reason: 'a second save must keep the substituted C4 name',
+      );
+      expect(
+        runContaining(leftover, 'Person name')!.charStyle.style.bold,
+        isTrue,
+      );
+      expect(allText(leftover), isNot(contains('[object Object]')));
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

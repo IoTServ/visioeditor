@@ -685,6 +685,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `\temp\` sat on the heater and P&ID Indicator `TI` / `##` sat in
   the stem that `collectXFormData` maps to `svg:y`. Cell labels now
   freeze one Text child per row. A second save keeps the band pins.
+- draw.io Graph XML `label` placeholders now stay native in LibreOffice.
+  Official `Graph.convertValueToString` reads the XML user-object
+  `label` and `replacePlaceholders` substitutes `%c4Name%`, but capture
+  stringified the node as `[object Object]`, so a C4 Person lost
+  `Person name` that `collectText` maps to `text:p`. Cell labels now
+  freeze the substituted HTML; string values stay unchanged. A second
+  save keeps the name.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

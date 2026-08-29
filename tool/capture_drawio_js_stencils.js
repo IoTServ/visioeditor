@@ -2339,6 +2339,24 @@ Geometry.prototype.setTerminalPoint = function(point, isSource) {
   else this.targetPoint = pt;
 };
 Geometry.prototype.clone = function() { return Object.assign(new Geometry(), this); };
+function xmlUserObject(name) {
+  const attrs = Object.create(null);
+  return {
+    name,
+    nodeName: name,
+    nodeType: 1,
+    getAttribute(key) {
+      return Object.prototype.hasOwnProperty.call(attrs, key) ? String(attrs[key]) : null;
+    },
+    setAttribute(key, value) {
+      attrs[key] = value;
+    },
+    hasAttribute(key) {
+      return Object.prototype.hasOwnProperty.call(attrs, key);
+    },
+  };
+}
+
 function Cell(value, geometry, style) {
   this.value = value; this.geometry = geometry; this.style = style;
   this.children = []; this.edges = [];
@@ -2365,7 +2383,28 @@ Cell.prototype.clone = function() {
   return copy;
 };
 Cell.prototype.setValue = function(value) { this.value = value; };
-Cell.prototype.setAttribute = function() {};
+Cell.prototype.getValue = function() { return this.value; };
+// mxCell.setAttribute / getAttribute write the XML user object.
+// C4 templates store label + %c4Name% placeholders there.
+Cell.prototype.setAttribute = function(name, value) {
+  const user = this.value;
+  if (user != null && typeof user === 'object' && typeof user.setAttribute === 'function') {
+    user.setAttribute(name, value);
+  }
+};
+Cell.prototype.getAttribute = function(name, defaultValue) {
+  const user = this.value;
+  if (user != null && typeof user === 'object' && typeof user.getAttribute === 'function') {
+    const val = user.getAttribute(name);
+    return val != null ? val : defaultValue;
+  }
+  return defaultValue;
+};
+Cell.prototype.hasAttribute = function(name) {
+  const user = this.value;
+  return !!(user != null && typeof user === 'object' &&
+    typeof user.hasAttribute === 'function' && user.hasAttribute(name));
+};
 Cell.prototype.setEdge = function(value) { this.edge = !!value; };
 Cell.prototype.setVertex = function(value) { this.vertex = !!value; };
 Cell.prototype.setConnectable = function() {};
@@ -2557,7 +2596,7 @@ const sidebarContext = {
     bind: (scope, fn) => fn.bind(scope),
     extend() {},
     setStyle: mxUtilsSetStyle,
-    createXmlDocument: () => ({createElement: (name) => ({name})}),
+    createXmlDocument: () => ({createElement: (name) => xmlUserObject(name)}),
     htmlEntities: (value) => value,
   },
   mxCell: Cell,
@@ -2926,8 +2965,43 @@ function decompressDrawio(data) {
   }
 }
 
-function cellLabel(value, keepHtml = false) {
-  const source = String(value ?? '');
+function cellDisplaySource(value) {
+  if (value == null) return '';
+  if (typeof value === 'string' || typeof value === 'number') return String(value);
+  // Graph.convertValueToString: XML user objects expose the label attribute,
+  // not Object.prototype.toString ([object Object]).
+  if (typeof value === 'object' && typeof value.getAttribute === 'function') {
+    return value.getAttribute('label') || '';
+  }
+  return '';
+}
+
+function cellHasPlaceholders(cell) {
+  const user = cell && cell.value;
+  return !!(user && typeof user === 'object' &&
+    typeof user.getAttribute === 'function' &&
+    user.getAttribute('placeholders') == '1');
+}
+
+// Graph.replacePlaceholders: %c4Name% → cell.getAttribute('c4Name').
+// LibreOffice collectText only sees the frozen Char runs.
+function replaceCellPlaceholders(cell, str) {
+  if (!cellHasPlaceholders(cell) || cell.getAttribute('placeholder') != null) {
+    return str;
+  }
+  return String(str || '').replace(
+    /%(date\{.*\}|[^%\{\}"'=;]+)%/g,
+    (token, name) => {
+      if (name === 'label' || name === 'tooltip') return token;
+      const val = cell.getAttribute(name);
+      return val != null ? val : token;
+    },
+  );
+}
+
+function cellLabel(value, keepHtml = false, cell = null) {
+  let source = cellDisplaySource(value);
+  if (cell) source = replaceCellPlaceholders(cell, source);
   if (!source) return '';
   if (keepHtml && /<[a-zA-Z][\s\S]*>/.test(source)) return source;
   const stripped = source
@@ -3555,7 +3629,7 @@ function paintCellTree(cells, canvas, width, height) {
         if (result) painted = true;
       }
       const htmlOn = isHtmlCellStyle(cellStyle);
-      const label = cellLabel(cell.value, htmlOn);
+      const label = cellLabel(cell.value, htmlOn, cell);
       if (label) {
         applyTextStyle(canvas, cellStyle);
         const align = String(cellStyle.align || 'center');
