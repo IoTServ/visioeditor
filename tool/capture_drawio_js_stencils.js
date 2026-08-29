@@ -485,6 +485,15 @@ class CanvasRecorder {
     } else {
       this.operations.push(`<text ${attrs.join(' ')}/>`);
     }
+    // CSS border-bottom dotted/dashed is not Char Style 0x4 (that is a
+    // solid underline collectCharIX maps to style:text-underline-type).
+    // Freeze a collectLine sibling so ER Weak Key stays distinct from
+    // Key Attribute fontStyle=4.
+    if (htmlRuns && htmlRuns.length) {
+      paintHtmlBorderBottom(
+        this, x, y, w, h, horiz, vert, htmlRuns,
+      );
+    }
   }
 
   bindStyle(fill, stroke) {
@@ -3110,6 +3119,66 @@ function applyHtmlCss(next, attrs) {
     const mapped = htmlFontFamily(family);
     if (mapped) next.fontFamily = mapped;
   }
+  const bb = htmlStyleProp(attrs, 'border-bottom')
+    || htmlStyleProp(attrs, 'border-bottom-style');
+  if (bb) {
+    const kind = htmlBorderBottomKind(bb);
+    if (kind === 'solid') next.fontStyle |= 4;
+    else if (kind === 'dotted' || kind === 'dashed') next.borderBottom = kind;
+  }
+}
+
+function htmlBorderBottomKind(raw) {
+  const token = String(raw || '');
+  if (/none|0px/i.test(token)) return null;
+  if (/dotted/i.test(token)) return 'dotted';
+  if (/dashed/i.test(token)) return 'dashed';
+  if (/solid/i.test(token)) return 'solid';
+  return null;
+}
+
+// mxText HTML `border-bottom: 1px dotted` (ER Weak Key Attribute).
+// Char Style 0x4 is always a solid underline in collectCharIX; paint a
+// dashed Line sibling (LinePattern / veDashPattern) under the glyph box.
+function paintHtmlBorderBottom(canvas, x, y, w, h, align, valign, runs) {
+  const marked = (runs || []).filter((run) =>
+    run.borderBottom === 'dotted' || run.borderBottom === 'dashed');
+  if (!marked.length) return;
+  const boxW = Number(w);
+  const boxH = Number(h);
+  if (!(boxW > 0 && boxH > 0)) return;
+  const fallback = Number(canvas.state.fontSize) || 12;
+  let textW = 0;
+  let textH = 0;
+  for (const run of marked) {
+    const fs = Number(run.fontSize);
+    const size = Number.isFinite(fs) && fs > 0 ? fs : fallback;
+    const str = String(run.str || '');
+    textW += str.length * size * 0.6;
+    textH = Math.max(textH, size * 1.2);
+  }
+  if (textW < 1) return;
+  const horiz = String(align || '').toLowerCase();
+  const vert = String(valign || '').toLowerCase();
+  let cx;
+  if (horiz.includes('center')) cx = x + boxW / 2;
+  else if (horiz.includes('right')) cx = x + boxW - textW / 2;
+  else cx = x + textW / 2;
+  let cy;
+  if (vert.includes('middle')) cy = y + boxH / 2;
+  else if (vert.includes('bottom')) cy = y + boxH - textH / 2;
+  else cy = y + textH / 2;
+  const color = marked[0].fontColor || canvas.state.fontColor || '#000000';
+  canvas.setStrokeColor(color);
+  canvas.setStrokeWidth(1);
+  canvas.setDashed(true);
+  canvas.setDashPattern(marked[0].borderBottom === 'dashed' ? '6 3' : '1 2');
+  canvas.begin();
+  canvas.moveTo(cx - textW / 2, cy + textH / 2);
+  canvas.lineTo(cx + textW / 2, cy + textH / 2);
+  canvas.stroke();
+  canvas.setDashed(false);
+  canvas.setDashPattern('none');
 }
 
 function cloneHtmlStyle(style) {
@@ -3120,6 +3189,7 @@ function cloneHtmlStyle(style) {
     fontFamily: style.fontFamily,
     textOpacity: style.textOpacity,
     position: Number(style.position) || 0,
+    borderBottom: style.borderBottom || null,
   };
 }
 
@@ -3129,7 +3199,8 @@ function sameHtmlStyle(a, b) {
     && Number(a.fontSize) === Number(b.fontSize)
     && String(a.fontFamily || '') === String(b.fontFamily || '')
     && Number(a.textOpacity) === Number(b.textOpacity)
-    && (Number(a.position) || 0) === (Number(b.position) || 0);
+    && (Number(a.position) || 0) === (Number(b.position) || 0)
+    && String(a.borderBottom || '') === String(b.borderBottom || '');
 }
 
 function htmlLabelRunsDiffer(runs, state) {

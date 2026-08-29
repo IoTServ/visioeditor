@@ -2180,6 +2180,101 @@ void main() {
   );
 
   test(
+    'mxText html border-bottom dotted stays a dashed Line for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool hasDottedUnderline(VsdxShape shape) {
+        bool isDashRibbon(VsdxShape child) {
+          if ((child.text ?? '').trim().isNotEmpty) return false;
+          if (!child.line.hasLine) return false;
+          final cmds = [
+            for (final geometry in child.geometries) ...geometry.commands,
+          ];
+          if (cmds.length < 2) return false;
+          if (cmds.any((cmd) => cmd is! MoveTo && cmd is! LineTo)) {
+            return false;
+          }
+          final dashed = child.line.pattern >= 2 ||
+              (child.line.customDashPattern?.isNotEmpty ?? false) ||
+              cmds.whereType<MoveTo>().length > 1;
+          return dashed;
+        }
+
+        if (shape.children.any(isDashRibbon)) return true;
+        return shape.children.any(hasDottedUnderline);
+      }
+
+      Stencil stencil(String name) => dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / ER / entityRelation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      final key = stencil('Key Attribute').build(445, 3, 3);
+      final weak = stencil('Weak Key Attribute').build(446, 3, 3);
+      expect(
+        runContaining(key, 'Attribute')!.charStyle.underline,
+        isTrue,
+        reason: 'fontStyle=4 Key Attribute is Char Style 0x4 that '
+            'collectCharIX maps to style:text-underline-type',
+      );
+      expect(
+        hasDottedUnderline(key),
+        isFalse,
+        reason: 'the solid underline must not grow a dashed Line sibling',
+      );
+      expect(
+        runContaining(weak, 'Attribute')!.charStyle.underline,
+        isFalse,
+        reason: 'CSS border-bottom dotted is not Char Style 0x4',
+      );
+      expect(
+        hasDottedUnderline(weak),
+        isTrue,
+        reason: 'the dotted rule is a collectLine sibling (1 2 dash) so '
+            'Draw paints dots instead of a solid underline',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(weak.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Attribute')!.charStyle.underline,
+        isFalse,
+        reason: 'a second save must not freeze a solid Char underline',
+      );
+      expect(
+        hasDottedUnderline(leftover),
+        isTrue,
+        reason: 'a second save must keep the dotted Line',
+      );
+    },
+  );
+
+  test(
     'mxText html tables stay row Text boxes for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {

@@ -714,6 +714,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   maps to `style:font-name`. Cell labels now freeze Char.Font (CSS
   stack until a Visio face; `"open sans", arial` → Arial). A second
   save keeps the face.
+- draw.io mxText html `border-bottom` dotted now stays native in LibreOffice.
+  Official `mxText` paints CSS `border-bottom: 1px dotted` under the
+  glyph, but capture dropped the border, so an ER Weak Key Attribute
+  looked like a plain Attribute while Key Attribute (`fontStyle=4`)
+  kept the solid Style 0x4 that `collectCharIX` maps to
+  `style:text-underline-type`. Cell labels now freeze a dashed Line
+  sibling (`1 2` → `veDashPattern`) that `collectLine` maps to
+  `draw:dots`; Char underline stays off. A second save keeps the dots.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
