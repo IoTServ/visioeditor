@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io `triangle` / `hexagon` / `actor` now keep mxGraph direction in
+  LibreOffice. Capture painted those primitives as diamonds or rectangles
+  and stubbed `c.rotate` / `getShapeRotation`, so Bootstrap south chevrons
+  and directed flowchart vertices never reached `VisioDocument::parse` as
+  the contours Draw paints. Rotation is now baked into the path, matching
+  `mxSvgCanvas2D.rotate` with y-down clockwise angles. A second save
+  keeps the chevron.
 - draw.io sidebar factories now keep terminals, relative offsets and
   cloned cells in LibreOffice. `addEntry` composites (UML interface
   lines, Property labels, Bootstrap button groups, BPMN choreographies)

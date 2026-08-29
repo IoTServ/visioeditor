@@ -714,4 +714,76 @@ void main() {
       greaterThan(2),
     );
   });
+
+  test('mxGraph triangle direction south stays a chevron for LibreOffice', () {
+    final buttons = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Button group, horizontal (4)')
+        .build(80, 3, 3);
+    ({double w, double h, int lines})? chevron;
+    for (final geometry in buttons.geometries) {
+      var minX = double.infinity, minY = double.infinity;
+      var maxX = -double.infinity, maxY = -double.infinity;
+      var lines = 0;
+      for (final command in geometry.commands) {
+        if (command is LineTo) lines++;
+        final x = switch (command) {
+          MoveTo(:final x) => x,
+          LineTo(:final x) => x,
+          _ => null,
+        };
+        final y = switch (command) {
+          MoveTo(:final y) => y,
+          LineTo(:final y) => y,
+          _ => null,
+        };
+        if (x == null || y == null) continue;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      final w = maxX - minX;
+      final h = maxY - minY;
+      if (lines == 3 && h > w) {
+        chevron = (w: w, h: h, lines: lines);
+        break;
+      }
+    }
+    expect(
+      chevron,
+      isNotNull,
+      reason: 'shape=triangle;direction=south must bake a 3-point chevron, '
+          'not an unrotated diamond',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Button group, horizontal (4)')
+          .build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.geometries.any((geometry) {
+        return geometry.commands.whereType<LineTo>().length == 3;
+      }),
+      isTrue,
+    );
+  });
 }

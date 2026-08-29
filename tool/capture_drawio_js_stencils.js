@@ -37,6 +37,11 @@ class CanvasRecorder {
   constructor() {
     this.tx = 0;
     this.ty = 0;
+    this.rotTheta = 0;
+    this.rotFlipH = false;
+    this.rotFlipV = false;
+    this.rotCx = 0;
+    this.rotCy = 0;
     this.stack = [];
     this.operations = [];
     this.pathOpen = false;
@@ -45,7 +50,11 @@ class CanvasRecorder {
   }
 
   save() {
-    this.stack.push({tx: this.tx, ty: this.ty, state: {...this.state}});
+    this.stack.push({
+      tx: this.tx, ty: this.ty, state: {...this.state},
+      rotTheta: this.rotTheta, rotFlipH: this.rotFlipH, rotFlipV: this.rotFlipV,
+      rotCx: this.rotCx, rotCy: this.rotCy,
+    });
   }
 
   restore() {
@@ -54,46 +63,122 @@ class CanvasRecorder {
       this.tx = saved.tx;
       this.ty = saved.ty;
       this.state = saved.state;
+      this.rotTheta = saved.rotTheta;
+      this.rotFlipH = saved.rotFlipH;
+      this.rotFlipV = saved.rotFlipV;
+      this.rotCx = saved.rotCx;
+      this.rotCy = saved.rotCy;
     }
   }
 
   translate(x, y) { this.tx += Number(x) || 0; this.ty += Number(y) || 0; }
+  scale() {}
+  rotate(theta, flipH, flipV, cx, cy) {
+    this.rotTheta = Number(theta) || 0;
+    this.rotFlipH = !!flipH;
+    this.rotFlipV = !!flipV;
+    this.rotCx = Number(cx) || 0;
+    this.rotCy = Number(cy) || 0;
+  }
+  isRotated() {
+    return this.rotTheta !== 0 || this.rotFlipH || this.rotFlipV;
+  }
+  map(px, py) {
+    let x = (Number(px) || 0) + this.tx;
+    let y = (Number(py) || 0) + this.ty;
+    if (!this.isRotated()) return {x, y};
+    let theta = this.rotTheta;
+    const cx = this.rotCx;
+    const cy = this.rotCy;
+    if (this.rotFlipH && this.rotFlipV) theta += 180;
+    else if (this.rotFlipH !== this.rotFlipV) {
+      if (this.rotFlipH) x = 2 * cx - x;
+      if (this.rotFlipV) y = 2 * cy - y;
+    }
+    if (this.rotFlipH ? !this.rotFlipV : this.rotFlipV) theta = -theta;
+    if (theta !== 0) {
+      const rad = theta * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const dx = x - cx;
+      const dy = y - cy;
+      x = cx + dx * cos - dy * sin;
+      y = cy + dx * sin + dy * cos;
+    }
+    return {x, y};
+  }
   begin() { this.finishPath(); this.operations.push('<path>'); this.pathOpen = true; }
   end() { this.finishPath(); }
-  moveTo(x, y) { this.command('move', {x: this.x(x), y: this.y(y)}); }
-  lineTo(x, y) { this.command('line', {x: this.x(x), y: this.y(y)}); }
+  moveTo(x, y) { const p = this.map(x, y); this.command('move', {x: p.x, y: p.y}); }
+  lineTo(x, y) { const p = this.map(x, y); this.command('line', {x: p.x, y: p.y}); }
   curveTo(x1, y1, x2, y2, x3, y3) {
-    this.command('curve', {
-      x1: this.x(x1), y1: this.y(y1), x2: this.x(x2), y2: this.y(y2),
-      x3: this.x(x3), y3: this.y(y3),
-    });
+    const p1 = this.map(x1, y1);
+    const p2 = this.map(x2, y2);
+    const p3 = this.map(x3, y3);
+    this.command('curve', {x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, x3: p3.x, y3: p3.y});
   }
   quadTo(x1, y1, x2, y2) {
-    this.command('quad', {x1: this.x(x1), y1: this.y(y1), x2: this.x(x2), y2: this.y(y2)});
+    const p1 = this.map(x1, y1);
+    const p2 = this.map(x2, y2);
+    this.command('quad', {x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y});
   }
   arcTo(rx, ry, rotation, largeArc, sweep, x, y) {
+    const p = this.map(x, y);
     this.command('arc', {
-      rx, ry, 'x-axis-rotation': rotation, 'large-arc-flag': largeArc,
-      'sweep-flag': sweep, x: this.x(x), y: this.y(y),
+      rx, ry, 'x-axis-rotation': (Number(rotation) || 0) + this.rotTheta,
+      'large-arc-flag': largeArc, 'sweep-flag': sweep, x: p.x, y: p.y,
     });
   }
   close() { this.operations.push('<close/>'); }
+  poly(points) {
+    if (!points || points.length < 2) return;
+    this.begin();
+    this.moveTo(points[0][0], points[0][1]);
+    for (let i = 1; i < points.length; i++) this.lineTo(points[i][0], points[i][1]);
+    this.close();
+  }
   rect(x, y, w, h) {
     this.finishPath();
     if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
-    this.operations.push(`<rect x="${number(this.x(x))}" y="${number(this.y(y))}" w="${number(w)}" h="${number(h)}"/>`);
+    if (this.isRotated()) {
+      this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+      return;
+    }
+    const p = this.map(x, y);
+    this.operations.push(`<rect x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}"/>`);
   }
   roundrect(x, y, w, h, rx, ry) {
     this.finishPath();
     if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
+    if (this.isRotated()) {
+      this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+      return;
+    }
+    const p = this.map(x, y);
     const arc = Math.min(100, 100 * Math.max(Number(rx) || 0, Number(ry) || 0) /
       Math.max(1e-9, Math.min(Math.abs(Number(w) || 0), Math.abs(Number(h) || 0))));
-    this.operations.push(`<roundrect x="${number(this.x(x))}" y="${number(this.y(y))}" w="${number(w)}" h="${number(h)}" arcsize="${number(arc)}"/>`);
+    this.operations.push(`<roundrect x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}" arcsize="${number(arc)}"/>`);
   }
   ellipse(x, y, w, h) {
     this.finishPath();
     if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
-    this.operations.push(`<ellipse x="${number(this.x(x))}" y="${number(this.y(y))}" w="${number(w)}" h="${number(h)}"/>`);
+    if (this.isRotated()) {
+      const rx = w / 2;
+      const ry = h / 2;
+      const cx = x + rx;
+      const cy = y + ry;
+      const k = 0.5522847498;
+      this.begin();
+      this.moveTo(cx + rx, cy);
+      this.curveTo(cx + rx, cy + k * ry, cx + k * rx, cy + ry, cx, cy + ry);
+      this.curveTo(cx - k * rx, cy + ry, cx - rx, cy + k * ry, cx - rx, cy);
+      this.curveTo(cx - rx, cy - k * ry, cx - k * rx, cy - ry, cx, cy - ry);
+      this.curveTo(cx + k * rx, cy - ry, cx + rx, cy - k * ry, cx + rx, cy);
+      this.close();
+      return;
+    }
+    const p = this.map(x, y);
+    this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}"/>`);
   }
   fill() { this.finishPath(); this.operations.push('<fill/>'); }
   stroke() { this.finishPath(); this.operations.push('<stroke/>'); }
@@ -102,8 +187,6 @@ class CanvasRecorder {
   // also call image(); dropping the whole parent would hide Kubernetes / AWS
   // product icons that still have vector geometry.
   image() {}
-  scale() {}
-  rotate() {}
   setFillStyle() {}
   setStrokeAlpha() {}
   setFontBackgroundColor() {}
@@ -127,10 +210,11 @@ class CanvasRecorder {
     if (Number.isFinite(fontStyle) && fontStyle !== 0) {
       this.operations.push(`<fontstyle style="${number(fontStyle)}"/>`);
     }
-    const rot = Number(rotation);
+    const p = this.map(x, y);
+    const rot = (Number(rotation) || 0) + this.rotTheta;
     const attrs = [
-      `x="${number(this.x(x))}"`,
-      `y="${number(this.y(y))}"`,
+      `x="${number(p.x)}"`,
+      `y="${number(p.y)}"`,
       `str="${xmlEscape(s)}"`,
       `align="${horiz.includes('center') ? 'center' : horiz.includes('right') ? 'right' : 'left'}"`,
       `valign="${vert.includes('middle') ? 'middle' : vert.includes('bottom') ? 'bottom' : 'top'}"`,
@@ -343,12 +427,31 @@ for (const file of fs.readdirSync(stencilRoot, {recursive: true}).filter((name) 
   } catch (_) {}
 }
 
-function mxShape() { this.style = {}; this.scale = 1; this.strokewidth = 1; }
+function mxShape() {
+  this.style = {};
+  this.scale = 1;
+  this.strokewidth = 1;
+  this.direction = null;
+  this.rotation = 0;
+  this.flipH = false;
+  this.flipV = false;
+}
 mxShape.prototype.getTextRotation = function() { return 0; };
 mxShape.prototype.isHtmlAllowed = function() { return false; };
-mxShape.prototype.getShapeRotation = function() { return 0; };
+mxShape.prototype.getRotation = function() {
+  return Number(this.rotation) || 0;
+};
+mxShape.prototype.getShapeRotation = function() {
+  let rot = this.getRotation();
+  if (this.direction === mxConstants.DIRECTION_NORTH) rot += 270;
+  else if (this.direction === mxConstants.DIRECTION_WEST) rot += 180;
+  else if (this.direction === mxConstants.DIRECTION_SOUTH) rot += 90;
+  return rot;
+};
 mxShape.prototype.configureCanvas = function() {};
-mxShape.prototype.updateTransform = function() {};
+mxShape.prototype.updateTransform = function(c, x, y, w, h) {
+  c.rotate(this.getShapeRotation(), this.flipH, this.flipV, x + w / 2, y + h / 2);
+};
 mxShape.prototype.getArcSize = function(w, h) { return Math.min(w, h) * 0.1; };
 mxShape.prototype.paintBackground = function() {};
 mxShape.prototype.paintForeground = function() {};
@@ -382,10 +485,50 @@ function createBaseShape(name) {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.ellipse(x, y, w, h); c.fillAndStroke();
     };
-  } else if (name === 'mxRhombus' || name === 'mxHexagon' || name === 'mxTriangle') {
+  } else if (name === 'mxTriangle') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
-      c.begin(); c.moveTo(x + w / 2, y); c.lineTo(x + w, y + h / 2);
-      c.lineTo(x + w / 2, y + h); c.lineTo(x, y + h / 2); c.close();
+      c.translate(x, y);
+      c.begin();
+      c.moveTo(0, 0);
+      c.lineTo(w, 0.5 * h);
+      c.lineTo(0, h);
+      c.close();
+      c.fillAndStroke();
+    };
+  } else if (name === 'mxHexagon') {
+    BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      c.translate(x, y);
+      c.begin();
+      c.moveTo(0.25 * w, 0);
+      c.lineTo(0.75 * w, 0);
+      c.lineTo(w, 0.5 * h);
+      c.lineTo(0.75 * w, h);
+      c.lineTo(0.25 * w, h);
+      c.lineTo(0, 0.5 * h);
+      c.close();
+      c.fillAndStroke();
+    };
+  } else if (name === 'mxRhombus') {
+    BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      c.begin();
+      c.moveTo(x + w / 2, y);
+      c.lineTo(x + w, y + h / 2);
+      c.lineTo(x + w / 2, y + h);
+      c.lineTo(x, y + h / 2);
+      c.close();
+      c.fillAndStroke();
+    };
+  } else if (name === 'mxActor') {
+    BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      c.translate(x, y);
+      const width = w / 3;
+      c.begin();
+      c.moveTo(0, h);
+      c.curveTo(0, 3 * h / 5, 0, 2 * h / 5, w / 2, 2 * h / 5);
+      c.curveTo(w / 2 - width, 2 * h / 5, w / 2 - width, 0, w / 2, 0);
+      c.curveTo(w / 2 + width, 0, w / 2 + width, 2 * h / 5, w / 2, 2 * h / 5);
+      c.curveTo(w, 2 * h / 5, w, 3 * h / 5, w, h);
+      c.close();
       c.fillAndStroke();
     };
   } else if (name === 'mxCylinder') {
@@ -397,8 +540,7 @@ function createBaseShape(name) {
   } else if (
     name === 'mxRectangleShape' || name === 'mxLabel' || name === 'mxSwimlane' ||
     name === 'mxConnector' || name === 'mxLine' || name === 'mxPolyline' ||
-    name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape' ||
-    name === 'mxActor'
+    name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape'
   ) {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.rect(x, y, w, h); c.fillAndStroke();
@@ -813,6 +955,16 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.style = style;
   shape.scale = 1;
   shape.bounds = {x, y, width, height};
+  shape.direction = style.direction || null;
+  shape.rotation = Number(style.rotation) || 0;
+  shape.flipH = style.flipH == 1;
+  shape.flipV = style.flipV == 1;
+  if (shape.direction === mxConstants.DIRECTION_NORTH ||
+      shape.direction === mxConstants.DIRECTION_SOUTH) {
+    const tmp = shape.flipH;
+    shape.flipH = shape.flipV;
+    shape.flipV = tmp;
+  }
   shape.state = {
     style,
     view: {
@@ -831,9 +983,14 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
       },
     },
   };
+  canvas.save();
   try {
+    if (typeof shape.updateTransform === 'function') {
+      shape.updateTransform(canvas, x, y, width, height);
+    }
     shape.paintVertexShape(canvas, x, y, width, height);
   } catch (error) {
+    canvas.restore();
     renderStats.paintError++;
     const errorKey = String(error);
     paintErrorCounts[errorKey] = (paintErrorCounts[errorKey] || 0) + 1;
@@ -846,6 +1003,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     }
     return false;
   }
+  canvas.restore();
   canvas.finish();
   return shape;
 }
