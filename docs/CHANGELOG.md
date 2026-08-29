@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Overlapping draw.io fills now stay solid in LibreOffice.
+  Similar-sized blobs (CloudFront, duplicate AWS decorations) are
+  still several `NoFill=0` Geometry rows after nested interiors are
+  stroked, so libvisio `collectGeometry` / `_fillAndShadowProperties`
+  (`svg:fill-rule=evenodd`) punched the intersections. Extra fills now
+  move onto child shapes Draw paints separately. First-aid crosses and
+  no-entry bars keep their evenodd cut-outs. Format fill/line still
+  follow those children. A second save keeps the children.
 - draw.io JavaScript Canvas shapes now keep `c.text` glyphs and nested
   mxStencil icons in LibreOffice. Capture used to ignore `canvas.text()`,
   treat `getStencil` as an external asset (dropping Kubernetes / Cisco /

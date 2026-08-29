@@ -640,6 +640,32 @@ class VsdxShape {
     VsdxConnectorProps? connectorProps,
     VsdxShapeKind? shapeKind,
   }) {
+    var nextChildren = children ?? this.children;
+    if (children == null &&
+        (fill != null || line != null) &&
+        nextChildren.isNotEmpty) {
+      final mapped = <VsdxShape>[
+        for (final child in nextChildren)
+          if (!child.isLibvisioFillSplitChild)
+            child
+          else if (fill != null && line != null && child.line.hasLine)
+            child.copyWith(fill: fill, line: line)
+          else if (fill != null)
+            child.copyWith(fill: fill)
+          else if (line != null && child.line.hasLine)
+            child.copyWith(line: line)
+          else
+            child,
+      ];
+      var changed = false;
+      for (var i = 0; i < mapped.length; i++) {
+        if (!identical(mapped[i], nextChildren[i])) {
+          changed = true;
+          break;
+        }
+      }
+      if (changed) nextChildren = mapped;
+    }
     return VsdxShape(
       id: id ?? this.id,
       name: name ?? this.name,
@@ -652,7 +678,7 @@ class VsdxShape {
       angleRad: angleRad ?? this.angleRad,
       text: text ?? this.text,
       richText: richText ?? this.richText,
-      children: children ?? this.children,
+      children: nextChildren,
       geometries: geometries ?? this.geometries,
       fill: fill ?? this.fill,
       line: line ?? this.line,
@@ -997,6 +1023,11 @@ class VsdxShape {
   /// punch icon glyphs as holes. Editor-owned; libvisio ignores User rows.
   static const String userLibvisioEvenoddHole = 'veLibvisioEvenoddHole';
 
+  /// Child that holds one overlapping `NoFill=0` blob moved off the parent
+  /// so libvisio / canvas evenodd does not punch the intersection. Fill and
+  /// line follow the parent via [copyWith]. Editor-owned.
+  static const String userLibvisioFillSplit = 'veLibvisioFillSplit';
+
   /// Media part [userLibvisioSourceImage] names, or `null` when absent.
   String? get libvisioSourceImagePart {
     for (final c in userCells) {
@@ -1026,6 +1057,17 @@ class VsdxShape {
     if (holeName(name)) return true;
     final master = masterName;
     return master != null && holeName(master);
+  }
+
+  /// `true` when this shape is a fill blob split off its parent so evenodd
+  /// does not punch overlapping draw.io interiors.
+  bool get isLibvisioFillSplitChild {
+    for (final cell in userCells) {
+      if (cell.name != userLibvisioFillSplit) continue;
+      final value = (cell.value ?? '').trim().toLowerCase();
+      return value == '1' || value == 'true';
+    }
+    return false;
   }
 
   /// Stored expanded height (inches) while [collapsed], so unfold restores size.

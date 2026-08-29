@@ -525,6 +525,7 @@ import 'rich_text.dart';
 import 'rounding.dart';
 import 'shape.dart';
 import 'shape_factory.dart';
+import 'shape_kind.dart';
 import 'shape_inside.dart';
 import 'sketch_style.dart';
 import 'table.dart';
@@ -696,18 +697,6 @@ VsdxShape strokeNestedFillsOnShapeForLibvisio(
       strokeNestedFillsOnShapeForLibvisio(child, keepHoles: keepHoles),
   ];
   var next = shape;
-  if (!keepHoles &&
-      !shape.keepsLibvisioEvenoddHoles &&
-      !_isLibvisioBakePlate(shape)) {
-    final geos = strokeNestedFillsForLibvisio(
-      shape.geometries,
-      width: shape.width,
-      height: shape.height,
-    );
-    if (!identical(geos, shape.geometries)) {
-      next = next.copyWith(geometries: geos);
-    }
-  }
   var childrenChanged = children.length != shape.children.length;
   if (!childrenChanged) {
     for (var i = 0; i < children.length; i++) {
@@ -718,7 +707,146 @@ VsdxShape strokeNestedFillsOnShapeForLibvisio(
     }
   }
   if (childrenChanged) next = next.copyWith(children: children);
+  if (!keepHoles &&
+      !shape.keepsLibvisioEvenoddHoles &&
+      !_isLibvisioBakePlate(shape)) {
+    final geos = strokeNestedFillsForLibvisio(
+      next.geometries,
+      width: next.width,
+      height: next.height,
+    );
+    if (!identical(geos, next.geometries)) {
+      next = next.copyWith(geometries: geos);
+    }
+    next = splitOverlappingFillsOnShapeForLibvisio(next);
+  }
   return next;
+}
+
+int _maxDescendantShapeId(VsdxShape shape) {
+  var maxId = shape.id;
+  for (final child in shape.children) {
+    final nested = _maxDescendantShapeId(child);
+    if (nested > maxId) maxId = nested;
+  }
+  return maxId;
+}
+
+bool _libvisioFillsOverlap(
+  VsdxGeometry a,
+  VsdxGeometry b, {
+  required double width,
+  required double height,
+}) {
+  final ba = geometryLocalBounds(a, width: width, height: height);
+  final bb = geometryLocalBounds(b, width: width, height: height);
+  if (ba == null || bb == null) return false;
+  final x0 = ba.minX > bb.minX ? ba.minX : bb.minX;
+  final x1 = ba.maxX < bb.maxX ? ba.maxX : bb.maxX;
+  final y0 = ba.minY > bb.minY ? ba.minY : bb.minY;
+  final y1 = ba.maxY < bb.maxY ? ba.maxY : bb.maxY;
+  if (x1 <= x0 + 1e-9 || y1 <= y0 + 1e-9) return false;
+  final overlap = (x1 - x0) * (y1 - y0);
+  final aa = (ba.maxX - ba.minX).abs() * (ba.maxY - ba.minY).abs();
+  final ab = (bb.maxX - bb.minX).abs() * (bb.maxY - bb.minY).abs();
+  final smaller = aa < ab ? aa : ab;
+  if (smaller <= 0) return false;
+  return overlap / smaller >= 0.05;
+}
+
+/// Move overlapping `NoFill=0` Geometry onto child shapes.
+///
+/// Nested glyphs are already stroked by [strokeNestedFillsForLibvisio].
+/// Remaining similar-sized overlapping fills (draw.io CloudFront blobs,
+/// duplicate AWS decorations) still become one evenodd path in libvisio
+/// `collectGeometry` / `_fillAndShadowProperties`. Each child is a separate
+/// shape Draw fills independently. First-aid / no-entry cut-outs skip this
+/// via [VsdxShape.keepsLibvisioEvenoddHoles].
+VsdxShape splitOverlappingFillsOnShapeForLibvisio(VsdxShape shape) {
+  if (shape.is1D || shape.hasImage) return shape;
+  final filled = <int>[
+    for (var i = 0; i < shape.geometries.length; i++)
+      if (!shape.geometries[i].noFill && !shape.geometries[i].noShow) i,
+  ];
+  if (filled.length < 2) return shape;
+  final overlapping = <int>{};
+  for (var i = 0; i < filled.length; i++) {
+    for (var j = i + 1; j < filled.length; j++) {
+      if (!_libvisioFillsOverlap(
+        shape.geometries[filled[i]],
+        shape.geometries[filled[j]],
+        width: shape.width,
+        height: shape.height,
+      )) {
+        continue;
+      }
+      overlapping.add(filled[i]);
+      overlapping.add(filled[j]);
+    }
+  }
+  if (overlapping.length < 2) return shape;
+
+  var keep = overlapping.first;
+  var keepArea = 0.0;
+  for (final i in overlapping) {
+    final box = geometryLocalBounds(
+      shape.geometries[i],
+      width: shape.width,
+      height: shape.height,
+    );
+    final area = box == null
+        ? 0.0
+        : (box.maxX - box.minX).abs() * (box.maxY - box.minY).abs();
+    if (area > keepArea) {
+      keepArea = area;
+      keep = i;
+    }
+  }
+
+  final parentGeos = <VsdxGeometry>[
+    for (var i = 0; i < shape.geometries.length; i++)
+      if (!overlapping.contains(i) || i == keep) shape.geometries[i],
+  ];
+  var nextId = _maxDescendantShapeId(shape) + 1;
+  final extras = <VsdxShape>[];
+  for (final i in overlapping) {
+    if (i == keep) continue;
+    final id = nextId++;
+    extras.add(
+      VsdxShape(
+        id: id,
+        name: 'Sheet.$id',
+        pinX: shape.effectiveLocPinX,
+        pinY: shape.effectiveLocPinY,
+        width: shape.width,
+        height: shape.height,
+        locPinXInches: shape.effectiveLocPinX,
+        locPinYInches: shape.effectiveLocPinY,
+        fill: shape.fill,
+        line: shape.geometries[i].noLine
+            ? const VsdxLine(pattern: 0)
+            : shape.line,
+        geometries: <VsdxGeometry>[shape.geometries[i]],
+        userCells: const <VsdxUserCell>[
+          VsdxUserCell(name: VsdxShape.userLibvisioFillSplit, value: '1'),
+        ],
+        layerMemberIds: shape.layerMemberIds,
+        richText: const VsdxRichText(
+          runs: <VsdxTextRun>[],
+          textBlock: VsdxTextBlock(hideText: true),
+        ),
+      ),
+    );
+  }
+  if (extras.isEmpty) return shape;
+  final kind = shape.shapeKind == VsdxShapeKind.normal
+      ? VsdxShapeKind.group
+      : shape.shapeKind;
+  return shape.copyWith(
+    geometries: parentGeos,
+    children: <VsdxShape>[...shape.children, ...extras],
+    shapeKind: kind,
+  );
 }
 
 /// Stroke nested fills Draw would evenodd-punch (`svg:fill-rule=evenodd`).

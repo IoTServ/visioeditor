@@ -1,4 +1,5 @@
 import 'package:test/test.dart';
+import 'package:vsdx/stencils.dart';
 import 'package:vsdx/vsdx.dart';
 
 void main() {
@@ -1040,8 +1041,8 @@ void main() {
       ),
     );
     final cubeLeftover = parser
-        .parse(
-            writer.write(originalBytes: writer.emptyDocument(), edited: cubeDoc))
+        .parse(writer.write(
+            originalBytes: writer.emptyDocument(), edited: cubeDoc))
         .pages
         .first
         .findShapeById(cubeId)!;
@@ -1103,5 +1104,104 @@ void main() {
         .findShapeById(id)!;
     expect(filled(leftover), 2,
         reason: 'a second save must not restore the nested squares');
+  });
+
+  test(
+      'overlapping draw.io fills become children so Draw does not evenodd them',
+      () {
+    int filledCount(VsdxShape shape) {
+      var n = shape.geometries.where((g) => !g.noFill && !g.noShow).length;
+      for (final child in shape.children) {
+        n += filledCount(child);
+      }
+      return n;
+    }
+
+    bool remainingFillsOverlap(VsdxShape shape) {
+      final filled = [
+        for (final g in shape.geometries)
+          if (!g.noFill && !g.noShow) g,
+      ];
+      for (var i = 0; i < filled.length; i++) {
+        for (var j = i + 1; j < filled.length; j++) {
+          final a = geometryLocalBounds(
+            filled[i],
+            width: shape.width,
+            height: shape.height,
+          );
+          final b = geometryLocalBounds(
+            filled[j],
+            width: shape.width,
+            height: shape.height,
+          );
+          if (a == null || b == null) continue;
+          final x0 = a.minX > b.minX ? a.minX : b.minX;
+          final x1 = a.maxX < b.maxX ? a.maxX : b.maxX;
+          final y0 = a.minY > b.minY ? a.minY : b.minY;
+          final y1 = a.maxY < b.maxY ? a.maxY : b.maxY;
+          if (x1 <= x0 + 1e-9 || y1 <= y0 + 1e-9) continue;
+          return true;
+        }
+      }
+      return false;
+    }
+
+    final stencil = kStencils.firstWhere(
+      (s) =>
+          s.group == 'Draw.io / AWS / Content Delivery' &&
+          s.name == 'CloudFront',
+    );
+    final shape = stencil.build(10, 3, 3);
+    expect(remainingFillsOverlap(shape), isFalse,
+        reason: 'libvisio concatenates sibling fills with evenodd');
+    expect(shape.children, isNotEmpty);
+    expect(filledCount(shape), greaterThan(2));
+    expect(
+      shape.children.every((c) => c.isLibvisioFillSplitChild),
+      isTrue,
+    );
+    const mag = VsdxColor(0xFFFF00FF);
+    final recoloured = shape.copyWith(
+      fill: const VsdxFill(foreground: mag, pattern: 1),
+    );
+    expect(recoloured.fill.foreground, mag);
+    expect(
+      recoloured.children.every((c) => c.fill.foreground == mag),
+      isTrue,
+      reason: 'Format fill must still paint the split CloudFront blobs',
+    );
+    expect(
+      VsdxShapeFactory.signFirstAid(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 1.5,
+        height: 1.5,
+      ).geometries.where((g) => !g.noFill && !g.noShow).length,
+      2,
+      reason: 'first-aid keeps its evenodd cut-out',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(stencil.build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(remainingFillsOverlap(leftover), isFalse);
+    expect(filledCount(leftover), greaterThan(2),
+        reason: 'a second save must keep the split CloudFront blobs');
+    expect(
+      leftover.children.any((c) => c.isLibvisioFillSplitChild),
+      isTrue,
+      reason: 'User.veLibvisioFillSplit must survive reopen so fill follows',
+    );
   });
 }
