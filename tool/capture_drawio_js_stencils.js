@@ -802,7 +802,7 @@ function createBaseShape(name) {
   } else if (
     name === 'mxLabel' ||
     name === 'mxConnector' || name === 'mxPolyline' ||
-    name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape'
+    name === 'mxImageShape'
   ) {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.rect(x, y, w, h); c.fillAndStroke();
@@ -866,6 +866,23 @@ const mxUtilsBase = {
   isNode() { return false; },
   indexOf(arr, item) { return arr.indexOf(item); },
   mod(n, m) { return ((n % m) + m) % m; },
+  relativeCcw(x1, y1, x2, y2, px, py) {
+    x2 -= x1;
+    y2 -= y1;
+    px -= x1;
+    py -= y1;
+    let ccw = px * y2 - py * x2;
+    if (ccw === 0.0) {
+      ccw = px * x2 + py * y2;
+      if (ccw > 0.0) {
+        px -= x2;
+        py -= y2;
+        ccw = px * x2 + py * y2;
+        if (ccw < 0.0) ccw = 0.0;
+      }
+    }
+    return ccw < 0.0 ? -1 : (ccw > 0.0 ? 1 : 0);
+  },
 };
 const mxUtils = new Proxy(mxUtilsBase, {
   get(target, prop) {
@@ -946,6 +963,8 @@ registerShape(mxConstants.SHAPE_TRIANGLE, shapeContext.mxTriangle);
 registerShape(mxConstants.SHAPE_HEXAGON, shapeContext.mxHexagon);
 registerShape(mxConstants.SHAPE_CLOUD, shapeContext.mxCloud);
 registerShape(mxConstants.SHAPE_LINE, shapeContext.mxLine);
+registerShape(mxConstants.SHAPE_ARROW, shapeContext.mxArrow);
+registerShape(mxConstants.SHAPE_ARROW_CONNECTOR, shapeContext.mxArrowConnector);
 registerShape('rect', RectShape);
 registerShape('image', RectShape);
 registerShape('cylinder', shapeContext.mxCylinder);
@@ -964,19 +983,27 @@ function loadJs(file, source) {
     loadErrors.push({file, error: String(error)});
   }
 }
-// Official mxSwimlane.paintVertexShape (title bar + body + divider). The
-// capture stub used to fill the whole box, so BPMN/UML lanes never reached
-// VisioDocument::parse as the contours LibreOffice Draw paints.
-try {
-  vm.runInContext(
-    fs.readFileSync(path.join(webapp, 'mxgraph/src/shape/mxSwimlane.js'), 'utf8') +
-      '\nthis.mxSwimlane = mxSwimlane;',
-    shapeContext,
-    {filename: 'mxgraph/src/shape/mxSwimlane.js'},
-  );
-} catch (error) {
-  loadErrors.push({file: 'mxgraph/src/shape/mxSwimlane.js', error: String(error)});
+function loadOfficialCtor(relPath, ctorName) {
+  const file = `mxgraph/src/shape/${relPath}`;
+  try {
+    vm.runInContext(
+      fs.readFileSync(path.join(webapp, file), 'utf8') +
+        `\nthis.${ctorName} = ${ctorName};`,
+      shapeContext,
+      {filename: file},
+    );
+  } catch (error) {
+    loadErrors.push({file, error: String(error)});
+  }
 }
+// Official edge arrows (filled block / thick connector) and swimlane title
+// bar. Capture stubs used a polyline or a full rectangle, so Draw never saw
+// those types through VisioDocument::parse.
+loadOfficialCtor('mxArrow.js', 'mxArrow');
+loadOfficialCtor('mxArrowConnector.js', 'mxArrowConnector');
+loadOfficialCtor('mxSwimlane.js', 'mxSwimlane');
+registerShape(mxConstants.SHAPE_ARROW, shapeContext.mxArrow);
+registerShape(mxConstants.SHAPE_ARROW_CONNECTOR, shapeContext.mxArrowConnector);
 registerShape(mxConstants.SHAPE_SWIMLANE, shapeContext.mxSwimlane);
 loadJs(
   'js/grapheditor/Shapes.js',
@@ -1475,11 +1502,15 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
     shape.style = style;
     shape.fill = stylePaintColor(style.fillColor, '#ffffff');
     shape.stroke = stylePaintColor(style.strokeColor, '#000000');
+    shape.strokewidth = Number(style.strokeWidth) || 1;
     shape.isDashed = style.dashed == 1;
+    shape.isRounded = style.rounded == 1;
     shape.scale = 1;
     shape.bounds = {x, y, width, height};
     try {
       if (style.dashed === '1') canvas.setDashed(true);
+      if (canvas.setFillColor) canvas.setFillColor(shape.fill);
+      if (canvas.setStrokeColor) canvas.setStrokeColor(shape.stroke);
       shape.paintEdgeShape(canvas, pts);
       canvas.finish();
       return true;

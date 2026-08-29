@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io `link` and `flexArrow` connectors now stay native in LibreOffice.
+  Capture inherited a polyline `paintEdgeShape`, so BPMN Conversation Link
+  and Lean Mapping shipments never reached `VisioDocument::parse` as the
+  open double-rail / filled thick arrow Draw paints. Capture now loads
+  official `mxArrow` / `mxArrowConnector` (and `mxUtils.relativeCcw`)
+  before sidebar factories. A second save keeps the rails and fill.
 - draw.io named styles and swimlanes now stay native in LibreOffice. Capture
   dropped tokens without `=` (`swimlane;`, `ellipse;`, `rhombus;`) and
   painted `mxSwimlane` as a full rectangle, so BPMN lanes and UML ellipses

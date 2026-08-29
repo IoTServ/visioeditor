@@ -547,6 +547,84 @@ void main() {
     expect(leftover.geometries, isNotEmpty);
   });
 
+  test(
+    'mxArrowConnector link and flexArrow stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final link = stencil(
+        'Draw.io JS / BPMN / BPMN 2.0  General',
+        'Conversation Link',
+      ).build(53, 3, 3);
+      expect(link.geometries.where((geometry) => !geometry.noFill), isEmpty);
+      expect(
+        link.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(2),
+        reason:
+            'shape=link isOpenEnded paints two parallel rails, not a polyline',
+      );
+
+      final flex = stencil(
+        'Draw.io JS / LeanMapping / Value Stream Mapping',
+        'Shipments',
+      ).build(54, 3, 3);
+      expect(
+        flex.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+        reason: 'flexArrow paintEdgeShape is one filled arrow body',
+      );
+      expect(
+        flex.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(3),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final linkId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / BPMN / BPMN 2.0  General',
+        'Conversation Link',
+      ).build(linkId, 3, 3));
+      final flexId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / LeanMapping / Value Stream Mapping',
+        'Shipments',
+      ).build(flexId, 5, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(linkId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(2),
+      );
+      expect(
+        leftover
+            .findShapeById(flexId)!
+            .geometries
+            .where((geometry) => !geometry.noFill),
+        hasLength(1),
+      );
+    },
+  );
+
   test('electrical wire and mockup tables capture native geometry', () {
     Stencil stencil(String groupName, String shapeName) => dynamic
         .singleWhere((group) => group.name == groupName)
