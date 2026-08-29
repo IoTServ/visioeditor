@@ -1051,6 +1051,104 @@ void main() {
     );
   });
 
+  test('mxStencil fontfamily stays Char.Font for LibreOffice', () {
+    String? glyphFont(VsdxShape shape, String text) {
+      for (final child in shape.children) {
+        if (child.text == text && child.richText.runs.isNotEmpty) {
+          return child.richText.runs.first.charStyle.fontFamily;
+        }
+        final nested = glyphFont(child, text);
+        if (nested != null) return nested;
+      }
+      return null;
+    }
+
+    final contact = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Contact Center')
+        .build(91, 3, 3);
+    expect(
+      glyphFont(contact, 'V'),
+      'Helvetica',
+      reason: "fontfamily family='Helvetica' must reach collectCharIX Font",
+    );
+    expect(
+      glyphFont(contact, 'WWW'),
+      'Helvetica',
+      reason: 'the later WWW glyph keeps the same Char.Font',
+    );
+
+    final motor = dynamic
+        .singleWhere(
+          (group) =>
+              group.name ==
+              'Draw.io JS / PID / Process Engineering / Valves',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Gate Valve (Motor)')
+        .build(92, 3, 3);
+    expect(
+      glyphFont(motor, 'M'),
+      'Helvetica',
+      reason: "PID setFontFamily('Helvetica') must reach collectCharIX Font",
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+            .stencils
+            .singleWhere((entry) => entry.name == 'Contact Center')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      glyphFont(leftover, 'V'),
+      'Helvetica',
+      reason: 'a second save must keep Char.Font Helvetica',
+    );
+
+    var motorDoc = parser.parse(writer.emptyDocument());
+    final motorId = motorDoc.pages.first.nextFreeShapeId();
+    motorDoc = motorDoc.replacePage(
+      0,
+      motorDoc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) =>
+                  group.name ==
+                  'Draw.io JS / PID / Process Engineering / Valves',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Gate Valve (Motor)')
+            .build(motorId, 3, 3),
+      ),
+    );
+    final leftoverMotor = parser
+        .parse(
+          writer.write(originalBytes: writer.emptyDocument(), edited: motorDoc),
+        )
+        .pages
+        .first
+        .findShapeById(motorId)!;
+    expect(
+      glyphFont(leftoverMotor, 'M'),
+      'Helvetica',
+      reason: 'a second save must keep the Motor M Char.Font',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

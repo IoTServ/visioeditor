@@ -129,6 +129,7 @@ class CanvasRecorder {
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
+    this._fontFamilyToken = null;
     this._strokeWidthToken = 1;
     this._dashedToken = null;
     this._dashToken = null;
@@ -144,6 +145,7 @@ class CanvasRecorder {
       strokeColor: '#000000',
       fontSize: 12,
       fontStyle: 0,
+      fontFamily: null,
       fontColor: null,
       strokeWidth: 1,
       gradientColor: null,
@@ -389,6 +391,7 @@ class CanvasRecorder {
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
+    this._fontFamilyToken = null;
     this._strokeWidthToken = 1;
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
@@ -455,6 +458,12 @@ class CanvasRecorder {
     if (fontToken !== this._fontToken && fontToken != null) {
       this._fontToken = fontToken;
       this._emitPaint('fontcolor', fontToken);
+    }
+    const ff = this.state.fontFamily == null ? null : String(this.state.fontFamily);
+    if (ff !== this._fontFamilyToken) {
+      this._fontFamilyToken = ff;
+      this.finishPath();
+      this.operations.push(`<fontfamily family="${xmlEscape(ff || '')}"/>`);
     }
     const sw = Number(this.state.strokeWidth);
     if (Number.isFinite(sw) && sw !== this._strokeWidthToken) {
@@ -717,7 +726,16 @@ class CanvasRecorder {
     this._fontToken = token;
     this._emitPaint('fontcolor', token);
   }
-  setFontFamily() {}
+  // mxStencil.drawNode fontfamily → setFontFamily(family).
+  // LibreOffice collectCharIX maps Char.Font onto style:font-name.
+  setFontFamily(value) {
+    const family = value == null ? '' : String(value);
+    this.state.fontFamily = family;
+    if (family === this._fontFamilyToken) return;
+    this._fontFamilyToken = family;
+    this.finishPath();
+    this.operations.push(`<fontfamily family="${xmlEscape(family)}"/>`);
+  }
   setFontSize(value) { this.state.fontSize = value; }
   setFontStyle(value) { this.state.fontStyle = value; }
 
@@ -1401,6 +1419,10 @@ class NestedStencil {
     }
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
     else if (name === 'fontstyle') canvas.setFontStyle(attrNum(node, 'style'));
+    else if (name === 'fontfamily') {
+      // mxStencil.js: canvas.setFontFamily(node.getAttribute('family')).
+      if (node.attrs.family != null) canvas.setFontFamily(node.attrs.family);
+    }
     if (disableShadow &&
         (name === 'fillstroke' || name === 'fillstrokecolor' ||
          name === 'fill' || name === 'stroke')) {

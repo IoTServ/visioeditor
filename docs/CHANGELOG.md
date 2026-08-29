@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `fontfamily` now stays native in LibreOffice.
+  Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
+  valves call `c.setFontFamily('Helvetica')`, but capture stubbed
+  `setFontFamily` and the decoder ignored the XML node, so Cisco
+  Contact Center `V`/`WWW` and Gate Valve (Motor) `M` used the
+  StyleSheet Arial that `collectCharIX` maps to `style:font-name`.
+  Quoted CSS families strip to a Visio face (`sans-serif` → Arial).
+  A second save keeps `Char.Font`.
 - draw.io style `strokeWidth` now stays native in LibreOffice.
   Official `mxShape.paint` calls `setStrokeWidth(this.strokewidth)` and
   `mxStencil.drawShape` inherits `STYLE_STROKEWIDTH` (or `width * minScale`),

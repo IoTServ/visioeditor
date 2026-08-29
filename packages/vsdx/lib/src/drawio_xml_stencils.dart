@@ -86,6 +86,7 @@ class _DrawioXmlShapeDecoder {
   List<VsdxPathCommand>? _pending;
   double _fontSize = 12;
   int _fontStyle = 0;
+  String? _fontFamily;
   VsdxColor? _fontColor;
   VsdxColor? _fillColor;
   VsdxFill? _fillOverride;
@@ -333,6 +334,9 @@ class _DrawioXmlShapeDecoder {
       case 'fontstyle':
         _fontStyle = _number(node, 'style').round();
         break;
+      case 'fontfamily':
+        _fontFamily = _mxFontFamily(node.getAttribute('family'));
+        break;
       case 'fillcolor':
         _applyMxFill(node.getAttribute('color'));
         break;
@@ -373,6 +377,7 @@ class _DrawioXmlShapeDecoder {
             rotationDegrees: _number(node, 'rotation'),
             fontSize: _fontSize,
             fontStyle: _fontStyle,
+            fontFamily: _fontFamily,
             color: _fontColor,
           ));
         }
@@ -394,6 +399,8 @@ class _DrawioXmlShapeDecoder {
       // `shadow` follows mxShape.configureCanvas setShadow onto ShdwPattern
       // that `_fillAndShadowProperties` maps to ODF draw:shadow (hard
       // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
+      // `fontfamily` follows mxStencil.drawNode setFontFamily onto Char.Font
+      // that collectCharIX maps to style:font-name.
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -1003,6 +1010,7 @@ class _DrawioXmlShapeDecoder {
           VsdxTextRun(
             text: label.text,
             charStyle: VsdxCharStyle(
+              fontFamily: label.fontFamily,
               fontSizeInches: fontInches,
               style: VsdxFontStyle(
                 bold: (label.fontStyle & 1) != 0,
@@ -1056,6 +1064,7 @@ class _DrawioStencilLabel {
     required this.rotationDegrees,
     required this.fontSize,
     required this.fontStyle,
+    this.fontFamily,
     this.color,
   });
 
@@ -1068,6 +1077,7 @@ class _DrawioStencilLabel {
   final double rotationDegrees;
   final double fontSize;
   final int fontStyle;
+  final String? fontFamily;
   final VsdxColor? color;
 }
 
@@ -1101,6 +1111,27 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
     return VsdxColor.tryParse('#$token');
   }
   return VsdxColor.tryParse(token);
+}
+
+/// mxStencil.drawNode fontfamily: strip CSS quotes, first family, map
+/// generic CSS faces onto Visio/libvisio names collectCharIX emits as
+/// style:font-name.
+String? _mxFontFamily(String? raw) {
+  var token = (raw ?? '').trim();
+  if (token.isEmpty) return null;
+  token = token.split(',').first.trim();
+  if (token.length >= 2 &&
+      ((token.startsWith("'") && token.endsWith("'")) ||
+          (token.startsWith('"') && token.endsWith('"')))) {
+    token = token.substring(1, token.length - 1).trim();
+  }
+  if (token.isEmpty) return null;
+  return switch (token.toLowerCase()) {
+    'sans-serif' => 'Arial',
+    'serif' => 'Times New Roman',
+    'monospace' => 'Courier New',
+    _ => token,
+  };
 }
 
 /// mxStencil.drawNode dashpattern: skip `none` and non-positive lengths.
