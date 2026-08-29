@@ -129,7 +129,7 @@ class CanvasRecorder {
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
-    this._strokeWidthToken = null;
+    this._strokeWidthToken = 1;
     this._dashedToken = null;
     this._dashToken = null;
     this._lineCapToken = null;
@@ -389,7 +389,7 @@ class CanvasRecorder {
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
-    this._strokeWidthToken = null;
+    this._strokeWidthToken = 1;
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
     this._strokeAlphaToken = 1;
@@ -1229,6 +1229,7 @@ class NestedStencil {
     this.w0 = Number(desc.attrs.w) || 100;
     this.h0 = Number(desc.attrs.h) || 100;
     this.aspect = desc.attrs.aspect || 'variable';
+    this.strokewidth = desc.attrs.strokewidth || 'inherit';
     this.bgNode = desc.children.find((child) => child.name === 'background');
     this.fgNode = desc.children.find((child) => child.name === 'foreground');
   }
@@ -1264,6 +1265,18 @@ class NestedStencil {
     if (!(w > 0) || !(h > 0)) return;
     const direction = shape && shape.style ? shape.style.direction : null;
     const aspect = this.computeAspect(shape && shape.style, x, y, w, h, direction);
+    // mxStencil.drawShape: inherit → STYLE_STROKEWIDTH, else width * minScale.
+    // LibreOffice only calls VisioDocument::parse, so the canvas width must
+    // become LineWeight collectLine paints.
+    const minScale = Math.min(aspect.width, aspect.height);
+    let sw;
+    if (String(this.strokewidth).toLowerCase() === 'inherit') {
+      const styleSw = Number(shape && shape.style && shape.style.strokeWidth);
+      sw = Number.isFinite(styleSw) && styleSw > 0 ? styleSw : 1;
+    } else {
+      sw = (Number(this.strokewidth) || 1) * minScale;
+    }
+    if (canvas.setStrokeWidth) canvas.setStrokeWidth(sw);
     // Official mxStencil.drawShape: background keeps the canvas shadow;
     // foreground disableShadow turns it off on the first fill/stroke.
     this.drawChildren(canvas, this.bgNode, aspect, shape, false);
@@ -2559,6 +2572,9 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     if (typeof shape.configureCanvas === 'function') {
       shape.configureCanvas(canvas, x, y, width, height);
     }
+    // mxShape.paint: stencils set width in drawShape; JS constructors
+    // call setStrokeWidth(this.strokewidth) before paintVertexShape.
+    if (canvas.setStrokeWidth) canvas.setStrokeWidth(shape.strokewidth);
     shape.paintVertexShape(canvas, x, y, width, height);
   } catch (error) {
     canvas.restore();
@@ -2779,6 +2795,7 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
       if (style.dashPattern) canvas.setDashPattern(style.dashPattern);
       if (canvas.setFillColor) canvas.setFillColor(shape.fill);
       if (canvas.setStrokeColor) canvas.setStrokeColor(shape.stroke);
+      if (canvas.setStrokeWidth) canvas.setStrokeWidth(shape.strokewidth);
       // createMarker shortens the endpoint mxPoints in place.
       const paintPts = pts.map((pt) => new shapeContext.mxPoint(pt.x, pt.y));
       shape.paintEdgeShape(canvas, paintPts);

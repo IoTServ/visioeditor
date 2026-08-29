@@ -96,6 +96,7 @@ class _DrawioXmlShapeDecoder {
   double _fillAlpha = 1;
   double _strokeAlpha = 1;
   double? _strokeWidth;
+  double? _parentStrokeWidth;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
   bool _parentDashed = false;
@@ -213,6 +214,15 @@ class _DrawioXmlShapeDecoder {
         _rasterPart != null || (!inheritLine && children.isNotEmpty)
             ? const VsdxLine(pattern: 0)
             : _paintLine(stroke: true);
+    if (inheritLine && _parentStrokeWidth != null) {
+      // restore() re-emits the pre-save strokewidth (often 1) after the
+      // contour. collectLine is shape-level, so keep the width that was
+      // in force when parent Geometry was painted.
+      final savedWidth = _strokeWidth;
+      _strokeWidth = _parentStrokeWidth;
+      parentLine = parentLine.copyWith(weightInches: _strokeWeightInches);
+      _strokeWidth = savedWidth;
+    }
     if (inheritLine && _parentDashed) {
       // Arrowheads call setDashed(false) after the rail. collectLine is
       // shape-level, so keep the dash that was in force when parent
@@ -685,6 +695,9 @@ class _DrawioXmlShapeDecoder {
     if (doStroke && _dashed) {
       _parentDashed = true;
       _parentDashPattern ??= _dashPattern;
+    }
+    if (doStroke && _strokeWidth != null) {
+      _parentStrokeWidth ??= _strokeWidth;
     }
     if (_shadow != null) _parentShadow ??= _shadow;
   }

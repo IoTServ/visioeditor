@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io style `strokeWidth` now stays native in LibreOffice.
+  Official `mxShape.paint` calls `setStrokeWidth(this.strokewidth)` and
+  `mxStencil.drawShape` inherits `STYLE_STROKEWIDTH` (or `width * minScale`),
+  but capture never forwarded the style, so an Infographic Arc
+  (`strokeWidth=6`) and Bootstrap Border spinner (`strokeWidth=4`) used
+  the 0.01 in palette default that `collectLine` still paints as a
+  hairline. Capture now emits the width; `restore()` then re-emits the
+  pre-save `width=1`, so the decoder freezes `LineWeight` when parent
+  Geometry is painted (same as dash). A second save keeps the weight.
 - draw.io mxGraph `shadow=1` now stays native in LibreOffice.
   Official `mxShape.configureCanvas` calls `setShadow(this.isShadow)`
   and `mxSvgCanvas2D.createShadow` clones a translated grey silhouette,

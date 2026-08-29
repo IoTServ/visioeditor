@@ -999,6 +999,58 @@ void main() {
     );
   });
 
+  test('mxGraph style strokeWidth stays LineWeight for LibreOffice', () {
+    double maxWeight(VsdxShape shape) {
+      var weight = shape.line.hasLine ? shape.line.weightInches : 0.0;
+      for (final child in shape.children) {
+        final childWeight = maxWeight(child);
+        if (childWeight > weight) weight = childWeight;
+      }
+      return weight;
+    }
+
+    final arc = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Arc')
+        .build(90, 3, 3);
+    expect(
+      maxWeight(arc),
+      closeTo(0.09, 0.005),
+      reason: 'strokeWidth=6 at 100px → 1.5 in is 0.09 in LineWeight, '
+          'not the 0.01 in palette default or restore() width=1',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Arc')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      maxWeight(leftover),
+      closeTo(0.09, 0.005),
+      reason: 'a second save must keep the authored LineWeight',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(
