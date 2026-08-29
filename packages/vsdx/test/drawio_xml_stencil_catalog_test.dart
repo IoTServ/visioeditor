@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(475));
+    expect(dynamic, hasLength(476));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      13046,
+      13113,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1550,6 +1550,156 @@ void main() {
             .whereType<LineTo>()
             .length,
         greaterThanOrEqualTo(6),
+      );
+    },
+  );
+
+  test(
+    'grapheditor classic UML palettes stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      const group = 'Draw.io JS / UML / uml';
+      expect(
+        dynamic.singleWhere((entry) => entry.name == group).stencils,
+        hasLength(65),
+        reason: 'addUmlPalette templates must reach VisioDocument::parse',
+      );
+
+      final umlClass = stencil(group, 'Class').build(200, 3, 3);
+      expect(
+        umlClass.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(8),
+        reason: 'UML Class is a swimlane plus stacked compartments, not a rectangle',
+      );
+      expect(umlClass.children, hasLength(3), reason: 'Class stacks name, field and method');
+      expect(
+        umlClass.children.map((child) => child.text).toList(),
+        ['Classname', '+ field: type', '+ method(type): type'],
+      );
+
+      final useCase = stencil(group, 'Use Case').build(201, 3, 3);
+      expect(
+        useCase.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        1,
+        reason: 'ellipse;shape=useCase is one oval',
+      );
+
+      final lifeline = stencil(group, 'Lifeline').build(202, 3, 4);
+      expect(
+        lifeline.geometries.length,
+        greaterThanOrEqualTo(2),
+        reason: 'shape=umlLifeline paints a header box and the dashed axis',
+      );
+      expect(
+        lifeline.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(5),
+      );
+
+      final actorLifeline = stencil(group, 'Actor Lifeline').build(203, 3, 4);
+      expect(
+        actorLifeline.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        1,
+        reason: 'participant=umlActor must paint the stick-figure head',
+      );
+
+      final package = stencil(group, 'Package').build(204, 3, 3);
+      expect(
+        package.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(6),
+        reason: 'shape=folder is a tabbed package, not a rectangle',
+      );
+
+      final actor = stencil(group, 'Actor').build(205, 3, 3);
+      expect(
+        actor.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        1,
+        reason: 'shape=umlActor is a stick figure with a head',
+      );
+      expect(
+        actor.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(4),
+      );
+
+      final item2 = stencil(group, 'Item 2').build(206, 3, 3);
+      expect(
+        item2.geometries.where((geometry) => !geometry.noFill),
+        isNotEmpty,
+        reason: 'mxLabel.paintImage must vectorise the gear, not a hollow rect',
+      );
+      expect(
+        item2.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(20),
+        reason: 'Item 2 is a named-style label with a gear icon',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final classId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(group, 'Class').build(classId, 3, 3));
+      final useCaseId = page.nextFreeShapeId();
+      page = page.addShape(stencil(group, 'Use Case').build(useCaseId, 5, 3));
+      final lifelineId = page.nextFreeShapeId();
+      page = page.addShape(stencil(group, 'Lifeline').build(lifelineId, 7, 3));
+      final packageId = page.nextFreeShapeId();
+      page = page.addShape(stencil(group, 'Package').build(packageId, 9, 3));
+      final item2Id = page.nextFreeShapeId();
+      page = page.addShape(stencil(group, 'Item 2').build(item2Id, 11, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+
+      final leftoverClass = leftover.findShapeById(classId)!;
+      expect(
+        leftoverClass.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(8),
+      );
+      expect(
+        leftoverClass.children.map((child) => child.text).toList(),
+        ['Classname', '+ field: type', '+ method(type): type'],
+        reason: 'libvisio keeps compartment labels on child shapes',
+      );
+      expect(
+        leftover
+            .findShapeById(useCaseId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty,
+      );
+      expect(
+        leftover
+            .findShapeById(lifelineId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(5),
+      );
+      expect(
+        leftover
+            .findShapeById(packageId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(6),
+      );
+      expect(
+        leftover
+            .findShapeById(item2Id)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(20),
       );
     },
   );

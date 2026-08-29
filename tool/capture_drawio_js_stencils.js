@@ -15,8 +15,8 @@ const shapeRoot = path.join(webapp, 'shapes');
 // styles/default.xml (swimlane, ellipse, rhombus, triangle, line, …).
 const namedStyles = {};
 
-function parseStyle(source) {
-  const style = {};
+function parseStyle(source, base) {
+  const style = base ? {...base} : {};
   for (const part of String(source || '').split(';')) {
     const token = part.trim();
     if (!token) continue;
@@ -68,6 +68,7 @@ function isNoneColor(value) {
 
 function stylePaintColor(value, fallback) {
   if (value == null || value === '') return fallback;
+  if (String(value).toLowerCase() === 'default') return fallback;
   return isNoneColor(value) ? null : value;
 }
 
@@ -448,12 +449,25 @@ function svgPaintIsNone(value) {
 function applySvgPaint(canvas, style, kind) {
   canvas.save();
   if (kind === 'fill' || kind === 'fillstroke') {
-    if (svgPaintIsNone(style.fill)) canvas.setFillColor(null);
+    if (svgPaintIsNone(style.fill)) {
+      canvas.setFillColor(null);
+    } else if (style.fill != null && style.fill !== '') {
+      const fill = String(style.fill).trim();
+      if (!/^currentcolor$/i.test(fill) && !/^url\(/i.test(fill)) {
+        canvas.setFillColor(fill);
+      }
+    }
   } else {
     canvas.setFillColor(null);
   }
   if (kind === 'stroke' || kind === 'fillstroke') {
     if (svgPaintIsNone(style.stroke)) canvas.setStrokeColor(null);
+    else if (style.stroke != null && style.stroke !== '') {
+      const stroke = String(style.stroke).trim();
+      if (!/^currentcolor$/i.test(stroke) && !/^url\(/i.test(stroke)) {
+        canvas.setStrokeColor(stroke);
+      }
+    }
   } else {
     canvas.setStrokeColor(null);
   }
@@ -937,6 +951,18 @@ function mxShape() {
 }
 mxShape.prototype.getTextRotation = function() { return 0; };
 mxShape.prototype.isHtmlAllowed = function() { return false; };
+mxShape.prototype.apply = function(state) {
+  this.state = state;
+  if (!state || !state.style) return;
+  this.style = state.style;
+  this.fill = mxUtils.getValue(this.style, mxConstants.STYLE_FILLCOLOR, this.fill);
+  this.stroke = mxUtils.getValue(this.style, mxConstants.STYLE_STROKECOLOR, this.stroke);
+  this.strokewidth = mxUtils.getNumber(this.style, mxConstants.STYLE_STROKEWIDTH, this.strokewidth);
+  this.rotation = mxUtils.getValue(this.style, mxConstants.STYLE_ROTATION, this.rotation);
+  this.direction = mxUtils.getValue(this.style, mxConstants.STYLE_DIRECTION, this.direction);
+  this.flipH = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPH, 0) == 1;
+  this.flipV = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPV, 0) == 1;
+};
 mxShape.prototype.getRotation = function() {
   return Number(this.rotation) || 0;
 };
@@ -1397,6 +1423,12 @@ function loadOfficialCtor(relPath, ctorName) {
 loadOfficialCtor('mxImageShape.js', 'mxImageShape');
 registerShape(mxConstants.SHAPE_IMAGE, shapeContext.mxImageShape || RectShape);
 registerShape('image', shapeContext.mxImageShape || RectShape);
+// Official mxLabel paints the style=image icon (UML Item 2, Misc Label).
+// The capture stub mapped `label` to a rectangle, so those gears never
+// reached VisioDocument::parse.
+loadOfficialCtor('mxLabel.js', 'mxLabel');
+registerShape(mxConstants.SHAPE_LABEL, shapeContext.mxLabel || RectShape);
+registerShape('label', shapeContext.mxLabel || RectShape);
 loadOfficialCtor('mxArrow.js', 'mxArrow');
 loadOfficialCtor('mxArrowConnector.js', 'mxArrowConnector');
 loadOfficialCtor('mxSwimlane.js', 'mxSwimlane');
@@ -1476,6 +1508,10 @@ const notVertexSamples = [];
 function Sidebar() {
   this.palettes = [];
   this.initialDefaultVertexStyle = {};
+  // Clipart Gear_128x128.png is raster; LibreOffice only sees vector
+  // geometry from VisioDocument::parse. Use the same SVG gear Azure2
+  // already vectorises via mxImageShape / mxLabel.paintImage.
+  this.gearImage = 'img/lib/mscae/Gear.svg';
   this.graph = {setLinkForCell() {}, setAttributeForCell() {}};
   this.editorUi = {
     editor: {
@@ -1657,7 +1693,7 @@ vm.createContext(sidebarContext);
 vm.runInContext(
   extractSidebarPrototype(
     fs.readFileSync(path.join(webapp, 'js/grapheditor/Sidebar.js'), 'utf8'),
-    ['addGeneralPalette', 'addMiscPalette', 'addAdvancedPalette', 'createAdvancedShapes'],
+    ['addGeneralPalette', 'addMiscPalette', 'addAdvancedPalette', 'createAdvancedShapes', 'addUmlPalette'],
   ),
   sidebarContext,
   {filename: 'js/grapheditor/Sidebar.js'},
@@ -1706,6 +1742,19 @@ for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js
   }
   captured.push({
     file: 'Sidebar-General.js',
+    sourcePath: 'js/grapheditor/Sidebar.js',
+    palettes: sidebar.palettes,
+  });
+}
+
+{
+  const sidebar = new Sidebar();
+  sidebarContext.sb = sidebar;
+  try { sidebar.addUmlPalette(false); } catch (error) {
+    factoryErrors.push({id: 'uml', error: String(error && error.stack || error)});
+  }
+  captured.push({
+    file: 'Sidebar-UML.js',
     sourcePath: 'js/grapheditor/Sidebar.js',
     palettes: sidebar.palettes,
   });
@@ -1815,6 +1864,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
           if (cell == null) return '';
           return String(cell.value != null ? cell.value : '');
         },
+        cellRenderer: mxCellRenderer,
         getModel() { return {getChildCount() { return 0; }, getChildAt() { return null; }}; },
       },
     },
@@ -2093,8 +2143,11 @@ function paintCellTree(cells, canvas, width, height) {
   const visit = (cell, parentX, parentY, parentW, parentH) => {
     if (!cell) return;
     if (cell.geometry) {
-      const cellStyle = parseStyle(cell.style);
-      const isEdge = !!(cell.edge || cellStyle.edge === '1');
+      const isEdge = !!(cell.edge || (typeof cell.style === 'string' && /(?:^|;)edge=1(?:;|$)/.test(cell.style)));
+      const cellStyle = parseStyle(
+        cell.style,
+        isEdge ? namedStyles.defaultEdge : namedStyles.defaultVertex,
+      );
       applyStackLayout(cell, cellStyle);
       const origin = cellOrigin(
         cell.geometry, parentX, parentY, parentW, parentH, isEdge,
@@ -2166,7 +2219,7 @@ function renderEntry(entry) {
   let style = null;
   if (entry.kind === 'vertex') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
-    style = parseStyle(entry.style);
+    style = parseStyle(entry.style, namedStyles.defaultVertex);
     if (isGenericStyle(style)) {
       renderStats.unregistered++;
       const key = String(style.shape || '(none)');
@@ -2218,7 +2271,7 @@ function renderEntry(entry) {
     }
   } else if (entry.kind === 'edge') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
-    style = parseStyle(entry.style);
+    style = parseStyle(entry.style, namedStyles.defaultEdge);
     ({width, height} = entrySize(entry));
     const geometry = new Geometry(0, 0, width, height);
     geometry.setTerminalPoint({x: 0, y: height}, true);

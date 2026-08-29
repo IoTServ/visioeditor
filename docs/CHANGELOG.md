@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io classic UML palettes now stay native in LibreOffice. Capture only
+  loaded `Sidebar-*.js`, so Class, Lifeline, Use Case and Package in
+  `grapheditor/Sidebar.js` `addUmlPalette` never reached
+  `VisioDocument::parse`. Those templates now paint through the same Canvas
+  path, including `umlLifeline` participant heads (`cellRenderer.getShape`
+  plus `mxShape.apply`) and `mxLabel` gear icons (Item 2). SVG path fills are
+  applied even when the label is `fillColor=none`. A second save keeps the
+  stacked class, dashed lifeline, oval, folder and gear.
 - draw.io General / Misc / Advanced palettes now stay native in LibreOffice.
   Capture only loaded `Sidebar-*.js`, so Note, Cube, Callout and Double
   Ellipse in `grapheditor/Sidebar.js` never reached `VisioDocument::parse`.
