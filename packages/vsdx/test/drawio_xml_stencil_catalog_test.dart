@@ -2734,6 +2734,90 @@ void main() {
   );
 
   test(
+    'mxText html table cellpadding stays TextBlock padding for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if ((child.text ?? '').contains(text)) return child;
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final instrument = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / PID / Process Engineering / Instruments',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Discrete Instrument (control room)',
+          )
+          .build(455, 3, 3);
+      final ti = glyphContaining(instrument, 'TI')!;
+      final hash = glyphContaining(instrument, '##')!;
+      expect(
+        identical(ti, hash),
+        isFalse,
+        reason: 'an unclosed last <tr> is still two HTML rows, so TI and ## '
+            'are stacked Text children collectXFormData maps to svg:y',
+      );
+      expect(
+        ti.pinY,
+        greaterThan(hash.pinY),
+        reason: 'TI is the top row (Visio Y-up)',
+      );
+      expect(
+        ti.height,
+        closeTo(instrument.height / 2, 0.04),
+        reason: 'two equal rows share the 50×50 overflow=fill box',
+      );
+      // mxText default spacing 2 plus cellpadding=4. Catalog scale 1.5/50.
+      const instScale = 1.5 / 50;
+      expect(
+        ti.richText.textBlock.marginLeftInches,
+        closeTo(6 * instScale, 0.01),
+        reason: 'cellpadding=4 plus spacing 2 is collectTextBlock LeftMargin '
+            'that libvisio maps to fo:padding-left',
+      );
+      expect(
+        ti.richText.textBlock.marginTopInches,
+        closeTo(6 * instScale, 0.01),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(instrument.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphContaining(leftover, 'TI')!.richText.textBlock.marginLeftInches,
+        closeTo(6 * instScale, 0.01),
+        reason: 'a second save must keep TextBlock LeftMargin',
+      );
+      expect(
+        identical(
+          glyphContaining(leftover, 'TI'),
+          glyphContaining(leftover, '##'),
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'mxCell xml placeholder labels stay substituted Text for LibreOffice',
     () {
       String allText(VsdxShape shape) {

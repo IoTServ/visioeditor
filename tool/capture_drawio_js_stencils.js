@@ -3469,14 +3469,16 @@ function htmlTdFragment(attrs, inner) {
 
 function htmlTableRowSpecs(html) {
   const source = String(html || '');
-  const tableMatch = /<table\b[^>]*>([\s\S]*)<\/table>/i.exec(source);
+  const tableMatch = /<table\b([^>]*)>([\s\S]*)<\/table>/i.exec(source);
   if (!tableMatch) return null;
   const outside = source.replace(tableMatch[0], '');
   if (cellLabel(outside, false).trim()) return null;
   const rows = [];
-  const trRe = /<tr\b([^>]*)>([\s\S]*?)<\/tr>/gi;
+  // Browsers still parse a last <tr> without </tr> (P&ID discInst
+  // `<tr><td>##</td></table>`). Requiring </tr> folded TI/## into one box.
+  const trRe = /<tr\b([^>]*)>([\s\S]*?)(?:<\/tr\s*>|(?=<tr\b)|(?=<\/table)|$)/gi;
   let match;
-  while ((match = trRe.exec(tableMatch[1]))) {
+  while ((match = trRe.exec(tableMatch[2]))) {
     const inner = match[2] || '';
     const tds = [];
     const tdRe = /<td\b([^>/]*)(?:\/>|>([\s\S]*?)<\/td>)/gi;
@@ -3502,6 +3504,17 @@ function htmlTableRowSpecs(html) {
   const multiCol = rows.some((row) => row.cells.length > 1);
   if (!multiCol && rows.length < 2) return null;
   return rows;
+}
+
+// HTML table cellpadding is a presentational hint for td padding.
+// collectTextBlock LeftMargin maps that onto fo:padding-left, on top of
+// mxText.style spacing already on canvas.state.
+function htmlTablePaddingPx(html) {
+  const open = /<table\b([^>]*)>/i.exec(String(html || ''));
+  if (!open) return 0;
+  const attr = htmlAttr(open[1], 'cellpadding');
+  const n = htmlCssPx(attr);
+  return n != null && n > 0 ? n : 0;
 }
 
 function htmlRowHasText(row) {
@@ -3561,6 +3574,17 @@ function paintHtmlTableLabel(
   const known = heights.reduce((sum, v) => sum + (v || 0), 0);
   const missing = heights.filter((v) => v == null).length;
   const auto = missing > 0 ? Math.max(0, h - known) / missing : 0;
+  const pad = htmlTablePaddingPx(html);
+  const prevL = canvas.state.spacingLeft;
+  const prevR = canvas.state.spacingRight;
+  const prevT = canvas.state.spacingTop;
+  const prevB = canvas.state.spacingBottom;
+  if (pad > 0) {
+    canvas.state.spacingLeft = (Number(prevL) || 0) + pad;
+    canvas.state.spacingRight = (Number(prevR) || 0) + pad;
+    canvas.state.spacingTop = (Number(prevT) || 0) + pad;
+    canvas.state.spacingBottom = (Number(prevB) || 0) + pad;
+  }
   let top = y;
   let painted = false;
   for (let i = 0; i < rows.length; i++) {
@@ -3585,6 +3609,12 @@ function paintHtmlTableLabel(
       }
     }
     top += rh;
+  }
+  if (pad > 0) {
+    canvas.state.spacingLeft = prevL;
+    canvas.state.spacingRight = prevR;
+    canvas.state.spacingTop = prevT;
+    canvas.state.spacingBottom = prevB;
   }
   return painted || rows.every((row) => !htmlRowHasText(row));
 }

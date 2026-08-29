@@ -756,6 +756,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `svg:stroke`. Cell labels now freeze a Line sibling and split the
   title / body into stacked Text boxes (Bootstrap Alert `border-color`
   stays LineColor). A second save keeps the rule.
+- draw.io mxText html table `cellpadding` now stays native in LibreOffice.
+  Official `mxText` paints `<table cellpadding="4">` as HTML cell padding
+  (and browsers still parse a last `<tr>` without `</tr>`), but capture
+  required a closing tag and dropped the attribute, so a P&ID Discrete
+  Instrument stacked `TI` / `##` in one box without the LeftMargin that
+  `collectTextBlock` maps to `fo:padding-left`. Cell labels now freeze
+  one Text child per row and add cellpadding onto mxText spacing. A
+  second save keeps the bands and padding.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
