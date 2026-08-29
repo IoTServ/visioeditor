@@ -413,7 +413,7 @@ class CanvasRecorder {
   setLink() {}
   text(x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation) {
     this.finishPath();
-    const s = String(str ?? '');
+    let s = String(str ?? '');
     if (!s) return;
     const horiz = String(align ?? '').toLowerCase();
     const vert = String(valign ?? '').toLowerCase();
@@ -423,6 +423,20 @@ class CanvasRecorder {
     }
     const p = this.map(x, y);
     const rot = (Number(rotation) || 0) + this.rotTheta;
+    const htmlOn = format === 'html' || /<[a-zA-Z][\s\S]*>/.test(s);
+    const htmlRuns = htmlOn
+      ? parseHtmlLabel(s, {
+          fontStyle: Number(this.state.fontStyle) || 0,
+          fontColor: this.state.fontColor,
+          fontSize: this.state.fontSize,
+          fontFamily: this.state.fontFamily,
+          textOpacity: this.state.textOpacity,
+        })
+      : null;
+    if (htmlRuns && htmlRuns.length) {
+      s = htmlRuns.map((run) => run.str).join('');
+    }
+    if (!s) return;
     const attrs = [
       `x="${number(p.x)}"`,
       `y="${number(p.y)}"`,
@@ -463,7 +477,14 @@ class CanvasRecorder {
       attrs.push(`textopacity="${number(textOpacity)}"`);
     }
     this.state.textOpacity = 100;
-    this.operations.push(`<text ${attrs.join(' ')}/>`);
+    // mxText html=1 paints <b>/<font> as separate collectCharIX rows.
+    // One str= run would drop Classifier1 bold and GCP Name's black.
+    if (htmlRuns && htmlLabelRunsDiffer(htmlRuns, this.state)) {
+      const inner = htmlRuns.map((run) => `<run ${htmlRunAttrs(run)}/>`).join('');
+      this.operations.push(`<text ${attrs.join(' ')}>${inner}</text>`);
+    } else {
+      this.operations.push(`<text ${attrs.join(' ')}/>`);
+    }
   }
 
   bindStyle(fill, stroke) {
@@ -2789,9 +2810,10 @@ function decompressDrawio(data) {
   }
 }
 
-function cellLabel(value) {
+function cellLabel(value, keepHtml = false) {
   const source = String(value ?? '');
   if (!source) return '';
+  if (keepHtml && /<[a-zA-Z][\s\S]*>/.test(source)) return source;
   const stripped = source
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
@@ -2805,6 +2827,144 @@ function cellLabel(value) {
     .replace(/ *\n[ \n]*/g, '\n')
     .trim();
   return stripped;
+}
+
+function decodeHtmlEntities(value) {
+  return String(value ?? '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&#10;/g, '\n')
+    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"');
+}
+
+function htmlAttr(attrs, name) {
+  const re = new RegExp(
+    `(?:^|\\s)${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
+    'i',
+  );
+  const match = re.exec(attrs || '');
+  return match ? (match[1] || match[2] || match[3]) : null;
+}
+
+function htmlStyleProp(attrs, prop) {
+  const style = htmlAttr(attrs, 'style') || '';
+  const re = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i');
+  const match = re.exec(style);
+  return match ? match[1].trim() : null;
+}
+
+function cloneHtmlStyle(style) {
+  return {
+    fontStyle: Number(style.fontStyle) || 0,
+    fontColor: style.fontColor,
+    fontSize: style.fontSize,
+    fontFamily: style.fontFamily,
+    textOpacity: style.textOpacity,
+  };
+}
+
+function sameHtmlStyle(a, b) {
+  return (Number(a.fontStyle) || 0) === (Number(b.fontStyle) || 0)
+    && String(a.fontColor || '') === String(b.fontColor || '')
+    && Number(a.fontSize) === Number(b.fontSize)
+    && String(a.fontFamily || '') === String(b.fontFamily || '')
+    && Number(a.textOpacity) === Number(b.textOpacity);
+}
+
+function htmlLabelRunsDiffer(runs, state) {
+  if (!runs || runs.length === 0) return false;
+  if (runs.length > 1) return true;
+  return !sameHtmlStyle(runs[0], {
+    fontStyle: Number(state.fontStyle) || 0,
+    fontColor: state.fontColor,
+    fontSize: state.fontSize,
+    fontFamily: state.fontFamily,
+    textOpacity: state.textOpacity,
+  });
+}
+
+function htmlRunAttrs(run) {
+  const attrs = [`str="${xmlEscape(run.str)}"`];
+  attrs.push(`fontstyle="${Number(run.fontStyle) || 0}"`);
+  const size = Number(run.fontSize);
+  if (Number.isFinite(size) && size > 0) attrs.push(`fontsize="${number(size)}"`);
+  if (run.fontColor) attrs.push(`fontcolor="${xmlEscape(String(run.fontColor))}"`);
+  if (run.fontFamily) attrs.push(`fontfamily="${xmlEscape(String(run.fontFamily))}"`);
+  const opacity = Number(run.textOpacity);
+  if (Number.isFinite(opacity) && Math.abs(opacity - 100) > 1e-6) {
+    attrs.push(`textopacity="${number(opacity)}"`);
+  }
+  return attrs.join(' ');
+}
+
+// mxText html=1: <b>/<i>/<font color|size> become Char Style / Color / Size
+// that collectCharIX maps to fo:font-weight / fo:color / fo:font-size.
+function parseHtmlLabel(html, base) {
+  const runs = [];
+  const stack = [cloneHtmlStyle(base)];
+  const current = () => stack[stack.length - 1];
+  const pushRun = (text) => {
+    if (!text) return;
+    const style = current();
+    const last = runs[runs.length - 1];
+    if (last && sameHtmlStyle(last, style)) last.str += text;
+    else runs.push({str: text, ...cloneHtmlStyle(style)});
+  };
+  const tokenRe = /<!--[\s\S]*?-->|<(\/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+)/g;
+  let match;
+  while ((match = tokenRe.exec(html))) {
+    if (match[0].startsWith('<!--')) continue;
+    if (match[4]) {
+      pushRun(decodeHtmlEntities(match[4]).replace(/[^\S\n]+/g, ' '));
+      continue;
+    }
+    const tag = match[2].toLowerCase();
+    const attrs = match[3] || '';
+    const closing = !!match[1] || /\/\s*$/.test(attrs);
+    if (tag === 'br' || tag === 'hr') {
+      pushRun('\n');
+      continue;
+    }
+    if (tag === 'p' || tag === 'div' || tag === 'tr' || tag === 'li' || /^h[1-6]$/.test(tag)) {
+      if (runs.length && !String(runs[runs.length - 1].str).endsWith('\n')) {
+        pushRun('\n');
+      }
+      continue;
+    }
+    if (match[1]) {
+      if (stack.length > 1) stack.pop();
+      continue;
+    }
+    if (closing) continue;
+    const next = cloneHtmlStyle(current());
+    if (tag === 'b' || tag === 'strong') next.fontStyle |= 1;
+    else if (tag === 'i' || tag === 'em') next.fontStyle |= 2;
+    else if (tag === 'u') next.fontStyle |= 4;
+    else if (tag === 's' || tag === 'strike' || tag === 'del') next.fontStyle |= 8;
+    if (tag === 'font' || tag === 'span') {
+      const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
+      if (color) next.fontColor = color;
+      const sizeToken = htmlStyleProp(attrs, 'font-size') || htmlAttr(attrs, 'size');
+      if (sizeToken) {
+        const size = parseFloat(sizeToken);
+        if (Number.isFinite(size) && size > 0) next.fontSize = size;
+      }
+      const weight = htmlStyleProp(attrs, 'font-weight');
+      if (weight && /^(bold|[7-9]00)$/i.test(weight)) next.fontStyle |= 1;
+      const italic = htmlStyleProp(attrs, 'font-style');
+      if (italic && /italic/i.test(italic)) next.fontStyle |= 2;
+    }
+    stack.push(next);
+  }
+  return runs;
+}
+
+function isHtmlCellStyle(style) {
+  return !!(style && (style.html == 1 || style.html === '1'));
 }
 
 function applyTextStyle(canvas, style) {
@@ -2884,7 +3044,8 @@ function mxVertexLabelRotation(style) {
 }
 
 function paintTemplateLabel(entry, style, width, height, canvas) {
-  const label = cellLabel(entry && entry.value);
+  const htmlOn = isHtmlCellStyle(style);
+  const label = cellLabel(entry && entry.value, htmlOn);
   if (!label) return;
   applyTextStyle(canvas, style);
   const align = String((style && style.align) || 'center');
@@ -2892,7 +3053,8 @@ function paintTemplateLabel(entry, style, width, height, canvas) {
   const box = mxVertexLabelBox(style, 0, 0, width, height);
   canvas.text(
     box.x, box.y, box.w, box.h, label, align, valign,
-    undefined, undefined, undefined, undefined, mxVertexLabelRotation(style),
+    undefined, htmlOn ? 'html' : undefined, undefined, undefined,
+    mxVertexLabelRotation(style),
   );
 }
 
@@ -3144,7 +3306,8 @@ function paintCellTree(cells, canvas, width, height) {
         );
         if (result) painted = true;
       }
-      const label = cellLabel(cell.value);
+      const htmlOn = isHtmlCellStyle(cellStyle);
+      const label = cellLabel(cell.value, htmlOn);
       if (label) {
         applyTextStyle(canvas, cellStyle);
         const align = String(cellStyle.align || 'center');
@@ -3152,7 +3315,7 @@ function paintCellTree(cells, canvas, width, height) {
         const box = mxVertexLabelBox(cellStyle, x, y, cellWidth, cellHeight);
         canvas.text(
           box.x, box.y, box.w, box.h, label, align, valign,
-          undefined, undefined, undefined, undefined,
+          undefined, htmlOn ? 'html' : undefined, undefined, undefined,
           mxVertexLabelRotation(cellStyle),
         );
         painted = true;

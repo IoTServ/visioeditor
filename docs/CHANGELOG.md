@@ -655,6 +655,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   freeze the parent hex (and the same for `fillColor` /
   `strokeColor` / `gradientColor`) before paint; omitted keys still
   use `defaultVertex`. A second save keeps Char Color.
+- draw.io mxText `html=1` spans now stay native in LibreOffice.
+  Official `mxText` paints `<b>` / `<font color>` / `font-size` as
+  styled HTML, but capture stripped tags to one Char run, so a UML
+  2.5 Classifier title (`<b>Classifier1</b>`) and GCP Expanded
+  Product Card `Name` (`<font color="#000000">`) lost bold and
+  the black that `collectCharIX` maps to `fo:font-weight` /
+  `fo:color`. Cell labels now freeze extra Character rows; stencil
+  glyphs without tags stay a single run. A second save keeps Style
+  and Color per run.
 - draw.io mxText `fontStyle` now stays native in LibreOffice.
   Official `mxText.configureCanvas` always calls `setFontStyle` and
   `mxXmlCanvas2D` emits the compressed token even when it returns to

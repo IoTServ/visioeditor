@@ -1821,6 +1821,107 @@ void main() {
     },
   );
 
+  test(
+    'mxText html spans stay extra Char rows for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxTextRun? runExact(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.replaceAll('\n', '').trim() == text) return run;
+          }
+          final nested = runExact(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final classifier = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / UML25 / uml 2.5',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Classifier')
+          .build(109, 3, 3);
+      expect(
+        runContaining(classifier, 'Classifier1')!.charStyle.style.bold,
+        isTrue,
+        reason: 'html <b>Classifier1</b> must reach collectCharIX Style.bold',
+      );
+      expect(
+        runContaining(classifier, 'keyword')!.charStyle.style.bold,
+        isFalse,
+        reason: 'stereotype text outside <b> stays roman',
+      );
+      expect(
+        runContaining(classifier, '{abstract}')!.charStyle.style.bold,
+        isFalse,
+      );
+
+      final card = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / GCP2 / GCP / Expanded Product Cards',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Compute Engine')
+          .build(110, 3, 3);
+      expect(
+        runExact(card, 'Name')!.charStyle.color?.value,
+        0xFF000000,
+        reason: '<font color="#000000">Name</font> must not pick up #999999',
+      );
+      expect(
+        runExact(card, 'Compute Engine')!.charStyle.color?.value,
+        0xFF999999,
+      );
+      final attr = runExact(card, 'Attribute Name')!;
+      final name = runExact(card, 'Name')!;
+      expect(
+        attr.charStyle.fontSizeInches,
+        closeTo(name.charStyle.fontSizeInches * 11 / 12, 0.01),
+        reason: 'font-size: 11px is Char.Size that collectCharIX maps to '
+            'fo:font-size',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(classifier.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Classifier1')!.charStyle.style.bold,
+        isTrue,
+        reason: 'a second save must keep Char bold on Classifier1',
+      );
+      expect(
+        runContaining(leftover, '{abstract}')!.charStyle.style.bold,
+        isFalse,
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

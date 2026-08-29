@@ -372,10 +372,10 @@ class _DrawioXmlShapeDecoder {
         }
         break;
       case 'text':
-        final str = node.getAttribute('str') ?? '';
-        if (str.isNotEmpty) {
+        final runs = _decodeTextRuns(node);
+        if (runs.isNotEmpty) {
           _labels.add(_DrawioStencilLabel(
-            text: str,
+            text: runs.map((run) => run.text).join(),
             x: _number(node, 'x'),
             y: _number(node, 'y'),
             boxWidth: _number(node, 'w'),
@@ -392,14 +392,15 @@ class _DrawioXmlShapeDecoder {
             // mxXmlCanvas2D.text rotation is STYLE_ROTATION; decoder
             // negates into TxtAngle that LibreOffice librevenge:rotate
             // paints (Y-up). STYLE_HORIZONTAL stays `vertical`.
-            fontSize: _fontSize,
-            fontStyle: _fontStyle,
-            fontFamily: _fontFamily,
-            color: _fontColor,
+            fontSize: runs.first.fontSize,
+            fontStyle: runs.first.fontStyle,
+            fontFamily: runs.first.fontFamily,
+            color: runs.first.color,
             background: _fontBackground,
             // mxText.apply STYLE_TEXT_OPACITY percent. Char ColorTrans
             // is not a libvisio token; a save bakes it into Color RGB.
-            textOpacity: _number(node, 'textopacity', fallback: 100),
+            textOpacity: runs.first.textOpacity,
+            runs: runs,
           ));
         }
         break;
@@ -427,6 +428,9 @@ class _DrawioXmlShapeDecoder {
       // `text` `textopacity` follows mxText.apply STYLE_TEXT_OPACITY onto
       // Char.transparency; ColorTrans is not a token, so a save bakes RGB
       // that collectCharIX maps to fo:color (xmlStringToColour zeros alpha).
+      // `text` `run` children follow mxText html=1 <b>/<font> onto extra
+      // Character rows collectCharIX maps to fo:font-weight / fo:color /
+      // fo:font-size.
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -612,6 +616,47 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     _fontBackground = _mxGraphPaintColor(token);
+  }
+
+  /// mxText html=1: `<run>` children are extra Character rows. A bare
+  /// `str=` label stays a single collectCharIX run.
+  List<_DrawioStencilLabelRun> _decodeTextRuns(XmlElement node) {
+    final parentOpacity = _number(node, 'textopacity', fallback: 100);
+    final runs = <_DrawioStencilLabelRun>[
+      for (final el in node.childElements)
+        if (el.name.local == 'run')
+          _DrawioStencilLabelRun(
+            text: el.getAttribute('str') ?? '',
+            fontSize: _number(el, 'fontsize', fallback: _fontSize),
+            fontStyle: _number(
+              el,
+              'fontstyle',
+              fallback: _fontStyle.toDouble(),
+            ).round(),
+            fontFamily: el.getAttribute('fontfamily') ?? _fontFamily,
+            color: el.getAttribute('fontcolor') != null
+                ? _mxGraphPaintColor(el.getAttribute('fontcolor'))
+                : _fontColor,
+            textOpacity: _number(
+              el,
+              'textopacity',
+              fallback: parentOpacity,
+            ),
+          ),
+    ].where((run) => run.text.isNotEmpty).toList(growable: false);
+    if (runs.isNotEmpty) return runs;
+    final str = node.getAttribute('str') ?? '';
+    if (str.isEmpty) return const <_DrawioStencilLabelRun>[];
+    return <_DrawioStencilLabelRun>[
+      _DrawioStencilLabelRun(
+        text: str,
+        fontSize: _fontSize,
+        fontStyle: _fontStyle,
+        fontFamily: _fontFamily,
+        color: _fontColor,
+        textOpacity: parentOpacity,
+      ),
+    ];
   }
 
   /// mxShape.configureCanvas setShadow + mxSvgCanvas2D.createShadow.
@@ -1066,22 +1111,23 @@ class _DrawioXmlShapeDecoder {
       text: label.text,
       richText: VsdxRichText(
         runs: <VsdxTextRun>[
-          VsdxTextRun(
-            text: label.text,
-            charStyle: VsdxCharStyle(
-              fontFamily: label.fontFamily,
-              fontSizeInches: fontInches,
-              style: VsdxFontStyle(
-                bold: (label.fontStyle & 1) != 0,
-                italic: (label.fontStyle & 2) != 0,
+          for (final run in label.runs)
+            VsdxTextRun(
+              text: run.text,
+              charStyle: VsdxCharStyle(
+                fontFamily: run.fontFamily ?? label.fontFamily,
+                fontSizeInches: math.max(0.04, run.fontSize * scale),
+                style: VsdxFontStyle(
+                  bold: (run.fontStyle & 1) != 0,
+                  italic: (run.fontStyle & 2) != 0,
+                ),
+                underline: (run.fontStyle & 4) != 0,
+                strikethrough: (run.fontStyle & 8) != 0,
+                color: run.color ?? label.color,
+                transparency: ((100 - run.textOpacity) / 100).clamp(0.0, 1.0),
               ),
-              underline: (label.fontStyle & 4) != 0,
-              strikethrough: (label.fontStyle & 8) != 0,
-              color: label.color,
-              transparency: ((100 - label.textOpacity) / 100).clamp(0.0, 1.0),
+              paraStyle: VsdxParaStyle(horizontalAlign: horz),
             ),
-            paraStyle: VsdxParaStyle(horizontalAlign: horz),
-          ),
         ],
         textBlock: VsdxTextBlock(
           verticalAlign: vert,
@@ -1144,6 +1190,7 @@ class _DrawioStencilLabel {
     this.color,
     this.background,
     this.textOpacity = 100,
+    required this.runs,
   });
 
   final String text;
@@ -1165,6 +1212,25 @@ class _DrawioStencilLabel {
   final String? fontFamily;
   final VsdxColor? color;
   final VsdxColor? background;
+  final double textOpacity;
+  final List<_DrawioStencilLabelRun> runs;
+}
+
+class _DrawioStencilLabelRun {
+  const _DrawioStencilLabelRun({
+    required this.text,
+    required this.fontSize,
+    required this.fontStyle,
+    this.fontFamily,
+    this.color,
+    this.textOpacity = 100,
+  });
+
+  final String text;
+  final double fontSize;
+  final int fontStyle;
+  final String? fontFamily;
+  final VsdxColor? color;
   final double textOpacity;
 }
 
