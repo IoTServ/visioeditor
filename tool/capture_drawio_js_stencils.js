@@ -3177,13 +3177,20 @@ function parseHtmlLabel(html, base) {
   return runs;
 }
 
-// mxText html=1 tables (P&ID TI/##, Electrical thermistor \temp\) are
-// 100%×100% grids. Flattening them to one collectTextBlock box centred
-// the caption on the glyph; LibreOffice must pin each row like the HTML
-// table. One td per tr (the sidebar pattern). Multi-column tables fall
-// back to a single canvas.text.
+// mxText html=1 tables (P&ID TI/##, Electrical thermistor \temp\, Mockup
+// Step Bar) are 100%×100% grids. Flattening them to one collectTextBlock
+// box centred the caption on the glyph; LibreOffice must pin each cell
+// like the HTML table. `height=0%` with text is a content band (browser
+// min-content), not a zero-height skip.
 function htmlHasVisibleText(html) {
   return !!cellLabel(html, false).trim();
+}
+
+function htmlTdFragment(attrs, inner) {
+  const body = inner || '';
+  const style = htmlAttr(attrs, 'style');
+  if (style) return `<span style="${style}">${body}</span>`;
+  return body;
 }
 
 function htmlTableRowSpecs(html) {
@@ -3198,36 +3205,74 @@ function htmlTableRowSpecs(html) {
   while ((match = trRe.exec(tableMatch[1]))) {
     const inner = match[2] || '';
     const tds = [];
-    const tdRe = /<td\b([^>]*)>([\s\S]*?)<\/td>/gi;
+    const tdRe = /<td\b([^>/]*)(?:\/>|>([\s\S]*?)<\/td>)/gi;
     let td;
-    while ((td = tdRe.exec(inner))) tds.push(td);
-    if (tds.length > 1) return null;
+    while ((td = tdRe.exec(inner))) {
+      tds.push({attrs: td[1] || '', inner: td[2] || ''});
+    }
     const trAttrs = match[1] || '';
-    const tdAttrs = tds.length ? tds[0][1] : '';
+    const cells = (tds.length ? tds : [{attrs: '', inner}]).map((cell) => ({
+      widthToken: htmlAttr(cell.attrs, 'width') || htmlStyleProp(cell.attrs, 'width'),
+      align: htmlAttr(cell.attrs, 'align') || htmlStyleProp(cell.attrs, 'text-align'),
+      valign: htmlAttr(cell.attrs, 'valign') || htmlStyleProp(cell.attrs, 'vertical-align'),
+      html: htmlTdFragment(cell.attrs, cell.inner),
+    }));
+    const firstAttrs = tds.length ? tds[0].attrs : '';
     const heightToken = htmlAttr(trAttrs, 'height')
       || htmlStyleProp(trAttrs, 'height')
-      || htmlAttr(tdAttrs, 'height')
-      || htmlStyleProp(tdAttrs, 'height');
-    rows.push({
-      heightToken,
-      align: htmlAttr(tdAttrs, 'align') || htmlStyleProp(tdAttrs, 'text-align'),
-      valign: htmlAttr(tdAttrs, 'valign') || htmlStyleProp(tdAttrs, 'vertical-align'),
-      html: tds.length ? tds[0][2] : inner,
-    });
+      || htmlAttr(firstAttrs, 'height')
+      || htmlStyleProp(firstAttrs, 'height');
+    rows.push({heightToken, cells});
   }
-  if (rows.length < 2) return null;
+  if (rows.length < 1) return null;
+  const multiCol = rows.some((row) => row.cells.length > 1);
+  if (!multiCol && rows.length < 2) return null;
   return rows;
 }
 
-function htmlRowHeightPx(token, boxH) {
+function htmlRowHasText(row) {
+  return (row.cells || []).some((cell) => htmlHasVisibleText(cell.html));
+}
+
+function htmlContentBandPx(fontSize) {
+  const size = Number(fontSize);
+  return Math.max(8, (Number.isFinite(size) && size > 0 ? size : 12) * 1.4);
+}
+
+function htmlRowHeightPx(token, boxH, hasText, fontSize) {
   if (token == null || token === '') return null;
   const t = String(token).trim();
   if (/%$/.test(t)) {
     const n = parseFloat(t);
-    return Number.isFinite(n) ? boxH * n / 100 : null;
+    if (!Number.isFinite(n)) return null;
+    // HTML 0% + content sizes to the line box; 100% eats the leftover.
+    if (n <= 0) return hasText ? htmlContentBandPx(fontSize) : 0;
+    if (n >= 100) return null;
+    return boxH * n / 100;
+  }
+  const n = parseFloat(t);
+  if (!Number.isFinite(n)) return null;
+  if (n <= 0) return hasText ? htmlContentBandPx(fontSize) : 0;
+  return n;
+}
+
+function htmlColWidthPx(token, boxW) {
+  if (token == null || token === '') return null;
+  const t = String(token).trim();
+  if (/%$/.test(t)) {
+    const n = parseFloat(t);
+    return Number.isFinite(n) && n > 0 ? boxW * n / 100 : null;
   }
   const n = parseFloat(t);
   return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function htmlColWidths(cells, boxW) {
+  const widths = cells.map((cell) => htmlColWidthPx(cell.widthToken, boxW));
+  const known = widths.reduce((sum, v) => sum + (v || 0), 0);
+  const missing = widths.filter((v) => v == null).length;
+  const auto = missing > 0 ? Math.max(0, boxW - known) / missing : 0;
+  return widths.map((v) => (v == null ? auto : v));
 }
 
 function paintHtmlTableLabel(
@@ -3235,7 +3280,10 @@ function paintHtmlTableLabel(
 ) {
   const rows = htmlTableRowSpecs(html);
   if (!rows) return false;
-  const heights = rows.map((row) => htmlRowHeightPx(row.heightToken, h));
+  const fontSize = canvas && canvas.state ? canvas.state.fontSize : 12;
+  const heights = rows.map((row) => htmlRowHeightPx(
+    row.heightToken, h, htmlRowHasText(row), fontSize,
+  ));
   const known = heights.reduce((sum, v) => sum + (v || 0), 0);
   const missing = heights.filter((v) => v == null).length;
   const auto = missing > 0 ? Math.max(0, h - known) / missing : 0;
@@ -3244,18 +3292,27 @@ function paintHtmlTableLabel(
   for (let i = 0; i < rows.length; i++) {
     const rh = heights[i] == null ? auto : heights[i];
     const row = rows[i];
-    if (rh > 0 && htmlHasVisibleText(row.html)) {
-      canvas.text(
-        x, top, w, rh, cellLabel(row.html, true),
-        row.align || defaultAlign,
-        row.valign || defaultValign || 'middle',
-        undefined, 'html', undefined, undefined, rotation,
-      );
-      painted = true;
+    if (rh > 0 && htmlRowHasText(row)) {
+      const widths = htmlColWidths(row.cells, w);
+      let left = x;
+      for (let j = 0; j < row.cells.length; j++) {
+        const cell = row.cells[j];
+        const cw = widths[j];
+        if (cw > 0 && htmlHasVisibleText(cell.html)) {
+          canvas.text(
+            left, top, cw, rh, cellLabel(cell.html, true),
+            cell.align || defaultAlign,
+            cell.valign || defaultValign || 'middle',
+            undefined, 'html', undefined, undefined, rotation,
+          );
+          painted = true;
+        }
+        left += cw;
+      }
     }
     top += rh;
   }
-  return painted || rows.every((row) => !htmlHasVisibleText(row.html));
+  return painted || rows.every((row) => !htmlRowHasText(row));
 }
 
 function isHtmlCellStyle(style) {

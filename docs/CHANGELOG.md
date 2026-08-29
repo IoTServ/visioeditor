@@ -692,6 +692,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `Person name` that `collectText` maps to `text:p`. Cell labels now
   freeze the substituted HTML; string values stay unchanged. A second
   save keeps the name.
+- draw.io mxText html multi-column tables now stay native in LibreOffice.
+  Official `mxText` with `overflow=fill` paints `<td width="25%">`
+  columns (`height=0%` is a content band), but capture joined every
+  cell into one centred Char run, so Mockup Step Bar `Layer 1`–`Layer 4`
+  sat on the dots that `collectXFormData` maps to `svg:x`. Cell labels
+  now freeze one Text child per td (`textColor2` on Layer 3 stays
+  Char Color). A second save keeps the column pins.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

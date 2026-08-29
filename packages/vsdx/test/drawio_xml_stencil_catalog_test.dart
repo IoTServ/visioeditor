@@ -2254,6 +2254,121 @@ void main() {
     },
   );
 
+  test(
+    'mxText html multi-column tables stay cell Text boxes for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final nav = dynamic.singleWhere(
+        (group) => group.name == 'Draw.io JS / Mockup / Mockup Navigation',
+      );
+      VsdxShape? bar;
+      var id = 447;
+      for (final entry in nav.stencils.where((e) => e.name == 'Step Bar')) {
+        final shape = entry.build(id++, 3, 3);
+        if (allText(shape).contains('Layer 1') &&
+            allText(shape).contains('Layer 3')) {
+          bar = shape;
+          break;
+        }
+      }
+      expect(bar, isNotNull, reason: 'Step Bar html table template');
+      final layer1 = glyphContaining(bar!, 'Layer 1')!;
+      final layer3 = glyphContaining(bar, 'Layer 3')!;
+      expect(
+        identical(layer1, layer3),
+        isFalse,
+        reason: 'td width=25% is a Text child collectXFormData maps to svg:x, '
+            'not one concatenated Char run',
+      );
+      expect(
+        allText(bar),
+        isNot(contains('Layer 1Layer 2')),
+      );
+      expect(
+        layer1.width,
+        closeTo(bar.width * 0.25, 0.04),
+        reason: 'four equal columns fill the 300px bar',
+      );
+      expect(
+        layer1.height,
+        lessThan(bar.height * 0.9),
+        reason: 'tr height=0% with text is a content band at the top, not '
+            'the full step-dot box',
+      );
+      expect(
+        layer1.pinY,
+        greaterThan(bar.height * 0.5),
+        reason: 'the 0% content row sits at the top (Visio Y-up)',
+      );
+      expect(layer1.pinX, lessThan(layer3.pinX));
+      expect(
+        runContaining(bar, 'Layer 3')!.charStyle.color?.value,
+        0xFF008CFF,
+        reason: 'td style color:#008cff is textColor2 Char Color '
+            'collectCharIX maps to fo:color',
+      );
+      expect(
+        runContaining(bar, 'Layer 1')!.charStyle.color?.value,
+        0xFF666666,
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final leftoverId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(bar.copyWith(id: leftoverId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(leftoverId)!;
+      expect(
+        glyphContaining(leftover, 'Layer 3')!.width,
+        closeTo(bar.width * 0.25, 0.04),
+        reason: 'a second save must keep the 25% column',
+      );
+      expect(
+        runContaining(leftover, 'Layer 3')!.charStyle.color?.value,
+        0xFF008CFF,
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(
