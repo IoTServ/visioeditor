@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxGraph `shadow=1` now stays native in LibreOffice.
+  Official `mxShape.configureCanvas` calls `setShadow(this.isShadow)`
+  and `mxSvgCanvas2D.createShadow` clones a translated grey silhouette,
+  but capture stubbed `setShadow` so GCP2 Service Cards (`shadow=1`)
+  dropped the drop-shadow that libvisio `_fillAndShadowProperties`
+  maps to ODF `draw:shadow`. The flag now becomes `ShdwPattern` 1 with
+  mxGraph's 2×3 px offset (Visio Y-up) and `#808080`; blur stays 0 so
+  Draw keeps the hard edge instead of a Gaussian PNG bake. Foreground
+  decorations still call `setShadow(false)` after the body. A second
+  save keeps `ShdwPattern` 1.
 - draw.io mxStencil `linecap` / `linejoin` / `miterlimit` / `dashpattern`
   now stay native in LibreOffice. `mxStencil.drawNode` calls
   `setLineCap` / `setLineJoin` / `setMiterLimit` / `setDashPattern`, but

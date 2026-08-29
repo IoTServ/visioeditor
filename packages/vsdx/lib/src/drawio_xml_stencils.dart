@@ -104,6 +104,8 @@ class _DrawioXmlShapeDecoder {
   LineCap? _lineCap;
   VsdxLineJoin? _lineJoin;
   double? _miterLimit;
+  VsdxShadow? _shadow;
+  VsdxShadow? _parentShadow;
   String? _rasterPart;
   String? _rasterMime;
   double _penX = 0;
@@ -177,13 +179,23 @@ class _DrawioXmlShapeDecoder {
         ],
       ));
     }
-    var nextId = id + 1;
-    final children = <VsdxShape>[
-      for (final part in _coloredParts) _coloredShape(id: nextId++, part: part),
-      for (final label in _labels) _labelShape(id: nextId++, label: label),
-    ];
     final inheritFill = _geometries.any((geometry) => !geometry.noFill);
     final inheritLine = _geometries.any((geometry) => !geometry.noLine);
+    var nextId = id + 1;
+    final children = <VsdxShape>[];
+    var childShadowPending =
+        !inheritFill && _parentShadow != null && _parentShadow!.enabled;
+    for (final part in _coloredParts) {
+      var partShadow = VsdxShadow.disabled;
+      if (childShadowPending && part.fill.hasFill) {
+        partShadow = _parentShadow!;
+        childShadowPending = false;
+      }
+      children.add(_coloredShape(id: nextId++, part: part, shadow: partShadow));
+    }
+    for (final label in _labels) {
+      children.add(_labelShape(id: nextId++, label: label));
+    }
     // Use Sheet.N like factory / chart stencils. The catalog keeps the
     // human-readable stencil title for the palette; putting it on shape.name
     // would paint as a label fallback when text is empty. Authored mxGraph
@@ -227,6 +239,9 @@ class _DrawioXmlShapeDecoder {
       shapeKind: children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
       fill: parentFill,
       line: parentLine,
+      shadow: inheritFill
+          ? (_parentShadow ?? VsdxShadow.disabled)
+          : VsdxShadow.disabled,
       imagePartName: _rasterPart,
       foreignType: _rasterPart == null
           ? null
@@ -287,6 +302,9 @@ class _DrawioXmlShapeDecoder {
       case 'miterlimit':
         final limit = _number(node, 'limit', fallback: 4);
         if (limit >= 1) _miterLimit = limit;
+        break;
+      case 'shadow':
+        _applyMxShadow(node);
         break;
       case 'fill':
         _finish(fill: true, stroke: false);
@@ -363,6 +381,9 @@ class _DrawioXmlShapeDecoder {
       // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
       // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
+      // `shadow` follows mxShape.configureCanvas setShadow onto ShdwPattern
+      // that `_fillAndShadowProperties` maps to ODF draw:shadow (hard
+      // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -540,6 +561,36 @@ class _DrawioXmlShapeDecoder {
     _fontColor = _mxGraphPaintColor(token);
   }
 
+  /// mxShape.configureCanvas setShadow + mxSvgCanvas2D.createShadow.
+  /// dx/dy are mxGraph pixels (Y down). Visio ShapeShdwOffsetY is up;
+  /// libvisio `_fillAndShadowProperties` emits ODF offset-y as −Y.
+  void _applyMxShadow(XmlElement node) {
+    if (node.getAttribute('enabled') == '0') {
+      _shadow = null;
+      return;
+    }
+    final dx = _number(node, 'dx', fallback: 2);
+    final dy = _number(node, 'dy', fallback: 3);
+    final alpha = node.getAttribute('alpha') == null
+        ? 1.0
+        : _number(node, 'alpha', fallback: 1).clamp(0.0, 1.0).toDouble();
+    final color = _mxGraphPaintColor(node.getAttribute('color')) ??
+        const VsdxColor(0xFF808080);
+    var offsetX = dx * scaleX;
+    var offsetY = -dy * scaleY;
+    if (offsetX.abs() < 1e-9) offsetX = 0.02;
+    if (offsetY.abs() < 1e-9) offsetY = -0.03;
+    _shadow = VsdxShadow(
+      enabled: true,
+      pattern: 1,
+      color: color,
+      offsetXInches: offsetX,
+      offsetYInches: offsetY,
+      blurInches: 0,
+      transparency: (1 - alpha).clamp(0.0, 1.0),
+    );
+  }
+
   double get _strokeWeightInches {
     final width = _strokeWidth;
     if (width == null) return VsdxLine.defaultLine.weightInches;
@@ -622,6 +673,7 @@ class _DrawioXmlShapeDecoder {
             : const VsdxFill(pattern: 0),
         line: _paintLine(stroke: doStroke),
       ));
+      if (_shadow != null) _parentShadow ??= _shadow;
       return;
     }
     _geometries.add(VsdxGeometry(
@@ -634,6 +686,7 @@ class _DrawioXmlShapeDecoder {
       _parentDashed = true;
       _parentDashPattern ??= _dashPattern;
     }
+    if (_shadow != null) _parentShadow ??= _shadow;
   }
 
   List<VsdxPathCommand> _decodePath(XmlElement path) {
@@ -847,6 +900,7 @@ class _DrawioXmlShapeDecoder {
   VsdxShape _coloredShape({
     required int id,
     required _DrawioColoredPart part,
+    VsdxShadow shadow = VsdxShadow.disabled,
   }) {
     final locX = targetWidth / 2;
     final locY = targetHeight / 2;
@@ -861,6 +915,7 @@ class _DrawioXmlShapeDecoder {
       locPinYInches: locY,
       fill: part.fill,
       line: part.line,
+      shadow: shadow,
       geometries: <VsdxGeometry>[
         VsdxGeometry(
           noFill: !part.fill.hasFill,

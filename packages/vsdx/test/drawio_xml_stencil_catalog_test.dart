@@ -943,6 +943,62 @@ void main() {
     );
   });
 
+  test('mxGraph shadow=1 stays ShdwPattern for LibreOffice', () {
+    bool hasHardShadow(VsdxShape shape) {
+      final shadow = shape.shadow;
+      if (shadow.enabled &&
+          shadow.pattern == 1 &&
+          shadow.blurInches.abs() < 1e-9 &&
+          shadow.offsetXInches.abs() > 1e-6 &&
+          shadow.offsetYInches.abs() > 1e-6) {
+        return true;
+      }
+      return shape.children.any(hasHardShadow);
+    }
+
+    final card = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / GCP2 / GCP / Service Cards',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Blank One Line')
+        .build(89, 3, 3);
+    expect(
+      hasHardShadow(card),
+      isTrue,
+      reason: 'shadow=1 must become ShdwPattern 1 that libvisio '
+          '_fillAndShadowProperties maps to draw:shadow',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) =>
+                  group.name == 'Draw.io JS / GCP2 / GCP / Service Cards',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Blank One Line')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      hasHardShadow(leftover),
+      isTrue,
+      reason: 'a second save must keep ShdwPattern 1',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

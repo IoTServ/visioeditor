@@ -138,6 +138,7 @@ class CanvasRecorder {
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
     this._strokeAlphaToken = 1;
+    this._shadowToken = '0';
     this.state = {
       fillColor: '#ffffff',
       strokeColor: '#000000',
@@ -157,6 +158,12 @@ class CanvasRecorder {
       lineCap: null,
       lineJoin: null,
       miterLimit: 4,
+      // mxConstants SHADOW_* — mxSvgCanvas2D.createShadow clones + translate.
+      shadow: false,
+      shadowColor: '#808080',
+      shadowAlpha: 1,
+      shadowDx: 2,
+      shadowDy: 3,
     };
   }
 
@@ -347,9 +354,6 @@ class CanvasRecorder {
   setFillStyle() {}
   setFontBackgroundColor() {}
   setFontBorderColor() {}
-  setShadowColor() {}
-  setShadowAlpha() {}
-  setShadowOffset() {}
   setTitle() {}
   setLink() {}
   text(x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation) {
@@ -389,6 +393,8 @@ class CanvasRecorder {
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
     this._strokeAlphaToken = 1;
+    this.state.shadow = false;
+    this._shadowToken = '0';
   }
 
   _emitPaint(tag, token) {
@@ -458,6 +464,7 @@ class CanvasRecorder {
     }
     this._reemitAlpha();
     this._reemitLineStyle();
+    this._reemitShadow();
   }
 
   _reemitLineStyle() {
@@ -608,6 +615,77 @@ class CanvasRecorder {
     this.finishPath();
     this.operations.push(`<miterlimit limit="${number(n)}"/>`);
   }
+  // mxShape.configureCanvas / mxSvgCanvas2D.createShadow: a translated
+  // grey silhouette. LibreOffice only calls VisioDocument::parse, so
+  // emit ShdwPattern cells libvisio `_fillAndShadowProperties` maps to
+  // ODF draw:shadow. setShadow(false) before paintForeground matches
+  // official paintVertexShape (decorations stay unshadowed).
+  _shadowPayload() {
+    const on = !!this.state.shadow;
+    if (!on) return '0';
+    return [
+      '1',
+      number(this.state.shadowDx),
+      number(this.state.shadowDy),
+      cssColorKey(this.state.shadowColor) || '#808080',
+      number(this.state.shadowAlpha),
+    ].join('|');
+  }
+
+  _emitShadow(enabled) {
+    this.finishPath();
+    if (!enabled) {
+      this.operations.push('<shadow enabled="0"/>');
+      return;
+    }
+    const dx = Number(this.state.shadowDx);
+    const dy = Number(this.state.shadowDy);
+    const alpha = Number(this.state.shadowAlpha);
+    const color = this.state.shadowColor || '#808080';
+    const attrs = ['enabled="1"'];
+    if (Number.isFinite(dx)) attrs.push(`dx="${number(dx)}"`);
+    if (Number.isFinite(dy)) attrs.push(`dy="${number(dy)}"`);
+    if (color && !isNoneColor(color)) attrs.push(`color="${xmlEscape(color)}"`);
+    if (Number.isFinite(alpha) && alpha !== 1) attrs.push(`alpha="${number(alpha)}"`);
+    this.operations.push(`<shadow ${attrs.join(' ')}/>`);
+  }
+
+  _reemitShadow() {
+    const token = this._shadowPayload();
+    if (token === this._shadowToken) return;
+    this._shadowToken = token;
+    this._emitShadow(!!this.state.shadow);
+  }
+
+  setShadow(enabled) {
+    const on = enabled === true || enabled === 1 || enabled === '1';
+    this.state.shadow = on;
+    const token = this._shadowPayload();
+    if (token === this._shadowToken) return;
+    this._shadowToken = token;
+    this._emitShadow(on);
+  }
+
+  setShadowColor(value) {
+    this.state.shadowColor = isNoneColor(value) ? '#808080' : value;
+    if (this.state.shadow) this._reemitShadow();
+  }
+
+  setShadowAlpha(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return;
+    this.state.shadowAlpha = Math.max(0, Math.min(1, n));
+    if (this.state.shadow) this._reemitShadow();
+  }
+
+  setShadowOffset(dx, dy) {
+    const x = Number(dx);
+    const y = Number(dy);
+    if (Number.isFinite(x)) this.state.shadowDx = x;
+    if (Number.isFinite(y)) this.state.shadowDy = y;
+    if (this.state.shadow) this._reemitShadow();
+  }
+
   // mxAbstractCanvas2D.setGradient: fillColor=c1, gradientColor=c2.
   // Official configureCanvas calls this when STYLE_GRADIENTCOLOR is set.
   // Emit actual hex so the Dart decoder can bake FillPattern 25–34
@@ -632,7 +710,6 @@ class CanvasRecorder {
     this._fillToken = token;
     this._emitFillGradient();
   }
-  setShadow() {}
   setFontColor(value) {
     this.state.fontColor = isNoneColor(value) ? null : value;
     const token = isNoneColor(value) ? 'none' : String(value);
@@ -1187,16 +1264,20 @@ class NestedStencil {
     if (!(w > 0) || !(h > 0)) return;
     const direction = shape && shape.style ? shape.style.direction : null;
     const aspect = this.computeAspect(shape && shape.style, x, y, w, h, direction);
-    this.drawChildren(canvas, this.bgNode, aspect, shape);
-    this.drawChildren(canvas, this.fgNode, aspect, shape);
+    // Official mxStencil.drawShape: background keeps the canvas shadow;
+    // foreground disableShadow turns it off on the first fill/stroke.
+    this.drawChildren(canvas, this.bgNode, aspect, shape, false);
+    this.drawChildren(canvas, this.fgNode, aspect, shape, true);
   }
 
-  drawChildren(canvas, node, aspect, shape) {
+  drawChildren(canvas, node, aspect, shape, disableShadow) {
     if (!node) return;
-    for (const child of node.children) this.drawNode(canvas, child, aspect, shape);
+    for (const child of node.children) {
+      this.drawNode(canvas, child, aspect, shape, disableShadow);
+    }
   }
 
-  drawNode(canvas, node, aspect, shape) {
+  drawNode(canvas, node, aspect, shape, disableShadow) {
     const name = node.name;
     const x0 = aspect.x;
     const y0 = aspect.y;
@@ -1209,7 +1290,9 @@ class NestedStencil {
     else if (name === 'restore') canvas.restore();
     else if (name === 'path') {
       canvas.begin();
-      for (const child of node.children) this.drawNode(canvas, child, aspect, shape);
+      for (const child of node.children) {
+        this.drawNode(canvas, child, aspect, shape, disableShadow);
+      }
     } else if (name === 'close') canvas.close();
     else if (name === 'move') canvas.moveTo(X('x'), Y('y'));
     else if (name === 'line') canvas.lineTo(X('x'), Y('y'));
@@ -1305,6 +1388,11 @@ class NestedStencil {
     }
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
     else if (name === 'fontstyle') canvas.setFontStyle(attrNum(node, 'style'));
+    if (disableShadow &&
+        (name === 'fillstroke' || name === 'fillstrokecolor' ||
+         name === 'fill' || name === 'stroke')) {
+      canvas.setShadow(false);
+    }
   }
 }
 
@@ -1392,6 +1480,8 @@ mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
   if (c.setAlpha && Number.isFinite(opacity)) c.setAlpha(opacity / 100);
   if (c.setFillAlpha && Number.isFinite(fillOpacity)) c.setFillAlpha(fillOpacity / 100);
   if (c.setStrokeAlpha && Number.isFinite(strokeOpacity)) c.setStrokeAlpha(strokeOpacity / 100);
+  // mxShape.js ~1037: isShadow calls setShadow before dashes / fill.
+  if (this.isShadow != null && c.setShadow) c.setShadow(this.isShadow);
   // mxShape.js ~1025–1082: dashPattern, linecap, linejoin, miterlimit.
   const dash = this.style != null ? this.style.dashPattern : null;
   const fixDash = this.style != null &&
@@ -2390,6 +2480,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
       if (style.linecap) canvas.setLineCap(style.linecap);
       if (style.linejoin) canvas.setLineJoin(style.linejoin);
       if (style.miterlimit) canvas.setMiterLimit(style.miterlimit);
+      if (style.shadow == 1) canvas.setShadow(true);
       if (isNoneColor(fill)) canvas.setFillColor(null);
       if (isNoneColor(stroke)) canvas.setStrokeColor(null);
       stencil.drawShape(canvas, ghost, x, y, width, height);
@@ -2416,6 +2507,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.stroke = stroke;
   shape.strokewidth = Number(style.strokeWidth) || 1;
   shape.isDashed = style.dashed == 1;
+  shape.isShadow = style.shadow == 1;
   shape.isRounded = style.rounded == 1;
   shape.scale = 1;
   shape.bounds = {x, y, width, height};
