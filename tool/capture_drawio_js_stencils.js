@@ -4007,12 +4007,27 @@ function applyTextStyle(canvas, style) {
   canvas.state.textOpacity = Number.isFinite(textOpacity) ? textOpacity : 100;
   // mxText.apply: spacing + spacingLeft/Right/Top/Bottom. Default spacing
   // is 2 so an omitted key still pads like configureCanvas.
-  const spacing = parseInt(style.spacing != null ? style.spacing : 2, 10);
-  const sp = Number.isFinite(spacing) ? spacing : 2;
-  canvas.state.spacingLeft = (parseInt(style.spacingLeft, 10) || 0) + sp;
-  canvas.state.spacingRight = (parseInt(style.spacingRight, 10) || 0) + sp;
-  canvas.state.spacingTop = (parseInt(style.spacingTop, 10) || 0) + sp;
-  canvas.state.spacingBottom = (parseInt(style.spacingBottom, 10) || 0) + sp;
+  // mxCellRenderer.rotateLabelBounds (legacySpacing=true) skips
+  // getSpacing when overflow is fill/width, so the HTML table is the
+  // full cell. collectTextBlock LeftMargin must not keep that 2px
+  // LibreOffice would pad as fo:padding-left (P&ID compressor T,
+  // Removable Spool RS, Lean Mapping Kanban).
+  const overflow = String(style.overflow || 'visible');
+  const skipSpacing = overflow === 'fill' || overflow === 'width' ||
+    (overflow === 'block' && String(style.blockSpacing) !== '1');
+  if (skipSpacing) {
+    canvas.state.spacingLeft = 0;
+    canvas.state.spacingRight = 0;
+    canvas.state.spacingTop = 0;
+    canvas.state.spacingBottom = 0;
+  } else {
+    const spacing = parseInt(style.spacing != null ? style.spacing : 2, 10);
+    const sp = Number.isFinite(spacing) ? spacing : 2;
+    canvas.state.spacingLeft = (parseInt(style.spacingLeft, 10) || 0) + sp;
+    canvas.state.spacingRight = (parseInt(style.spacingRight, 10) || 0) + sp;
+    canvas.state.spacingTop = (parseInt(style.spacingTop, 10) || 0) + sp;
+    canvas.state.spacingBottom = (parseInt(style.spacingBottom, 10) || 0) + sp;
+  }
   // mxShape.getTextRotation: STYLE_HORIZONTAL != 1 adds verticalTextRotation.
   // LibreOffice _flushText ignores TextDirection writing-mode; a save bakes
   // TextDirection=1 into TxtAngle that librevenge:rotate paints.

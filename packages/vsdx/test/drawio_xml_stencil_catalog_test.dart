@@ -2948,13 +2948,14 @@ void main() {
         closeTo(compressor.height * 0.75 / 2, 0.04),
         reason: 'the 25% empty row keeps T off the turbine top (Visio Y-up)',
       );
-      // mxText default spacing 2 plus padding-left 11% of the 100px cell.
+      // overflow=fill skips mxText spacing 2; padding-left 11% of 100px.
       const compressorScale = 1.5 / 100;
       expect(
         tee.richText.textBlock.marginLeftInches,
-        closeTo(13 * compressorScale, 0.01),
-        reason: 'td padding-left:11% plus spacing 2 is collectTextBlock '
-            'LeftMargin that libvisio maps to fo:padding-left',
+        closeTo(11 * compressorScale, 0.01),
+        reason: 'td padding-left:11% is collectTextBlock LeftMargin that '
+            'libvisio maps to fo:padding-left; overflow=fill must not add '
+            'the mxText default spacing of 2',
       );
 
       const writer = VsdxWriter();
@@ -2974,7 +2975,7 @@ void main() {
           .findShapeById(id)!;
       expect(
         glyphContaining(leftover, 'T')!.richText.textBlock.marginLeftInches,
-        closeTo(13 * compressorScale, 0.01),
+        closeTo(11 * compressorScale, 0.01),
         reason: 'a second save must keep TextBlock LeftMargin',
       );
     },

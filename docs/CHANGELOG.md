@@ -806,6 +806,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   that `collectParaIX` maps to `fo:margin-top`. Adjacent blocks collapse
   like CSS. SysML `margin:0px` still zeroes the UA slot. A second save
   keeps Para spacing.
+- draw.io mxText `overflow=fill` now stays native in LibreOffice.
+  Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
+  mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
+  full cell, but capture still wrote the default 2px as TextBlock
+  LeftMargin that `collectTextBlock` maps to `fo:padding-left`. A P&ID
+  Centrifugal Compressor `T` (`padding-left:11%`) and Removable Spool
+  `RS` no longer sit on that extra inset. DiscInst without fill still
+  keeps spacing 2 plus cellpadding. A second save keeps the padding.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
