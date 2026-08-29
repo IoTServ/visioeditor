@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(153));
+    expect(dynamic, hasLength(189));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      2681,
+      3639,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -352,5 +352,56 @@ void main() {
           .any((child) => child.text == 'api'),
       isTrue,
     );
+  });
+
+  test('BPMN 2 tasks SysML models and Android bars capture native geometry',
+      () {
+    Stencil stencil(String groupName, String shapeName) => dynamic
+        .singleWhere((group) => group.name == groupName)
+        .stencils
+        .singleWhere((entry) => entry.name == shapeName);
+
+    final task = stencil(
+      'Draw.io JS / BPMN / BPMN 2.0  Tasks',
+      'User',
+    ).build(30, 3, 3);
+    expect(task.geometries.length, greaterThan(1),
+        reason:
+            'mxgraph.bpmn.task2 must load via getShape(mxgraph.basic.rect)');
+
+    final model = stencil(
+      'Draw.io JS / Sysml / SysML / Model Elements',
+      'Model',
+    ).build(31, 3, 3);
+    expect(model.geometries, isNotEmpty,
+        reason: 'mxgraph.sysml.composite paints folder via Shapes.js');
+
+    final bar = stencil(
+      'Draw.io JS / Android / android',
+      'Split Action Bar',
+    ).build(32, 3, 3);
+    expect(bar.geometries.length, greaterThan(1),
+        reason: 'vertex-cells mockups must paint built-in rectangles');
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final taskId = doc.pages.first.nextFreeShapeId();
+    var page = doc.pages.first.addShape(stencil(
+      'Draw.io JS / BPMN / BPMN 2.0  Tasks',
+      'User',
+    ).build(taskId, 2, 4));
+    final modelId = page.nextFreeShapeId();
+    page = page.addShape(stencil(
+      'Draw.io JS / Sysml / SysML / Model Elements',
+      'Model',
+    ).build(modelId, 5, 4));
+    doc = doc.replacePage(0, page);
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first;
+    expect(leftover.findShapeById(taskId)!.geometries.length, greaterThan(1));
+    expect(leftover.findShapeById(modelId)!.geometries, isNotEmpty);
   });
 }

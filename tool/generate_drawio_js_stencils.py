@@ -21,8 +21,18 @@ CAPTURE = ROOT / "tool/capture_drawio_js_stencils.js"
 
 
 def dart_string(value: str) -> str:
-    escaped = value.replace("\\", "\\\\").replace("'", "\\'").replace("$", "\\$")
+    escaped = (
+        value.replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("$", "\\$")
+        .replace("\r", "\\r")
+        .replace("\n", "\\n")
+    )
     return f"'{escaped}'"
+
+
+def catalog_name(value: str | None) -> str:
+    return " ".join((value or "Unnamed Shape").split()) or "Unnamed Shape"
 
 
 def wrapped_string(value: str, width: int = 100) -> list[str]:
@@ -36,19 +46,14 @@ def generate(webapp: Path, output: Path) -> tuple[int, int]:
     captured = json.loads(
         subprocess.check_output(["node", str(CAPTURE), str(webapp)], text=True)
     )
-    unexpected_errors = [
-        error
-        for error in captured["shapeLoadErrors"]
-        if error["file"] != "bpmn/mxBpmnShape2.js"
-    ]
-    if unexpected_errors:
-        raise RuntimeError(f"draw.io shape load errors: {unexpected_errors}")
+    if captured["shapeLoadErrors"]:
+        raise RuntimeError(f"draw.io shape load errors: {captured['shapeLoadErrors']}")
 
     records: list[tuple[str, str, list[str], str]] = []
     shape_count = 0
     for library in captured["libraries"]:
         xml = library["xml"]
-        names = [shape.get("name") or "Unnamed Shape" for shape in ET.fromstring(xml)]
+        names = [catalog_name(shape.get("name")) for shape in ET.fromstring(xml)]
         if not names:
             continue
         payload = base64.b64encode(

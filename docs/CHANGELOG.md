@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io BPMN 2 tasks, SysML models and Android mockup bars now
+  capture native geometry for LibreOffice. Capture loaded only
+  `shapes/*.js` and had no `mxCellRenderer.getShape`, so
+  `mxBpmnShape2.js` could not extend `mxgraph.basic.rect`, SysML
+  `composite` had no `paintVertexShape`, and vertex-cell mockups
+  that use built-in rectangles were dropped as empty. LibreOffice
+  only calls `VisioDocument::parse`, so Draw never saw those types.
+  Grapheditor `Shapes.js` now loads first, `getShape` is wired, and
+  composite cells fall back to XML stencils or a rectangle. A second
+  save keeps the geometry.
 - Overlapping draw.io fills now stay solid in LibreOffice.
   Similar-sized blobs (CloudFront, duplicate AWS decorations) are
   still several `NoFill=0` Geometry rows after nested interiors are

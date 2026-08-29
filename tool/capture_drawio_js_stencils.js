@@ -101,6 +101,17 @@ class CanvasRecorder {
   // also call image(); dropping the whole parent would hide Kubernetes / AWS
   // product icons that still have vector geometry.
   image() {}
+  scale() {}
+  rotate() {}
+  setFillStyle() {}
+  setStrokeAlpha() {}
+  setFontBackgroundColor() {}
+  setFontBorderColor() {}
+  setShadowColor() {}
+  setShadowAlpha() {}
+  setShadowOffset() {}
+  setTitle() {}
+  setLink() {}
   text(x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation) {
     this.finishPath();
     const s = String(str ?? '');
@@ -327,35 +338,54 @@ for (const file of fs.readdirSync(stencilRoot, {recursive: true}).filter((name) 
   } catch (_) {}
 }
 
-function mxShape() { this.style = {}; }
+function mxShape() { this.style = {}; this.scale = 1; this.strokewidth = 1; }
 mxShape.prototype.getTextRotation = function() { return 0; };
 mxShape.prototype.isHtmlAllowed = function() { return false; };
 mxShape.prototype.getShapeRotation = function() { return 0; };
 mxShape.prototype.configureCanvas = function() {};
 mxShape.prototype.updateTransform = function() {};
 mxShape.prototype.getArcSize = function(w, h) { return Math.min(w, h) * 0.1; };
+mxShape.prototype.paintBackground = function() {};
+mxShape.prototype.paintForeground = function() {};
+mxShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+  this.paintBackground(c, x, y, w, h);
+  if (c && c.setShadow) c.setShadow(false);
+  this.paintForeground(c, x, y, w, h);
+};
 
 const baseNames = [
-  'mxActor', 'mxArrow', 'mxArrowConnector', 'mxCylinder', 'mxDoubleEllipse',
-  'mxEllipse', 'mxImageShape', 'mxLabel', 'mxRectangleShape', 'mxRhombus',
-  'mxSwimlane',
+  'mxActor', 'mxArrow', 'mxArrowConnector', 'mxCloud', 'mxConnector',
+  'mxCylinder', 'mxDoubleEllipse', 'mxEllipse', 'mxHexagon', 'mxImageShape',
+  'mxLabel', 'mxLine', 'mxPolyline', 'mxRectangleShape', 'mxRhombus',
+  'mxSwimlane', 'mxTriangle',
 ];
 
 function createBaseShape(name) {
   function BaseShape() { mxShape.call(this); }
   BaseShape.prototype = Object.create(mxShape.prototype);
   BaseShape.prototype.constructor = BaseShape;
-  if (name === 'mxEllipse' || name === 'mxDoubleEllipse') {
+  if (name === 'mxEllipse' || name === 'mxDoubleEllipse' || name === 'mxCloud') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.ellipse(x, y, w, h); c.fillAndStroke();
     };
-  } else if (name === 'mxRhombus') {
+  } else if (name === 'mxRhombus' || name === 'mxHexagon' || name === 'mxTriangle') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.begin(); c.moveTo(x + w / 2, y); c.lineTo(x + w, y + h / 2);
       c.lineTo(x + w / 2, y + h); c.lineTo(x, y + h / 2); c.close();
       c.fillAndStroke();
     };
-  } else if (name === 'mxRectangleShape' || name === 'mxLabel' || name === 'mxSwimlane') {
+  } else if (name === 'mxCylinder') {
+    BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      c.ellipse(x, y, w, h * 0.25); c.fillAndStroke();
+      c.rect(x, y + h * 0.125, w, h * 0.75); c.fillAndStroke();
+      c.ellipse(x, y + h * 0.75, w, h * 0.25); c.fillAndStroke();
+    };
+  } else if (
+    name === 'mxRectangleShape' || name === 'mxLabel' || name === 'mxSwimlane' ||
+    name === 'mxConnector' || name === 'mxLine' || name === 'mxPolyline' ||
+    name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape' ||
+    name === 'mxActor'
+  ) {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.rect(x, y, w, h); c.fillAndStroke();
     };
@@ -382,36 +412,53 @@ const mxConstants = loadMxConstants(
 );
 
 const registry = {};
+function registerShape(name, ctor) { registry[name] = ctor; }
+function getShape(name) { return name != null ? registry[name] : null; }
+const mxCellRenderer = {
+  defaultShapes: registry,
+  registerShape,
+  getShape,
+};
+mxCellRenderer.prototype = mxCellRenderer;
+
+const mxUtilsBase = {
+  extend(child, parent) {
+    child.prototype = Object.create((parent || mxShape).prototype);
+    child.prototype.constructor = child;
+  },
+  getValue(style, key, fallback) {
+    return style && style[key] != null ? style[key] : fallback;
+  },
+  getNumber(style, key, fallback) {
+    const value = style && style[key] != null ? Number(style[key]) : fallback;
+    return Number.isFinite(value) ? value : fallback;
+  },
+  getColorValue(style, key, fallback) {
+    return style && style[key] != null ? style[key] : fallback;
+  },
+  getSizeForString(value, fontSize) {
+    const size = Number(fontSize) || 12;
+    return {width: String(value || '').length * size * 0.6, height: size * 1.2};
+  },
+  parseColorList(value) {
+    return String(value || '').split(/[\s,]+/).filter(Boolean);
+  },
+  clone(value) { return {...value}; },
+  bind(scope, fn) { return fn.bind(scope); },
+  isNode() { return false; },
+  indexOf(arr, item) { return arr.indexOf(item); },
+};
+const mxUtils = new Proxy(mxUtilsBase, {
+  get(target, prop) {
+    if (prop in target) return target[prop];
+    return () => null;
+  },
+});
+
 const shapeContext = {
   mxShape,
-  mxUtils: {
-    extend(child, parent) {
-      child.prototype = Object.create(parent.prototype);
-      child.prototype.constructor = child;
-    },
-    getValue(style, key, fallback) {
-      return style && style[key] != null ? style[key] : fallback;
-    },
-    getNumber(style, key, fallback) {
-      const value = style && style[key] != null ? Number(style[key]) : fallback;
-      return Number.isFinite(value) ? value : fallback;
-    },
-    getColorValue(style, key, fallback) {
-      return style && style[key] != null ? style[key] : fallback;
-    },
-    getSizeForString(value, fontSize) {
-      const size = Number(fontSize) || 12;
-      return {width: String(value || '').length * size * 0.6, height: size * 1.2};
-    },
-    parseColorList(value) {
-      return String(value || '').split(/[\s,]+/).filter(Boolean);
-    },
-    clone(value) { return {...value}; },
-  },
-  mxCellRenderer: {
-    defaultShapes: registry,
-    registerShape(name, ctor) { registry[name] = ctor; },
-  },
+  mxUtils,
+  mxCellRenderer,
   mxConstants,
   mxPoint: function(x, y) { this.x = x; this.y = y; },
   mxRectangle: function(x, y, width, height) {
@@ -431,12 +478,52 @@ const shapeContext = {
     },
   },
   GRAPH_IMAGE_PATH: '',
-  Graph: {handleFactory: {}, createHandle() { return {}; }},
-  document: {createElement: () => ({style: {}})},
+  Graph: Object.assign(function Graph() {}, {
+    handleFactory: {},
+    createHandle() { return {}; },
+    createSvgImage() { return {src: ''}; },
+    prototype: {
+      getPreferredSizeForCell() { return null; },
+    },
+  }),
+  document: {createElement: () => ({style: {}, getElementsByTagName: () => []})},
   window: {},
   console,
+  mxEvent: {addListener() {}, removeListener() {}, consume() {}, addGestureListeners() {}},
+  mxPerimeter: new Proxy({}, {get: () => function() { return null; }}),
+  mxEdgeStyle: new Proxy({}, {get: () => function() {}}),
+  mxStyleRegistry: {putValue() {}, getValue() { return null; }},
+  mxResources: {get: (key) => String(key)},
+  mxObjectIdentity: {get: (obj) => String(obj)},
+  mxGraph: function() {},
+  mxHandle: function() {},
+  mxSvgCanvas2D: function() {},
+  mxText: function() {},
+  mxCellEditor: function() {},
+  mxEdgeHandler: function() {},
+  mxElbowEdgeHandler: function() {},
+  mxVertexHandler: function() {},
 };
 for (const name of baseNames) shapeContext[name] = createBaseShape(name);
+const RectShape = shapeContext.mxRectangleShape;
+const EllipseShape = shapeContext.mxEllipse;
+const RhombusShape = shapeContext.mxRhombus;
+registerShape(mxConstants.SHAPE_RECTANGLE, RectShape);
+registerShape(mxConstants.SHAPE_ELLIPSE, EllipseShape);
+registerShape(mxConstants.SHAPE_DOUBLE_ELLIPSE, shapeContext.mxDoubleEllipse);
+registerShape(mxConstants.SHAPE_RHOMBUS, RhombusShape);
+registerShape(mxConstants.SHAPE_IMAGE, RectShape);
+registerShape(mxConstants.SHAPE_LABEL, RectShape);
+registerShape(mxConstants.SHAPE_ACTOR, shapeContext.mxActor);
+registerShape(mxConstants.SHAPE_CYLINDER, shapeContext.mxCylinder);
+registerShape(mxConstants.SHAPE_SWIMLANE, shapeContext.mxSwimlane);
+registerShape(mxConstants.SHAPE_TRIANGLE, shapeContext.mxTriangle);
+registerShape(mxConstants.SHAPE_HEXAGON, shapeContext.mxHexagon);
+registerShape(mxConstants.SHAPE_CLOUD, shapeContext.mxCloud);
+registerShape(mxConstants.SHAPE_LINE, shapeContext.mxLine);
+registerShape('rect', RectShape);
+registerShape('image', RectShape);
+registerShape('cylinder', shapeContext.mxCylinder);
 vm.createContext(shapeContext);
 
 function recursiveJs(root) {
@@ -445,12 +532,24 @@ function recursiveJs(root) {
 }
 
 const loadErrors = [];
-for (const file of recursiveJs(shapeRoot)) {
+function loadJs(file, source) {
   try {
-    vm.runInContext(fs.readFileSync(path.join(shapeRoot, file), 'utf8'), shapeContext, {filename: file});
+    vm.runInContext(fs.readFileSync(source, 'utf8'), shapeContext, {filename: file});
   } catch (error) {
     loadErrors.push({file, error: String(error)});
   }
+}
+loadJs(
+  'js/grapheditor/Shapes.js',
+  path.join(webapp, 'js/grapheditor/Shapes.js'),
+);
+if (!registry['mxgraph.basic.rect']) registerShape('mxgraph.basic.rect', RectShape);
+if (!registry.note) registerShape('note', RectShape);
+if (!registry.folder) registerShape('folder', RectShape);
+if (!registry.partialRectangle) registerShape('partialRectangle', RectShape);
+if (!registry.cylinder) registerShape('cylinder', shapeContext.mxCylinder);
+for (const file of recursiveJs(shapeRoot)) {
+  loadJs(file, path.join(shapeRoot, file));
 }
 
 function Geometry(x, y, width, height) {
@@ -561,14 +660,50 @@ for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js
 }
 
 const renderStats = {notVertex: 0, noStyle: 0, unregistered: 0, noPainter: 0, paintError: 0, noGeometry: 0};
+const unregisteredShapes = {};
+const noGeometryEntries = [];
+const noPainterEntries = [];
 const paintErrors = [];
 const paintErrorCounts = {};
-function paintRegistered(style, width, height, canvas, x = 0, y = 0) {
-  const ctor = registry[style.shape];
+function isGenericStyle(style) {
+  const name = style && style.shape;
+  return name == null || name === '' || name === 'rectangle' ||
+    name === 'label' || name === 'image' || name === 'rect';
+}
+
+function recordingCanvas() {
+  const canvas = new CanvasRecorder();
+  return new Proxy(canvas, {
+    get(target, prop) {
+      if (prop in target) {
+        const value = target[prop];
+        return typeof value === 'function' ? value.bind(target) : value;
+      }
+      if (typeof prop === 'string') return function() {};
+      return undefined;
+    },
+  });
+}
+
+function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) {
+  const name = style && style.shape;
+  let ctor = name ? registry[name] : null;
+  if (!ctor && opts.allowStencil && name) {
+    const stencil = stencilMap[String(name).toLowerCase()];
+    if (stencil) {
+      stencil.drawShape(canvas, null, x, y, width, height);
+      canvas.finish();
+      return {};
+    }
+  }
+  if (!ctor && opts.fallbackRect) {
+    ctor = registry[mxConstants.SHAPE_RECTANGLE];
+  }
   if (!ctor) return null;
-  if (!ctor.prototype.paintVertexShape) return null;
+  if (typeof ctor.prototype.paintVertexShape !== 'function') return null;
   const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
   shape.style = style;
+  shape.scale = 1;
   shape.state = {style, view: {graph: {getLabel() { return ''; }}}};
   try {
     shape.paintVertexShape(canvas, x, y, width, height);
@@ -576,7 +711,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0) {
     renderStats.paintError++;
     const errorKey = String(error);
     paintErrorCounts[errorKey] = (paintErrorCounts[errorKey] || 0) + 1;
-    if (paintErrors.length < 30) paintErrors.push({shape: style.shape, error: String(error)});
+    if (paintErrors.length < 30) paintErrors.push({shape: name, error: String(error)});
     return false;
   }
   canvas.finish();
@@ -584,7 +719,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0) {
 }
 
 function renderEntry(entry) {
-  const canvas = new CanvasRecorder();
+  const canvas = recordingCanvas();
   let width;
   let height;
   let shape = null;
@@ -592,9 +727,26 @@ function renderEntry(entry) {
   if (entry.kind === 'vertex') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
     style = parseStyle(entry.style);
+    if (isGenericStyle(style)) {
+      renderStats.unregistered++;
+      const key = String(style.shape || '(none)');
+      unregisteredShapes[key] = (unregisteredShapes[key] || 0) + 1;
+      return null;
+    }
     const ctor = registry[style.shape];
-    if (!ctor) { renderStats.unregistered++; return null; }
-    if (!ctor.prototype.paintVertexShape) { renderStats.noPainter++; return null; }
+    if (!ctor) {
+      renderStats.unregistered++;
+      const key = String(style.shape || '(none)');
+      unregisteredShapes[key] = (unregisteredShapes[key] || 0) + 1;
+      return null;
+    }
+    if (typeof ctor.prototype.paintVertexShape !== 'function') {
+      renderStats.noPainter++;
+      if (noPainterEntries.length < 20) {
+        noPainterEntries.push({title: entry.title, shape: style.shape});
+      }
+      return null;
+    }
     width = Math.max(1, Number(entry.width) || 100);
     height = Math.max(1, Number(entry.height) || 100);
     shape = paintRegistered(style, width, height, canvas);
@@ -610,7 +762,10 @@ function renderEntry(entry) {
       const cellWidth = Math.max(1, Number(cell.geometry.width) || width);
       const cellHeight = Math.max(1, Number(cell.geometry.height) || height);
       const cellStyle = parseStyle(cell.style);
-      const result = paintRegistered(cellStyle, cellWidth, cellHeight, canvas, x, y);
+      const result = paintRegistered(
+        cellStyle, cellWidth, cellHeight, canvas, x, y,
+        {fallbackRect: true, allowStencil: true},
+      );
       if (result) painted = true;
       for (const child of cell.children || []) visit(child, x, y);
     };
@@ -622,6 +777,13 @@ function renderEntry(entry) {
   }
   if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse|text)\b/.test(operation))) {
     renderStats.noGeometry++;
+    if (noGeometryEntries.length < 40) {
+      noGeometryEntries.push({
+        title: entry.title,
+        shape: style && style.shape,
+        ops: canvas.operations.slice(0, 20),
+      });
+    }
     return null;
   }
   let connections = '';
@@ -651,7 +813,7 @@ for (const family of captured) {
     for (const entry of palette.entries) {
       const rendered = renderEntry(entry);
       if (!rendered) continue;
-      const base = String(entry.title || 'Unnamed Shape').trim() || 'Unnamed Shape';
+      const base = String(entry.title || 'Unnamed Shape').replace(/\s+/g, ' ').trim() || 'Unnamed Shape';
       const count = (names.get(base) || 0) + 1;
       names.set(base, count);
       const name = count === 1 ? base : `${base} (${count})`;
@@ -678,6 +840,9 @@ const result = {
   renderStats,
   paintErrors,
   paintErrorCounts,
+  unregisteredShapes,
+  noGeometryEntries,
+  noPainterEntries,
   libraries,
 };
 if (process.argv.includes('--summary')) {
