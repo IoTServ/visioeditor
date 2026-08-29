@@ -24,7 +24,8 @@ function xmlEscape(value) {
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
     .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
+    .replaceAll('"', '&quot;')
+    .replaceAll('\n', '&#10;');
 }
 
 function number(value) {
@@ -39,7 +40,7 @@ class CanvasRecorder {
     this.operations = [];
     this.pathOpen = false;
     this.externalAsset = false;
-    this.state = {fillColor: '#ffffff', strokeColor: '#000000'};
+    this.state = {fillColor: '#ffffff', strokeColor: '#000000', fontSize: 12, fontStyle: 0};
   }
 
   save() {
@@ -78,23 +79,53 @@ class CanvasRecorder {
   close() { this.operations.push('<close/>'); }
   rect(x, y, w, h) {
     this.finishPath();
+    if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
     this.operations.push(`<rect x="${number(this.x(x))}" y="${number(this.y(y))}" w="${number(w)}" h="${number(h)}"/>`);
   }
   roundrect(x, y, w, h, rx, ry) {
     this.finishPath();
+    if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
     const arc = Math.min(100, 100 * Math.max(Number(rx) || 0, Number(ry) || 0) /
       Math.max(1e-9, Math.min(Math.abs(Number(w) || 0), Math.abs(Number(h) || 0))));
     this.operations.push(`<roundrect x="${number(this.x(x))}" y="${number(this.y(y))}" w="${number(w)}" h="${number(h)}" arcsize="${number(arc)}"/>`);
   }
   ellipse(x, y, w, h) {
     this.finishPath();
+    if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
     this.operations.push(`<ellipse x="${number(this.x(x))}" y="${number(this.y(y))}" w="${number(w)}" h="${number(h)}"/>`);
   }
   fill() { this.finishPath(); this.operations.push('<fill/>'); }
   stroke() { this.finishPath(); this.operations.push('<stroke/>'); }
   fillAndStroke() { this.finishPath(); this.operations.push('<fillstroke/>'); }
-  image() { this.externalAsset = true; }
-  text() {}
+  // Raster images stay out of the vector capture. Nested mxStencil painters
+  // also call image(); dropping the whole parent would hide Kubernetes / AWS
+  // product icons that still have vector geometry.
+  image() {}
+  text(x, y, w, h, str, align, valign, wrap, format, overflow, clip, rotation) {
+    this.finishPath();
+    const s = String(str ?? '');
+    if (!s) return;
+    const horiz = String(align ?? '').toLowerCase();
+    const vert = String(valign ?? '').toLowerCase();
+    const fontSize = Number(this.state.fontSize);
+    if (Number.isFinite(fontSize) && fontSize > 0) {
+      this.operations.push(`<fontsize size="${number(fontSize)}"/>`);
+    }
+    const fontStyle = Number(this.state.fontStyle);
+    if (Number.isFinite(fontStyle) && fontStyle !== 0) {
+      this.operations.push(`<fontstyle style="${number(fontStyle)}"/>`);
+    }
+    const rot = Number(rotation);
+    const attrs = [
+      `x="${number(this.x(x))}"`,
+      `y="${number(this.y(y))}"`,
+      `str="${xmlEscape(s)}"`,
+      `align="${horiz.includes('center') ? 'center' : horiz.includes('right') ? 'right' : 'left'}"`,
+      `valign="${vert.includes('middle') ? 'middle' : vert.includes('bottom') ? 'bottom' : 'top'}"`,
+    ];
+    if (Number.isFinite(rot) && rot !== 0) attrs.push(`rotation="${number(rot)}"`);
+    this.operations.push(`<text ${attrs.join(' ')}/>`);
+  }
 
   setAlpha(value) { this.state.alpha = value; }
   setFillAlpha(value) { this.state.fillAlpha = value; }
@@ -107,10 +138,11 @@ class CanvasRecorder {
   setLineJoin() {}
   setMiterLimit() {}
   setShadow() {}
+  setDashPattern() {}
   setFontColor() {}
   setFontFamily() {}
-  setFontSize() {}
-  setFontStyle() {}
+  setFontSize(value) { this.state.fontSize = value; }
+  setFontStyle(value) { this.state.fontStyle = value; }
 
   x(value) { return (Number(value) || 0) + this.tx; }
   y(value) { return (Number(value) || 0) + this.ty; }
@@ -126,6 +158,173 @@ class CanvasRecorder {
     }
   }
   finish() { this.finishPath(); }
+}
+
+function decodeXml(value) {
+  return String(value)
+    .replaceAll('&quot;', '"')
+    .replaceAll('&apos;', "'")
+    .replaceAll('&lt;', '<')
+    .replaceAll('&gt;', '>')
+    .replaceAll('&#10;', '\n')
+    .replaceAll('&amp;', '&');
+}
+
+function parseAttributes(source) {
+  const attrs = {};
+  const re = /([A-Za-z_:][\w:.-]*)\s*=\s*"([^"]*)"/g;
+  let match;
+  while ((match = re.exec(source))) attrs[match[1]] = decodeXml(match[2]);
+  return attrs;
+}
+
+function parseXml(xml) {
+  const cleaned = String(xml).replace(/<\?[\s\S]*?\?>/g, '').replace(/<!--[\s\S]*?-->/g, '');
+  const root = {name: '#root', attrs: {}, children: []};
+  const stack = [root];
+  const re = /<(\/)?([A-Za-z_][\w:.-]*)([^>]*?)(\/)?>|([^<]+)/g;
+  let match;
+  while ((match = re.exec(cleaned))) {
+    if (match[5] != null) continue;
+    if (match[1]) {
+      if (stack.length > 1) stack.pop();
+      continue;
+    }
+    const node = {name: match[2], attrs: parseAttributes(match[3] || ''), children: []};
+    stack[stack.length - 1].children.push(node);
+    if (!match[4]) stack.push(node);
+  }
+  return root;
+}
+
+function attrNum(node, key, fallback = 0) {
+  const value = Number(node.attrs[key]);
+  return Number.isFinite(value) ? value : fallback;
+}
+
+const stencilMap = {};
+
+class NestedStencil {
+  constructor(desc) {
+    this.w0 = Number(desc.attrs.w) || 100;
+    this.h0 = Number(desc.attrs.h) || 100;
+    this.aspect = desc.attrs.aspect || 'variable';
+    this.bgNode = desc.children.find((child) => child.name === 'background');
+    this.fgNode = desc.children.find((child) => child.name === 'foreground');
+  }
+
+  drawShape(canvas, shape, x, y, w, h) {
+    if (!(w > 0) || !(h > 0)) return;
+    let sx = w / this.w0;
+    let sy = h / this.h0;
+    let x0 = x;
+    let y0 = y;
+    if (this.aspect === 'fixed') {
+      const scale = Math.min(sx, sy);
+      sx = scale;
+      sy = scale;
+      x0 += (w - this.w0 * scale) / 2;
+      y0 += (h - this.h0 * scale) / 2;
+    }
+    const aspect = {x: x0, y: y0, width: sx, height: sy};
+    this.drawChildren(canvas, this.bgNode, aspect);
+    this.drawChildren(canvas, this.fgNode, aspect);
+  }
+
+  drawChildren(canvas, node, aspect) {
+    if (!node) return;
+    for (const child of node.children) this.drawNode(canvas, child, aspect);
+  }
+
+  drawNode(canvas, node, aspect) {
+    const name = node.name;
+    const x0 = aspect.x;
+    const y0 = aspect.y;
+    const sx = aspect.width;
+    const sy = aspect.height;
+    const minScale = Math.min(sx, sy);
+    const X = (key) => x0 + attrNum(node, key) * sx;
+    const Y = (key) => y0 + attrNum(node, key) * sy;
+    if (name === 'save') canvas.save();
+    else if (name === 'restore') canvas.restore();
+    else if (name === 'path') {
+      canvas.begin();
+      for (const child of node.children) this.drawNode(canvas, child, aspect);
+    } else if (name === 'close') canvas.close();
+    else if (name === 'move') canvas.moveTo(X('x'), Y('y'));
+    else if (name === 'line') canvas.lineTo(X('x'), Y('y'));
+    else if (name === 'quad') {
+      canvas.quadTo(X('x1'), Y('y1'), X('x2'), Y('y2'));
+    } else if (name === 'curve') {
+      canvas.curveTo(X('x1'), Y('y1'), X('x2'), Y('y2'), X('x3'), Y('y3'));
+    } else if (name === 'arc') {
+      canvas.arcTo(
+        attrNum(node, 'rx') * sx,
+        attrNum(node, 'ry') * sy,
+        attrNum(node, 'x-axis-rotation'),
+        attrNum(node, 'large-arc-flag'),
+        attrNum(node, 'sweep-flag'),
+        X('x'),
+        Y('y'),
+      );
+    } else if (name === 'rect') {
+      canvas.rect(X('x'), Y('y'), attrNum(node, 'w') * sx, attrNum(node, 'h') * sy);
+    } else if (name === 'roundrect') {
+      const width = attrNum(node, 'w') * sx;
+      const height = attrNum(node, 'h') * sy;
+      let arcsize = attrNum(node, 'arcsize');
+      if (arcsize === 0) arcsize = 10;
+      const radius = Math.min(width, height) * arcsize / 100;
+      canvas.roundrect(X('x'), Y('y'), width, height, radius, radius);
+    } else if (name === 'ellipse') {
+      canvas.ellipse(X('x'), Y('y'), attrNum(node, 'w') * sx, attrNum(node, 'h') * sy);
+    } else if (name === 'text') {
+      const str = node.attrs.str || '';
+      if (!str) return;
+      let rotation = node.attrs.vertical === '1' ? -90 : 0;
+      rotation -= Number(node.attrs.rotation || 0);
+      canvas.text(
+        X('x'), Y('y'), 0, 0, str,
+        node.attrs.align || 'left',
+        node.attrs.valign || 'top',
+        0, null, 0, 0, rotation,
+      );
+    } else if (name === 'include-shape') {
+      const nested = stencilMap[String(node.attrs.name || '').toLowerCase()];
+      if (nested) {
+        nested.drawShape(
+          canvas, null, X('x'), Y('y'),
+          attrNum(node, 'w') * sx, attrNum(node, 'h') * sy,
+        );
+      }
+    } else if (name === 'fillstroke' || name === 'fillstrokecolor') canvas.fillAndStroke();
+    else if (name === 'fill') canvas.fill();
+    else if (name === 'stroke') canvas.stroke();
+    else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
+    else if (name === 'fontstyle') canvas.setFontStyle(attrNum(node, 'style'));
+  }
+}
+
+function registerShapes(shapesNode) {
+  const pkg = String(shapesNode.attrs.name || '').toLowerCase();
+  const prefix = pkg ? `${pkg}.` : '';
+  for (const shape of shapesNode.children) {
+    if (shape.name !== 'shape' || !shape.attrs.name) continue;
+    const stencilName = String(shape.attrs.name).replace(/ /g, '_').toLowerCase();
+    stencilMap[prefix + stencilName] = new NestedStencil(shape);
+  }
+}
+
+function visitStencilNode(node) {
+  if (node.name === 'shapes') registerShapes(node);
+  for (const child of node.children || []) visitStencilNode(child);
+}
+
+const stencilRoot = path.join(webapp, 'stencils');
+for (const file of fs.readdirSync(stencilRoot, {recursive: true}).filter((name) => String(name).endsWith('.xml')).sort()) {
+  try {
+    visitStencilNode(parseXml(fs.readFileSync(path.join(stencilRoot, file), 'utf8')));
+  } catch (_) {}
 }
 
 function mxShape() { this.style = {}; }
@@ -164,8 +363,25 @@ function createBaseShape(name) {
   return BaseShape;
 }
 
+function loadMxConstants(source) {
+  const constants = {};
+  const re = /^\s*([A-Z][A-Z0-9_]+):\s*(?:'([^']*)'|"([^"]*)"|(-?\d+(?:\.\d+)?))/gm;
+  let match;
+  while ((match = re.exec(source))) {
+    constants[match[1]] = match[2] ?? match[3] ?? Number(match[4]);
+  }
+  return new Proxy(constants, {
+    get(target, key) {
+      return key in target ? target[key] : String(key);
+    },
+  });
+}
+
+const mxConstants = loadMxConstants(
+  fs.readFileSync(path.join(webapp, 'mxgraph/src/util/mxConstants.js'), 'utf8'),
+);
+
 const registry = {};
-const constantProxy = new Proxy({}, {get: (_, key) => String(key)});
 const shapeContext = {
   mxShape,
   mxUtils: {
@@ -187,13 +403,16 @@ const shapeContext = {
       const size = Number(fontSize) || 12;
       return {width: String(value || '').length * size * 0.6, height: size * 1.2};
     },
+    parseColorList(value) {
+      return String(value || '').split(/[\s,]+/).filter(Boolean);
+    },
     clone(value) { return {...value}; },
   },
   mxCellRenderer: {
     defaultShapes: registry,
     registerShape(name, ctor) { registry[name] = ctor; },
   },
-  mxConstants: constantProxy,
+  mxConstants,
   mxPoint: function(x, y) { this.x = x; this.y = y; },
   mxRectangle: function(x, y, width, height) {
     this.x = x; this.y = y; this.width = width; this.height = height;
@@ -205,8 +424,10 @@ const shapeContext = {
   mxClient: {IS_FF: false, IS_SF: false},
   mxMarker: {addMarker() {}},
   mxStencilRegistry: {
-    getStencil() {
-      return {drawShape(canvas) { canvas.externalAsset = true; }};
+    addStencil(name, stencil) { stencilMap[String(name).toLowerCase()] = stencil; },
+    getStencil(name) {
+      if (name == null || name === '') return null;
+      return stencilMap[String(name).toLowerCase()] || null;
     },
   },
   GRAPH_IMAGE_PATH: '',
@@ -295,7 +516,7 @@ Sidebar.prototype.addPalette = function(id, title, expanded, factory) {
 
 const sidebarContext = {
   Sidebar,
-  mxConstants: constantProxy,
+  mxConstants,
   mxResources: {get: (key) => String(key)},
   mxUtils: {
     bind: (scope, fn) => fn.bind(scope),
@@ -348,7 +569,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0) {
   if (!ctor.prototype.paintVertexShape) return null;
   const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
   shape.style = style;
-  shape.state = {style};
+  shape.state = {style, view: {graph: {getLabel() { return ''; }}}};
   try {
     shape.paintVertexShape(canvas, x, y, width, height);
   } catch (error) {
@@ -399,8 +620,7 @@ function renderEntry(entry) {
     renderStats.notVertex++;
     return null;
   }
-  if (canvas.externalAsset) { renderStats.noGeometry++; return null; }
-  if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse)\b/.test(operation))) {
+  if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse|text)\b/.test(operation))) {
     renderStats.noGeometry++;
     return null;
   }

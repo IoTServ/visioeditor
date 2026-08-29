@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(63));
+    expect(dynamic, hasLength(153));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      959,
+      2681,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -245,6 +245,112 @@ void main() {
       leftover.children.any((child) => child.text == 'AND'),
       isTrue,
       reason: 'a second save must keep the IEC AND glyph',
+    );
+  });
+
+  test('empty mxGraph rects do not wipe the pending IEC NAND contour', () {
+    final stencil = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Electrical / Iec Logic Gates',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'NAND');
+    final shape = stencil.build(11, 3, 3);
+    expect(shape.geometries, isNotEmpty);
+    var collapsed = 0;
+    for (final geometry in shape.geometries) {
+      var minX = double.infinity, minY = double.infinity;
+      var maxX = -double.infinity, maxY = -double.infinity;
+      var hasPoint = false;
+      for (final command in geometry.commands) {
+        final x = switch (command) {
+          MoveTo(:final x) => x,
+          LineTo(:final x) => x,
+          _ => null,
+        };
+        final y = switch (command) {
+          MoveTo(:final y) => y,
+          LineTo(:final y) => y,
+          _ => null,
+        };
+        if (x == null || y == null) {
+          hasPoint = true;
+          minX = 0;
+          maxX = 1;
+          break;
+        }
+        hasPoint = true;
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+      if (hasPoint && (maxX - minX) < 1e-9 && (maxY - minY) < 1e-9) {
+        collapsed++;
+      }
+    }
+    expect(collapsed, 0,
+        reason:
+            'a 0×0 <rect/> after restore must not become a degenerate fill');
+  });
+
+  test('JavaScript Canvas text and nested stencils stay in LibreOffice', () {
+    Stencil stencil(String groupName, String shapeName) => dynamic
+        .singleWhere((group) => group.name == groupName)
+        .stencils
+        .singleWhere((entry) => entry.name == shapeName);
+
+    final icStencil = stencil(
+      'Draw.io JS / Electrical / Electrical / Logic Gates',
+      'Dual In-Line IC',
+    );
+    final ic = icStencil.build(20, 3, 3);
+    expect(
+      ic.children.any((child) => child.text == '1'),
+      isTrue,
+      reason: 'mxGraph c.text pin numbers must become child shapes',
+    );
+
+    final pod = stencil(
+      'Draw.io JS / Kubernetes / Kubernetes',
+      'API',
+    ).build(21, 3, 3);
+    expect(pod.geometries.length, greaterThan(2),
+        reason: 'nested mxgraph.kubernetes.frame + icon must be inlined');
+
+    final labeledStencil = stencil(
+      'Draw.io JS / Kubernetes / Kubernetes',
+      'API (2)',
+    );
+    final labeled = labeledStencil.build(22, 3, 3);
+    expect(
+      labeled.children.any((child) => child.text == 'api'),
+      isTrue,
+      reason: 'kubernetesLabel=1 paints c.text("api")',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final icId = doc.pages.first.nextFreeShapeId();
+    var page = doc.pages.first.addShape(icStencil.build(icId, 2, 4));
+    final apiId = page.nextFreeShapeId();
+    page = page.addShape(labeledStencil.build(apiId, 5, 4));
+    doc = doc.replacePage(0, page);
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first;
+    expect(
+      leftover.findShapeById(icId)!.children.any((child) => child.text == '1'),
+      isTrue,
+    );
+    expect(
+      leftover
+          .findShapeById(apiId)!
+          .children
+          .any((child) => child.text == 'api'),
+      isTrue,
     );
   });
 }

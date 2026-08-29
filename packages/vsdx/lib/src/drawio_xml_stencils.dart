@@ -106,10 +106,25 @@ class _DrawioXmlShapeDecoder {
     }
 
     final sourceName = element.getAttribute('name')?.trim();
-    if (_geometries.isEmpty) {
+    if (_geometries.isEmpty && _labels.isEmpty) {
       throw StateError(
         'draw.io stencil ${sourceName ?? id} produced no geometry',
       );
+    }
+    if (_geometries.isEmpty) {
+      // Text-only mxGraph painters (some JS captures) still need a hit box
+      // libvisio can attach Text children to.
+      _geometries.add(VsdxGeometry(
+        noFill: true,
+        noLine: true,
+        commands: <VsdxPathCommand>[
+          const MoveTo(0, 0),
+          LineTo(targetWidth, 0),
+          LineTo(targetWidth, targetHeight),
+          LineTo(0, targetHeight),
+          const LineTo(0, 0),
+        ],
+      ));
     }
     final children = <VsdxShape>[
       for (var i = 0; i < _labels.length; i++)
@@ -130,24 +145,23 @@ class _DrawioXmlShapeDecoder {
       geometries: List<VsdxGeometry>.unmodifiable(_geometries),
       connectionPoints: _connectionPoints(),
       children: children,
-      shapeKind:
-          children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
+      shapeKind: children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
     );
   }
 
   void _consume(XmlElement node) {
     switch (node.name.local) {
       case 'path':
-        _pending = _decodePath(node);
+        _setPending(_decodePath(node));
         break;
       case 'rect':
-        _pending = _decodeRect(node);
+        _setPending(_decodeRect(node));
         break;
       case 'roundrect':
-        _pending = _decodeRoundRect(node);
+        _setPending(_decodeRoundRect(node));
         break;
       case 'ellipse':
-        _pending = _decodeEllipse(node);
+        _setPending(_decodeEllipse(node));
         break;
       case 'fill':
         _finish(fill: true, stroke: false);
@@ -189,6 +203,11 @@ class _DrawioXmlShapeDecoder {
       default:
         break;
     }
+  }
+
+  void _setPending(List<VsdxPathCommand> commands) {
+    if (commands.isEmpty) return;
+    _pending = commands;
   }
 
   void _finish({required bool fill, required bool stroke}) {
@@ -305,8 +324,16 @@ class _DrawioXmlShapeDecoder {
   List<VsdxPathCommand> _decodeRect(XmlElement rect) {
     final left = _number(rect, 'x');
     final top = _number(rect, 'y');
-    final right = left + _number(rect, 'w');
-    final bottom = top + _number(rect, 'h');
+    final width = _number(rect, 'w');
+    final height = _number(rect, 'h');
+    // mxGraph emits <rect/> after restore as a 0×0 no-op. A fallback-0
+    // rectangle would overwrite the pending contour and evenodd-noise the
+    // tile in LibreOffice's concatenated fill path.
+    if (width.abs() < 1e-9 && height.abs() < 1e-9) {
+      return const <VsdxPathCommand>[];
+    }
+    final right = left + width;
+    final bottom = top + height;
     return <VsdxPathCommand>[
       MoveTo(_x(left), _y(top)),
       LineTo(_x(right), _y(top)),
@@ -321,6 +348,9 @@ class _DrawioXmlShapeDecoder {
     final top = _number(rect, 'y');
     final width = _number(rect, 'w').abs();
     final height = _number(rect, 'h').abs();
+    if (width < 1e-9 && height < 1e-9) {
+      return const <VsdxPathCommand>[];
+    }
     final right = left + width;
     final bottom = top + height;
     final arcSize = _number(rect, 'arcsize', fallback: 15).clamp(0.0, 100.0);
@@ -372,6 +402,9 @@ class _DrawioXmlShapeDecoder {
     final top = _number(ellipse, 'y');
     final width = _number(ellipse, 'w');
     final height = _number(ellipse, 'h');
+    if (width.abs() < 1e-9 && height.abs() < 1e-9) {
+      return const <VsdxPathCommand>[];
+    }
     final cx = left + width / 2;
     final cy = top + height / 2;
     return <VsdxPathCommand>[
@@ -405,7 +438,8 @@ class _DrawioXmlShapeDecoder {
   }) {
     final fontInches =
         math.max(0.04, label.fontSize * math.min(scaleX, scaleY));
-    final width = math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
+    final width =
+        math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
     final height = fontInches * 1.4;
     final x = _x(label.x);
     final y = _y(label.y);

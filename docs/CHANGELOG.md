@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io JavaScript Canvas shapes now keep `c.text` glyphs and nested
+  mxStencil icons in LibreOffice. Capture used to ignore `canvas.text()`,
+  treat `getStencil` as an external asset (dropping Kubernetes / Cisco /
+  AWS product icons), and decode empty `<rect/>` as a 0×0 contour that
+  overwrote the pending path. LibreOffice only calls
+  `VisioDocument::parse`, so Draw never saw pin numbers or inlined icons.
+  Nested XML stencils are now painted at capture time, authored strings
+  stay on child shapes, and a second save keeps both.
 - draw.io stencil `<text>` glyphs now stay visible in LibreOffice.
   mxGraph stencils (IEC AND/NAND labels, mockup calendars, instrument
   tags) paint those strings after a `fill` / `stroke`, but the decoder
