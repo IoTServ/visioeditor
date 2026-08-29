@@ -92,6 +92,9 @@ class _DrawioXmlShapeDecoder {
   VsdxColor? _strokeColor;
   bool _fillIsNone = false;
   bool _strokeIsNone = false;
+  double _overallAlpha = 1;
+  double _fillAlpha = 1;
+  double _strokeAlpha = 1;
   double? _strokeWidth;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
@@ -281,6 +284,15 @@ class _DrawioXmlShapeDecoder {
       case 'fillgradient':
         _applyMxFillGradient(node);
         break;
+      case 'alpha':
+        _overallAlpha = _alphaValue(node);
+        break;
+      case 'fillalpha':
+        _fillAlpha = _alphaValue(node);
+        break;
+      case 'strokealpha':
+        _strokeAlpha = _alphaValue(node);
+        break;
       case 'strokecolor':
         _applyMxStroke(node.getAttribute('color'));
         break;
@@ -319,6 +331,8 @@ class _DrawioXmlShapeDecoder {
       // `fillgradient` bakes FillPattern 25–34 so libvisio's two-stop
       // linear (`_fillAndShadowProperties`) keeps AWS brand ramps;
       // `applyStencilStyle.withSolidForeground` would otherwise beige them.
+      // `alpha` / `fillalpha` / `strokealpha` become FillForegndTrans /
+      // LineColorTrans that `_fillAndShadowProperties` maps to draw:opacity.
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -423,12 +437,37 @@ class _DrawioXmlShapeDecoder {
   }
 
   VsdxFill _paintFill() {
-    if (_fillOverride != null) return _fillOverride!;
+    final trans = _fillTransparency;
+    if (_fillOverride != null) {
+      final fill = _fillOverride!;
+      if (trans <= 1e-9) return fill;
+      return fill.copyWith(
+        foregroundTransparency:
+            (1 - (1 - fill.foregroundTransparency) * (1 - trans))
+                .clamp(0.0, 1.0),
+        backgroundTransparency:
+            (1 - (1 - fill.backgroundTransparency) * (1 - trans))
+                .clamp(0.0, 1.0),
+      );
+    }
     if (_fillColor != null) {
-      return VsdxFill(foreground: _fillColor, pattern: 1);
+      return VsdxFill(
+        foreground: _fillColor,
+        pattern: 1,
+        foregroundTransparency: trans,
+      );
     }
     return VsdxFill.defaultFill;
   }
+
+  double get _fillTransparency =>
+      (1 - (_overallAlpha * _fillAlpha).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+
+  double get _strokeTransparency =>
+      (1 - (_overallAlpha * _strokeAlpha).clamp(0.0, 1.0)).clamp(0.0, 1.0);
+
+  double _alphaValue(XmlElement node) =>
+      _number(node, 'alpha', fallback: 1).clamp(0.0, 1.0).toDouble();
 
   void _applyMxStroke(String? raw) {
     final token = (raw ?? '').trim();
@@ -488,6 +527,9 @@ class _DrawioXmlShapeDecoder {
         : VsdxLine.defaultLine;
     if (_strokeWidth != null) {
       line = line.copyWith(weightInches: _strokeWeightInches);
+    }
+    if (_strokeTransparency > 1e-9) {
+      line = line.copyWith(transparency: _strokeTransparency);
     }
     return line;
   }

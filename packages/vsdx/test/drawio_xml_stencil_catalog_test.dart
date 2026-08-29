@@ -738,6 +738,98 @@ void main() {
     );
   });
 
+  test('mxStencil fillalpha stays FillForegndTrans for LibreOffice', () {
+    final router = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Rack / Cisco')
+        .stencils
+        .singleWhere(
+          (entry) =>
+              entry.name == 'Cisco 1905 Serial Integrated Services Router',
+        )
+        .build(84, 3, 3);
+    expect(
+      router.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == VsdxColor.black &&
+            child.fill.foregroundTransparency > 0.7 &&
+            child.fill.foregroundTransparency < 0.85,
+      ),
+      isTrue,
+      reason: 'fillalpha 0.232 must reach collectFillAndShadow as '
+          'FillForegndTrans, not an opaque black overlay',
+    );
+
+    final docs = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Google Material Design',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'docs')
+        .build(85, 3, 3);
+    expect(
+      docs.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == VsdxColor.white &&
+            (child.fill.foregroundTransparency - 0.5).abs() < 0.02,
+      ),
+      isTrue,
+      reason: 'gmdl docs fold uses alpha 0.5 on fillcolor #ffffff',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere((group) => group.name == 'Draw.io / Rack / Cisco')
+            .stencils
+            .singleWhere(
+              (entry) =>
+                  entry.name == 'Cisco 1905 Serial Integrated Services Router',
+            )
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == VsdxColor.black &&
+            child.fill.foregroundTransparency > 0.7,
+      ),
+      isTrue,
+      reason: 'a second save must keep the rack overlay FillForegndTrans',
+    );
+
+    final disabled = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Gmdl / GMDL / Buttons',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Raised Button (Pressed) (2)')
+        .build(86, 3, 3);
+    expect(
+      disabled.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == VsdxColor.black &&
+            (child.fill.foregroundTransparency - 0.88).abs() < 0.02,
+      ),
+      isTrue,
+      reason: 'GMDL opacity=12 must become FillForegndTrans 0.88',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

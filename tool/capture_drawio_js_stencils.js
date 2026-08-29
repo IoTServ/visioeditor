@@ -82,10 +82,10 @@ function paintToken(value, styleFill, styleStroke) {
 // Fill must not collapse to 'stroke'. AWS resourceIcon does
 // setFillColor(strokeColor) for the white glyph; that token became
 // inherit FillForegnd and applyStencilStyle painted it as the palette.
-function fillPaintToken(value, styleFill) {
+function fillPaintToken(value, styleFill, forceHex) {
   if (isNoneColor(value)) return 'none';
   const key = cssColorKey(value);
-  if (styleFill != null && key === cssColorKey(styleFill)) return 'fill';
+  if (!forceHex && styleFill != null && key === cssColorKey(styleFill)) return 'fill';
   return String(value);
 }
 
@@ -130,6 +130,9 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._strokeWidthToken = null;
+    this._alphaToken = 1;
+    this._fillAlphaToken = 1;
+    this._strokeAlphaToken = 1;
     this.state = {
       fillColor: '#ffffff',
       strokeColor: '#000000',
@@ -141,6 +144,9 @@ class CanvasRecorder {
       gradientDir: null,
       gradientAlpha1: 1,
       gradientAlpha2: 1,
+      alpha: 1,
+      fillAlpha: 1,
+      strokeAlpha: 1,
     };
   }
 
@@ -329,7 +335,6 @@ class CanvasRecorder {
     );
   }
   setFillStyle() {}
-  setStrokeAlpha() {}
   setFontBackgroundColor() {}
   setFontBorderColor() {}
   setShadowColor() {}
@@ -371,6 +376,9 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._strokeWidthToken = null;
+    this._alphaToken = 1;
+    this._fillAlphaToken = 1;
+    this._strokeAlphaToken = 1;
   }
 
   _emitPaint(tag, token) {
@@ -412,7 +420,11 @@ class CanvasRecorder {
         this._emitFillGradient();
       }
     } else {
-      const fillToken = fillPaintToken(this.state.fillColor, this.styleFill);
+      const fillToken = fillPaintToken(
+        this.state.fillColor,
+        this.styleFill,
+        this._effectiveFillOpacity() < 1 - 1e-9,
+      );
       if (fillToken !== this._fillToken) {
         this._fillToken = fillToken;
         this._emitPaint('fillcolor', fillToken);
@@ -434,17 +446,69 @@ class CanvasRecorder {
       this.finishPath();
       this.operations.push(`<strokewidth width="${number(sw)}"/>`);
     }
+    this._reemitAlpha();
   }
 
-  setAlpha(value) { this.state.alpha = value; }
-  setFillAlpha(value) { this.state.fillAlpha = value; }
+  _effectiveFillOpacity() {
+    const a = Number(this.state.alpha);
+    const f = Number(this.state.fillAlpha);
+    return (Number.isFinite(a) ? a : 1) * (Number.isFinite(f) ? f : 1);
+  }
+
+  _emitAlpha(tag, value) {
+    this.finishPath();
+    this.operations.push(`<${tag} alpha="${number(value)}"/>`);
+  }
+
+  _reemitAlpha() {
+    const a = Number(this.state.alpha);
+    const fa = Number(this.state.fillAlpha);
+    const sa = Number(this.state.strokeAlpha);
+    const alpha = Number.isFinite(a) ? a : 1;
+    const fillAlpha = Number.isFinite(fa) ? fa : 1;
+    const strokeAlpha = Number.isFinite(sa) ? sa : 1;
+    if (alpha !== this._alphaToken) {
+      this._alphaToken = alpha;
+      this._emitAlpha('alpha', alpha);
+    }
+    if (fillAlpha !== this._fillAlphaToken) {
+      this._fillAlphaToken = fillAlpha;
+      this._emitAlpha('fillalpha', fillAlpha);
+    }
+    if (strokeAlpha !== this._strokeAlphaToken) {
+      this._strokeAlphaToken = strokeAlpha;
+      this._emitAlpha('strokealpha', strokeAlpha);
+    }
+  }
+
+  _setAlphaChannel(which, value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return;
+    const clamped = Math.max(0, Math.min(1, n));
+    if (which === 'alpha') this.state.alpha = clamped;
+    else if (which === 'fillalpha') this.state.fillAlpha = clamped;
+    else this.state.strokeAlpha = clamped;
+    const tokenKey = which === 'alpha' ? '_alphaToken'
+      : which === 'fillalpha' ? '_fillAlphaToken' : '_strokeAlphaToken';
+    if (this[tokenKey] === clamped) return;
+    this[tokenKey] = clamped;
+    this._emitAlpha(which, clamped);
+  }
+
+  setAlpha(value) { this._setAlphaChannel('alpha', value); }
+  setFillAlpha(value) { this._setAlphaChannel('fillalpha', value); }
+  setStrokeAlpha(value) { this._setAlphaChannel('strokealpha', value); }
   setFillColor(value) {
     this.state.fillColor = isNoneColor(value) ? null : value;
     this.state.gradientColor = null;
     this.state.gradientDir = null;
     this.state.gradientAlpha1 = 1;
     this.state.gradientAlpha2 = 1;
-    const token = fillPaintToken(value, this.styleFill);
+    const token = fillPaintToken(
+      value,
+      this.styleFill,
+      this._effectiveFillOpacity() < 1 - 1e-9,
+    );
     if (token === this._fillToken) return;
     this._fillToken = token;
     this._emitPaint('fillcolor', token);
@@ -1137,6 +1201,15 @@ class NestedStencil {
       // mxStencil.drawNode: width * (fixed==1 ? 1 : minScale).
       const s = node.attrs.fixed === '1' ? 1 : minScale;
       canvas.setStrokeWidth(attrNum(node, 'width') * s);
+    } else if (name === 'alpha') {
+      canvas.setAlpha(attrNum(node, 'alpha'));
+    } else if (name === 'fillalpha') {
+      // Official drawNode calls setAlpha for fillalpha/strokealpha.
+      // Dedicated channels keep FillForegndTrans vs LineColorTrans
+      // that libvisio _fillAndShadowProperties maps to draw:opacity.
+      canvas.setFillAlpha(attrNum(node, 'alpha'));
+    } else if (name === 'strokealpha') {
+      canvas.setStrokeAlpha(attrNum(node, 'alpha'));
     } else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
     else if (name === 'dashpattern') canvas.setDashed(true);
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
@@ -1182,6 +1255,9 @@ function mxShape() {
   this.flipV = false;
   this.gradient = null;
   this.gradientDirection = null;
+  this.opacity = 100;
+  this.fillOpacity = 100;
+  this.strokeOpacity = 100;
 }
 mxShape.prototype.getTextRotation = function() { return 0; };
 mxShape.prototype.isHtmlAllowed = function() { return false; };
@@ -1194,6 +1270,9 @@ mxShape.prototype.apply = function(state) {
   this.gradientDirection = mxUtils.getValue(
     this.style, mxConstants.STYLE_GRADIENT_DIRECTION, this.gradientDirection,
   );
+  this.opacity = mxUtils.getValue(this.style, mxConstants.STYLE_OPACITY, this.opacity);
+  this.fillOpacity = mxUtils.getValue(this.style, mxConstants.STYLE_FILL_OPACITY, this.fillOpacity);
+  this.strokeOpacity = mxUtils.getValue(this.style, mxConstants.STYLE_STROKE_OPACITY, this.strokeOpacity);
   this.stroke = mxUtils.getValue(this.style, mxConstants.STYLE_STROKECOLOR, this.stroke);
   this.strokewidth = mxUtils.getNumber(this.style, mxConstants.STYLE_STROKEWIDTH, this.strokewidth);
   this.rotation = mxUtils.getValue(this.style, mxConstants.STYLE_ROTATION, this.rotation);
@@ -1215,6 +1294,13 @@ mxShape.prototype.getShapeRotation = function() {
   return rot;
 };
 mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
+  // mxShape.js ~1032: opacity / fillOpacity / strokeOpacity are 0–100.
+  const opacity = Number(this.opacity);
+  const fillOpacity = Number(this.fillOpacity);
+  const strokeOpacity = Number(this.strokeOpacity);
+  if (c.setAlpha && Number.isFinite(opacity)) c.setAlpha(opacity / 100);
+  if (c.setFillAlpha && Number.isFinite(fillOpacity)) c.setFillAlpha(fillOpacity / 100);
+  if (c.setStrokeAlpha && Number.isFinite(strokeOpacity)) c.setStrokeAlpha(strokeOpacity / 100);
   // mxShape.js ~1054: fill + gradientColor calls setGradient, else setFillColor.
   if (this.fill != null && this.fill != mxConstants.NONE &&
       this.gradient && this.gradient != mxConstants.NONE &&
@@ -2201,6 +2287,12 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.fill = fill;
   shape.gradient = stylePaintColor(style.gradientColor, null);
   shape.gradientDirection = style.gradientDirection || mxConstants.DIRECTION_SOUTH;
+  const opacity = Number(style.opacity);
+  const fillOpacity = Number(style.fillOpacity);
+  const strokeOpacity = Number(style.strokeOpacity);
+  shape.opacity = Number.isFinite(opacity) ? opacity : 100;
+  shape.fillOpacity = Number.isFinite(fillOpacity) ? fillOpacity : 100;
+  shape.strokeOpacity = Number.isFinite(strokeOpacity) ? strokeOpacity : 100;
   shape.stroke = stroke;
   shape.strokewidth = Number(style.strokeWidth) || 1;
   shape.isDashed = style.dashed == 1;

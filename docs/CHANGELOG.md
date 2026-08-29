@@ -596,6 +596,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   match `strokeColor` into inherit FillForegnd, so a Sumerian glyph
   and a Note dog-ear stay siblings `collectGeometry` can paint. A
   second save keeps the magenta/pink ramp.
+- draw.io mxStencil `alpha` / `fillalpha` / `strokealpha` now stay
+  native in LibreOffice. `mxStencil.drawNode` calls `setAlpha` /
+  fill / stroke alpha, but capture dropped them and the Dart decoder
+  ignored the nodes, so a Cisco rack overlay (`fillalpha` 0.232) and
+  a GMDL `docs` fold (`alpha` 0.5) painted fully opaque. Those values
+  now become `FillForegndTrans` / `LineColorTrans` that libvisio
+  `_fillAndShadowProperties` maps to ODF `draw:opacity`. Sidebar
+  `opacity=12` GMDL buttons emit the same cells. A second save keeps
+  the wash.
 - draw.io mxStencil `strokewidth` now stays native in LibreOffice.
   `mxStencil.drawNode` calls `setStrokeWidth(width * minScale)`, but
   capture dropped it and the Dart decoder ignored the node, so a
