@@ -722,6 +722,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `style:text-underline-type`. Cell labels now freeze a dashed Line
   sibling (`1 2` → `veDashPattern`) that `collectLine` maps to
   `draw:dots`; Char underline stays off. A second save keeps the dots.
+- draw.io mxText html `text-align` now stays native in LibreOffice.
+  Official `mxText` paints CSS `text-align` on block `<p>` as HTML
+  alignment, but capture used only the cell `align`, so a SysML
+  Stereotype Property Compartment (`property1 = value` is
+  `text-align:left` under a centered title) and Namespace Compartment
+  (`align=left` cell with a centered `<p>`) lost the HorzAlign that
+  `collectParaIX` maps to `fo:text-align`. Cell labels now freeze Para
+  alignment per HTML block; inline `span` `text-align` still inherits
+  the cell. A second save keeps left and center on the same shape.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

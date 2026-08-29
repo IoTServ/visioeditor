@@ -424,6 +424,11 @@ class CanvasRecorder {
     const p = this.map(x, y);
     const rot = (Number(rotation) || 0) + this.rotTheta;
     const htmlOn = format === 'html' || /<[a-zA-Z][\s\S]*>/.test(s);
+    const cellAlign = horiz.includes('center')
+      ? 'center'
+      : horiz.includes('right')
+        ? 'right'
+        : 'left';
     const htmlRuns = htmlOn
       ? parseHtmlLabel(s, {
           fontStyle: Number(this.state.fontStyle) || 0,
@@ -431,6 +436,7 @@ class CanvasRecorder {
           fontSize: this.state.fontSize,
           fontFamily: this.state.fontFamily,
           textOpacity: this.state.textOpacity,
+          align: cellAlign,
         })
       : null;
     if (htmlRuns && htmlRuns.length) {
@@ -441,7 +447,7 @@ class CanvasRecorder {
       `x="${number(p.x)}"`,
       `y="${number(p.y)}"`,
       `str="${xmlEscape(s)}"`,
-      `align="${horiz.includes('center') ? 'center' : horiz.includes('right') ? 'right' : 'left'}"`,
+      `align="${cellAlign}"`,
       `valign="${vert.includes('middle') ? 'middle' : vert.includes('bottom') ? 'bottom' : 'top'}"`,
     ];
     // mxXmlCanvas2D.text: w/h is the cell box. Stencil glyphs pass 0.
@@ -479,7 +485,14 @@ class CanvasRecorder {
     this.state.textOpacity = 100;
     // mxText html=1 paints <b>/<font> as separate collectCharIX rows.
     // One str= run would drop Classifier1 bold and GCP Name's black.
-    if (htmlRuns && htmlLabelRunsDiffer(htmlRuns, this.state)) {
+    if (htmlRuns && htmlLabelRunsDiffer(htmlRuns, {
+      fontStyle: Number(this.state.fontStyle) || 0,
+      fontColor: this.state.fontColor,
+      fontSize: this.state.fontSize,
+      fontFamily: this.state.fontFamily,
+      textOpacity: this.state.textOpacity,
+      align: cellAlign,
+    })) {
       const inner = htmlRuns.map((run) => `<run ${htmlRunAttrs(run)}/>`).join('');
       this.operations.push(`<text ${attrs.join(' ')}>${inner}</text>`);
     } else {
@@ -3094,10 +3107,19 @@ function htmlFontFamily(raw) {
   return fallback;
 }
 
+function htmlAlignToken(raw) {
+  const v = String(raw || '').trim().toLowerCase();
+  if (v === 'center' || v === 'middle') return 'center';
+  if (v === 'right' || v === 'end') return 'right';
+  if (v === 'justify') return 'justify';
+  if (v === 'left' || v === 'start') return 'left';
+  return null;
+}
+
 // mxText HTML/CSS on <p>/<span>/<font>: color, size, weight, italic,
-// text-decoration, font-family. collectCharIX maps Style 0x4 to underline;
-// line-through is Char Strikethru that Draw still paints; family is Char.Font.
-function applyHtmlCss(next, attrs) {
+// text-decoration, font-family, block text-align. collectCharIX maps
+// Style 0x4 to underline; collectParaIX HorzAlign is fo:text-align.
+function applyHtmlCss(next, attrs, tag) {
   const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
   if (color) next.fontColor = color;
   const sizeToken = htmlStyleProp(attrs, 'font-size') || htmlAttr(attrs, 'size');
@@ -3125,6 +3147,15 @@ function applyHtmlCss(next, attrs) {
     const kind = htmlBorderBottomKind(bb);
     if (kind === 'solid') next.fontStyle |= 4;
     else if (kind === 'dotted' || kind === 'dashed') next.borderBottom = kind;
+  }
+  // CSS text-align on inline span is ignored (Bootstrap Alert). Block
+  // <p>/<div> (SysML compartments) map onto collectParaIX HorzAlign.
+  if (tag === 'p' || tag === 'div' || tag === 'td' || tag === 'th' ||
+      tag === 'li' || /^h[1-6]$/.test(tag || '')) {
+    const ta = htmlAlignToken(
+      htmlStyleProp(attrs, 'text-align') || htmlAttr(attrs, 'align'),
+    );
+    if (ta) next.align = ta;
   }
 }
 
@@ -3190,6 +3221,7 @@ function cloneHtmlStyle(style) {
     textOpacity: style.textOpacity,
     position: Number(style.position) || 0,
     borderBottom: style.borderBottom || null,
+    align: style.align || null,
   };
 }
 
@@ -3200,7 +3232,8 @@ function sameHtmlStyle(a, b) {
     && String(a.fontFamily || '') === String(b.fontFamily || '')
     && Number(a.textOpacity) === Number(b.textOpacity)
     && (Number(a.position) || 0) === (Number(b.position) || 0)
-    && String(a.borderBottom || '') === String(b.borderBottom || '');
+    && String(a.borderBottom || '') === String(b.borderBottom || '')
+    && String(a.align || '') === String(b.align || '');
 }
 
 function htmlLabelRunsDiffer(runs, state) {
@@ -3212,6 +3245,7 @@ function htmlLabelRunsDiffer(runs, state) {
     fontSize: state.fontSize,
     fontFamily: state.fontFamily,
     textOpacity: state.textOpacity,
+    align: state.align,
   });
 }
 
@@ -3230,6 +3264,7 @@ function htmlRunAttrs(run) {
   // style:text-position super/sub.
   const pos = Number(run.position) || 0;
   if (pos === 1 || pos === 2) attrs.push(`pos="${pos}"`);
+  if (run.align) attrs.push(`align="${xmlEscape(String(run.align))}"`);
   return attrs.join(' ');
 }
 
@@ -3285,7 +3320,7 @@ function parseHtmlLabel(html, base) {
     else if (tag === 's' || tag === 'strike' || tag === 'del') next.fontStyle |= 8;
     else if (tag === 'sup') next.position = 1;
     else if (tag === 'sub') next.position = 2;
-    applyHtmlCss(next, attrs);
+    applyHtmlCss(next, attrs, tag);
     stack.push(next);
   }
   return runs;

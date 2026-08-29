@@ -654,6 +654,7 @@ class _DrawioXmlShapeDecoder {
             ),
             position:
                 el.getAttribute('pos') == null ? 0 : _number(el, 'pos').round(),
+            align: el.getAttribute('align'),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
@@ -1095,11 +1096,6 @@ class _DrawioXmlShapeDecoder {
         _ => y - height / 2,
       };
     }
-    final horz = switch (label.align) {
-      'center' => VsdxHorzAlign.center,
-      'right' => VsdxHorzAlign.right,
-      _ => VsdxHorzAlign.left,
-    };
     final vert = switch (label.valign) {
       'bottom' => VsdxVertAlign.bottom,
       'middle' => VsdxVertAlign.middle,
@@ -1143,7 +1139,9 @@ class _DrawioXmlShapeDecoder {
                   _ => VsdxTextPosition.normal,
                 },
               ),
-              paraStyle: VsdxParaStyle(horizontalAlign: horz),
+              paraStyle: VsdxParaStyle(
+                horizontalAlign: _mxHorzAlign(run.align ?? label.align),
+              ),
             ),
         ],
         textBlock: VsdxTextBlock(
@@ -1242,6 +1240,7 @@ class _DrawioStencilLabelRun {
     this.color,
     this.textOpacity = 100,
     this.position = 0,
+    this.align,
   });
 
   final String text;
@@ -1253,6 +1252,10 @@ class _DrawioStencilLabelRun {
 
   /// mxText html `<sup>`/`<sub>` → Char.Pos (1 super / 2 sub).
   final int position;
+
+  /// CSS `text-align` on a block tag, else the mxText STYLE_ALIGN.
+  /// collectParaIX HorzAlign maps this to fo:text-align.
+  final String? align;
 }
 
 class _DrawioColoredPart {
@@ -1286,6 +1289,15 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
   }
   return VsdxColor.tryParse(token);
 }
+
+/// mxText CSS `text-align` / STYLE_ALIGN → collectParaIX HorzAlign
+/// (`fo:text-align`).
+VsdxHorzAlign _mxHorzAlign(String? raw) => switch ((raw ?? '').toLowerCase()) {
+      'center' => VsdxHorzAlign.center,
+      'right' => VsdxHorzAlign.right,
+      'justify' => VsdxHorzAlign.justify,
+      _ => VsdxHorzAlign.left,
+    };
 
 /// mxStencil.drawNode fontfamily: strip CSS quotes, first family, map
 /// generic CSS faces onto Visio/libvisio names collectCharIX emits as

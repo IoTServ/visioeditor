@@ -2275,6 +2275,89 @@ void main() {
   );
 
   test(
+    'mxText html text-align stays Para HorzAlign for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final compartment = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Stereotype Property Compartment',
+          )
+          .build(447, 3, 3);
+      expect(
+        runContaining(compartment, 'Block1')!
+            .paraStyle
+            .horizontalAlign,
+        VsdxHorzAlign.center,
+        reason: 'html text-align:center on the title <p> is collectParaIX '
+            'HorzAlign that libvisio maps to fo:text-align',
+      );
+      expect(
+        runContaining(compartment, 'property1 = value')!
+            .paraStyle
+            .horizontalAlign,
+        VsdxHorzAlign.left,
+        reason: 'the next <p text-align:left> must not inherit the cell '
+            'align=center',
+      );
+
+      final namespace = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Namespace Compartment')
+          .build(448, 3, 3);
+      expect(
+        runContaining(namespace, 'Block1')!.paraStyle.horizontalAlign,
+        VsdxHorzAlign.center,
+        reason: 'cell align=left still yields centered HTML <p> titles',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(compartment.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Block1')!.paraStyle.horizontalAlign,
+        VsdxHorzAlign.center,
+        reason: 'a second save must keep HorzAlign center on Block1',
+      );
+      expect(
+        runContaining(leftover, 'property1 = value')!
+            .paraStyle
+            .horizontalAlign,
+        VsdxHorzAlign.left,
+        reason: 'a second save must keep HorzAlign left on the property',
+      );
+    },
+  );
+
+  test(
     'mxText html tables stay row Text boxes for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {
