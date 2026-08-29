@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io stencil `<text>` glyphs now stay visible in LibreOffice.
+  mxGraph stencils (IEC AND/NAND labels, mockup calendars, instrument
+  tags) paint those strings after a `fill` / `stroke`, but the decoder
+  dropped every `<text>` node. LibreOffice only calls
+  `VisioDocument::parse`, so Draw never saw the labels. Authored strings
+  are now child shapes with `FillPattern=0` / `LinePattern=0`
+  that libvisio still collects as Text. The palette title stays off the
+  parent. A second save keeps the children.
 - Isometric compute cubes now stay solid in LibreOffice.
   Three `NoFill=0` faces that share an L-junction became one evenodd
   path in libvisio `collectGeometry` / `_fillAndShadowProperties`

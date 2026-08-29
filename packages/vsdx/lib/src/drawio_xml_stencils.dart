@@ -81,7 +81,10 @@ class _DrawioXmlShapeDecoder {
   late final double scaleY;
 
   final List<VsdxGeometry> _geometries = <VsdxGeometry>[];
+  final List<_DrawioStencilLabel> _labels = <_DrawioStencilLabel>[];
   List<VsdxPathCommand>? _pending;
+  double _fontSize = 12;
+  int _fontStyle = 0;
 
   VsdxShape build(int id, double cx, double cy) {
     final safeWidth =
@@ -108,9 +111,15 @@ class _DrawioXmlShapeDecoder {
         'draw.io stencil ${sourceName ?? id} produced no geometry',
       );
     }
+    final children = <VsdxShape>[
+      for (var i = 0; i < _labels.length; i++)
+        _labelShape(id: id + 1 + i, label: _labels[i]),
+    ];
     // Use Sheet.N like factory / chart stencils. The catalog keeps the
     // human-readable stencil title for the palette; putting it on shape.name
-    // would paint as a label fallback when text is empty.
+    // would paint as a label fallback when text is empty. Authored mxGraph
+    // <text> glyphs (IEC AND, calendar days, …) become children so
+    // LibreOffice's libvisio text collector still paints them.
     return VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -120,6 +129,9 @@ class _DrawioXmlShapeDecoder {
       height: targetHeight,
       geometries: List<VsdxGeometry>.unmodifiable(_geometries),
       connectionPoints: _connectionPoints(),
+      children: children,
+      shapeKind:
+          children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
     );
   }
 
@@ -147,9 +159,33 @@ class _DrawioXmlShapeDecoder {
       case 'fillstrokecolor':
         _finish(fill: true, stroke: true);
         break;
-      // save/restore and paint attributes affect colour, alpha or line style,
-      // not geometry. The native stencil palette applies an editable project
-      // style after decoding, while retaining every source contour.
+      case 'fontsize':
+        final size = _number(node, 'size', fallback: _fontSize);
+        if (size > 0) _fontSize = size;
+        break;
+      case 'fontstyle':
+        _fontStyle = _number(node, 'style').round();
+        break;
+      case 'text':
+        final str = node.getAttribute('str') ?? '';
+        if (str.isNotEmpty) {
+          _labels.add(_DrawioStencilLabel(
+            text: str,
+            x: _number(node, 'x'),
+            y: _number(node, 'y'),
+            align: node.getAttribute('align') ?? 'left',
+            valign: node.getAttribute('valign') ?? 'top',
+            vertical: node.getAttribute('vertical') == '1',
+            rotationDegrees: _number(node, 'rotation'),
+            fontSize: _fontSize,
+            fontStyle: _fontStyle,
+          ));
+        }
+        break;
+      // save/restore and remaining paint attributes affect colour, alpha or
+      // line style, not geometry. The native stencil palette applies an
+      // editable project style after decoding, while retaining every source
+      // contour. Authored <text> is kept as a child so Draw paints it.
       default:
         break;
     }
@@ -363,8 +399,114 @@ class _DrawioXmlShapeDecoder {
     ];
   }
 
+  VsdxShape _labelShape({
+    required int id,
+    required _DrawioStencilLabel label,
+  }) {
+    final fontInches =
+        math.max(0.04, label.fontSize * math.min(scaleX, scaleY));
+    final width = math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
+    final height = fontInches * 1.4;
+    final x = _x(label.x);
+    final y = _y(label.y);
+    final pinX = switch (label.align) {
+      'left' => x + width / 2,
+      'right' => x - width / 2,
+      _ => x,
+    };
+    final pinY = switch (label.valign) {
+      'bottom' => y + height / 2,
+      'middle' => y,
+      _ => y - height / 2,
+    };
+    final horz = switch (label.align) {
+      'center' => VsdxHorzAlign.center,
+      'right' => VsdxHorzAlign.right,
+      _ => VsdxHorzAlign.left,
+    };
+    final vert = switch (label.valign) {
+      'bottom' => VsdxVertAlign.bottom,
+      'middle' => VsdxVertAlign.middle,
+      _ => VsdxVertAlign.top,
+    };
+    var angle = -label.rotationDegrees * math.pi / 180;
+    if (label.vertical) angle -= math.pi / 2;
+    return VsdxShape(
+      id: id,
+      name: 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: width,
+      height: height,
+      text: label.text,
+      richText: VsdxRichText(
+        runs: <VsdxTextRun>[
+          VsdxTextRun(
+            text: label.text,
+            charStyle: VsdxCharStyle(
+              fontSizeInches: fontInches,
+              style: VsdxFontStyle(
+                bold: (label.fontStyle & 1) != 0,
+                italic: (label.fontStyle & 2) != 0,
+              ),
+              underline: (label.fontStyle & 4) != 0,
+            ),
+            paraStyle: VsdxParaStyle(horizontalAlign: horz),
+          ),
+        ],
+        textBlock: VsdxTextBlock(
+          verticalAlign: vert,
+          marginLeftInches: 0,
+          marginRightInches: 0,
+          marginTopInches: 0,
+          marginBottomInches: 0,
+          angleRad: angle,
+        ),
+      ),
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          noLine: true,
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(width, 0),
+            LineTo(width, height),
+            LineTo(0, height),
+            const LineTo(0, 0),
+          ],
+        ),
+      ],
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+    );
+  }
+
   double _x(double source) => source * scaleX;
   double _y(double source) => (sourceHeight - source) * scaleY;
+}
+
+class _DrawioStencilLabel {
+  const _DrawioStencilLabel({
+    required this.text,
+    required this.x,
+    required this.y,
+    required this.align,
+    required this.valign,
+    required this.vertical,
+    required this.rotationDegrees,
+    required this.fontSize,
+    required this.fontStyle,
+  });
+
+  final String text;
+  final double x;
+  final double y;
+  final String align;
+  final String valign;
+  final bool vertical;
+  final double rotationDegrees;
+  final double fontSize;
+  final int fontStyle;
 }
 
 class _DrawioArcCurve {

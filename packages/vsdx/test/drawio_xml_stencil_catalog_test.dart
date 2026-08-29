@@ -210,4 +210,41 @@ void main() {
       isTrue,
     );
   });
+
+  test('draw.io mxGraph text glyphs stay on children for LibreOffice', () {
+    final stencil = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Electrical / Iec Logic Gates',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'AND');
+    final shape = stencil.build(10, 3, 3);
+    expect(shape.children, isNotEmpty, reason: 'IEC AND has an mxGraph <text>');
+    expect(
+      shape.children.any((child) => child.text == 'AND'),
+      isTrue,
+      reason: 'libvisio collects Text on child shapes, not skipped XML',
+    );
+    expect(shape.text, isNull,
+        reason: 'the catalog title must not become the parent label');
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(stencil.build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.children.any((child) => child.text == 'AND'),
+      isTrue,
+      reason: 'a second save must keep the IEC AND glyph',
+    );
+  });
 }
