@@ -1203,7 +1203,42 @@ function svgPresentation(node, inherited, css) {
   if (node.attrs['stop-opacity'] != null) {
     style['stop-opacity'] = node.attrs['stop-opacity'];
   }
+  if (node.attrs['stroke-width'] != null) {
+    style['stroke-width'] = node.attrs['stroke-width'];
+  }
+  if (node.attrs['stroke-linecap'] != null) {
+    style['stroke-linecap'] = node.attrs['stroke-linecap'];
+  }
+  if (node.attrs['stroke-linejoin'] != null) {
+    style['stroke-linejoin'] = node.attrs['stroke-linejoin'];
+  }
+  if (node.attrs['stroke-miterlimit'] != null) {
+    style['stroke-miterlimit'] = node.attrs['stroke-miterlimit'];
+  }
   return style;
+}
+
+function canvasMinScale(canvas) {
+  const sx = Math.abs(Number(canvas.sx) || 1);
+  const sy = Math.abs(Number(canvas.sy) || 1);
+  const scale = Math.min(sx, sy);
+  return scale > 0 ? scale : 1;
+}
+
+// SVG stroke-width is in user units; path x/y already go through map()*sx.
+// Emit LineWeight in the same stencil space so collectLine svg:stroke-width
+// matches the scaled contour (SAP Analytics Cloud Embedded Edition 1.875).
+function applySvgStrokeStyle(canvas, style) {
+  const width = svgLength(style['stroke-width'], NaN);
+  if (Number.isFinite(width) && width >= 0) {
+    canvas.setStrokeWidth(width * canvasMinScale(canvas));
+  }
+  const cap = style['stroke-linecap'];
+  if (cap) canvas.setLineCap(String(cap).trim().toLowerCase());
+  const join = style['stroke-linejoin'];
+  if (join) canvas.setLineJoin(String(join).trim().toLowerCase());
+  const miter = svgLength(style['stroke-miterlimit'], NaN);
+  if (Number.isFinite(miter) && miter >= 1) canvas.setMiterLimit(miter);
 }
 
 function svgPaintIsNone(value) {
@@ -1361,6 +1396,7 @@ function applySvgPaint(canvas, style, kind, root, css) {
       } else if (!applySvgPaintServer(canvas, stroke, root, css, 'stroke')) {
         canvas.setStrokeColor(htmlCssColorToHex(stroke) || stroke);
       }
+      applySvgStrokeStyle(canvas, style);
     }
   } else {
     canvas.setStrokeColor(null);

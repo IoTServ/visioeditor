@@ -839,6 +839,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Icons `image=` stems, and applies Adobe `gradientTransform`
   (PKI `translate(0 12.4) scale(1 -1)` so FillPattern 28 south
   matches the flipped Y). A second save keeps the two-stop ramps.
+- draw.io mxImageShape SVG `stroke-width` now stays native in
+  LibreOffice. Official SAP Analytics Cloud Embedded Edition paints a
+  `fill="none"` crescent with `stroke-width="1.875"`, but capture
+  never copied that presentation attribute, so `collectLine` only saw
+  the 0.01 in LineWeight default and Draw drew a hairline. Capture now
+  scales `stroke-width` / `stroke-linecap` / `stroke-linejoin` with
+  the SVG `map()` scale into the same stencil units as MoveTo.
+  A second save keeps LineWeight.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

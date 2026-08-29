@@ -4835,6 +4835,69 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG stroke-width stays LineWeight for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final cloud = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / SAP / SAP / Data Analytics',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'SAP Analytics Cloud Embedded Edition',
+          )
+          .build(136, 3, 3);
+      final arc = descendants(cloud).where(
+        (shape) =>
+            !shape.fill.hasFill &&
+            shape.line.hasLine &&
+            shape.line.color == VsdxColor.tryParse('#0195FF'),
+      );
+      expect(arc, isNotEmpty, reason: 'the crescent is fill=none + stroke');
+      expect(
+        arc.first.line.weightInches,
+        greaterThan(0.04),
+        reason: 'SVG stroke-width=1.875 (scaled into the icon) must reach '
+            'collectLine LineWeight, not the 0.01 in palette default',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cloud.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.weightInches > 0.04,
+        ),
+        isTrue,
+        reason: 'a second save must keep the SVG stroke LineWeight',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic
