@@ -159,6 +159,10 @@ class CanvasRecorder {
   x(value) { return (Number(value) || 0) + this.tx; }
   y(value) { return (Number(value) || 0) + this.ty; }
   command(name, attributes) {
+    if (!this.pathOpen) {
+      this.operations.push('<path>');
+      this.pathOpen = true;
+    }
     const values = Object.entries(attributes)
       .map(([key, value]) => ` ${key}="${number(value)}"`).join('');
     this.operations.push(`<${name}${values}/>`);
@@ -557,6 +561,9 @@ for (const file of recursiveJs(shapeRoot)) {
 function Geometry(x, y, width, height) {
   this.x = x; this.y = y; this.width = width; this.height = height;
   this.relative = false;
+  this.sourcePoint = null;
+  this.targetPoint = null;
+  this.points = [];
 }
 Geometry.prototype.setTerminalPoint = function() {};
 Geometry.prototype.clone = function() { return Object.assign(new Geometry(), this); };
@@ -569,6 +576,10 @@ Cell.prototype.insertEdge = function(cell) { this.edges.push(cell); return cell;
 Cell.prototype.clone = function() { return Object.assign(new Cell(), this); };
 Cell.prototype.setValue = function(value) { this.value = value; };
 Cell.prototype.setAttribute = function() {};
+Cell.prototype.setEdge = function(value) { this.edge = !!value; };
+Cell.prototype.setVertex = function(value) { this.vertex = !!value; };
+Cell.prototype.setConnectable = function() {};
+Cell.prototype.setStyle = function(style) { this.style = style; };
 
 function Sidebar() { this.palettes = []; }
 Sidebar.prototype.setCurrentSearchEntryLibrary = function() {};
@@ -793,7 +804,28 @@ function cellsFromMxGraphXml(xml) {
           Number(geoNode.attrs.height) || 0,
         )
       : new Geometry(0, 0, 0, 0);
-    converted[node.attrs.id] = new Cell(node.attrs.value, geometry, node.attrs.style);
+    if (geoNode) {
+      geometry.relative = geoNode.attrs.relative === '1';
+      for (const child of geoNode.children || []) {
+        if (child.name === 'mxPoint') {
+          const pt = {x: Number(child.attrs.x) || 0, y: Number(child.attrs.y) || 0};
+          if (child.attrs.as === 'sourcePoint') geometry.sourcePoint = pt;
+          else if (child.attrs.as === 'targetPoint') geometry.targetPoint = pt;
+          else geometry.points.push(pt);
+        } else if (child.name === 'Array') {
+          for (const pt of child.children || []) {
+            if (pt.name === 'mxPoint') {
+              geometry.points.push({x: Number(pt.attrs.x) || 0, y: Number(pt.attrs.y) || 0});
+            }
+          }
+        }
+      }
+    }
+    let style = node.attrs.style || '';
+    if (node.attrs.edge === '1' && !/(?:^|;)edge=/.test(style)) {
+      style = `edge=1;${style}`;
+    }
+    converted[node.attrs.id] = new Cell(node.attrs.value, geometry, style);
   }
   const tops = [];
   for (const node of nodes) {
@@ -809,6 +841,98 @@ function cellsFromMxGraphXml(xml) {
   return tops;
 }
 
+function mxPts(x, y) {
+  return new shapeContext.mxPoint(x, y);
+}
+
+function edgePoints(style, width, height, x, y, geometry) {
+  if (geometry && (geometry.sourcePoint || geometry.targetPoint ||
+      (geometry.points && geometry.points.length))) {
+    const pts = [];
+    const start = geometry.sourcePoint || {x: 0, y: height / 2};
+    pts.push(mxPts(x + start.x, y + start.y));
+    for (const p of geometry.points || []) {
+      pts.push(mxPts(x + p.x, y + p.y));
+    }
+    const end = geometry.targetPoint || {x: width, y: height / 2};
+    pts.push(mxPts(x + end.x, y + end.y));
+    return pts;
+  }
+  return [mxPts(x, y + height / 2), mxPts(x + width, y + height / 2)];
+}
+
+function paintArrowHead(canvas, type, fill, tipX, tipY, fromX, fromY) {
+  if (!type || type === 'none') return;
+  const dx = tipX - fromX;
+  const dy = tipY - fromY;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  const size = 10;
+  const bx = tipX - ux * size;
+  const by = tipY - uy * size;
+  const px = -uy * size * 0.5;
+  const py = ux * size * 0.5;
+  if (type === 'oval') {
+    canvas.ellipse(tipX - size * 0.4, tipY - size * 0.4, size * 0.8, size * 0.8);
+    if (String(fill) === '0') canvas.stroke();
+    else canvas.fillAndStroke();
+    return;
+  }
+  canvas.begin();
+  canvas.moveTo(tipX, tipY);
+  canvas.lineTo(bx + px, by + py);
+  canvas.lineTo(bx - px, by - py);
+  canvas.close();
+  if (type === 'open' || String(fill) === '0') canvas.stroke();
+  else canvas.fillAndStroke();
+}
+
+function paintConnectorLine(style, pts, canvas) {
+  if (!pts || pts.length < 2) return;
+  if (style.dashed === '1') canvas.operations.push('<dashed dashed="1"/>');
+  canvas.begin();
+  canvas.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) canvas.lineTo(pts[i].x, pts[i].y);
+  canvas.stroke();
+  const start = pts[0];
+  const startFrom = pts[1] || start;
+  const end = pts[pts.length - 1];
+  const endFrom = pts[pts.length - 2] || end;
+  const startArrow = style.startArrow || 'none';
+  const endArrow = style.endArrow == null ? 'classic' : style.endArrow;
+  paintArrowHead(canvas, startArrow, style.startFill, start.x, start.y, startFrom.x, startFrom.y);
+  paintArrowHead(canvas, endArrow, style.endFill, end.x, end.y, endFrom.x, endFrom.y);
+  canvas.finish();
+}
+
+function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) {
+  const pts = edgePoints(style, width, height, x, y, geometry);
+  const name = style && style.shape;
+  const ctor = name ? registry[name] : null;
+  if (ctor && typeof ctor.prototype.paintEdgeShape === 'function') {
+    const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
+    shape.style = style;
+    shape.scale = 1;
+    try {
+      shape.paintEdgeShape(canvas, pts);
+      canvas.finish();
+      return true;
+    } catch (error) {
+      renderStats.paintError++;
+      const errorKey = String(error);
+      paintErrorCounts[errorKey] = (paintErrorCounts[errorKey] || 0) + 1;
+      if (paintErrors.length < 30) paintErrors.push({shape: name, error: String(error)});
+    }
+  }
+  if (ctor && typeof ctor.prototype.paintVertexShape === 'function' && !isGenericStyle(style)) {
+    const result = paintRegistered(style, width, height, canvas, x, y);
+    return !!result;
+  }
+  paintConnectorLine(style, pts, canvas);
+  return true;
+}
+
 function paintCellTree(cells, canvas, width, height) {
   let painted = false;
   const visit = (cell, parentX, parentY) => {
@@ -819,11 +943,17 @@ function paintCellTree(cells, canvas, width, height) {
       const cellWidth = Math.max(1, Number(cell.geometry.width) || width);
       const cellHeight = Math.max(1, Number(cell.geometry.height) || height);
       const cellStyle = parseStyle(cell.style);
-      const result = paintRegistered(
-        cellStyle, cellWidth, cellHeight, canvas, x, y,
-        {fallbackRect: true, allowStencil: true},
-      );
-      if (result) painted = true;
+      if (cell.edge || cellStyle.edge === '1') {
+        if (paintEdge(cellStyle, cellWidth, cellHeight, canvas, x, y, cell.geometry)) {
+          painted = true;
+        }
+      } else {
+        const result = paintRegistered(
+          cellStyle, cellWidth, cellHeight, canvas, x, y,
+          {fallbackRect: true, allowStencil: true},
+        );
+        if (result) painted = true;
+      }
       const label = cellLabel(cell.value);
       if (label) {
         canvas.text(x, y, cellWidth, cellHeight, label, 'center', 'middle');
@@ -880,6 +1010,19 @@ function renderEntry(entry) {
       return null;
     }
   } else if (entry.kind === 'vertex-cells' && Array.isArray(entry.cells)) {
+    width = Math.max(1, Number(entry.width) || 100);
+    height = Math.max(1, Number(entry.height) || 100);
+    if (!paintCellTree(entry.cells, canvas, width, height)) {
+      renderStats.notVertex++;
+      return null;
+    }
+  } else if (entry.kind === 'edge') {
+    if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
+    style = parseStyle(entry.style);
+    width = Math.max(1, Number(entry.width) || 100);
+    height = Math.max(1, Number(entry.height) || 100);
+    paintEdge(style, width, height, canvas);
+  } else if (entry.kind === 'edge-cells' && Array.isArray(entry.cells)) {
     width = Math.max(1, Number(entry.width) || 100);
     height = Math.max(1, Number(entry.height) || 100);
     if (!paintCellTree(entry.cells, canvas, width, height)) {

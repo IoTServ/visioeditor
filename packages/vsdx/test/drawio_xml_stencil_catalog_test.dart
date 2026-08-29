@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(207));
+    expect(dynamic, hasLength(215));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      4300,
+      4645,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -450,5 +450,100 @@ void main() {
       leftover.children.any((child) => (child.text ?? '').isNotEmpty),
       isTrue,
     );
+  });
+
+  test('Cisco Truck keeps mxStencil path ops issued outside path', () {
+    final stencil = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Truck');
+    final truck = stencil.build(50, 3, 3);
+    final scaleX = truck.width / 86.33;
+    final scaleY = truck.height / 33;
+    final x = 80.33 * scaleX;
+    final y = (33 - 2) * scaleY;
+    final hasCrease = truck.geometries.expand((g) => g.commands).any((cmd) {
+      return cmd is LineTo &&
+          (cmd.x - x).abs() < 0.03 &&
+          (cmd.y - y).abs() < 0.03;
+    });
+    expect(
+      hasCrease,
+      isTrue,
+      reason: 'LibreOffice only sees Geometry; the cab crease is a '
+          'foreground move/line outside <path>',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(stencil.build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.geometries.expand((g) => g.commands).any((cmd) {
+        return cmd is LineTo &&
+            (cmd.x - x).abs() < 0.03 &&
+            (cmd.y - y).abs() < 0.03;
+      }),
+      isTrue,
+      reason: 'a second save must keep the Truck cab crease',
+    );
+  });
+
+  test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
+    final dashed = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / IBM / IBM / Connectors',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Dashed Connector');
+    final shape = dashed.build(51, 3, 3);
+    expect(
+      shape.line.pattern,
+      2,
+      reason: 'a dashed-only edge template is LinePattern 2 in tokens.txt',
+    );
+    expect(shape.geometries, isNotEmpty);
+  });
+
+  test('sidebar edge templates capture native geometry for LibreOffice', () {
+    final stencil = dynamic
+        .singleWhere((group) => group.name == 'Draw.io JS / Arrows2 / arrows')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Wedge Arrow');
+    final wedge = stencil.build(52, 3, 3);
+    expect(
+      wedge.geometries,
+      isNotEmpty,
+      reason: 'createEdgeTemplateEntry wedgeArrow uses paintEdgeShape',
+    );
+    expect(
+      wedge.geometries.any((g) => !g.noFill),
+      isTrue,
+      reason: 'wedge fill must stay a Geometry libvisio can paint',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(stencil.build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries, isNotEmpty);
   });
 }

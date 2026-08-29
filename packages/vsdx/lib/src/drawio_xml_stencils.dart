@@ -85,6 +85,13 @@ class _DrawioXmlShapeDecoder {
   List<VsdxPathCommand>? _pending;
   double _fontSize = 12;
   int _fontStyle = 0;
+  bool _dashed = false;
+  bool _solidPaintBeforeDash = false;
+  double _penX = 0;
+  double _penY = 0;
+  double _subX = 0;
+  double _subY = 0;
+  bool _hasSub = false;
 
   VsdxShape build(int id, double cx, double cy) {
     final safeWidth =
@@ -146,22 +153,46 @@ class _DrawioXmlShapeDecoder {
       connectionPoints: _connectionPoints(),
       children: children,
       shapeKind: children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
+      line: _dashed && !_solidPaintBeforeDash
+          ? const VsdxLine(pattern: 2)
+          : VsdxLine.defaultLine,
     );
   }
 
   void _consume(XmlElement node) {
     switch (node.name.local) {
       case 'path':
+        _resetPen();
         _setPending(_decodePath(node));
         break;
       case 'rect':
+        _resetPen();
         _setPending(_decodeRect(node));
         break;
       case 'roundrect':
+        _resetPen();
         _setPending(_decodeRoundRect(node));
         break;
       case 'ellipse':
+        _resetPen();
         _setPending(_decodeEllipse(node));
+        break;
+      case 'move':
+      case 'line':
+      case 'curve':
+      case 'quad':
+      case 'arc':
+      case 'close':
+        // mxStencil.drawNode treats these as canvas path ops even outside
+        // <path> (Cisco Truck's cab crease). NestedStencil.drawNode in the
+        // JS capture already did; the Dart decoder used to drop them.
+        _appendImplicitPathNode(node);
+        break;
+      case 'dashed':
+        _dashed = node.getAttribute('dashed') != '0';
+        break;
+      case 'dashpattern':
+        _dashed = true;
         break;
       case 'fill':
         _finish(fill: true, stroke: false);
@@ -205,12 +236,28 @@ class _DrawioXmlShapeDecoder {
     }
   }
 
+  void _resetPen() {
+    _penX = 0;
+    _penY = 0;
+    _subX = 0;
+    _subY = 0;
+    _hasSub = false;
+  }
+
   void _setPending(List<VsdxPathCommand> commands) {
     if (commands.isEmpty) return;
     _pending = commands;
   }
 
+  void _appendImplicitPathNode(XmlElement node) {
+    final commands = _pending ?? <VsdxPathCommand>[];
+    _decodePathNode(node, commands);
+    if (commands.isEmpty) return;
+    _pending = commands;
+  }
+
   void _finish({required bool fill, required bool stroke}) {
+    if (!_dashed) _solidPaintBeforeDash = true;
     final commands = _pending;
     _pending = null;
     if (commands == null || commands.isEmpty) return;
@@ -224,101 +271,99 @@ class _DrawioXmlShapeDecoder {
 
   List<VsdxPathCommand> _decodePath(XmlElement path) {
     final commands = <VsdxPathCommand>[];
-    var sourceX = 0.0;
-    var sourceY = 0.0;
-    var startX = 0.0;
-    var startY = 0.0;
-    var hasStart = false;
-
     for (final command in path.childElements) {
-      switch (command.name.local) {
-        case 'move':
-          sourceX = _number(command, 'x');
-          sourceY = _number(command, 'y');
-          startX = sourceX;
-          startY = sourceY;
-          hasStart = true;
-          commands.add(MoveTo(_x(sourceX), _y(sourceY)));
-          break;
-        case 'line':
-          sourceX = _number(command, 'x');
-          sourceY = _number(command, 'y');
-          commands.add(LineTo(_x(sourceX), _y(sourceY)));
-          break;
-        case 'curve':
-          final x1 = _number(command, 'x1');
-          final y1 = _number(command, 'y1');
-          final x2 = _number(command, 'x2');
-          final y2 = _number(command, 'y2');
-          sourceX = _number(command, 'x3');
-          sourceY = _number(command, 'y3');
-          commands.add(CubBezTo(
-            x: _x(sourceX),
-            y: _y(sourceY),
-            x1: _x(x1),
-            y1: _y(y1),
-            x2: _x(x2),
-            y2: _y(y2),
-          ));
-          break;
-        case 'quad':
-          final x1 = _number(command, 'x1');
-          final y1 = _number(command, 'y1');
-          sourceX = _number(command, 'x2');
-          sourceY = _number(command, 'y2');
-          commands.add(QuadBezTo(
-            x: _x(sourceX),
-            y: _y(sourceY),
-            x1: _x(x1),
-            y1: _y(y1),
-          ));
-          break;
-        case 'arc':
-          final endX = _number(command, 'x');
-          final endY = _number(command, 'y');
-          final curves = _svgArcCurves(
-            sourceX,
-            sourceY,
-            endX,
-            endY,
-            _number(command, 'rx').abs(),
-            _number(command, 'ry').abs(),
-            _number(command, 'x-axis-rotation') * math.pi / 180,
-            _flag(command, 'large-arc-flag'),
-            _flag(command, 'sweep-flag'),
-          );
-          if (curves.isEmpty) {
-            commands.add(LineTo(_x(endX), _y(endY)));
-          } else {
-            for (final curve in curves) {
-              commands.add(CubBezTo(
-                x: _x(curve.endX),
-                y: _y(curve.endY),
-                x1: _x(curve.x1),
-                y1: _y(curve.y1),
-                x2: _x(curve.x2),
-                y2: _y(curve.y2),
-              ));
-            }
-          }
-          sourceX = endX;
-          sourceY = endY;
-          break;
-        case 'close':
-          if (hasStart && (sourceX != startX || sourceY != startY)) {
-            commands.add(LineTo(_x(startX), _y(startY)));
-          }
-          sourceX = startX;
-          sourceY = startY;
-          break;
-        case 'ellipse':
-          commands.addAll(_decodeEllipse(command));
-          break;
-        default:
-          break;
-      }
+      _decodePathNode(command, commands);
     }
     return commands;
+  }
+
+  void _decodePathNode(XmlElement command, List<VsdxPathCommand> commands) {
+    switch (command.name.local) {
+      case 'move':
+        _penX = _number(command, 'x');
+        _penY = _number(command, 'y');
+        _subX = _penX;
+        _subY = _penY;
+        _hasSub = true;
+        commands.add(MoveTo(_x(_penX), _y(_penY)));
+        break;
+      case 'line':
+        _penX = _number(command, 'x');
+        _penY = _number(command, 'y');
+        commands.add(LineTo(_x(_penX), _y(_penY)));
+        break;
+      case 'curve':
+        final x1 = _number(command, 'x1');
+        final y1 = _number(command, 'y1');
+        final x2 = _number(command, 'x2');
+        final y2 = _number(command, 'y2');
+        _penX = _number(command, 'x3');
+        _penY = _number(command, 'y3');
+        commands.add(CubBezTo(
+          x: _x(_penX),
+          y: _y(_penY),
+          x1: _x(x1),
+          y1: _y(y1),
+          x2: _x(x2),
+          y2: _y(y2),
+        ));
+        break;
+      case 'quad':
+        final x1 = _number(command, 'x1');
+        final y1 = _number(command, 'y1');
+        _penX = _number(command, 'x2');
+        _penY = _number(command, 'y2');
+        commands.add(QuadBezTo(
+          x: _x(_penX),
+          y: _y(_penY),
+          x1: _x(x1),
+          y1: _y(y1),
+        ));
+        break;
+      case 'arc':
+        final endX = _number(command, 'x');
+        final endY = _number(command, 'y');
+        final curves = _svgArcCurves(
+          _penX,
+          _penY,
+          endX,
+          endY,
+          _number(command, 'rx').abs(),
+          _number(command, 'ry').abs(),
+          _number(command, 'x-axis-rotation') * math.pi / 180,
+          _flag(command, 'large-arc-flag'),
+          _flag(command, 'sweep-flag'),
+        );
+        if (curves.isEmpty) {
+          commands.add(LineTo(_x(endX), _y(endY)));
+        } else {
+          for (final curve in curves) {
+            commands.add(CubBezTo(
+              x: _x(curve.endX),
+              y: _y(curve.endY),
+              x1: _x(curve.x1),
+              y1: _y(curve.y1),
+              x2: _x(curve.x2),
+              y2: _y(curve.y2),
+            ));
+          }
+        }
+        _penX = endX;
+        _penY = endY;
+        break;
+      case 'close':
+        if (_hasSub && (_penX != _subX || _penY != _subY)) {
+          commands.add(LineTo(_x(_subX), _y(_subY)));
+        }
+        _penX = _subX;
+        _penY = _subY;
+        break;
+      case 'ellipse':
+        commands.addAll(_decodeEllipse(command));
+        break;
+      default:
+        break;
+    }
   }
 
   List<VsdxPathCommand> _decodeRect(XmlElement rect) {

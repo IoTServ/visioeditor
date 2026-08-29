@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io sidebar edges and mxStencil path ops now stay in LibreOffice.
+  `createEdgeTemplateEntry` palettes (Arrows 2 wedge, IBM/ER connectors)
+  were skipped as non-vertices, and Cisco Truck's cab crease is a
+  `move`/`line` outside `<path>` that the decoder dropped. LibreOffice
+  only calls `VisioDocument::parse`, so Draw never saw those types.
+  Edges now paint via `paintEdgeShape` or a stroked polyline with baked
+  heads, implicit path commands join the pending contour, and
+  `<dashed>` becomes LinePattern 2. A second save keeps the geometry.
 - draw.io compressed sidebar composites now capture native geometry
   for LibreOffice. `addDataEntry` palettes (mockup dialogs, UML
   activity partitions, GMDL sheets) store an mxGraphModel as
