@@ -1771,6 +1771,101 @@ void main() {
     );
   });
 
+  test('mxGraph direction=south stays inside the cell box for LibreOffice', () {
+    ({double minX, double minY, double maxX, double maxY}) aabb(
+      Iterable<VsdxGeometry> geometries,
+    ) {
+      var minX = double.infinity, minY = double.infinity;
+      var maxX = -double.infinity, maxY = -double.infinity;
+      void acc(double x, double y) {
+        if (x < minX) minX = x;
+        if (x > maxX) maxX = x;
+        if (y < minY) minY = y;
+        if (y > maxY) maxY = y;
+      }
+
+      for (final geometry in geometries) {
+        for (final command in geometry.commands) {
+          switch (command) {
+            case MoveTo(:final x, :final y):
+            case LineTo(:final x, :final y):
+              acc(x, y);
+            case CubBezTo(
+                :final x,
+                :final y,
+                :final x1,
+                :final y1,
+                :final x2,
+                :final y2):
+              acc(x, y);
+              acc(x1, y1);
+              acc(x2, y2);
+            default:
+              break;
+          }
+        }
+      }
+      return (minX: minX, minY: minY, maxX: maxX, maxY: maxY);
+    }
+
+    final cabinet = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Cabinet / cabinets',
+        )
+        .stencils
+        .singleWhere(
+          (entry) => entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+        )
+        .build(102, 3, 3);
+    expect(
+      cabinet.width,
+      lessThan(cabinet.height),
+      reason: 'the south panel cell is 12.5×350, not a landscape bar',
+    );
+    final box = aabb(cabinet.geometries);
+    expect(
+      box.maxX - box.minX,
+      closeTo(cabinet.width, 0.08),
+      reason: 'isPaintBoundsInverted + rotate must keep collectGeometry '
+          'inside svg:width, not a 350px path scaled by 1.5/12.5',
+    );
+    expect(
+      box.maxY - box.minY,
+      closeTo(cabinet.height, 0.08),
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / Cabinet / cabinets',
+            )
+            .stencils
+            .singleWhere(
+              (entry) =>
+                  entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+            )
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    final leftoverBox = aabb(leftover.geometries);
+    expect(
+      leftoverBox.maxX - leftoverBox.minX,
+      closeTo(leftover.width, 0.08),
+      reason: 'a second save must keep the south contour in the cell box',
+    );
+  });
+
   test('mxGraph triangle direction south stays a chevron for LibreOffice', () {
     final buttons = dynamic
         .singleWhere(
@@ -1804,7 +1899,7 @@ void main() {
       }
       final w = maxX - minX;
       final h = maxY - minY;
-      if (lines == 3 && h > w) {
+      if (lines == 3 && w > h) {
         chevron = (w: w, h: h, lines: lines);
         break;
       }
@@ -1812,8 +1907,8 @@ void main() {
     expect(
       chevron,
       isNotNull,
-      reason: 'shape=triangle;direction=south must bake a 3-point chevron, '
-          'not an unrotated diamond',
+      reason: 'shape=triangle;direction=south must bake a 3-point chevron '
+          'pointing down in the cell (isPaintBoundsInverted), not a diamond',
     );
 
     const writer = VsdxWriter();

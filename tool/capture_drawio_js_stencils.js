@@ -1578,6 +1578,12 @@ mxShape.prototype.getShapeRotation = function() {
   else if (this.direction === mxConstants.DIRECTION_SOUTH) rot += 90;
   return rot;
 };
+mxShape.prototype.isPaintBoundsInverted = function() {
+  // mxShape.js ~1630: stencils invert via computeAspect, not this swap.
+  return this.stencil == null &&
+    (this.direction === mxConstants.DIRECTION_NORTH ||
+     this.direction === mxConstants.DIRECTION_SOUTH);
+};
 mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
   // mxShape.js ~1032: opacity / fillOpacity / strokeOpacity are 0–100.
   const opacity = Number(this.opacity);
@@ -2659,16 +2665,33 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   };
   canvas.save();
   try {
+    // mxShape.paint: isPaintBoundsInverted swaps w/h, then updateTransform
+    // rotates about that centre. LibreOffice collectGeometry has no
+    // direction; rotating a 12.5×350 south rect without the swap bakes a
+    // 350-wide path that decoder scaleX explodes past the cell XForm.
+    let paintX = x;
+    let paintY = y;
+    let paintW = width;
+    let paintH = height;
+    if (typeof shape.isPaintBoundsInverted === 'function' &&
+        shape.isPaintBoundsInverted()) {
+      const t = (paintW - paintH) / 2;
+      paintX += t;
+      paintY -= t;
+      const tmp = paintW;
+      paintW = paintH;
+      paintH = tmp;
+    }
     if (typeof shape.updateTransform === 'function') {
-      shape.updateTransform(canvas, x, y, width, height);
+      shape.updateTransform(canvas, paintX, paintY, paintW, paintH);
     }
     if (typeof shape.configureCanvas === 'function') {
-      shape.configureCanvas(canvas, x, y, width, height);
+      shape.configureCanvas(canvas, paintX, paintY, paintW, paintH);
     }
     // mxShape.paint: stencils set width in drawShape; JS constructors
     // call setStrokeWidth(this.strokewidth) before paintVertexShape.
     if (canvas.setStrokeWidth) canvas.setStrokeWidth(shape.strokewidth);
-    shape.paintVertexShape(canvas, x, y, width, height);
+    shape.paintVertexShape(canvas, paintX, paintY, paintW, paintH);
   } catch (error) {
     canvas.restore();
     renderStats.paintError++;

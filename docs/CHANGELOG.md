@@ -609,6 +609,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `_flushText` skips `style:writing-mode`) and `wrap` onto `veWordWrap`
   (`TxtWidth` bake when off). Stencil glyphs with `w=h=0` stay a tight
   `TxtAngle`. A second save keeps the baked rotation.
+- draw.io `direction=north/south` now stays in the cell box for LibreOffice.
+  Official `mxShape.paint` swaps width/height when `isPaintBoundsInverted`
+  before `updateTransform` rotates, but capture rotated the original
+  bounds, so a Cabinet 12.5×350 south rect became a 350-wide path that
+  decoder `scaleX` exploded past the XForm `collectXFormData` maps to
+  `svg:width`. Capture now inverts like `paint`; XML stencils still use
+  `computeAspect`. A second save keeps the contour.
 - draw.io mxStencil `fontfamily` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
   valves call `c.setFontFamily('Helvetica')`, but capture stubbed
