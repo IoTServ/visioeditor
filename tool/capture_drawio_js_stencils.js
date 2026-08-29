@@ -1681,23 +1681,33 @@ function renderEntry(entry) {
       return null;
     }
     const ctor = vertexPainter(style);
-    if (!ctor) {
-      renderStats.unregistered++;
-      const key = String(style.shape || '(none)');
-      unregisteredShapes[key] = (unregisteredShapes[key] || 0) + 1;
-      return null;
-    }
-    if (typeof ctor.prototype.paintVertexShape !== 'function') {
-      renderStats.noPainter++;
-      if (noPainterEntries.length < 20) {
-        noPainterEntries.push({title: entry.title, shape: style.shape});
-      }
-      return null;
-    }
     width = Math.max(1, Number(entry.width) || 100);
     height = Math.max(1, Number(entry.height) || 100);
     if (!style.shape) style = {...style, shape: mxConstants.SHAPE_RECTANGLE};
-    shape = paintRegistered(style, width, height, canvas);
+    if (ctor) {
+      if (typeof ctor.prototype.paintVertexShape !== 'function') {
+        renderStats.noPainter++;
+        if (noPainterEntries.length < 20) {
+          noPainterEntries.push({title: entry.title, shape: style.shape});
+        }
+        return null;
+      }
+      shape = paintRegistered(style, width, height, canvas);
+    } else {
+      // Sidebar templates often use shape=mxgraph.flowchart.terminator
+      // (and office/aws XML stencils). LibreOffice only calls
+      // VisioDocument::parse; NestedStencil.drawShape is the same path
+      // paintCellTree already uses for composite cells.
+      shape = paintRegistered(
+        style, width, height, canvas, 0, 0, {allowStencil: true},
+      );
+      if (!shape) {
+        renderStats.unregistered++;
+        const key = String(style.shape || '(none)');
+        unregisteredShapes[key] = (unregisteredShapes[key] || 0) + 1;
+        return null;
+      }
+    }
     if (!shape) return null;
   } else if (entry.kind === 'data' && entry.data) {
     ({width, height} = entrySize(entry));

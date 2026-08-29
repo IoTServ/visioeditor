@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(219));
+    expect(dynamic, hasLength(366));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      5245,
+      11250,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1294,6 +1294,87 @@ void main() {
       expect(
         leftover.findShapeById(zoneId)!.line.pattern,
         2,
+      );
+    },
+  );
+
+  test(
+    'mxStencil flowchart vertices stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final terminator = stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Terminator',
+      ).build(120, 3, 3);
+      expect(
+        terminator.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+        reason: 'mxgraph.flowchart.terminator is one stadium fillstroke',
+      );
+      expect(
+        terminator.geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo),
+        isTrue,
+        reason: 'end caps are SVG arcs, not a sharp rectangle',
+      );
+
+      final decision = stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Decision',
+      ).build(121, 3, 3);
+      expect(
+        decision.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+      );
+      expect(
+        decision.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        4,
+        reason: 'mxgraph.flowchart.decision is a diamond, not a rectangle',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final terminatorId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Terminator',
+      ).build(terminatorId, 3, 3));
+      final decisionId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Decision',
+      ).build(decisionId, 5, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(terminatorId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isTrue,
+      );
+      expect(
+        leftover
+            .findShapeById(decisionId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(4),
       );
     },
   );

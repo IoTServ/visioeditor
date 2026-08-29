@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io XML stencils used by JavaScript sidebars now stay native in
+  LibreOffice. Capture only painted registered Canvas constructors, so
+  Flowchart Terminator / Decision (`shape=mxgraph.flowchart.*`) never
+  reached `VisioDocument::parse`. Vertex templates now use the same
+  `mxStencil.drawShape` path composite cells already used. A second save
+  keeps the stadium and diamond.
 - draw.io default rectangles now stay native in LibreOffice. Capture treated
   empty `shape`, `rectangle`, `label` and `rect` as unregistered, so Flowchart
   Process and AWS Availability Zone never reached `VisioDocument::parse`.
