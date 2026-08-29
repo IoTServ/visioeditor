@@ -2973,6 +2973,28 @@ function htmlStyleProp(attrs, prop) {
   return match ? match[1].trim() : null;
 }
 
+// mxText HTML/CSS on <p>/<span>/<font>: color, size, weight, italic,
+// text-decoration. collectCharIX maps Style 0x4 to underline; line-through
+// is Char Strikethru that Draw still paints.
+function applyHtmlCss(next, attrs) {
+  const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
+  if (color) next.fontColor = color;
+  const sizeToken = htmlStyleProp(attrs, 'font-size') || htmlAttr(attrs, 'size');
+  if (sizeToken) {
+    const size = parseFloat(sizeToken);
+    if (Number.isFinite(size) && size > 0) next.fontSize = size;
+  }
+  const weight = htmlStyleProp(attrs, 'font-weight');
+  if (weight && /^(bold|[7-9]00)$/i.test(weight)) next.fontStyle |= 1;
+  const italic = htmlStyleProp(attrs, 'font-style');
+  if (italic && /italic/i.test(italic)) next.fontStyle |= 2;
+  const deco = htmlStyleProp(attrs, 'text-decoration');
+  if (deco) {
+    if (/underline/i.test(deco)) next.fontStyle |= 4;
+    if (/line-through/i.test(deco)) next.fontStyle |= 8;
+  }
+}
+
 function cloneHtmlStyle(style) {
   return {
     fontStyle: Number(style.fontStyle) || 0,
@@ -3023,9 +3045,9 @@ function htmlRunAttrs(run) {
   return attrs.join(' ');
 }
 
-// mxText html=1: <b>/<i>/<font color|size>/<sup>/<sub> become Char Style /
-// Color / Size / Pos that collectCharIX maps to fo:font-weight / fo:color /
-// fo:font-size / style:text-position.
+// mxText html=1: <b>/<i>/<font>/<sup>/<sub> and CSS text-decoration become
+// Char Style / Color / Size / Pos that collectCharIX maps to fo:font-weight /
+// fo:color / fo:font-size / style:text-underline-type / style:text-position.
 function parseHtmlLabel(html, base) {
   const runs = [];
   const stack = [cloneHtmlStyle(base)];
@@ -3048,41 +3070,34 @@ function parseHtmlLabel(html, base) {
     const tag = match[2].toLowerCase();
     const attrs = match[3] || '';
     const closing = !!match[1] || /\/\s*$/.test(attrs);
+    const block = tag === 'p' || tag === 'div' || tag === 'tr' || tag === 'li' ||
+      /^h[1-6]$/.test(tag);
     if (tag === 'br' || tag === 'hr') {
       pushRun('\n');
       continue;
     }
-    if (tag === 'p' || tag === 'div' || tag === 'tr' || tag === 'li' || /^h[1-6]$/.test(tag)) {
-      if (runs.length && !String(runs[runs.length - 1].str).endsWith('\n')) {
+    if (match[1]) {
+      // </p> still ends the line; styles were pushed on the open tag.
+      if (block && runs.length &&
+          !String(runs[runs.length - 1].str).endsWith('\n')) {
         pushRun('\n');
       }
-      continue;
-    }
-    if (match[1]) {
       if (stack.length > 1) stack.pop();
       continue;
     }
     if (closing) continue;
     const next = cloneHtmlStyle(current());
+    if (block && runs.length &&
+        !String(runs[runs.length - 1].str).endsWith('\n')) {
+      pushRun('\n');
+    }
     if (tag === 'b' || tag === 'strong') next.fontStyle |= 1;
     else if (tag === 'i' || tag === 'em') next.fontStyle |= 2;
     else if (tag === 'u') next.fontStyle |= 4;
     else if (tag === 's' || tag === 'strike' || tag === 'del') next.fontStyle |= 8;
     else if (tag === 'sup') next.position = 1;
     else if (tag === 'sub') next.position = 2;
-    if (tag === 'font' || tag === 'span') {
-      const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
-      if (color) next.fontColor = color;
-      const sizeToken = htmlStyleProp(attrs, 'font-size') || htmlAttr(attrs, 'size');
-      if (sizeToken) {
-        const size = parseFloat(sizeToken);
-        if (Number.isFinite(size) && size > 0) next.fontSize = size;
-      }
-      const weight = htmlStyleProp(attrs, 'font-weight');
-      if (weight && /^(bold|[7-9]00)$/i.test(weight)) next.fontStyle |= 1;
-      const italic = htmlStyleProp(attrs, 'font-style');
-      if (italic && /italic/i.test(italic)) next.fontStyle |= 2;
-    }
+    applyHtmlCss(next, attrs);
     stack.push(next);
   }
   return runs;

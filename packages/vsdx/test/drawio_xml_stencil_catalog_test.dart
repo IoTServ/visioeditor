@@ -1999,6 +1999,77 @@ void main() {
     },
   );
 
+  test(
+    'mxText html text-decoration stays Char underline for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final spec = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Instance Specification (4)')
+          .build(442, 3, 3);
+      expect(
+        runContaining(spec, 'instance1 / property1: Type2')!
+            .charStyle
+            .underline,
+        isTrue,
+        reason: 'html text-decoration:underline on <p> is Char Style 0x4 that '
+            'readCharIX maps to style:text-underline-type',
+      );
+      expect(
+        runContaining(spec, 'property1 = 10')!.charStyle.underline,
+        isFalse,
+        reason: 'the slot values sit outside the underlined <p>',
+      );
+      expect(
+        runContaining(spec, 'instance2 / property2: Type3')!
+            .charStyle
+            .underline,
+        isTrue,
+        reason: 'fontStyle=4 on the next cell is still Style 0x4',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(spec.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'instance1 / property1: Type2')!
+            .charStyle
+            .underline,
+        isTrue,
+        reason: 'a second save must keep Char underline',
+      );
+      expect(
+        runContaining(leftover, 'property1 = 10')!.charStyle.underline,
+        isFalse,
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

@@ -671,6 +671,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `readCharIX` maps to `style:text-position`. Cell labels now freeze
   extra Character rows with Pos 1/2. A second save keeps superscript
   and subscript.
+- draw.io mxText CSS `text-decoration` now stays native in LibreOffice.
+  Official `mxText` paints HTML `text-decoration:underline` on `<p>` /
+  `<span>`, but capture treated block tags as newlines only, so a
+  SysML Instance Specification (`instance1 / property1: Type2`) lost
+  the Style 0x4 that `readCharIX` maps to `style:text-underline-type`.
+  Cell labels now freeze that Char bit (and `line-through` as
+  Strikethru). A second save keeps underline.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
