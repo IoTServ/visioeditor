@@ -655,6 +655,10 @@ class _DrawioXmlShapeDecoder {
             position:
                 el.getAttribute('pos') == null ? 0 : _number(el, 'pos').round(),
             align: el.getAttribute('align'),
+            marginLeft: _number(el, 'margin-left'),
+            marginRight: _number(el, 'margin-right'),
+            marginTop: _number(el, 'margin-top'),
+            marginBottom: _number(el, 'margin-bottom'),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
@@ -1141,6 +1145,10 @@ class _DrawioXmlShapeDecoder {
               ),
               paraStyle: VsdxParaStyle(
                 horizontalAlign: _mxHorzAlign(run.align ?? label.align),
+                indentLeftInches: run.marginLeft * scale,
+                indentRightInches: run.marginRight * scale,
+                spaceBeforeInches: run.marginTop * scale,
+                spaceAfterInches: run.marginBottom * scale,
               ),
             ),
         ],
@@ -1241,6 +1249,10 @@ class _DrawioStencilLabelRun {
     this.textOpacity = 100,
     this.position = 0,
     this.align,
+    this.marginLeft = 0,
+    this.marginRight = 0,
+    this.marginTop = 0,
+    this.marginBottom = 0,
   });
 
   final String text;
@@ -1256,6 +1268,13 @@ class _DrawioStencilLabelRun {
   /// CSS `text-align` on a block tag, else the mxText STYLE_ALIGN.
   /// collectParaIX HorzAlign maps this to fo:text-align.
   final String? align;
+
+  /// CSS `margin-*` on a block tag, in mxGraph pixels. collectParaIX
+  /// IndLeft / IndRight / SpBefore / SpAfter map to fo:margin-*.
+  final double marginLeft;
+  final double marginRight;
+  final double marginTop;
+  final double marginBottom;
 }
 
 class _DrawioColoredPart {

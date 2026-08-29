@@ -3157,6 +3157,55 @@ function applyHtmlCss(next, attrs, tag) {
     );
     if (ta) next.align = ta;
   }
+  // CSS margin on block <p> (SysML margin-top:4px / margin-left:8px /
+  // Abstract Definition margin:13px). collectParaIX IndLeft / SpBefore
+  // map to fo:margin-left / fo:margin-top. Inline tags inherit left/right
+  // and only the first run in the block keeps margin-top.
+  if (tag === 'p' || tag === 'div' || tag === 'li' || /^h[1-6]$/.test(tag || '')) {
+    htmlApplyMargins(next, attrs);
+    next.paraStart = true;
+  }
+}
+
+function htmlCssPx(raw) {
+  const token = String(raw || '').trim();
+  if (!token || token === 'auto' || token === 'inherit' || token === 'none') {
+    return null;
+  }
+  const n = parseFloat(token);
+  return Number.isFinite(n) ? n : null;
+}
+
+function htmlApplyMargins(next, attrs) {
+  const box = String(htmlStyleProp(attrs, 'margin') || '').trim();
+  if (box) {
+    const parts = box.split(/\s+/).map(htmlCssPx);
+    if (parts.length && parts.every((v) => v != null)) {
+      if (parts.length === 1) {
+        next.marginTop = next.marginRight = next.marginBottom = next.marginLeft = parts[0];
+      } else if (parts.length === 2) {
+        next.marginTop = next.marginBottom = parts[0];
+        next.marginRight = next.marginLeft = parts[1];
+      } else if (parts.length === 3) {
+        next.marginTop = parts[0];
+        next.marginRight = next.marginLeft = parts[1];
+        next.marginBottom = parts[2];
+      } else {
+        next.marginTop = parts[0];
+        next.marginRight = parts[1];
+        next.marginBottom = parts[2];
+        next.marginLeft = parts[3];
+      }
+    }
+  }
+  const mt = htmlCssPx(htmlStyleProp(attrs, 'margin-top'));
+  if (mt != null) next.marginTop = mt;
+  const mr = htmlCssPx(htmlStyleProp(attrs, 'margin-right'));
+  if (mr != null) next.marginRight = mr;
+  const mb = htmlCssPx(htmlStyleProp(attrs, 'margin-bottom'));
+  if (mb != null) next.marginBottom = mb;
+  const ml = htmlCssPx(htmlStyleProp(attrs, 'margin-left'));
+  if (ml != null) next.marginLeft = ml;
 }
 
 function htmlBorderBottomKind(raw) {
@@ -3222,6 +3271,11 @@ function cloneHtmlStyle(style) {
     position: Number(style.position) || 0,
     borderBottom: style.borderBottom || null,
     align: style.align || null,
+    marginTop: Number(style.marginTop) || 0,
+    marginRight: Number(style.marginRight) || 0,
+    marginBottom: Number(style.marginBottom) || 0,
+    marginLeft: Number(style.marginLeft) || 0,
+    paraStart: !!style.paraStart,
   };
 }
 
@@ -3233,7 +3287,11 @@ function sameHtmlStyle(a, b) {
     && Number(a.textOpacity) === Number(b.textOpacity)
     && (Number(a.position) || 0) === (Number(b.position) || 0)
     && String(a.borderBottom || '') === String(b.borderBottom || '')
-    && String(a.align || '') === String(b.align || '');
+    && String(a.align || '') === String(b.align || '')
+    && (Number(a.marginTop) || 0) === (Number(b.marginTop) || 0)
+    && (Number(a.marginRight) || 0) === (Number(b.marginRight) || 0)
+    && (Number(a.marginBottom) || 0) === (Number(b.marginBottom) || 0)
+    && (Number(a.marginLeft) || 0) === (Number(b.marginLeft) || 0);
 }
 
 function htmlLabelRunsDiffer(runs, state) {
@@ -3265,6 +3323,14 @@ function htmlRunAttrs(run) {
   const pos = Number(run.position) || 0;
   if (pos === 1 || pos === 2) attrs.push(`pos="${pos}"`);
   if (run.align) attrs.push(`align="${xmlEscape(String(run.align))}"`);
+  const ml = Number(run.marginLeft) || 0;
+  const mr = Number(run.marginRight) || 0;
+  const mt = Number(run.marginTop) || 0;
+  const mb = Number(run.marginBottom) || 0;
+  if (Math.abs(ml) > 1e-9) attrs.push(`margin-left="${number(ml)}"`);
+  if (Math.abs(mr) > 1e-9) attrs.push(`margin-right="${number(mr)}"`);
+  if (Math.abs(mt) > 1e-9) attrs.push(`margin-top="${number(mt)}"`);
+  if (Math.abs(mb) > 1e-9) attrs.push(`margin-bottom="${number(mb)}"`);
   return attrs.join(' ');
 }
 
@@ -3278,9 +3344,18 @@ function parseHtmlLabel(html, base) {
   const pushRun = (text) => {
     if (!text) return;
     const style = current();
+    const emit = cloneHtmlStyle(style);
+    if (!style.paraStart) emit.marginTop = 0;
+    if (text === '\n') {
+      emit.marginTop = 0;
+      emit.marginRight = 0;
+      emit.marginBottom = 0;
+      emit.marginLeft = 0;
+    }
     const last = runs[runs.length - 1];
-    if (last && sameHtmlStyle(last, style)) last.str += text;
-    else runs.push({str: text, ...cloneHtmlStyle(style)});
+    if (last && sameHtmlStyle(last, emit)) last.str += text;
+    else runs.push({str: text, ...emit});
+    for (const frame of stack) frame.paraStart = false;
   };
   const tokenRe = /<!--[\s\S]*?-->|<(\/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+)/g;
   let match;
@@ -3301,9 +3376,12 @@ function parseHtmlLabel(html, base) {
     }
     if (match[1]) {
       // </p> still ends the line; styles were pushed on the open tag.
-      if (block && runs.length &&
-          !String(runs[runs.length - 1].str).endsWith('\n')) {
-        pushRun('\n');
+      if (block && runs.length) {
+        const mb = Number(current().marginBottom) || 0;
+        if (Math.abs(mb) > 1e-9) runs[runs.length - 1].marginBottom = mb;
+        if (!String(runs[runs.length - 1].str).endsWith('\n')) {
+          pushRun('\n');
+        }
       }
       if (stack.length > 1) stack.pop();
       continue;

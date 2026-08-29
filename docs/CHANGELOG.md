@@ -731,6 +731,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `collectParaIX` maps to `fo:text-align`. Cell labels now freeze Para
   alignment per HTML block; inline `span` `text-align` still inherits
   the cell. A second save keeps left and center on the same shape.
+- draw.io mxText html `margin` now stays native in LibreOffice.
+  Official `mxText` paints CSS `margin` on block `<p>` as HTML padding
+  inside the cell, but capture dropped those properties, so a SysML
+  Abstract Definition (`margin:13px` around `Name`) and Stereotype
+  Property Compartment (`margin-left:8px` on `property1 = value`) lost
+  the IndLeft / SpBefore that `collectParaIX` maps to `fo:margin-left`
+  / `fo:margin-top`. Cell labels now freeze those Para cells (only the
+  first run in a block keeps `margin-top`). A second save keeps the
+  inset.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

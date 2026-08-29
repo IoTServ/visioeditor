@@ -2358,6 +2358,107 @@ void main() {
   );
 
   test(
+    'mxText html margin stays Para indent for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final blocks = dynamic.singleWhere(
+        (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+      );
+      final abstract = blocks.stencils
+          .where((entry) => entry.name.startsWith('Abstract Definition'))
+          .map((entry) => entry.build(449, 3, 3))
+          .firstWhere(
+            (shape) =>
+                runContaining(shape, 'Name') != null &&
+                runContaining(shape, 'abstract') == null,
+          );
+      // 80×40 cell, catalog scale 1.5 / max(w,h) = 1.5/80.
+      const abstractScale = 1.5 / 80;
+      expect(
+        runContaining(abstract, 'Name')!.paraStyle.indentLeftInches,
+        closeTo(13 * abstractScale, 0.01),
+        reason: 'html margin:13px is collectParaIX IndLeft that libvisio '
+            'maps to fo:margin-left',
+      );
+      expect(
+        runContaining(abstract, 'Name')!.paraStyle.spaceBeforeInches,
+        closeTo(13 * abstractScale, 0.01),
+        reason: 'the same shorthand is SpBefore / fo:margin-top',
+      );
+      expect(
+        runContaining(abstract, 'Name')!.paraStyle.indentRightInches,
+        closeTo(13 * abstractScale, 0.01),
+      );
+      expect(
+        runContaining(abstract, 'Name')!.paraStyle.spaceAfterInches,
+        closeTo(13 * abstractScale, 0.01),
+      );
+
+      final compartment = blocks.stencils
+          .singleWhere(
+            (entry) => entry.name == 'Stereotype Property Compartment',
+          )
+          .build(450, 3, 3);
+      const compartmentScale = 1.5 / 200;
+      expect(
+        runContaining(compartment, 'property1 = value')!
+            .paraStyle
+            .indentLeftInches,
+        closeTo(8 * compartmentScale, 0.005),
+        reason: 'html margin-left:8px on the property <p> is IndLeft',
+      );
+      expect(
+        runContaining(compartment, 'Block1')!.paraStyle.indentLeftInches,
+        closeTo(0, 0.005),
+        reason: 'the title <p> zeroes margin then only sets margin-top',
+      );
+      expect(
+        runContaining(compartment, '<<stereotype1>>')!
+            .paraStyle
+            .spaceBeforeInches,
+        closeTo(4 * compartmentScale, 0.005),
+        reason: 'html margin-top:4px on the first <p> is SpBefore',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(abstract.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Name')!.paraStyle.indentLeftInches,
+        closeTo(13 * abstractScale, 0.01),
+        reason: 'a second save must keep Para IndLeft',
+      );
+      expect(
+        runContaining(leftover, 'Name')!.paraStyle.spaceBeforeInches,
+        closeTo(13 * abstractScale, 0.01),
+        reason: 'a second save must keep Para SpBefore',
+      );
+    },
+  );
+
+  test(
     'mxText html tables stay row Text boxes for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {
