@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(215));
+    expect(dynamic, hasLength(217));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      4645,
+      4960,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -610,6 +610,108 @@ void main() {
             (child) => (child.text ?? '').isNotEmpty,
           ),
       isTrue,
+    );
+  });
+
+  test('sidebar factories keep terminals offsets and clones for LibreOffice',
+      () {
+    Stencil stencil(String groupName, String shapeName) => dynamic
+        .singleWhere((group) => group.name == groupName)
+        .stencils
+        .singleWhere((entry) => entry.name == shapeName);
+
+    final generalization = stencil(
+      'Draw.io JS / UML25 / uml 2.5',
+      'Interface Generalization',
+    ).build(70, 3, 3);
+    expect(
+      generalization.width / generalization.height,
+      greaterThan(5),
+      reason: 'h=0 edge templates must not inflate to a 100-tall covering box',
+    );
+    expect(
+      generalization.geometries.where((g) => g.noFill && !g.noLine),
+      isNotEmpty,
+      reason: 'setTerminalPoint must stroke the UML interface line',
+    );
+
+    final property = stencil(
+      'Draw.io JS / UML25 / uml 2.5',
+      'Property',
+    ).build(71, 3, 3);
+    final caption = property.children.where((child) => child.text == '0..1');
+    final field = property.children.where((child) => child.text == 'Property1');
+    expect(caption, isNotEmpty, reason: 'parent multiplicity stays Text');
+    expect(field, isNotEmpty, reason: 'relative offset label stays Text');
+    expect(
+      field.first.pinY,
+      lessThan(caption.first.pinY),
+      reason: 'mxGeometry relative+offset must place Property1 below 0..1',
+    );
+
+    final buttons = stencil(
+      'Draw.io JS / Bootstrap / bootstrap',
+      'Button group, vertical',
+    ).build(72, 3, 3);
+    expect(
+      buttons.geometries.length,
+      greaterThan(2),
+      reason: 'sb.cloneCell stacked buttons must stay native geometry',
+    );
+    expect(
+      buttons.children.where((child) => child.text == 'Button').length,
+      greaterThan(2),
+      reason: 'cloned button labels must stay Text for LibreOffice',
+    );
+
+    final choreography = stencil(
+      'Draw.io JS / BPMN / BPMN 2.0  Choreographies',
+      'Choreography Task',
+    ).build(73, 3, 3);
+    expect(
+      choreography.geometries.length,
+      greaterThan(1),
+      reason: 'zero-arg palette roots must keep working sb factories',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final igId = doc.pages.first.nextFreeShapeId();
+    var page = doc.pages.first.addShape(stencil(
+      'Draw.io JS / UML25 / uml 2.5',
+      'Interface Generalization',
+    ).build(igId, 2, 4));
+    final propId = page.nextFreeShapeId();
+    page = page.addShape(stencil(
+      'Draw.io JS / UML25 / uml 2.5',
+      'Property',
+    ).build(propId, 5, 4));
+    final btnId = page.nextFreeShapeId();
+    page = page.addShape(stencil(
+      'Draw.io JS / Bootstrap / bootstrap',
+      'Button group, vertical',
+    ).build(btnId, 8, 4));
+    doc = doc.replacePage(0, page);
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first;
+    expect(
+      leftover.findShapeById(igId)!.width /
+          leftover.findShapeById(igId)!.height,
+      greaterThan(5),
+    );
+    expect(
+      leftover
+          .findShapeById(propId)!
+          .children
+          .any((child) => child.text == 'Property1'),
+      isTrue,
+    );
+    expect(
+      leftover.findShapeById(btnId)!.geometries.length,
+      greaterThan(2),
     );
   });
 }

@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io sidebar factories now keep terminals, relative offsets and
+  cloned cells in LibreOffice. `addEntry` composites (UML interface
+  lines, Property labels, Bootstrap button groups, BPMN choreographies)
+  used `setTerminalPoint`, `mxGeometry.offset` and `sb.cloneCell`, which
+  capture stubbed or never invoked, so Draw never saw those types through
+  `VisioDocument::parse`. Edge templates with height 0 no longer inflate
+  to a covering box, XML `as="offset"` and nested edges stay in the
+  payload, `childLayout=stackLayout` is applied when every child sits at
+  the origin, and only zero-arg palette roots run so `sb` stays bound.
+  A second save keeps the geometry.
 - draw.io table cells and electrical wires now stay in LibreOffice.
   `table` / `tableRow` painters call `getTitleSize` and `shape=wire`
   calls `createMarker`; capture had neither, so those types threw and

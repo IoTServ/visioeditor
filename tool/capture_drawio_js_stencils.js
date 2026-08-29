@@ -580,17 +580,43 @@ function Geometry(x, y, width, height) {
   this.relative = false;
   this.sourcePoint = null;
   this.targetPoint = null;
+  this.offset = null;
   this.points = [];
 }
-Geometry.prototype.setTerminalPoint = function() {};
+Geometry.prototype.setTerminalPoint = function(point, isSource) {
+  const pt = {
+    x: Number(point && point.x) || 0,
+    y: Number(point && point.y) || 0,
+  };
+  if (isSource) this.sourcePoint = pt;
+  else this.targetPoint = pt;
+};
 Geometry.prototype.clone = function() { return Object.assign(new Geometry(), this); };
 function Cell(value, geometry, style) {
   this.value = value; this.geometry = geometry; this.style = style;
   this.children = []; this.edges = [];
 }
-Cell.prototype.insert = function(cell) { this.children.push(cell); return cell; };
-Cell.prototype.insertEdge = function(cell) { this.edges.push(cell); return cell; };
-Cell.prototype.clone = function() { return Object.assign(new Cell(), this); };
+Cell.prototype.insert = function(cell) {
+  cell.parent = this;
+  this.children.push(cell);
+  return cell;
+};
+Cell.prototype.insertEdge = function(cell) {
+  this.edges.push(cell);
+  return cell;
+};
+Cell.prototype.clone = function() {
+  const copy = new Cell(
+    this.value,
+    this.geometry ? this.geometry.clone() : this.geometry,
+    this.style,
+  );
+  copy.vertex = this.vertex;
+  copy.edge = this.edge;
+  copy.children = [];
+  copy.edges = [];
+  return copy;
+};
 Cell.prototype.setValue = function(value) { this.value = value; };
 Cell.prototype.setAttribute = function() {};
 Cell.prototype.setEdge = function(value) { this.edge = !!value; };
@@ -598,11 +624,32 @@ Cell.prototype.setVertex = function(value) { this.vertex = !!value; };
 Cell.prototype.setConnectable = function() {};
 Cell.prototype.setStyle = function(style) { this.style = style; };
 
+const factoryErrors = [];
+const notVertexKinds = {};
+const notVertexSamples = [];
+
 function Sidebar() { this.palettes = []; }
 Sidebar.prototype.setCurrentSearchEntryLibrary = function() {};
 Sidebar.prototype.getTagsForStencil = function() { return []; };
+Sidebar.prototype.filterTags = function(tags) { return tags; };
+Sidebar.prototype.cloneCell = function(cell, value) {
+  if (!cell) return cell;
+  const clone = cell.clone();
+  if (value != null) clone.value = value;
+  return clone;
+};
 Sidebar.prototype.addEntry = function(tags, factory) {
-  const wrapped = function(content) { return factory(content); };
+  const self = this;
+  const wrapped = function(content) {
+    try {
+      return factory.call(self, content);
+    } catch (error) {
+      if (factoryErrors.length < 40) {
+        factoryErrors.push({tags: String(tags || ''), error: String(error && error.stack || error)});
+      }
+      return wrapped.entry;
+    }
+  };
   wrapped.entry = {kind: 'factory', tags};
   return wrapped;
 };
@@ -610,6 +657,22 @@ Sidebar.prototype.addDataEntry = function(tags, width, height, title, data) {
   const wrapped = function() { return wrapped.entry; };
   wrapped.entry = {kind: 'data', tags, width, height, title, data};
   return wrapped;
+};
+Sidebar.prototype.createVertexTemplate = function(style, width, height, value, title) {
+  const cell = new Cell(value != null ? value : '', new Geometry(0, 0, width, height), style);
+  cell.vertex = true;
+  return this.createVertexTemplateFromCells([cell], width, height, title);
+};
+Sidebar.prototype.createEdgeTemplate = function(style, width, height, value, title) {
+  const cell = new Cell(value != null ? value : '', new Geometry(0, 0, width, height), style);
+  cell.geometry.setTerminalPoint({x: 0, y: height}, true);
+  cell.geometry.setTerminalPoint({x: width, y: 0}, false);
+  cell.geometry.relative = true;
+  cell.edge = true;
+  return this.createEdgeTemplateFromCells([cell], width, height, title);
+};
+Sidebar.prototype.createVertexTemplateFromData = function(data, width, height, title) {
+  return {kind: 'data', width, height, title, data};
 };
 Sidebar.prototype.createVertexTemplateEntry = function(style, width, height, value, title) {
   const wrapped = function() { return wrapped.entry; };
@@ -631,7 +694,12 @@ Sidebar.prototype.addPaletteFunctions = function(id, title, expanded, functions)
   const entries = functions.map((fn) => {
     if (!fn) return null;
     if (fn.entry && fn.entry.kind === 'factory') {
-      try { return fn({}); } catch (_) { return fn.entry; }
+      try { return fn.call(this, {}) || fn.entry; } catch (error) {
+        if (factoryErrors.length < 40) {
+          factoryErrors.push({id, error: String(error && error.stack || error)});
+        }
+        return fn.entry;
+      }
     }
     return fn.entry;
   }).filter(Boolean);
@@ -639,7 +707,11 @@ Sidebar.prototype.addPaletteFunctions = function(id, title, expanded, functions)
 };
 Sidebar.prototype.addPalette = function(id, title, expanded, factory) {
   const entries = [];
-  try { factory({appendChild(value) { if (value) entries.push(value); }}); } catch (_) {}
+  try { factory({appendChild(value) { if (value) entries.push(value); }}); } catch (error) {
+    if (factoryErrors.length < 40) {
+      factoryErrors.push({id, error: String(error && error.stack || error)});
+    }
+  }
   this.palettes.push({id, title, entries});
 };
 
@@ -675,7 +747,13 @@ for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js
     continue;
   }
   const methods = Object.getOwnPropertyNames(Sidebar.prototype)
-    .filter((name) => !before.has(name) && /^add.*Palette/.test(name));
+    .filter((name) => {
+      if (before.has(name) || !/^add.*Palette/.test(name)) return false;
+      // Sub-palettes such as addBPMN2ChoreographiesPalette(gn, r, sb)
+      // close over the sb argument. Calling them with no args overwrites
+      // the working palette that the zero-arg root method already added.
+      return Sidebar.prototype[name].length === 0;
+    });
   const sidebar = new Sidebar();
   sidebarContext.sb = sidebar;
   for (const method of methods) {
@@ -835,6 +913,7 @@ function cellsFromMxGraphXml(xml) {
           const pt = {x: Number(child.attrs.x) || 0, y: Number(child.attrs.y) || 0};
           if (child.attrs.as === 'sourcePoint') geometry.sourcePoint = pt;
           else if (child.attrs.as === 'targetPoint') geometry.targetPoint = pt;
+          else if (child.attrs.as === 'offset') geometry.offset = pt;
           else geometry.points.push(pt);
         } else if (child.name === 'Array') {
           for (const pt of child.children || []) {
@@ -849,11 +928,16 @@ function cellsFromMxGraphXml(xml) {
     if (node.attrs.edge === '1' && !/(?:^|;)edge=/.test(style)) {
       style = `edge=1;${style}`;
     }
-    converted[node.attrs.id] = new Cell(node.attrs.value, geometry, style);
+    const cell = new Cell(node.attrs.value, geometry, style);
+    if (node.attrs.vertex === '1') cell.vertex = true;
+    if (node.attrs.edge === '1') cell.edge = true;
+    converted[node.attrs.id] = cell;
   }
   const tops = [];
   for (const node of nodes) {
-    if (node.attrs.vertex !== '1') continue;
+    const isVertex = node.attrs.vertex === '1';
+    const isEdge = node.attrs.edge === '1';
+    if (!isVertex && !isEdge) continue;
     const cell = converted[node.attrs.id];
     const parent = byId[node.attrs.parent];
     if (parent && parent.attrs.vertex === '1' && converted[parent.attrs.id]) {
@@ -897,9 +981,9 @@ function paintArrowHead(canvas, type, fill, tipX, tipY, fromX, fromY) {
   const by = tipY - uy * size;
   const px = -uy * size * 0.5;
   const py = ux * size * 0.5;
-  if (type === 'oval') {
+  if (type === 'oval' || type === 'halfCircle') {
     canvas.ellipse(tipX - size * 0.4, tipY - size * 0.4, size * 0.8, size * 0.8);
-    if (String(fill) === '0') canvas.stroke();
+    if (String(fill) === '0' || type === 'halfCircle') canvas.stroke();
     else canvas.fillAndStroke();
     return;
   }
@@ -959,17 +1043,63 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
   return true;
 }
 
+function cellOrigin(geometry, parentX, parentY, parentW, parentH, isEdge) {
+  const g = geometry || {};
+  if (isEdge) {
+    // Relative x/y on edges is the label offset, not the stroke origin.
+    return {x: parentX, y: parentY};
+  }
+  if (g.relative) {
+    const ox = g.offset ? Number(g.offset.x) || 0 : 0;
+    const oy = g.offset ? Number(g.offset.y) || 0 : 0;
+    return {
+      x: parentX + (Number(g.x) || 0) * parentW + ox,
+      y: parentY + (Number(g.y) || 0) * parentH + oy,
+    };
+  }
+  return {
+    x: parentX + (Number(g.x) || 0),
+    y: parentY + (Number(g.y) || 0),
+  };
+}
+
+function applyStackLayout(cell, style) {
+  if (!cell || style.childLayout !== 'stackLayout') return;
+  const kids = (cell.children || []).filter((child) =>
+    child && child.geometry && !child.edge && !child.geometry.relative);
+  if (kids.length < 2) return;
+  if (kids.some((child) =>
+    (Number(child.geometry.x) || 0) !== 0 || (Number(child.geometry.y) || 0) !== 0)) {
+    return;
+  }
+  const horizontal = style.horizontalStack === '1';
+  const startSize = Math.max(0, Number(style.startSize) || 0);
+  let x = horizontal ? startSize : 0;
+  let y = horizontal ? 0 : startSize;
+  for (const child of kids) {
+    child.geometry.x = x;
+    child.geometry.y = y;
+    if (horizontal) x += Math.max(0, Number(child.geometry.width) || 0);
+    else y += Math.max(0, Number(child.geometry.height) || 0);
+  }
+}
+
 function paintCellTree(cells, canvas, width, height) {
   let painted = false;
-  const visit = (cell, parentX, parentY) => {
+  const visit = (cell, parentX, parentY, parentW, parentH) => {
     if (!cell) return;
     if (cell.geometry) {
-      const x = parentX + (Number(cell.geometry.x) || 0);
-      const y = parentY + (Number(cell.geometry.y) || 0);
-      const cellWidth = Math.max(1, Number(cell.geometry.width) || width);
-      const cellHeight = Math.max(1, Number(cell.geometry.height) || height);
       const cellStyle = parseStyle(cell.style);
-      if (cell.edge || cellStyle.edge === '1') {
+      const isEdge = !!(cell.edge || cellStyle.edge === '1');
+      applyStackLayout(cell, cellStyle);
+      const origin = cellOrigin(
+        cell.geometry, parentX, parentY, parentW, parentH, isEdge,
+      );
+      const x = origin.x;
+      const y = origin.y;
+      const cellWidth = Math.max(1, Number(cell.geometry.width) || parentW);
+      const cellHeight = Math.max(1, Number(cell.geometry.height) || parentH);
+      if (isEdge) {
         if (paintEdge(cellStyle, cellWidth, cellHeight, canvas, x, y, cell.geometry)) {
           painted = true;
         }
@@ -985,13 +1115,43 @@ function paintCellTree(cells, canvas, width, height) {
         canvas.text(x, y, cellWidth, cellHeight, label, 'center', 'middle');
         painted = true;
       }
-      for (const child of cell.children || []) visit(child, x, y);
+      const next = [...(cell.children || [])];
+      for (const edge of cell.edges || []) {
+        if (!next.includes(edge)) next.push(edge);
+      }
+      for (const child of next) visit(child, x, y, cellWidth, cellHeight);
     } else {
-      for (const child of cell.children || []) visit(child, parentX, parentY);
+      for (const child of cell.children || []) {
+        visit(child, parentX, parentY, parentW, parentH);
+      }
     }
   };
-  for (const cell of cells || []) visit(cell, 0, 0);
+  for (const cell of cells || []) visit(cell, 0, 0, width, height);
   return painted;
+}
+
+function entrySize(entry) {
+  const width = Number(entry.width);
+  const height = Number(entry.height);
+  return {
+    width: Number.isFinite(width) && width > 0 ? width : 100,
+    height: Number.isFinite(height) && height > 0
+      ? height
+      : (height === 0 ? 1 : 100),
+  };
+}
+
+function missVertex(kind, entry) {
+  renderStats.notVertex++;
+  const key = kind || 'unknown';
+  notVertexKinds[key] = (notVertexKinds[key] || 0) + 1;
+  if (notVertexSamples.length < 25) {
+    notVertexSamples.push({
+      kind: key,
+      title: entry && entry.title,
+      tags: entry && entry.tags,
+    });
+  }
 }
 
 function renderEntry(entry) {
@@ -1028,35 +1188,35 @@ function renderEntry(entry) {
     shape = paintRegistered(style, width, height, canvas);
     if (!shape) return null;
   } else if (entry.kind === 'data' && entry.data) {
-    width = Math.max(1, Number(entry.width) || 100);
-    height = Math.max(1, Number(entry.height) || 100);
+    ({width, height} = entrySize(entry));
     const xml = decompressDrawio(entry.data);
     if (!xml || !paintCellTree(cellsFromMxGraphXml(xml), canvas, width, height)) {
-      renderStats.notVertex++;
+      missVertex('data', entry);
       return null;
     }
   } else if (entry.kind === 'vertex-cells' && Array.isArray(entry.cells)) {
-    width = Math.max(1, Number(entry.width) || 100);
-    height = Math.max(1, Number(entry.height) || 100);
+    ({width, height} = entrySize(entry));
     if (!paintCellTree(entry.cells, canvas, width, height)) {
-      renderStats.notVertex++;
+      missVertex('vertex-cells', entry);
       return null;
     }
   } else if (entry.kind === 'edge') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
     style = parseStyle(entry.style);
-    width = Math.max(1, Number(entry.width) || 100);
-    height = Math.max(1, Number(entry.height) || 100);
-    paintEdge(style, width, height, canvas);
+    ({width, height} = entrySize(entry));
+    const geometry = new Geometry(0, 0, width, height);
+    geometry.setTerminalPoint({x: 0, y: height}, true);
+    geometry.setTerminalPoint({x: width, y: 0}, false);
+    geometry.relative = true;
+    paintEdge(style, width, height, canvas, 0, 0, geometry);
   } else if (entry.kind === 'edge-cells' && Array.isArray(entry.cells)) {
-    width = Math.max(1, Number(entry.width) || 100);
-    height = Math.max(1, Number(entry.height) || 100);
+    ({width, height} = entrySize(entry));
     if (!paintCellTree(entry.cells, canvas, width, height)) {
-      renderStats.notVertex++;
+      missVertex('edge-cells', entry);
       return null;
     }
   } else {
-    renderStats.notVertex++;
+    missVertex(entry.kind || 'unknown', entry);
     return null;
   }
   if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse|text)\b/.test(operation))) {
@@ -1127,6 +1287,9 @@ const result = {
   unregisteredShapes,
   noGeometryEntries,
   noPainterEntries,
+  factoryErrors,
+  notVertexKinds,
+  notVertexSamples,
   libraries,
 };
 if (process.argv.includes('--summary')) {
