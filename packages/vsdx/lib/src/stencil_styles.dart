@@ -5,6 +5,7 @@
 library;
 
 import 'model/shape.dart';
+import 'model/line.dart';
 import 'utils/color.dart';
 
 /// A fill + stroke pair (hex `#RRGGBB` or `#AARRGGBB`).
@@ -699,9 +700,14 @@ VsdxShape applyStencilStyle(
     fill = fill.withSolidForeground(fillColor);
   }
   if (lineColor != null && line.hasLine) {
-    line = line
-        .withSolidColor(lineColor)
-        .copyWith(weightInches: lineWeightInches);
+    line = line.withSolidColor(lineColor);
+    // mxStencil <strokewidth> already froze LineWeight in stencil
+    // units. Overwriting it with the palette default would drop the
+    // checkmark / IEC rail that libvisio collectLine collects.
+    if ((line.weightInches - VsdxLine.defaultLine.weightInches).abs() <
+        1e-9) {
+      line = line.copyWith(weightInches: lineWeightInches);
+    }
   }
   if (identical(fill, shape.fill) && identical(line, shape.line)) {
     return shape;

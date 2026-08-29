@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `strokewidth` now stays native in LibreOffice.
+  `mxStencil.drawNode` calls `setStrokeWidth(width * minScale)`, but
+  capture dropped it and the Dart decoder ignored the node, so a
+  Checkbox On tick used the 0.01 in palette LineWeight that
+  `collectLine` still paints as a hairline. Authored widths now become
+  sibling `LineWeight` libvisio collects. A second save keeps the tick.
 - draw.io mxStencil hex `fillcolor` / `fontcolor` now stay native in
   LibreOffice. `mxStencil.parseColor` applies those nodes, but capture
   dropped hex and the Dart decoder ignored them, so a Radio Button On

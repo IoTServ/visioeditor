@@ -91,6 +91,7 @@ class _DrawioXmlShapeDecoder {
   VsdxColor? _strokeColor;
   bool _fillIsNone = false;
   bool _strokeIsNone = false;
+  double? _strokeWidth;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
   String? _rasterPart;
@@ -168,8 +169,7 @@ class _DrawioXmlShapeDecoder {
     }
     var nextId = id + 1;
     final children = <VsdxShape>[
-      for (final part in _coloredParts)
-        _coloredShape(id: nextId++, part: part),
+      for (final part in _coloredParts) _coloredShape(id: nextId++, part: part),
       for (final label in _labels) _labelShape(id: nextId++, label: label),
     ];
     final inheritFill = _geometries.any((geometry) => !geometry.noFill);
@@ -183,14 +183,16 @@ class _DrawioXmlShapeDecoder {
     // collectGeometry concatenates every NoFill=0 section of one shape
     // into one evenodd path, so a black radio dot on a grey disk would
     // otherwise punch a hole.
-    final parentFill = _rasterPart != null || (!inheritFill && children.isNotEmpty)
-        ? const VsdxFill(pattern: 0)
-        : VsdxFill.defaultFill;
-    final parentLine = _rasterPart != null || (!inheritLine && children.isNotEmpty)
-        ? const VsdxLine(pattern: 0)
-        : (_dashed && !_solidPaintBeforeDash
-            ? const VsdxLine(pattern: 2)
-            : VsdxLine.defaultLine);
+    final parentFill =
+        _rasterPart != null || (!inheritFill && children.isNotEmpty)
+            ? const VsdxFill(pattern: 0)
+            : VsdxFill.defaultFill;
+    final parentLine =
+        _rasterPart != null || (!inheritLine && children.isNotEmpty)
+            ? const VsdxLine(pattern: 0)
+            : (_dashed && !_solidPaintBeforeDash
+                ? _paintLine(stroke: true).copyWith(pattern: 2)
+                : _paintLine(stroke: true));
     return VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -280,6 +282,12 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'fontcolor':
         _applyMxFont(node.getAttribute('color'));
+        break;
+      case 'strokewidth':
+        final width = _number(node, 'width');
+        if (width > 0) {
+          _strokeWidth = width;
+        }
         break;
       case 'text':
         final str = node.getAttribute('str') ?? '';
@@ -406,6 +414,27 @@ class _DrawioXmlShapeDecoder {
     _fontColor = _mxGraphPaintColor(token);
   }
 
+  double get _strokeWeightInches {
+    final width = _strokeWidth;
+    if (width == null) return VsdxLine.defaultLine.weightInches;
+    // mxStencil.drawNode: width * (fixed ? 1 : minScale). The catalog
+    // freezes the stencil at targetWidth×targetHeight, so both cases
+    // scale with the same min(scaleX, scaleY) as MoveTo/LineTo.
+    final scale = math.min(scaleX.abs(), scaleY.abs());
+    return math.max(0.001, width * scale);
+  }
+
+  VsdxLine _paintLine({required bool stroke}) {
+    if (!stroke) return const VsdxLine(pattern: 0);
+    var line = _strokeColor != null
+        ? VsdxLine.defaultLine.withSolidColor(_strokeColor!)
+        : VsdxLine.defaultLine;
+    if (_strokeWidth != null) {
+      line = line.copyWith(weightInches: _strokeWeightInches);
+    }
+    return line;
+  }
+
   void _finish({required bool fill, required bool stroke}) {
     if (!_dashed) _solidPaintBeforeDash = true;
     final commands = _pending;
@@ -422,11 +451,7 @@ class _DrawioXmlShapeDecoder {
         fill: bakeFill
             ? VsdxFill(foreground: _fillColor, pattern: 1)
             : const VsdxFill(pattern: 0),
-        line: doStroke
-            ? (_strokeColor != null
-                ? VsdxLine.defaultLine.withSolidColor(_strokeColor!)
-                : VsdxLine.defaultLine)
-            : const VsdxLine(pattern: 0),
+        line: _paintLine(stroke: doStroke),
       ));
       return;
     }
@@ -817,8 +842,7 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
       );
     }
   }
-  if (!token.startsWith('#') &&
-      RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(token)) {
+  if (!token.startsWith('#') && RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(token)) {
     return VsdxColor.tryParse('#$token');
   }
   return VsdxColor.tryParse(token);

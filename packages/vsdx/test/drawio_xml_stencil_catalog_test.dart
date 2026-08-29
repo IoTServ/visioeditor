@@ -612,6 +612,60 @@ void main() {
     );
   });
 
+  test('mxStencil strokewidth stays LineWeight for LibreOffice', () {
+    final checkbox = migrated
+        .singleWhere(
+            (group) => group.name == 'Draw.io / Mockup / Form Elements')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Checkbox On')
+        .build(82, 3, 3);
+    final tick = checkbox.children.where(
+      (child) =>
+          !child.fill.hasFill &&
+          child.line.hasLine &&
+          child.line.color == VsdxColor.black,
+    );
+    expect(tick, isNotEmpty, reason: 'the check is fillcolor none + stroke');
+    expect(
+      tick.first.line.weightInches,
+      greaterThan(0.05),
+      reason: 'strokewidth width=2 must reach collectLine LineWeight, '
+          'not the 0.01 in palette default',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere(
+              (group) => group.name == 'Draw.io / Mockup / Form Elements',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Checkbox On')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.children.any(
+        (child) =>
+            !child.fill.hasFill &&
+            child.line.hasLine &&
+            child.line.weightInches > 0.05,
+      ),
+      isTrue,
+      reason: 'a second save must keep the check LineWeight',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

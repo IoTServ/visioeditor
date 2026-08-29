@@ -119,7 +119,8 @@ class CanvasRecorder {
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
-    this.state = {fillColor: '#ffffff', strokeColor: '#000000', fontSize: 12, fontStyle: 0, fontColor: null};
+    this._strokeWidthToken = null;
+    this.state = {fillColor: '#ffffff', strokeColor: '#000000', fontSize: 12, fontStyle: 0, fontColor: null, strokeWidth: 1};
   }
 
   save() {
@@ -348,6 +349,7 @@ class CanvasRecorder {
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
+    this._strokeWidthToken = null;
   }
 
   _emitPaint(tag, token) {
@@ -371,6 +373,12 @@ class CanvasRecorder {
       this._fontToken = fontToken;
       this._emitPaint('fontcolor', fontToken);
     }
+    const sw = Number(this.state.strokeWidth);
+    if (Number.isFinite(sw) && sw !== this._strokeWidthToken) {
+      this._strokeWidthToken = sw;
+      this.finishPath();
+      this.operations.push(`<strokewidth width="${number(sw)}"/>`);
+    }
   }
 
   setAlpha(value) { this.state.alpha = value; }
@@ -389,7 +397,15 @@ class CanvasRecorder {
     this._strokeToken = token;
     this._emitPaint('strokecolor', token);
   }
-  setStrokeWidth(value) { this.state.strokeWidth = value; }
+  setStrokeWidth(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 0) return;
+    this.state.strokeWidth = n;
+    if (this._strokeWidthToken === n) return;
+    this._strokeWidthToken = n;
+    this.finishPath();
+    this.operations.push(`<strokewidth width="${number(n)}"/>`);
+  }
   setDashed(value) {
     this.state.dashed = !!value;
     if (!this.state.dashed) return;
@@ -1035,6 +1051,10 @@ class NestedStencil {
       canvas.setStrokeColor(mxStencilColor(node.attrs.color, shape));
     } else if (name === 'fontcolor') {
       canvas.setFontColor(mxStencilColor(node.attrs.color, shape));
+    } else if (name === 'strokewidth') {
+      // mxStencil.drawNode: width * (fixed==1 ? 1 : minScale).
+      const s = node.attrs.fixed === '1' ? 1 : minScale;
+      canvas.setStrokeWidth(attrNum(node, 'width') * s);
     } else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
     else if (name === 'dashpattern') canvas.setDashed(true);
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
