@@ -1351,6 +1351,122 @@ void main() {
     );
   });
 
+  test('mxText wrap and vertical stay TextDirection cells for LibreOffice', () {
+    VsdxShape? glyphShape(VsdxShape shape, String text) {
+      for (final child in shape.children) {
+        if (child.text == text) return child;
+        final nested = glyphShape(child, text);
+        if (nested != null) return nested;
+      }
+      return null;
+    }
+
+    final alert = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Alert')
+        .build(98, 3, 3);
+    final alertGlyph = glyphShape(alert, 'A simple primary alert!')!;
+    expect(
+      alertGlyph.wordWrap,
+      isTrue,
+      reason: 'whiteSpace=wrap must keep wrapping in the cell box',
+    );
+
+    final ammeter = dynamic
+        .singleWhere(
+          (group) =>
+              group.name == 'Draw.io JS / Electrical / Electrical / Instruments',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Ammeter')
+        .build(99, 3, 3);
+    expect(
+      glyphShape(ammeter, 'A')!.wordWrap,
+      isFalse,
+      reason: 'mxText wrap defaults false; veWordWrap=0 bakes TxtWidth for Draw',
+    );
+
+    final cabinet = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Cabinet / cabinets',
+        )
+        .stencils
+        .singleWhere(
+          (entry) => entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+        )
+        .build(100, 3, 3);
+    final verticalGlyph = glyphShape(cabinet, '25x40');
+    expect(verticalGlyph, isNotNull, reason: 'the vertical panel keeps 25x40');
+    expect(
+      verticalGlyph!.richText.textBlock.textDirection,
+      1,
+      reason: 'STYLE_HORIZONTAL=0 is TextDirection=1 that a save bakes to TxtAngle',
+    );
+    expect(
+      verticalGlyph.richText.textBlock.angleRad.abs(),
+      lessThan(0.01),
+      reason: 'in-memory vertical labels use TextDirection, not a pre-baked TxtAngle',
+    );
+    expect(
+      verticalGlyph.wordWrap,
+      isTrue,
+      reason: 'the vertical panel also sets whiteSpace=wrap',
+    );
+
+    final flat = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / Cabinet / cabinets',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Panel Wiring System 25x40mm')
+        .build(101, 3, 3);
+    expect(
+      glyphShape(flat, '25x40')!.richText.textBlock.textDirection,
+      0,
+      reason: 'the horizontal panel must not inherit vertical from a sibling',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / Cabinet / cabinets',
+            )
+            .stencils
+            .singleWhere(
+              (entry) =>
+                  entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+            )
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    final leftoverGlyph = glyphShape(leftover, '25x40')!;
+    expect(
+      leftoverGlyph.richText.textBlock.textDirection,
+      0,
+      reason: 'a save bakes TextDirection so canvas reopen does not rotate twice',
+    );
+    expect(
+      leftoverGlyph.richText.textBlock.angleRad,
+      closeTo(-3.141592653589793 / 2, 0.05),
+      reason: 'libvisio _flushText paints librevenge:rotate from TxtAngle, '
+          'not style:writing-mode',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

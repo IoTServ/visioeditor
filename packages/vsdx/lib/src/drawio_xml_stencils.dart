@@ -384,6 +384,7 @@ class _DrawioXmlShapeDecoder {
             align: node.getAttribute('align') ?? 'left',
             valign: node.getAttribute('valign') ?? 'top',
             vertical: node.getAttribute('vertical') == '1',
+            wrap: node.getAttribute('wrap') == '1',
             rotationDegrees: _number(node, 'rotation'),
             fontSize: _fontSize,
             fontStyle: _fontStyle,
@@ -1033,8 +1034,12 @@ class _DrawioXmlShapeDecoder {
       _ => VsdxVertAlign.top,
     };
     var angle = -label.rotationDegrees * math.pi / 180;
-    if (label.vertical) angle -= math.pi / 2;
-    return VsdxShape(
+    // Cell boxes with STYLE_HORIZONTAL=0 use TextDirection=1 so canvas /
+    // SVG rotate and libvisio_write can bake TxtAngle for Draw. Stencil
+    // glyphs (w=h=0) keep the mxStencil vertical → TxtAngle shortcut.
+    final boxedVertical = hasBox && label.vertical;
+    if (label.vertical && !hasBox) angle -= math.pi / 2;
+    var shape = VsdxShape(
       id: id,
       name: 'Sheet.$id',
       pinX: pinX,
@@ -1070,6 +1075,7 @@ class _DrawioXmlShapeDecoder {
           marginBottomInches: hasBox ? label.spacingBottom * scale : 0,
           angleRad: angle,
           backgroundColor: label.background,
+          textDirection: boxedVertical ? 1 : 0,
         ),
       ),
       geometries: <VsdxGeometry>[
@@ -1088,6 +1094,12 @@ class _DrawioXmlShapeDecoder {
       fill: const VsdxFill(pattern: 0),
       line: const VsdxLine(pattern: 0),
     );
+    // mxText.wrap default is false. veWordWrap is not a token; a save
+    // expands TxtWidth so Draw does not wrap. Stencil glyphs stay default.
+    if (hasBox && !label.wrap) {
+      shape = shape.withWordWrap(false);
+    }
+    return shape;
   }
 
   double _x(double source) => source * scaleX;
@@ -1108,6 +1120,7 @@ class _DrawioStencilLabel {
     required this.align,
     required this.valign,
     required this.vertical,
+    this.wrap = false,
     required this.rotationDegrees,
     required this.fontSize,
     required this.fontStyle,
@@ -1128,6 +1141,7 @@ class _DrawioStencilLabel {
   final String align;
   final String valign;
   final bool vertical;
+  final bool wrap;
   final double rotationDegrees;
   final double fontSize;
   final int fontStyle;

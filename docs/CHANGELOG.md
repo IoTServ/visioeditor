@@ -600,6 +600,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   and `collectTextBlock` never saw `LeftMargin` → `fo:padding-*`. Cell
   values now fill the template; stencil glyphs that pass `w=h=0` stay
   tight. A second save keeps Pin / Width / LeftMargin.
+- draw.io mxText wrap and vertical labels now stay native in LibreOffice.
+  Official `mxXmlCanvas2D.text` writes `wrap` and `mxShape.getTextRotation`
+  adds `verticalTextRotation` when `STYLE_HORIZONTAL != 1`, but capture
+  dropped both, so a Cabinet panel (`horizontal=0`, value `25x40`) laid
+  out horizontally and `whiteSpace=wrap` never reached `veWordWrap`.
+  Cell boxes now set `TextDirection=1` (a save bakes `TxtAngle` because
+  `_flushText` skips `style:writing-mode`) and `wrap` onto `veWordWrap`
+  (`TxtWidth` bake when off). Stencil glyphs with `w=h=0` stay a tight
+  `TxtAngle`. A second save keeps the baked rotation.
 - draw.io mxStencil `fontfamily` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
   valves call `c.setFontFamily('Helvetica')`, but capture stubbed

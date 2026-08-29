@@ -174,6 +174,10 @@ class CanvasRecorder {
       spacingRight: 0,
       spacingTop: 0,
       spacingBottom: 0,
+      // mxText: STYLE_HORIZONTAL != 1 → verticalTextRotation. wrap from
+      // whiteSpace=wrap. NestedStencil passes wrap=0 and must not inherit.
+      verticalText: false,
+      wrap: false,
     };
   }
 
@@ -419,7 +423,15 @@ class CanvasRecorder {
       if (Number.isFinite(sr) && sr !== 0) attrs.push(`spacing-right="${number(sr)}"`);
       if (Number.isFinite(st) && st !== 0) attrs.push(`spacing-top="${number(st)}"`);
       if (Number.isFinite(sb) && sb !== 0) attrs.push(`spacing-bottom="${number(sb)}"`);
+      // mxXmlCanvas2D.text wrap. mxText default is false; whiteSpace=wrap
+      // is the cell flag collectTextBlock cannot see — veWordWrap bake
+      // expands TxtWidth when this stays off.
+      let wrapOn = !!this.state.wrap;
+      if (wrap === true || wrap === 1 || wrap === '1') wrapOn = true;
+      else if (wrap === false || wrap === 0 || wrap === '0') wrapOn = false;
+      if (wrapOn) attrs.push('wrap="1"');
     }
+    if (this.state.verticalText) attrs.push('vertical="1"');
     if (Number.isFinite(rot) && rot !== 0) attrs.push(`rotation="${number(rot)}"`);
     this.operations.push(`<text ${attrs.join(' ')}/>`);
   }
@@ -2746,6 +2758,12 @@ function applyTextStyle(canvas, style) {
   canvas.state.spacingRight = (parseInt(style.spacingRight, 10) || 0) + sp;
   canvas.state.spacingTop = (parseInt(style.spacingTop, 10) || 0) + sp;
   canvas.state.spacingBottom = (parseInt(style.spacingBottom, 10) || 0) + sp;
+  // mxShape.getTextRotation: STYLE_HORIZONTAL != 1 adds verticalTextRotation.
+  // LibreOffice _flushText ignores TextDirection writing-mode; a save bakes
+  // TextDirection=1 into TxtAngle that librevenge:rotate paints.
+  const horiz = style.horizontal;
+  canvas.state.verticalText = horiz == 0 || horiz === '0' || horiz === false;
+  canvas.state.wrap = String(style.whiteSpace || '') === 'wrap';
 }
 
 function paintTemplateLabel(entry, style, width, height, canvas) {
