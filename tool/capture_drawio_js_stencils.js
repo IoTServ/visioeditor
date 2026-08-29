@@ -49,6 +49,28 @@ function parseStyle(source, base) {
   return style;
 }
 
+// mxGraph CSS `inherit` takes the parent's computed color (HTML/SVG),
+// not the defaultVertex `default` slot. LibreOffice collectCharIX /
+// collectLine only see hex Color / LineColor; `inherit` is not a token.
+const inheritStyleKeys = [
+  'fontColor', 'fillColor', 'strokeColor', 'gradientColor',
+  'labelBackgroundColor', 'labelBorderColor',
+];
+
+function isInheritToken(value) {
+  return value != null && String(value).toLowerCase() === 'inherit';
+}
+
+function resolveInheritedStyle(style, inherited) {
+  const next = {...style};
+  const chain = {...inherited};
+  for (const key of inheritStyleKeys) {
+    if (isInheritToken(next[key])) next[key] = inherited[key];
+    if (next[key] != null && !isInheritToken(next[key])) chain[key] = next[key];
+  }
+  return {style: next, inherited: chain};
+}
+
 function xmlEscape(value) {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -3093,14 +3115,16 @@ function applyStackLayout(cell, style) {
 
 function paintCellTree(cells, canvas, width, height) {
   let painted = false;
-  const visit = (cell, parentX, parentY, parentW, parentH) => {
+  const visit = (cell, parentX, parentY, parentW, parentH, inherited = {}) => {
     if (!cell) return;
     if (cell.geometry) {
       const isEdge = !!(cell.edge || (typeof cell.style === 'string' && /(?:^|;)edge=1(?:;|$)/.test(cell.style)));
-      const cellStyle = parseStyle(
+      const parsed = parseStyle(
         cell.style,
         isEdge ? namedStyles.defaultEdge : namedStyles.defaultVertex,
       );
+      const resolved = resolveInheritedStyle(parsed, inherited);
+      const cellStyle = resolved.style;
       applyStackLayout(cell, cellStyle);
       const origin = cellOrigin(
         cell.geometry, parentX, parentY, parentW, parentH, isEdge,
@@ -3137,10 +3161,10 @@ function paintCellTree(cells, canvas, width, height) {
       for (const edge of cell.edges || []) {
         if (!next.includes(edge)) next.push(edge);
       }
-      for (const child of next) visit(child, x, y, cellWidth, cellHeight);
+      for (const child of next) visit(child, x, y, cellWidth, cellHeight, resolved.inherited);
     } else {
       for (const child of cell.children || []) {
-        visit(child, parentX, parentY, parentW, parentH);
+        visit(child, parentX, parentY, parentW, parentH, inherited);
       }
     }
   };

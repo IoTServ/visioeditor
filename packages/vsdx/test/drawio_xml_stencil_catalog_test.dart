@@ -1759,6 +1759,68 @@ void main() {
     },
   );
 
+  test(
+    'mxGraph inherit colors freeze parent hex for LibreOffice',
+    () {
+      VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first;
+          }
+          final nested = glyphRun(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final bar = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / Ios / iOS6')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Button bar')
+          .build(108, 3, 3);
+      expect(
+        glyphRun(bar, 'Item 1')!.charStyle.color?.value,
+        0xFF666666,
+        reason: 'fontColor=inherit under #666666 must reach collectCharIX '
+            'fo:color, not default black',
+      );
+      expect(
+        glyphRun(bar, 'Item 2')!.charStyle.color?.value,
+        0xFFFFFFFF,
+        reason: 'explicit fontColor=#ffffff must not pick up inherit',
+      );
+      expect(
+        glyphRun(bar, 'Item 3')!.charStyle.color?.value,
+        0xFF666666,
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(bar.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphRun(leftover, 'Item 1')!.charStyle.color?.value,
+        0xFF666666,
+        reason: 'a second save must keep the inherited Char Color',
+      );
+      expect(
+        glyphRun(leftover, 'Item 2')!.charStyle.color?.value,
+        0xFFFFFFFF,
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

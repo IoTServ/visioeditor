@@ -647,6 +647,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   bakes the blend into `Color` that `collectCharIX` maps to
   `fo:color`. Stencil glyphs and omitted keys reset to 100.
   A second save keeps the faded RGB.
+- draw.io mxGraph `fontColor=inherit` now stays native in LibreOffice.
+  Official HTML/SVG labels take the parent's computed colour, but
+  capture forwarded the `inherit` token, so iOS Button bar `Item 1`
+  (`fontColor=inherit` under `fontColor=#666666`) became default
+  black that `collectCharIX` maps to `fo:color`. Nested cells now
+  freeze the parent hex (and the same for `fillColor` /
+  `strokeColor` / `gradientColor`) before paint; omitted keys still
+  use `defaultVertex`. A second save keeps Char Color.
 - draw.io mxText `fontStyle` now stays native in LibreOffice.
   Official `mxText.configureCanvas` always calls `setFontStyle` and
   `mxXmlCanvas2D` emits the compressed token even when it returns to
