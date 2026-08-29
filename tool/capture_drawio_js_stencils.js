@@ -3186,6 +3186,20 @@ function htmlCssPx(raw) {
   return Number.isFinite(n) ? n : null;
 }
 
+// CSS padding percentages are of the containing-block WIDTH on every
+// side (CSS 2.1 8.4). parseFloat("11%") would freeze 11px.
+function htmlCssLength(raw, percentOf) {
+  const token = String(raw || '').trim();
+  if (!token || token === 'auto' || token === 'inherit' || token === 'none') {
+    return null;
+  }
+  if (/%$/.test(token)) {
+    const n = parseFloat(token);
+    return Number.isFinite(n) && percentOf != null ? percentOf * n / 100 : null;
+  }
+  return htmlCssPx(token);
+}
+
 // HTML <font size=N> presentational hint (html.spec.whatwg.org
 // phrasing-content-3). Chromium HTMLFontElement maps 1–7 onto
 // xx-small…xxx-large at a 16px medium.
@@ -3491,6 +3505,7 @@ function htmlTableRowSpecs(html) {
       widthToken: htmlAttr(cell.attrs, 'width') || htmlStyleProp(cell.attrs, 'width'),
       align: htmlAttr(cell.attrs, 'align') || htmlStyleProp(cell.attrs, 'text-align'),
       valign: htmlAttr(cell.attrs, 'valign') || htmlStyleProp(cell.attrs, 'vertical-align'),
+      attrs: cell.attrs,
       html: htmlTdFragment(cell.attrs, cell.inner),
     }));
     const firstAttrs = tds.length ? tds[0].attrs : '';
@@ -3515,6 +3530,44 @@ function htmlTablePaddingPx(html) {
   const attr = htmlAttr(open[1], 'cellpadding');
   const n = htmlCssPx(attr);
   return n != null && n > 0 ? n : 0;
+}
+
+// HTML td CSS padding (P&ID compressor `padding-left:11%`). Table
+// cellpadding is the presentational hint; a td longhand wins. Both
+// land on collectTextBlock LeftMargin → fo:padding-left.
+function htmlBoxPadding(attrs, boxW) {
+  const out = {top: 0, right: 0, bottom: 0, left: 0};
+  if (!attrs) return out;
+  const box = String(htmlStyleProp(attrs, 'padding') || '').trim();
+  if (box) {
+    const parts = box.split(/\s+/).map((part) => htmlCssLength(part, boxW));
+    if (parts.length && parts.every((v) => v != null)) {
+      if (parts.length === 1) {
+        out.top = out.right = out.bottom = out.left = parts[0];
+      } else if (parts.length === 2) {
+        out.top = out.bottom = parts[0];
+        out.right = out.left = parts[1];
+      } else if (parts.length === 3) {
+        out.top = parts[0];
+        out.right = out.left = parts[1];
+        out.bottom = parts[2];
+      } else {
+        out.top = parts[0];
+        out.right = parts[1];
+        out.bottom = parts[2];
+        out.left = parts[3];
+      }
+    }
+  }
+  const pt = htmlCssLength(htmlStyleProp(attrs, 'padding-top'), boxW);
+  if (pt != null) out.top = pt;
+  const pr = htmlCssLength(htmlStyleProp(attrs, 'padding-right'), boxW);
+  if (pr != null) out.right = pr;
+  const pb = htmlCssLength(htmlStyleProp(attrs, 'padding-bottom'), boxW);
+  if (pb != null) out.bottom = pb;
+  const pl = htmlCssLength(htmlStyleProp(attrs, 'padding-left'), boxW);
+  if (pl != null) out.left = pl;
+  return out;
 }
 
 function htmlRowHasText(row) {
@@ -3597,12 +3650,29 @@ function paintHtmlTableLabel(
         const cell = row.cells[j];
         const cw = widths[j];
         if (cw > 0 && htmlHasVisibleText(cell.html)) {
+          const extra = htmlBoxPadding(cell.attrs, cw);
+          const prevCellL = canvas.state.spacingLeft;
+          const prevCellR = canvas.state.spacingRight;
+          const prevCellT = canvas.state.spacingTop;
+          const prevCellB = canvas.state.spacingBottom;
+          if (extra.left || extra.right || extra.top || extra.bottom) {
+            canvas.state.spacingLeft = (Number(prevCellL) || 0) + extra.left;
+            canvas.state.spacingRight = (Number(prevCellR) || 0) + extra.right;
+            canvas.state.spacingTop = (Number(prevCellT) || 0) + extra.top;
+            canvas.state.spacingBottom = (Number(prevCellB) || 0) + extra.bottom;
+          }
           canvas.text(
             left, top, cw, rh, cellLabel(cell.html, true),
             cell.align || defaultAlign,
             cell.valign || defaultValign || 'middle',
             undefined, 'html', undefined, undefined, rotation,
           );
+          if (extra.left || extra.right || extra.top || extra.bottom) {
+            canvas.state.spacingLeft = prevCellL;
+            canvas.state.spacingRight = prevCellR;
+            canvas.state.spacingTop = prevCellT;
+            canvas.state.spacingBottom = prevCellB;
+          }
           painted = true;
         }
         left += cw;

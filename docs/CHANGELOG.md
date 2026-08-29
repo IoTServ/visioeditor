@@ -764,6 +764,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `collectTextBlock` maps to `fo:padding-left`. Cell labels now freeze
   one Text child per row and add cellpadding onto mxText spacing. A
   second save keeps the bands and padding.
+- draw.io mxText html table cell CSS padding now stays native in LibreOffice.
+  Official `mxText` paints `<td style="padding-left:11%">` as HTML cell
+  padding (percentages of the containing-block width), but capture only
+  applied table `cellpadding`, so a P&ID Centrifugal Compressor - Turbine
+  Driven `T` sat on the 2px mxText spacing without the LeftMargin that
+  `collectTextBlock` maps to `fo:padding-left`. Cell labels now freeze td
+  padding on top of cellpadding. A second save keeps the inset.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
