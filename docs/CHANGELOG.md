@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io General / Misc / Advanced palettes now stay native in LibreOffice.
+  Capture only loaded `Sidebar-*.js`, so Note, Cube, Callout and Double
+  Ellipse in `grapheditor/Sidebar.js` never reached `VisioDocument::parse`.
+  Those official `addGeneralPalette` / `addMiscPalette` /
+  `addAdvancedPalette` templates now paint through the same Canvas path.
+  A second save keeps the dog-ear, isometric cube and double oval.
 - draw.io SVG `image;` icons now stay native in LibreOffice. Capture skipped
   `shape=image` (Azure2, SAP, GCP data-URI), so Bot Services never reached
   `VisioDocument::parse`. `mxImageShape` now vectorises SVG files / data URIs

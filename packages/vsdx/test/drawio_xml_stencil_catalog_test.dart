@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(472));
+    expect(dynamic, hasLength(475));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      12912,
+      13046,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1465,6 +1465,91 @@ void main() {
             .expand((geometry) => geometry.commands)
             .any((command) => command is CubBezTo || command is RelCubBezTo),
         isTrue,
+      );
+    },
+  );
+
+  test(
+    'grapheditor General Note Cube and Callout stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final note = stencil('Draw.io JS / General / general', 'Note').build(140, 3, 3);
+      expect(
+        note.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(8),
+        reason: 'shape=note is a dog-eared page, not a four-line rectangle',
+      );
+
+      final cube = stencil('Draw.io JS / General / general', 'Cube').build(141, 3, 3);
+      expect(
+        cube.geometries.length,
+        greaterThanOrEqualTo(3),
+        reason: 'shape=cube paints isometric faces, not a single rectangle',
+      );
+
+      final callout = stencil('Draw.io JS / General / general', 'Callout').build(142, 3, 3);
+      expect(
+        callout.geometries.expand((geometry) => geometry.commands).whereType<LineTo>().length,
+        greaterThanOrEqualTo(6),
+        reason: 'shape=callout is a speech bubble, not a rectangle',
+      );
+
+      final doubleEllipse = stencil(
+        'Draw.io JS / General / advanced',
+        'Double Ellipse',
+      ).build(143, 3, 3);
+      expect(
+        doubleEllipse.geometries.expand((geometry) => geometry.commands).whereType<EllipseCmd>().length,
+        2,
+        reason: 'ellipse;shape=doubleEllipse is two ovals',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final noteId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(
+        stencil('Draw.io JS / General / general', 'Note').build(noteId, 3, 3),
+      );
+      final cubeId = page.nextFreeShapeId();
+      page = page.addShape(
+        stencil('Draw.io JS / General / general', 'Cube').build(cubeId, 5, 3),
+      );
+      final calloutId = page.nextFreeShapeId();
+      page = page.addShape(
+        stencil('Draw.io JS / General / general', 'Callout').build(calloutId, 7, 3),
+      );
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(noteId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(8),
+      );
+      expect(
+        leftover.findShapeById(cubeId)!.geometries,
+        isNotEmpty,
+      );
+      expect(
+        leftover
+            .findShapeById(calloutId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        greaterThanOrEqualTo(6),
       );
     },
   );

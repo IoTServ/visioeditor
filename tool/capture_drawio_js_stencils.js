@@ -924,6 +924,7 @@ function mxPoint(x, y) {
   this.x = x;
   this.y = y;
 }
+mxPoint.prototype.clone = function() { return new mxPoint(this.x, this.y); };
 
 function mxShape() {
   this.style = {};
@@ -1399,6 +1400,7 @@ registerShape('image', shapeContext.mxImageShape || RectShape);
 loadOfficialCtor('mxArrow.js', 'mxArrow');
 loadOfficialCtor('mxArrowConnector.js', 'mxArrowConnector');
 loadOfficialCtor('mxSwimlane.js', 'mxSwimlane');
+loadJs('mxgraph/src/shape/mxMarker.js', path.join(webapp, 'mxgraph/src/shape/mxMarker.js'));
 registerShape(mxConstants.SHAPE_ARROW, shapeContext.mxArrow);
 registerShape(mxConstants.SHAPE_ARROW_CONNECTOR, shapeContext.mxArrowConnector);
 registerShape(mxConstants.SHAPE_SWIMLANE, shapeContext.mxSwimlane);
@@ -1471,7 +1473,20 @@ const factoryErrors = [];
 const notVertexKinds = {};
 const notVertexSamples = [];
 
-function Sidebar() { this.palettes = []; }
+function Sidebar() {
+  this.palettes = [];
+  this.initialDefaultVertexStyle = {};
+  this.graph = {setLinkForCell() {}, setAttributeForCell() {}};
+  this.editorUi = {
+    editor: {
+      graph: {
+        appendFontSize(style) { return String(style || ''); },
+        vertexFontSize: 12,
+        edgeFontSize: 12,
+      },
+    },
+  };
+}
 Sidebar.prototype.setCurrentSearchEntryLibrary = function() {};
 Sidebar.prototype.getTagsForStencil = function() { return []; };
 Sidebar.prototype.filterTags = function(tags) { return tags; };
@@ -1558,6 +1573,54 @@ Sidebar.prototype.addPalette = function(id, title, expanded, factory) {
   this.palettes.push({id, title, entries});
 };
 
+function mxUtilsSetStyle(style, key, value) {
+  if (style == null || key == null) return style;
+  const parts = String(style).split(';').filter((part) => part !== '');
+  const prefix = `${key}=`;
+  let found = false;
+  const next = [];
+  for (const part of parts) {
+    if (part === key || part.startsWith(prefix)) {
+      found = true;
+      if (value != null && String(value) !== '') next.push(`${key}=${value}`);
+    } else next.push(part);
+  }
+  if (!found && value != null && String(value) !== '') next.push(`${key}=${value}`);
+  return next.length ? `${next.join(';')};` : '';
+}
+
+function extractSidebarPrototype(source, names) {
+  let out = '';
+  for (const name of names) {
+    const needle = `Sidebar.prototype.${name} = function`;
+    const start = source.indexOf(needle);
+    if (start < 0) throw new Error(`missing Sidebar.prototype.${name}`);
+    let i = source.indexOf('{', start);
+    let depth = 0;
+    let quote = null;
+    for (; i < source.length; i++) {
+      const ch = source[i];
+      if (quote) {
+        if (ch === '\\') { i++; continue; }
+        if (ch === quote) quote = null;
+        continue;
+      }
+      if (ch === "'" || ch === '"' || ch === '`') { quote = ch; continue; }
+      if (ch === '{') depth++;
+      else if (ch === '}') {
+        depth--;
+        if (depth === 0) {
+          i++;
+          if (source[i] === ';') i++;
+          out += `${source.slice(start, i)}\n`;
+          break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
 const sidebarContext = {
   Sidebar,
   mxConstants,
@@ -1565,13 +1628,24 @@ const sidebarContext = {
   mxUtils: {
     bind: (scope, fn) => fn.bind(scope),
     extend() {},
+    setStyle: mxUtilsSetStyle,
     createXmlDocument: () => ({createElement: (name) => ({name})}),
     htmlEntities: (value) => value,
   },
   mxCell: Cell,
   mxGeometry: Geometry,
-  mxPoint: shapeContext.mxPoint,
+  mxPoint,
   mxRectangle: shapeContext.mxRectangle,
+  Editor: {
+    defaultTextStyle:
+      'text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;whiteSpace=wrap;',
+  },
+  Menus: {
+    layoutContainerEdgeStyle: '',
+    layoutContainers: new Proxy({}, {
+      get: () => ({sidebarStyle: 'swimlane;startSize=20;', width: 240, height: 160}),
+    }),
+  },
   Graph: {createIcon: (name) => name, zapGremlins: (value) => value},
   urlParams: {},
   isLocalStorage: false,
@@ -1580,6 +1654,14 @@ const sidebarContext = {
   console,
 };
 vm.createContext(sidebarContext);
+vm.runInContext(
+  extractSidebarPrototype(
+    fs.readFileSync(path.join(webapp, 'js/grapheditor/Sidebar.js'), 'utf8'),
+    ['addGeneralPalette', 'addMiscPalette', 'addAdvancedPalette', 'createAdvancedShapes'],
+  ),
+  sidebarContext,
+  {filename: 'js/grapheditor/Sidebar.js'},
+);
 
 const captured = [];
 for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js$/.test(name)).sort()) {
@@ -1608,6 +1690,25 @@ for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js
     if (!previous || palette.entries.length > previous.entries.length) palettes.set(palette.id, palette);
   }
   captured.push({file, palettes: [...palettes.values()]});
+}
+
+{
+  const sidebar = new Sidebar();
+  sidebarContext.sb = sidebar;
+  try { sidebar.addGeneralPalette(true); } catch (error) {
+    factoryErrors.push({id: 'general', error: String(error && error.stack || error)});
+  }
+  try { sidebar.addMiscPalette(false); } catch (error) {
+    factoryErrors.push({id: 'misc', error: String(error && error.stack || error)});
+  }
+  try { sidebar.addAdvancedPalette(false); } catch (error) {
+    factoryErrors.push({id: 'advanced', error: String(error && error.stack || error)});
+  }
+  captured.push({
+    file: 'Sidebar-General.js',
+    sourcePath: 'js/grapheditor/Sidebar.js',
+    palettes: sidebar.palettes,
+  });
 }
 
 const renderStats = {notVertex: 0, noStyle: 0, unregistered: 0, noPainter: 0, paintError: 0, noGeometry: 0};
@@ -1710,6 +1811,10 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
         isTable() { return false; },
         isTableCell() { return false; },
         getCellGeometry() { return null; },
+        convertValueToString(cell) {
+          if (cell == null) return '';
+          return String(cell.value != null ? cell.value : '');
+        },
         getModel() { return {getChildCount() { return 0; }, getChildAt() { return null; }}; },
       },
     },
@@ -2187,7 +2292,7 @@ for (const family of captured) {
     if (shapes.length) {
       const title = String(palette.title || palette.id || familyName);
       libraries.push({
-        sourcePath: `js/diagramly/sidebar/${family.file}#${palette.id}`,
+        sourcePath: `${family.sourcePath || `js/diagramly/sidebar/${family.file}`}#${palette.id}`,
         groupName: `Draw.io JS / ${familyName} / ${title}`,
         xml: `<shapes name="mxgraph.generated.${xmlEscape(familyName.toLowerCase())}">${shapes.join('')}</shapes>`,
       });
