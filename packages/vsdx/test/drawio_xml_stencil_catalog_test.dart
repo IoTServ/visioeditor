@@ -2070,6 +2070,89 @@ void main() {
     },
   );
 
+  test(
+    'mxText html tables stay row Text boxes for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if ((child.text ?? '').contains(text)) return child;
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final thermistor = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Electrical / Electrical / Misc',
+          )
+          .stencils
+          .singleWhere(
+            (entry) =>
+                entry.name == 'Thermistor With Independent Integral Heater',
+          )
+          .build(443, 3, 3);
+      final temp = glyphContaining(thermistor, 'temp')!;
+      expect(
+        temp.height,
+        closeTo(thermistor.height * 0.45, 0.04),
+        reason: 'tr height=45% is a Text child collectXFormData maps to '
+            'svg:height, not the full heater box',
+      );
+      expect(
+        temp.pinY,
+        closeTo(thermistor.height * (1 - 0.45 / 2), 0.05),
+        reason: 'the 45% band sits at the top (Visio Y-up) so \\temp\\ is '
+            'not centred on the heater',
+      );
+
+      final indicator = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / PID / Process Engineering / Instruments',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Indicator (Instrument)')
+          .build(444, 3, 3);
+      final ti = glyphContaining(indicator, 'TI')!;
+      final hash = glyphContaining(indicator, '##')!;
+      expect(
+        ti.height,
+        closeTo(indicator.height * 0.25, 0.04),
+        reason: 'td height=25 on a 100px indicator is the first band',
+      );
+      expect(
+        ti.pinY,
+        greaterThan(hash.pinY),
+        reason: 'TI is the top row; ## is the next 25px band',
+      );
+      expect(identical(ti, hash), isFalse);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(thermistor.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphContaining(leftover, 'temp')!.height,
+        closeTo(thermistor.height * 0.45, 0.04),
+        reason: 'a second save must keep the 45% band',
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

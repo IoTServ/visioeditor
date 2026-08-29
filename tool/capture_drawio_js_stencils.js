@@ -3103,6 +3103,87 @@ function parseHtmlLabel(html, base) {
   return runs;
 }
 
+// mxText html=1 tables (P&ID TI/##, Electrical thermistor \temp\) are
+// 100%×100% grids. Flattening them to one collectTextBlock box centred
+// the caption on the glyph; LibreOffice must pin each row like the HTML
+// table. One td per tr (the sidebar pattern). Multi-column tables fall
+// back to a single canvas.text.
+function htmlHasVisibleText(html) {
+  return !!cellLabel(html, false).trim();
+}
+
+function htmlTableRowSpecs(html) {
+  const source = String(html || '');
+  const tableMatch = /<table\b[^>]*>([\s\S]*)<\/table>/i.exec(source);
+  if (!tableMatch) return null;
+  const outside = source.replace(tableMatch[0], '');
+  if (cellLabel(outside, false).trim()) return null;
+  const rows = [];
+  const trRe = /<tr\b([^>]*)>([\s\S]*?)<\/tr>/gi;
+  let match;
+  while ((match = trRe.exec(tableMatch[1]))) {
+    const inner = match[2] || '';
+    const tds = [];
+    const tdRe = /<td\b([^>]*)>([\s\S]*?)<\/td>/gi;
+    let td;
+    while ((td = tdRe.exec(inner))) tds.push(td);
+    if (tds.length > 1) return null;
+    const trAttrs = match[1] || '';
+    const tdAttrs = tds.length ? tds[0][1] : '';
+    const heightToken = htmlAttr(trAttrs, 'height')
+      || htmlStyleProp(trAttrs, 'height')
+      || htmlAttr(tdAttrs, 'height')
+      || htmlStyleProp(tdAttrs, 'height');
+    rows.push({
+      heightToken,
+      align: htmlAttr(tdAttrs, 'align') || htmlStyleProp(tdAttrs, 'text-align'),
+      valign: htmlAttr(tdAttrs, 'valign') || htmlStyleProp(tdAttrs, 'vertical-align'),
+      html: tds.length ? tds[0][2] : inner,
+    });
+  }
+  if (rows.length < 2) return null;
+  return rows;
+}
+
+function htmlRowHeightPx(token, boxH) {
+  if (token == null || token === '') return null;
+  const t = String(token).trim();
+  if (/%$/.test(t)) {
+    const n = parseFloat(t);
+    return Number.isFinite(n) ? boxH * n / 100 : null;
+  }
+  const n = parseFloat(t);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function paintHtmlTableLabel(
+  canvas, x, y, w, h, html, defaultAlign, defaultValign, rotation,
+) {
+  const rows = htmlTableRowSpecs(html);
+  if (!rows) return false;
+  const heights = rows.map((row) => htmlRowHeightPx(row.heightToken, h));
+  const known = heights.reduce((sum, v) => sum + (v || 0), 0);
+  const missing = heights.filter((v) => v == null).length;
+  const auto = missing > 0 ? Math.max(0, h - known) / missing : 0;
+  let top = y;
+  let painted = false;
+  for (let i = 0; i < rows.length; i++) {
+    const rh = heights[i] == null ? auto : heights[i];
+    const row = rows[i];
+    if (rh > 0 && htmlHasVisibleText(row.html)) {
+      canvas.text(
+        x, top, w, rh, cellLabel(row.html, true),
+        row.align || defaultAlign,
+        row.valign || defaultValign || 'middle',
+        undefined, 'html', undefined, undefined, rotation,
+      );
+      painted = true;
+    }
+    top += rh;
+  }
+  return painted || rows.every((row) => !htmlHasVisibleText(row.html));
+}
+
 function isHtmlCellStyle(style) {
   return !!(style && (style.html == 1 || style.html === '1'));
 }
@@ -3211,10 +3292,16 @@ function paintTemplateLabel(entry, style, width, height, canvas, shape) {
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
   const box = mxVertexInnerLabelBox(shape, style, 0, 0, width, height);
+  const rotation = mxVertexLabelRotation(style);
+  if (htmlOn && paintHtmlTableLabel(
+    canvas, box.x, box.y, box.w, box.h, label, align, valign, rotation,
+  )) {
+    return;
+  }
   canvas.text(
     box.x, box.y, box.w, box.h, label, align, valign,
     undefined, htmlOn ? 'html' : undefined, undefined, undefined,
-    mxVertexLabelRotation(style),
+    rotation,
   );
 }
 
@@ -3476,11 +3563,16 @@ function paintCellTree(cells, canvas, width, height) {
         const box = mxVertexInnerLabelBox(
           result, cellStyle, x, y, cellWidth, cellHeight,
         );
-        canvas.text(
-          box.x, box.y, box.w, box.h, label, align, valign,
-          undefined, htmlOn ? 'html' : undefined, undefined, undefined,
-          mxVertexLabelRotation(cellStyle),
-        );
+        const rotation = mxVertexLabelRotation(cellStyle);
+        if (!(htmlOn && paintHtmlTableLabel(
+          canvas, box.x, box.y, box.w, box.h, label, align, valign, rotation,
+        ))) {
+          canvas.text(
+            box.x, box.y, box.w, box.h, label, align, valign,
+            undefined, htmlOn ? 'html' : undefined, undefined, undefined,
+            rotation,
+          );
+        }
         painted = true;
       }
       const next = [...(cell.children || [])];

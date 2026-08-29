@@ -678,6 +678,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   the Style 0x4 that `readCharIX` maps to `style:text-underline-type`.
   Cell labels now freeze that Char bit (and `line-through` as
   Strikethru). A second save keeps underline.
+- draw.io mxText html tables now stay native in LibreOffice.
+  Official `mxText` paints `<table>` rows as stacked HTML boxes
+  (`overflow=fill`, `height=45%` / `height=25`), but capture joined
+  every cell into one centred Char run, so Electrical thermistor
+  `\temp\` sat on the heater and P&ID Indicator `TI` / `##` sat in
+  the stem that `collectXFormData` maps to `svg:y`. Cell labels now
+  freeze one Text child per row. A second save keeps the band pins.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
