@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SVG `image;` icons now stay native in LibreOffice. Capture skipped
+  `shape=image` (Azure2, SAP, GCP data-URI), so Bot Services never reached
+  `VisioDocument::parse`. `mxImageShape` now vectorises SVG files / data URIs
+  (including `<use href>`), and ArchiMate Work Package's concatenated
+  `shape=…rounded=1` is a rounded rectangle. A second save keeps the badge
+  and roundrect.
 - draw.io XML stencils used by JavaScript sidebars now stay native in
   LibreOffice. Capture only painted registered Canvas constructors, so
   Flowchart Terminator / Decision (`shape=mxgraph.flowchart.*`) never

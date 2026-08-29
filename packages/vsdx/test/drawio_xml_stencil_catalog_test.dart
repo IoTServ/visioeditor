@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(366));
+    expect(dynamic, hasLength(472));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      11250,
+      12912,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1375,6 +1375,96 @@ void main() {
             .whereType<LineTo>()
             .length,
         greaterThanOrEqualTo(4),
+      );
+    },
+  );
+
+  test(
+    'mxImageShape SVG icons and ArchiMate rounded stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final bot = stencil(
+        'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
+        'Bot Services',
+      ).build(130, 3, 3);
+      expect(
+        bot.geometries.where((geometry) => !geometry.noFill),
+        isNotEmpty,
+        reason: 'Azure2 SVG image; must vectorise, not drop as a raster',
+      );
+      expect(
+        bot.geometries.expand((geometry) => geometry.commands),
+        anyOf(
+          contains(isA<EllipseCmd>()),
+          contains(isA<CubBezTo>()),
+        ),
+        reason: 'Bot Services badge is a circle plus glyph paths',
+      );
+
+      final bonsai = stencil(
+        'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
+        'Bonsai',
+      ).build(131, 3, 3);
+      expect(
+        bonsai.geometries.where((geometry) => !geometry.noFill),
+        isNotEmpty,
+        reason: 'Bonsai.svg <use href="#id"> must paint defs geometry',
+      );
+
+      final work = stencil(
+        'Draw.io JS / ArchiMate / archiMate21',
+        'Work Package',
+      ).build(132, 3, 3);
+      expect(
+        work.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+        reason: 'shape=mxgraph.archimate.rounded=1 is a rounded rectangle',
+      );
+      expect(
+        work.geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo),
+        isTrue,
+        reason: 'concatenated rounded=1 must not collapse to a sharp rect',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final botId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
+        'Bot Services',
+      ).build(botId, 3, 3));
+      final workId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / ArchiMate / archiMate21',
+        'Work Package',
+      ).build(workId, 5, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(botId)!
+            .geometries
+            .where((geometry) => !geometry.noFill),
+        isNotEmpty,
+      );
+      expect(
+        leftover
+            .findShapeById(workId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isTrue,
       );
     },
   );

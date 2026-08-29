@@ -22,7 +22,26 @@ function parseStyle(source) {
     if (!token) continue;
     const split = token.indexOf('=');
     if (split >= 0) {
-      style[token.slice(0, split)] = token.slice(split + 1);
+      const key = token.slice(0, split);
+      let value = token.slice(split + 1);
+      // ArchiMate Work Package concatenates `shape=mxgraph.archimate.` +
+      // `rounded=1` without a semicolon, so mxGraph sees shape value
+      // `mxgraph.archimate.rounded=1`. Split the extra key so the vertex
+      // is a rounded rectangle LibreOffice can parse.
+      if (key === 'shape') {
+        const extra = value.lastIndexOf('=');
+        if (extra > 0) {
+          const tail = value.slice(0, extra);
+          const extraVal = value.slice(extra + 1);
+          const dot = tail.lastIndexOf('.');
+          const extraKey = dot >= 0 ? tail.slice(dot + 1) : '';
+          if (/^[A-Za-z]+$/.test(extraKey) && extraVal !== '') {
+            style[extraKey] = extraVal;
+            value = dot >= 0 ? tail.slice(0, dot) : tail;
+          }
+        }
+      }
+      style[key] = value;
     } else if (namedStyles[token]) {
       Object.assign(style, namedStyles[token]);
     }
@@ -56,6 +75,8 @@ class CanvasRecorder {
   constructor() {
     this.tx = 0;
     this.ty = 0;
+    this.sx = 1;
+    this.sy = 1;
     this.rotTheta = 0;
     this.rotFlipH = false;
     this.rotFlipV = false;
@@ -70,7 +91,7 @@ class CanvasRecorder {
 
   save() {
     this.stack.push({
-      tx: this.tx, ty: this.ty, state: {...this.state},
+      tx: this.tx, ty: this.ty, sx: this.sx, sy: this.sy, state: {...this.state},
       rotTheta: this.rotTheta, rotFlipH: this.rotFlipH, rotFlipV: this.rotFlipV,
       rotCx: this.rotCx, rotCy: this.rotCy,
     });
@@ -81,6 +102,8 @@ class CanvasRecorder {
     if (saved) {
       this.tx = saved.tx;
       this.ty = saved.ty;
+      this.sx = saved.sx;
+      this.sy = saved.sy;
       this.state = saved.state;
       this.rotTheta = saved.rotTheta;
       this.rotFlipH = saved.rotFlipH;
@@ -90,8 +113,17 @@ class CanvasRecorder {
     }
   }
 
-  translate(x, y) { this.tx += Number(x) || 0; this.ty += Number(y) || 0; }
-  scale() {}
+  translate(x, y) {
+    this.tx += (Number(x) || 0) * this.sx;
+    this.ty += (Number(y) || 0) * this.sy;
+  }
+  scale(sx, sy) {
+    const x = Number(sx);
+    const y = sy == null ? x : Number(sy);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    this.sx *= x;
+    this.sy *= y;
+  }
   rotate(theta, flipH, flipV, cx, cy) {
     this.rotTheta = Number(theta) || 0;
     this.rotFlipH = !!flipH;
@@ -103,8 +135,8 @@ class CanvasRecorder {
     return this.rotTheta !== 0 || this.rotFlipH || this.rotFlipV;
   }
   map(px, py) {
-    let x = (Number(px) || 0) + this.tx;
-    let y = (Number(py) || 0) + this.ty;
+    let x = (Number(px) || 0) * this.sx + this.tx;
+    let y = (Number(py) || 0) * this.sy + this.ty;
     if (!this.isRotated()) return {x, y};
     let theta = this.rotTheta;
     const cx = this.rotCx;
@@ -144,7 +176,9 @@ class CanvasRecorder {
   arcTo(rx, ry, rotation, largeArc, sweep, x, y) {
     const p = this.map(x, y);
     this.command('arc', {
-      rx, ry, 'x-axis-rotation': (Number(rotation) || 0) + this.rotTheta,
+      rx: (Number(rx) || 0) * Math.abs(this.sx),
+      ry: (Number(ry) || 0) * Math.abs(this.sy),
+      'x-axis-rotation': (Number(rotation) || 0) + this.rotTheta,
       'large-arc-flag': largeArc, 'sweep-flag': sweep, x: p.x, y: p.y,
     });
   }
@@ -164,7 +198,7 @@ class CanvasRecorder {
       return;
     }
     const p = this.map(x, y);
-    this.operations.push(`<rect x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}"/>`);
+    this.operations.push(`<rect x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}"/>`);
   }
   roundrect(x, y, w, h, rx, ry) {
     this.finishPath();
@@ -174,9 +208,12 @@ class CanvasRecorder {
       return;
     }
     const p = this.map(x, y);
-    const arc = Math.min(100, 100 * Math.max(Number(rx) || 0, Number(ry) || 0) /
-      Math.max(1e-9, Math.min(Math.abs(Number(w) || 0), Math.abs(Number(h) || 0))));
-    this.operations.push(`<roundrect x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}" arcsize="${number(arc)}"/>`);
+    const sw = w * this.sx;
+    const sh = h * this.sy;
+    const arc = Math.min(100, 100 * Math.max(Number(rx) || 0, Number(ry) || 0) *
+      Math.max(Math.abs(this.sx), Math.abs(this.sy)) /
+      Math.max(1e-9, Math.min(Math.abs(sw), Math.abs(sh))));
+    this.operations.push(`<roundrect x="${number(p.x)}" y="${number(p.y)}" w="${number(sw)}" h="${number(sh)}" arcsize="${number(arc)}"/>`);
   }
   ellipse(x, y, w, h) {
     this.finishPath();
@@ -197,7 +234,7 @@ class CanvasRecorder {
       return;
     }
     const p = this.map(x, y);
-    this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}"/>`);
+    this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}"/>`);
   }
   fill() {
     this.finishPath();
@@ -221,7 +258,9 @@ class CanvasRecorder {
   // Raster images stay out of the vector capture. Nested mxStencil painters
   // also call image(); dropping the whole parent would hide Kubernetes / AWS
   // product icons that still have vector geometry.
-  image() {}
+  image(x, y, w, h, src, aspect) {
+    if (paintSvgImage(this, x, y, w, h, src, aspect !== false)) return;
+  }
   setFillStyle() {}
   setStrokeAlpha() {}
   setFontBackgroundColor() {}
@@ -284,8 +323,8 @@ class CanvasRecorder {
   setFontSize(value) { this.state.fontSize = value; }
   setFontStyle(value) { this.state.fontStyle = value; }
 
-  x(value) { return (Number(value) || 0) + this.tx; }
-  y(value) { return (Number(value) || 0) + this.ty; }
+  x(value) { return (Number(value) || 0) * this.sx + this.tx; }
+  y(value) { return (Number(value) || 0) * this.sy + this.ty; }
   command(name, attributes) {
     if (!this.pathOpen) {
       this.operations.push('<path>');
@@ -316,9 +355,9 @@ function decodeXml(value) {
 
 function parseAttributes(source) {
   const attrs = {};
-  const re = /([A-Za-z_:][\w:.-]*)\s*=\s*"([^"]*)"/g;
+  const re = /([A-Za-z_:][\w:.-]*)\s*=\s*(?:"([^"]*)"|'([^']*)')/g;
   let match;
-  while ((match = re.exec(source))) attrs[match[1]] = decodeXml(match[2]);
+  while ((match = re.exec(source))) attrs[match[1]] = decodeXml(match[2] ?? match[3]);
   return attrs;
 }
 
@@ -339,6 +378,348 @@ function parseXml(xml) {
     if (!match[4]) stack.push(node);
   }
   return root;
+}
+
+function xmlLocalName(name) {
+  const value = String(name || '');
+  const colon = value.indexOf(':');
+  return (colon >= 0 ? value.slice(colon + 1) : value).toLowerCase();
+}
+
+function looksLikeBase64(payload) {
+  const compact = String(payload).replace(/\s+/g, '');
+  return compact.length >= 8 && /^[A-Za-z0-9+/]+=*$/.test(compact);
+}
+
+function loadSvgSource(src) {
+  if (src == null || src === '') return null;
+  const raw = String(src).trim();
+  if (/^data:image\/svg\+xml/i.test(raw)) {
+    const comma = raw.indexOf(',');
+    if (comma < 0) return null;
+    const header = raw.slice(0, comma);
+    const payload = raw.slice(comma + 1);
+    try {
+      let text;
+      const compact = payload.replace(/\s+/g, '');
+      if (/;base64/i.test(header) || (looksLikeBase64(compact) && compact.startsWith('PHN2Zy'))) {
+        text = Buffer.from(compact, 'base64').toString('utf8');
+      } else {
+        text = decodeURIComponent(compact);
+        if (!text.includes('<svg') && looksLikeBase64(compact)) {
+          text = Buffer.from(compact, 'base64').toString('utf8');
+        }
+      }
+      return text.includes('<svg') ? text : null;
+    } catch (_) {
+      return null;
+    }
+  }
+  if (/^data:/i.test(raw)) return null;
+  const rel = raw.replace(/^\.\//, '').split('?')[0];
+  if (!/\.svg$/i.test(rel) && !rel.startsWith('img/')) return null;
+  const file = path.join(webapp, rel);
+  if (!fs.existsSync(file)) return null;
+  const text = fs.readFileSync(file, 'utf8');
+  return text.includes('<svg') ? text : null;
+}
+
+function svgPresentation(node, inherited) {
+  const style = {...inherited};
+  for (const part of String(node.attrs.style || '').split(';')) {
+    const token = part.trim();
+    if (!token) continue;
+    const split = token.indexOf(':');
+    if (split < 0) continue;
+    style[token.slice(0, split).trim()] = token.slice(split + 1).trim();
+  }
+  if (node.attrs.fill != null) style.fill = node.attrs.fill;
+  if (node.attrs.stroke != null) style.stroke = node.attrs.stroke;
+  if (node.attrs.opacity != null) style.opacity = node.attrs.opacity;
+  return style;
+}
+
+function svgPaintIsNone(value) {
+  if (value == null || value === '') return false;
+  const v = String(value).trim().toLowerCase();
+  return v === 'none' || v === 'transparent';
+}
+
+function applySvgPaint(canvas, style, kind) {
+  canvas.save();
+  if (kind === 'fill' || kind === 'fillstroke') {
+    if (svgPaintIsNone(style.fill)) canvas.setFillColor(null);
+  } else {
+    canvas.setFillColor(null);
+  }
+  if (kind === 'stroke' || kind === 'fillstroke') {
+    if (svgPaintIsNone(style.stroke)) canvas.setStrokeColor(null);
+  } else {
+    canvas.setStrokeColor(null);
+  }
+  if (kind === 'fill') canvas.fill();
+  else if (kind === 'stroke') canvas.stroke();
+  else canvas.fillAndStroke();
+  canvas.restore();
+}
+
+function svgDrawKind(style, defaultFill) {
+  const fill = style.fill == null ? defaultFill : style.fill;
+  const stroke = style.stroke;
+  const fillNone = svgPaintIsNone(fill) || fill === '';
+  const strokeNone = stroke == null || stroke === '' || svgPaintIsNone(stroke);
+  if (fillNone && strokeNone) return null;
+  if (fillNone) return 'stroke';
+  if (strokeNone) return 'fill';
+  return 'fillstroke';
+}
+
+function parseSvgNumbers(source) {
+  const values = [];
+  const re = /[+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?/g;
+  let match;
+  while ((match = re.exec(String(source || '')))) values.push(Number(match[0]));
+  return values;
+}
+
+function paintSvgPath(canvas, d) {
+  const tokens = [];
+  const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)/g;
+  let match;
+  while ((match = re.exec(String(d || '')))) {
+    if (match[1]) tokens.push(match[1]);
+    else tokens.push(Number(match[2]));
+  }
+  if (!tokens.length) return false;
+  canvas.begin();
+  let x = 0;
+  let y = 0;
+  let sx = 0;
+  let sy = 0;
+  let lastCmd = '';
+  let c2x = 0;
+  let c2y = 0;
+  let q1x = 0;
+  let q1y = 0;
+  let i = 0;
+  const take = () => Number(tokens[i++]) || 0;
+  while (i < tokens.length) {
+    let cmd = tokens[i];
+    const prevCmd = lastCmd;
+    if (typeof cmd === 'string') {
+      i++;
+      lastCmd = cmd;
+    } else {
+      cmd = lastCmd;
+      if (!cmd) break;
+    }
+    const rel = cmd === cmd.toLowerCase();
+    const up = cmd.toUpperCase();
+    if (up === 'Z') {
+      canvas.close();
+      x = sx;
+      y = sy;
+      continue;
+    }
+    if (up === 'M') {
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      canvas.moveTo(x, y);
+      sx = x;
+      sy = y;
+      lastCmd = rel ? 'l' : 'L';
+      continue;
+    }
+    if (up === 'L') {
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      canvas.lineTo(x, y);
+    } else if (up === 'H') {
+      x = rel ? x + take() : take();
+      canvas.lineTo(x, y);
+    } else if (up === 'V') {
+      y = rel ? y + take() : take();
+      canvas.lineTo(x, y);
+    } else if (up === 'C') {
+      const x1 = rel ? x + take() : take();
+      const y1 = rel ? y + take() : take();
+      const x2 = rel ? x + take() : take();
+      const y2 = rel ? y + take() : take();
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      canvas.curveTo(x1, y1, x2, y2, x, y);
+      c2x = x2;
+      c2y = y2;
+    } else if (up === 'S') {
+      const x2 = rel ? x + take() : take();
+      const y2 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      const prevUp = String(prevCmd).toUpperCase();
+      const x1 = prevUp === 'C' || prevUp === 'S' ? 2 * x - c2x : x;
+      const y1 = prevUp === 'C' || prevUp === 'S' ? 2 * y - c2y : y;
+      canvas.curveTo(x1, y1, x2, y2, nx, ny);
+      c2x = x2;
+      c2y = y2;
+      x = nx;
+      y = ny;
+    } else if (up === 'Q') {
+      const x1 = rel ? x + take() : take();
+      const y1 = rel ? y + take() : take();
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      canvas.quadTo(x1, y1, x, y);
+      q1x = x1;
+      q1y = y1;
+    } else if (up === 'T') {
+      const prevUp = String(prevCmd).toUpperCase();
+      const x1 = prevUp === 'Q' || prevUp === 'T' ? 2 * x - q1x : x;
+      const y1 = prevUp === 'Q' || prevUp === 'T' ? 2 * y - q1y : y;
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      canvas.quadTo(x1, y1, x, y);
+      q1x = x1;
+      q1y = y1;
+    } else if (up === 'A') {
+      const rx = take();
+      const ry = take();
+      const rot = take();
+      const large = take();
+      const sweep = take();
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      canvas.arcTo(rx, ry, rot, large, sweep, x, y);
+    } else {
+      break;
+    }
+  }
+  return true;
+}
+
+const svgSkip = new Set([
+  'defs', 'title', 'desc', 'metadata', 'namedview', 'rdf', 'work', 'clippath',
+  'filter', 'lineargradient', 'radialgradient', 'stop', 'style', 'script',
+  'marker', 'image', 'text', 'tspan',
+]);
+
+function findSvgById(node, id) {
+  if (!node || !id) return null;
+  if (node.attrs && node.attrs.id === id) return node;
+  for (const child of node.children || []) {
+    const found = findSvgById(child, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+function paintSvgNode(canvas, node, inherited, root) {
+  const name = xmlLocalName(node.name);
+  if (svgSkip.has(name)) return false;
+  const style = svgPresentation(node, inherited);
+  let painted = false;
+  if (name === 'use') {
+    const href = node.attrs.href || node.attrs['xlink:href'] || '';
+    const id = String(href).replace(/^#/, '');
+    const target = findSvgById(root, id);
+    if (!target || target === node) return false;
+    canvas.save();
+    const ox = Number(node.attrs.x) || 0;
+    const oy = Number(node.attrs.y) || 0;
+    if (ox || oy) canvas.translate(ox, oy);
+    painted = paintSvgNode(canvas, target, style, root);
+    canvas.restore();
+    return painted;
+  }
+  if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
+    for (const child of node.children || []) {
+      if (paintSvgNode(canvas, child, style, root)) painted = true;
+    }
+    return painted;
+  }
+  const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
+    name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
+  if (!kind) return false;
+  if (name === 'path') {
+    if (!paintSvgPath(canvas, node.attrs.d)) return false;
+  } else if (name === 'circle') {
+    const cx = Number(node.attrs.cx) || 0;
+    const cy = Number(node.attrs.cy) || 0;
+    const r = Number(node.attrs.r) || 0;
+    if (!(r > 0)) return false;
+    canvas.ellipse(cx - r, cy - r, r * 2, r * 2);
+  } else if (name === 'ellipse') {
+    const cx = Number(node.attrs.cx) || 0;
+    const cy = Number(node.attrs.cy) || 0;
+    const rx = Number(node.attrs.rx) || 0;
+    const ry = Number(node.attrs.ry) || 0;
+    if (!(rx > 0 && ry > 0)) return false;
+    canvas.ellipse(cx - rx, cy - ry, rx * 2, ry * 2);
+  } else if (name === 'rect') {
+    const x = Number(node.attrs.x) || 0;
+    const y = Number(node.attrs.y) || 0;
+    const w = Number(node.attrs.width) || 0;
+    const h = Number(node.attrs.height) || 0;
+    const rx = Number(node.attrs.rx) || 0;
+    if (!(w > 0 && h > 0)) return false;
+    if (rx > 0) canvas.roundrect(x, y, w, h, rx, rx);
+    else canvas.rect(x, y, w, h);
+  } else if (name === 'polygon' || name === 'polyline') {
+    const nums = parseSvgNumbers(node.attrs.points);
+    if (nums.length < 4) return false;
+    canvas.begin();
+    canvas.moveTo(nums[0], nums[1]);
+    for (let i = 2; i + 1 < nums.length; i += 2) canvas.lineTo(nums[i], nums[i + 1]);
+    if (name === 'polygon') canvas.close();
+  } else if (name === 'line') {
+    canvas.begin();
+    canvas.moveTo(Number(node.attrs.x1) || 0, Number(node.attrs.y1) || 0);
+    canvas.lineTo(Number(node.attrs.x2) || 0, Number(node.attrs.y2) || 0);
+  } else {
+    return false;
+  }
+  applySvgPaint(canvas, {...style, fill: style.fill == null ? '#000' : style.fill}, kind);
+  return true;
+}
+
+function findSvgRoot(node) {
+  if (!node) return null;
+  if (xmlLocalName(node.name) === 'svg') return node;
+  for (const child of node.children || []) {
+    const found = findSvgRoot(child);
+    if (found) return found;
+  }
+  return null;
+}
+
+function paintSvgImage(canvas, x, y, w, h, src, preserveAspect) {
+  const xml = loadSvgSource(src);
+  if (!xml) return false;
+  const root = findSvgRoot(parseXml(xml));
+  if (!root) return false;
+  const vb = parseSvgNumbers(root.attrs.viewBox);
+  const vw = vb.length >= 4 ? vb[2] : (Number(root.attrs.width) || w || 1);
+  const vh = vb.length >= 4 ? vb[3] : (Number(root.attrs.height) || h || 1);
+  const vx = vb.length >= 4 ? vb[0] : 0;
+  const vy = vb.length >= 4 ? vb[1] : 0;
+  if (!(vw > 0 && vh > 0 && w > 0 && h > 0)) return false;
+  let dw = w;
+  let dh = h;
+  let dx = x;
+  let dy = y;
+  if (preserveAspect) {
+    const scale = Math.min(w / vw, h / vh);
+    dw = vw * scale;
+    dh = vh * scale;
+    dx = x + (w - dw) / 2;
+    dy = y + (h - dh) / 2;
+  }
+  canvas.save();
+  canvas.translate(dx, dy);
+  canvas.scale(dw / vw, dh / vh);
+  canvas.translate(-vx, -vy);
+  const painted = paintSvgNode(canvas, root, {}, root);
+  canvas.restore();
+  return painted;
 }
 
 function loadNamedStyles(xmlPath) {
@@ -979,7 +1360,7 @@ registerShape(mxConstants.SHAPE_LINE, shapeContext.mxLine);
 registerShape(mxConstants.SHAPE_ARROW, shapeContext.mxArrow);
 registerShape(mxConstants.SHAPE_ARROW_CONNECTOR, shapeContext.mxArrowConnector);
 registerShape('rect', RectShape);
-registerShape('image', RectShape);
+registerShape('image', shapeContext.mxImageShape || RectShape);
 registerShape('cylinder', shapeContext.mxCylinder);
 vm.createContext(shapeContext);
 
@@ -1012,6 +1393,9 @@ function loadOfficialCtor(relPath, ctorName) {
 // Official edge arrows (filled block / thick connector) and swimlane title
 // bar. Capture stubs used a polyline or a full rectangle, so Draw never saw
 // those types through VisioDocument::parse.
+loadOfficialCtor('mxImageShape.js', 'mxImageShape');
+registerShape(mxConstants.SHAPE_IMAGE, shapeContext.mxImageShape || RectShape);
+registerShape('image', shapeContext.mxImageShape || RectShape);
 loadOfficialCtor('mxArrow.js', 'mxArrow');
 loadOfficialCtor('mxArrowConnector.js', 'mxArrowConnector');
 loadOfficialCtor('mxSwimlane.js', 'mxSwimlane');
@@ -1228,16 +1612,16 @@ for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js
 
 const renderStats = {notVertex: 0, noStyle: 0, unregistered: 0, noPainter: 0, paintError: 0, noGeometry: 0};
 const unregisteredShapes = {};
+const noGeometryKinds = {};
 const noGeometryEntries = [];
 const noPainterEntries = [];
 const paintErrors = [];
 const paintErrorCounts = {};
 function isGenericStyle(style) {
-  // Raster pictures stay out of the vector catalog. Empty / rectangle /
-  // label / rect vertices are official mxRectangleShape (rounded, dashed,
-  // fillColor=none) so LibreOffice's VisioDocument::parse can paint them.
-  const name = style && style.shape;
-  return name === 'image';
+  // Raster pictures stay out of the vector catalog. SVG `image;` templates
+  // (Azure2, SAP, GCP data-URI icons) are painted by mxImageShape so
+  // LibreOffice's VisioDocument::parse still sees native geometry.
+  return false;
 }
 
 function vertexPainter(style) {
@@ -1299,6 +1683,10 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.rotation = Number(style.rotation) || 0;
   shape.flipH = style.flipH == 1;
   shape.flipV = style.flipV == 1;
+  shape.image = style.image || null;
+  shape.preserveImageAspect = style.imageAspect != '0';
+  shape.imageBackground = style.imageBackground || null;
+  shape.imageBorder = style.imageBorder || null;
   shape.laneFill = mxUtils.getValue(
     style, mxConstants.STYLE_SWIMLANE_FILLCOLOR, mxConstants.NONE,
   );
@@ -1699,7 +2087,8 @@ function renderEntry(entry) {
       // VisioDocument::parse; NestedStencil.drawShape is the same path
       // paintCellTree already uses for composite cells.
       shape = paintRegistered(
-        style, width, height, canvas, 0, 0, {allowStencil: true},
+        style, width, height, canvas, 0, 0,
+        {allowStencil: true, fallbackRect: style.rounded == 1},
       );
       if (!shape) {
         renderStats.unregistered++;
@@ -1743,11 +2132,20 @@ function renderEntry(entry) {
   }
   if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse|text)\b/.test(operation))) {
     renderStats.noGeometry++;
+    const image = style && style.image;
+    const src = image == null ? '' : String(image);
+    const mime = /^data:([^;,]+)/i.exec(src);
+    const ext = /\.([a-z0-9]+)$/i.exec(src.split('?')[0]);
+    const kind = mime ? mime[1] : (ext ? ext[1] : (src ? 'other' : `${entry.kind}:${style && style.shape || 'none'}`));
+    noGeometryKinds[kind] = (noGeometryKinds[kind] || 0) + 1;
     if (noGeometryEntries.length < 40) {
       noGeometryEntries.push({
         title: entry.title,
+        kind: entry.kind,
         shape: style && style.shape,
-        ops: canvas.operations.slice(0, 20),
+        imageKind: kind,
+        image: src.slice(0, 120),
+        ops: canvas.operations.slice(0, 8),
       });
     }
     return null;
@@ -1807,6 +2205,7 @@ const result = {
   paintErrors,
   paintErrorCounts,
   unregisteredShapes,
+  noGeometryKinds,
   noGeometryEntries,
   noPainterEntries,
   factoryErrors,
