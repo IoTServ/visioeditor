@@ -15,6 +15,7 @@ import 'line.dart';
 import 'shape.dart';
 import 'shape_kind.dart';
 import 'sheet_sections.dart';
+import 'user_property.dart';
 
 abstract final class VsdxShapeFactory {
   VsdxShapeFactory._();
@@ -6170,6 +6171,9 @@ abstract final class VsdxShapeFactory {
       ],
       fill: fill,
       line: line,
+      userCells: const <VsdxUserCell>[
+        VsdxUserCell(name: VsdxShape.userLibvisioEvenoddHole, value: '1'),
+      ],
     );
   }
 
@@ -6361,6 +6365,9 @@ abstract final class VsdxShapeFactory {
       ],
       fill: fill,
       line: line,
+      userCells: const <VsdxUserCell>[
+        VsdxUserCell(name: VsdxShape.userLibvisioEvenoddHole, value: '1'),
+      ],
     );
   }
 
@@ -9764,6 +9771,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     VsdxGeometry chevron(double tipX, double midY) => VsdxGeometry(
+          noFill: true,
           commands: <VsdxPathCommand>[
             MoveTo(tipX - 14 / 150 * w, midY - 8 / 90 * h),
             LineTo(tipX, midY),
@@ -10423,6 +10431,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     VsdxGeometry diamond(double cx, double cy, double s) => VsdxGeometry(
+          noFill: true,
           commands: <VsdxPathCommand>[
             MoveTo(cx - s, cy),
             LineTo(cx, cy + s),
@@ -11047,7 +11056,40 @@ abstract final class VsdxShapeFactory {
   // ---------------------------------------------------------------------------
   // AWS architecture starters (draw.io mxgraph.aws4.*) — geometric icons.
   // Not brand-mark replicas; clean compute / storage / messaging glyphs.
+  // Inner glyphs used to be NoFill=0 inside the body; libvisio concatenates
+  // those sections with `svg:fill-rule=evenodd` and Draw punches holes.
+  // [_cloudShape] strokes nested interiors so the tile stays solid.
   // ---------------------------------------------------------------------------
+
+  static VsdxShape _cloudShape({
+    required int id,
+    required double pinX,
+    required double pinY,
+    required double width,
+    required double height,
+    required List<VsdxGeometry> geometries,
+    VsdxFill fill = _defaultFill,
+    VsdxLine line = _defaultLine,
+    String? name,
+  }) {
+    final w = width.abs();
+    final h = height.abs();
+    return VsdxShape(
+      id: id,
+      name: name ?? 'Sheet.$id',
+      pinX: pinX,
+      pinY: pinY,
+      width: w,
+      height: h,
+      geometries: strokeNestedFillsForLibvisio(
+        geometries,
+        width: w,
+        height: h,
+      ),
+      fill: fill,
+      line: line,
+    );
+  }
 
   /// EC2: compute instance (cube with face accents).
   static VsdxShape awsEc2({
@@ -11063,7 +11105,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final d = 0.22 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11119,7 +11161,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11171,7 +11213,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11216,7 +11258,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.12 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11282,7 +11324,7 @@ abstract final class VsdxShapeFactory {
     final top = 0.78 * h;
     final bottom = 0.18 * h;
     final ry = 0.1 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11338,7 +11380,7 @@ abstract final class VsdxShapeFactory {
             LineTo(0.1 * w, y0),
           ],
         );
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11379,7 +11421,7 @@ abstract final class VsdxShapeFactory {
     final cardW = 0.18 * w;
     final cardH = 0.45 * h;
     final y = 0.28 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11425,7 +11467,7 @@ abstract final class VsdxShapeFactory {
     final cx = 0.35 * w;
     final cy = 0.5 * h;
     final r = 0.14 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11491,7 +11533,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11538,7 +11580,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11589,7 +11631,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11639,7 +11681,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11704,7 +11746,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.2 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11761,7 +11803,7 @@ abstract final class VsdxShapeFactory {
             cx: px, cy: py, aX: px + pr, aY: py, bX: px, bY: py + pr),
       ]));
     }
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11802,7 +11844,7 @@ abstract final class VsdxShapeFactory {
       ]);
     }
 
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11854,7 +11896,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.48 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11904,7 +11946,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -11957,7 +11999,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12004,7 +12046,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12051,7 +12093,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12116,7 +12158,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12170,7 +12212,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12222,7 +12264,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12280,7 +12322,7 @@ abstract final class VsdxShapeFactory {
     final top = 0.85 * h;
     final bottom = 0.45 * h;
     final ry = 0.08 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12342,7 +12384,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.22 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12395,7 +12437,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12444,7 +12486,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12488,7 +12530,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12554,7 +12596,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12591,7 +12633,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.08 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12657,7 +12699,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12707,7 +12749,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12773,7 +12815,7 @@ abstract final class VsdxShapeFactory {
             LineTo(x0, 0.28 * h),
           ],
         );
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12804,7 +12846,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12855,7 +12897,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12901,7 +12943,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -12955,7 +12997,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13009,7 +13051,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13072,7 +13114,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13137,7 +13179,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13192,7 +13234,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.14 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13252,7 +13294,7 @@ abstract final class VsdxShapeFactory {
             LineTo(0.18 * w, top),
           ],
         );
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13291,7 +13333,7 @@ abstract final class VsdxShapeFactory {
     final top = 0.8 * h;
     final bottom = 0.2 * h;
     final ry = 0.1 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13348,7 +13390,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13423,7 +13465,7 @@ abstract final class VsdxShapeFactory {
           LineTo(hx + 0.5 * hr, hy - 0.866 * hr),
           LineTo(hx + hr, hy),
         ];
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13462,7 +13504,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.12 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13520,7 +13562,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13572,7 +13614,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13630,7 +13672,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13688,7 +13730,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13751,7 +13793,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13801,7 +13843,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.12 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13849,7 +13891,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13895,7 +13937,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13950,7 +13992,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -13999,7 +14041,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14059,7 +14101,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14114,7 +14156,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14168,7 +14210,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14212,7 +14254,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14267,7 +14309,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14328,7 +14370,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14405,7 +14447,7 @@ abstract final class VsdxShapeFactory {
           ..add(LineTo(x0, y0));
       }
     }
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14440,7 +14482,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14497,7 +14539,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14547,7 +14589,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.08 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14603,7 +14645,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final d = 0.2 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14660,7 +14702,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14708,7 +14750,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14754,7 +14796,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14808,7 +14850,7 @@ abstract final class VsdxShapeFactory {
     final cx = 0.5 * w;
     final rx = 0.5 * (right - left);
     final ry = 0.08 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14856,7 +14898,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14925,7 +14967,7 @@ abstract final class VsdxShapeFactory {
     }
 
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -14957,7 +14999,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15018,7 +15060,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15077,7 +15119,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15131,7 +15173,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.42 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15192,7 +15234,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15244,7 +15286,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.12 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15299,7 +15341,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15347,7 +15389,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15402,7 +15444,7 @@ abstract final class VsdxShapeFactory {
             LineTo(x0, 0.25 * h),
           ],
         );
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15443,7 +15485,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15479,7 +15521,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15537,7 +15579,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15583,7 +15625,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.48 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15638,7 +15680,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15686,7 +15728,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15737,7 +15779,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15788,7 +15830,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15838,7 +15880,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15883,7 +15925,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15932,7 +15974,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -15987,7 +16029,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16044,7 +16086,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.08 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16121,7 +16163,7 @@ abstract final class VsdxShapeFactory {
         ..add(LineTo(x, y0));
       x += pw + gap;
     }
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16167,7 +16209,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16218,7 +16260,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.55 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16271,7 +16313,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16324,7 +16366,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16370,7 +16412,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.08 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16428,7 +16470,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16482,7 +16524,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16529,7 +16571,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16581,7 +16623,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16632,7 +16674,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16676,7 +16718,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16737,7 +16779,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16791,7 +16833,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16837,7 +16879,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16890,7 +16932,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16955,7 +16997,7 @@ abstract final class VsdxShapeFactory {
         ..add(LineTo(x, y0));
       x += pw + gap;
     }
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -16991,7 +17033,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17050,7 +17092,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17106,7 +17148,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17157,7 +17199,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final r = 0.12 * math.min(w, h);
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17209,7 +17251,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17262,7 +17304,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17323,7 +17365,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17381,7 +17423,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17424,7 +17466,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17476,7 +17518,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.08 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17536,7 +17578,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final d = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17590,7 +17632,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17643,7 +17685,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17713,7 +17755,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17744,7 +17786,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17792,7 +17834,7 @@ abstract final class VsdxShapeFactory {
     final left = 0.18 * w;
     final right = 0.82 * w;
     final ry = 0.08 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17857,7 +17899,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17901,7 +17943,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -17947,7 +17989,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.4 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18008,7 +18050,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18061,7 +18103,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18116,7 +18158,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18162,7 +18204,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18207,7 +18249,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18262,7 +18304,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.48 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18317,7 +18359,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18362,7 +18404,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.08 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18417,7 +18459,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18481,7 +18523,7 @@ abstract final class VsdxShapeFactory {
             LineTo(x0, 0.28 * h),
           ],
         );
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18513,7 +18555,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18578,7 +18620,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18614,7 +18656,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18665,7 +18707,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18714,7 +18756,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18773,7 +18815,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18825,7 +18867,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18873,7 +18915,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18920,7 +18962,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -18964,7 +19006,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19024,7 +19066,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19084,7 +19126,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19117,7 +19159,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19176,7 +19218,7 @@ abstract final class VsdxShapeFactory {
     final right = 0.82 * w;
     final cx = 0.5 * w;
     final ry = 0.08 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19224,7 +19266,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19273,7 +19315,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19328,7 +19370,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.42 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19386,7 +19428,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19443,7 +19485,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.2 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19497,7 +19539,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19552,7 +19594,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19601,7 +19643,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19656,7 +19698,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19710,7 +19752,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19761,7 +19803,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19807,7 +19849,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19854,7 +19896,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.55 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19908,7 +19950,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final d = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -19963,7 +20005,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20013,7 +20055,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20058,7 +20100,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20104,7 +20146,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20165,7 +20207,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.55 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20226,7 +20268,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20269,7 +20311,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20321,7 +20363,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20375,7 +20417,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20417,7 +20459,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final d = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20475,7 +20517,7 @@ abstract final class VsdxShapeFactory {
     final right = 0.82 * w;
     final cx = 0.5 * w;
     final ry = 0.08 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20529,7 +20571,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20578,7 +20620,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20634,7 +20676,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + r, cy),
         ];
     final r = 0.18 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20665,7 +20707,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20709,7 +20751,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20770,7 +20812,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20829,7 +20871,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20882,7 +20924,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20937,7 +20979,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -20994,7 +21036,7 @@ abstract final class VsdxShapeFactory {
     final right = 0.7 * w;
     final cx = 0.425 * w;
     final ry = 0.07 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21059,7 +21101,7 @@ abstract final class VsdxShapeFactory {
             LineTo(x0, 0.28 * h),
           ],
         );
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21090,7 +21132,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21139,7 +21181,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21202,7 +21244,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21258,7 +21300,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21312,7 +21354,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     final cx = 0.5 * w;
     final cy = 0.5 * h;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21364,7 +21406,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final r = 0.1 * math.min(w, h);
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21421,7 +21463,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21459,7 +21501,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21504,7 +21546,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21558,7 +21600,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21607,7 +21649,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21662,7 +21704,7 @@ abstract final class VsdxShapeFactory {
     final w = width.abs();
     final h = height.abs();
     final cx = 0.5 * w;
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21723,7 +21765,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21766,7 +21808,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,
@@ -21811,7 +21853,7 @@ abstract final class VsdxShapeFactory {
   }) {
     final w = width.abs();
     final h = height.abs();
-    return VsdxShape(
+    return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
       pinX: pinX,

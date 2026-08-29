@@ -1526,6 +1526,222 @@ class VsdxGeometry {
       '${noQuickDrag ? ' NoQuickDrag' : ''})';
 }
 
+/// Axis-aligned bounds of [geometry] in shape-local inches, or `null` when
+/// the path has no finite vertices (an infinite line, empty commands).
+({double minX, double minY, double maxX, double maxY})? geometryLocalBounds(
+  VsdxGeometry geometry, {
+  required double width,
+  required double height,
+}) {
+  final w = width.abs();
+  final h = height.abs();
+  var minX = double.infinity;
+  var minY = double.infinity;
+  var maxX = double.negativeInfinity;
+  var maxY = double.negativeInfinity;
+  var any = false;
+  void pt(double x, double y) {
+    if (!x.isFinite || !y.isFinite) return;
+    any = true;
+    if (x < minX) minX = x;
+    if (x > maxX) maxX = x;
+    if (y < minY) minY = y;
+    if (y > maxY) maxY = y;
+  }
+
+  void rel(double fx, double fy) => pt(fx * w, fy * h);
+
+  for (final command in geometry.commands) {
+    switch (command) {
+      case MoveTo(:final x, :final y):
+        pt(x, y);
+      case LineTo(:final x, :final y):
+        pt(x, y);
+      case ArcTo(:final x, :final y):
+        pt(x, y);
+      case RelMoveTo(:final fx, :final fy):
+        rel(fx, fy);
+      case RelLineTo(:final fx, :final fy):
+        rel(fx, fy);
+      case RelArcTo(:final fx, :final fy):
+        rel(fx, fy);
+      case CubBezTo(
+          :final x,
+          :final y,
+          :final x1,
+          :final y1,
+          :final x2,
+          :final y2
+        ):
+        pt(x, y);
+        pt(x1, y1);
+        pt(x2, y2);
+      case RelCubBezTo(
+          :final fx,
+          :final fy,
+          :final fx1,
+          :final fy1,
+          :final fx2,
+          :final fy2,
+        ):
+        rel(fx, fy);
+        rel(fx1, fy1);
+        rel(fx2, fy2);
+      case QuadBezTo(:final x, :final y, :final x1, :final y1):
+        pt(x, y);
+        pt(x1, y1);
+      case RelQuadBezTo(:final fx, :final fy, :final fx1, :final fy1):
+        rel(fx, fy);
+        rel(fx1, fy1);
+      case EllipticalArcTo(
+          :final x,
+          :final y,
+          :final controlX,
+          :final controlY
+        ):
+        pt(x, y);
+        pt(controlX, controlY);
+      case RelEllipticalArcTo(:final fx, :final fy, :final fcx, :final fcy):
+        rel(fx, fy);
+        rel(fcx, fcy);
+      case EllipseCmd(
+          :final cx,
+          :final cy,
+          :final aX,
+          :final aY,
+          :final bX,
+          :final bY
+        ):
+        final ax = aX - cx;
+        final ay = aY - cy;
+        final bx = bX - cx;
+        final by = bY - cy;
+        final halfW = math.sqrt(ax * ax + bx * bx);
+        final halfH = math.sqrt(ay * ay + by * by);
+        pt(cx - halfW, cy - halfH);
+        pt(cx + halfW, cy + halfH);
+      case PolylineTo(
+          :final x,
+          :final y,
+          :final vertices,
+          :final relative,
+          :final vertsRelative,
+          :final vertsYRelative,
+        ):
+        if (relative) {
+          rel(x, y);
+        } else {
+          pt(x, y);
+        }
+        for (final v in vertices) {
+          pt(vertsRelative ? v.x * w : v.x, vertsYRelative ? v.y * h : v.y);
+        }
+      case SplineStart(:final x, :final y, :final relative):
+        if (relative) {
+          rel(x, y);
+        } else {
+          pt(x, y);
+        }
+      case SplineKnot(:final x, :final y, :final relative):
+        if (relative) {
+          rel(x, y);
+        } else {
+          pt(x, y);
+        }
+      case NurbsTo(
+          :final x,
+          :final y,
+          :final controlPoints,
+          :final relative,
+          :final cpRelative,
+          :final cpYRelative,
+        ):
+        if (relative) {
+          rel(x, y);
+        } else {
+          pt(x, y);
+        }
+        for (final p in controlPoints) {
+          pt(cpRelative ? p.x * w : p.x, cpYRelative ? p.y * h : p.y);
+        }
+      case InfiniteLineCmd():
+        break;
+    }
+  }
+  if (!any) return null;
+  return (minX: minX, minY: minY, maxX: maxX, maxY: maxY);
+}
+
+bool _boxContains(
+  ({double minX, double minY, double maxX, double maxY}) outer,
+  ({double minX, double minY, double maxX, double maxY}) inner,
+) {
+  const eps = 1e-9;
+  if (inner.minX < outer.minX - eps ||
+      inner.maxX > outer.maxX + eps ||
+      inner.minY < outer.minY - eps ||
+      inner.maxY > outer.maxY + eps) {
+    return false;
+  }
+  final outerArea =
+      (outer.maxX - outer.minX).abs() * (outer.maxY - outer.minY).abs();
+  final innerArea =
+      (inner.maxX - inner.minX).abs() * (inner.maxY - inner.minY).abs();
+  return innerArea < outerArea * 0.999;
+}
+
+/// Stroke filled Geometry whose bounds sit inside the largest filled section.
+///
+/// LibreOffice only calls `VisioDocument::parse`. libvisio
+/// `collectGeometry` concatenates every `NoFill=0` section and
+/// `_fillAndShadowProperties` emits `svg:fill-rule=evenodd`, so an inner
+/// message square / LED / lens punches a hole in Draw. Visio paints those
+/// sections separately (same fill, visible stroke). Marking nested interiors
+/// NoFill keeps the outer body solid in canvas, SVG and Draw. Adjacent
+/// faces (isometric cubes, chevrons, process-bar tiles) are not nested and
+/// stay filled. Intentional cut-outs (first-aid cross, no-entry bar) must
+/// skip this rewrite.
+List<VsdxGeometry> strokeNestedFillsForLibvisio(
+  List<VsdxGeometry> geos, {
+  required double width,
+  required double height,
+}) {
+  if (geos.length < 2) return geos;
+  final filled = <int>[];
+  final boxes = <int, ({double minX, double minY, double maxX, double maxY})>{};
+  for (var i = 0; i < geos.length; i++) {
+    final g = geos[i];
+    if (g.noFill || g.noShow) continue;
+    final box = geometryLocalBounds(g, width: width, height: height);
+    if (box == null) continue;
+    filled.add(i);
+    boxes[i] = box;
+  }
+  if (filled.length < 2) return geos;
+  var outerIndex = filled.first;
+  var outerArea = -1.0;
+  for (final i in filled) {
+    final box = boxes[i]!;
+    final area = (box.maxX - box.minX).abs() * (box.maxY - box.minY).abs();
+    if (area > outerArea) {
+      outerArea = area;
+      outerIndex = i;
+    }
+  }
+  final outer = boxes[outerIndex]!;
+  var changed = false;
+  final next = <VsdxGeometry>[
+    for (var i = 0; i < geos.length; i++) geos[i],
+  ];
+  for (final i in filled) {
+    if (i == outerIndex) continue;
+    if (!_boxContains(outer, boxes[i]!)) continue;
+    next[i] = geos[i].copyWith(noFill: true);
+    changed = true;
+  }
+  return changed ? next : geos;
+}
+
 /// Sync Geometry NoFill without wiping decorative hollow segments on
 /// multi-geometry shapes (e.g. doubleRectangle inner ring stays NoFill).
 ///

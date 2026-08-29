@@ -992,6 +992,11 @@ class VsdxShape {
   /// the source when it remains in the package. Editor-owned.
   static const String userLibvisioSourceImage = 'veLibvisioSourceImage';
 
+  /// Keep an even-odd cut-out (first-aid cross, no-entry bar) when a save
+  /// would otherwise stroke nested `NoFill=0` interiors so Draw does not
+  /// punch icon glyphs as holes. Editor-owned; libvisio ignores User rows.
+  static const String userLibvisioEvenoddHole = 'veLibvisioEvenoddHole';
+
   /// Media part [userLibvisioSourceImage] names, or `null` when absent.
   String? get libvisioSourceImagePart {
     for (final c in userCells) {
@@ -1000,6 +1005,27 @@ class VsdxShape {
       return value.isEmpty ? null : value;
     }
     return null;
+  }
+
+  /// `true` when nested filled Geometry must stay `NoFill=0` so Draw keeps
+  /// the evenodd hole (first-aid cross, no-entry bar).
+  bool get keepsLibvisioEvenoddHoles {
+    for (final cell in userCells) {
+      if (cell.name != userLibvisioEvenoddHole) continue;
+      final value = (cell.value ?? '').trim().toLowerCase();
+      return value == '1' || value == 'true';
+    }
+    bool holeName(String value) {
+      final n = value.trim().toLowerCase();
+      return n == 'first aid' ||
+          n.contains('first aid') ||
+          n == 'no entry' ||
+          n.contains('no entry');
+    }
+
+    if (holeName(name)) return true;
+    final master = masterName;
+    return master != null && holeName(master);
   }
 
   /// Stored expanded height (inches) while [collapsed], so unfold restores size.

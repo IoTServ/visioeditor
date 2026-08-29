@@ -72,7 +72,10 @@
 /// Geometry sections punch even-odd holes (libvisio's
 /// `svg:fill-rule=evenodd`); a two-ring frame must not bake as a solid
 /// Width×Height plate, including when a multi-stop LineGradient joins
-/// that same fill PNG. For an
+/// that same fill PNG. Nested icon glyphs (cloud tiles, EIP squares)
+/// are the opposite missing paint: a save strokes those interiors so
+/// Draw does not punch the body, while first-aid / no-entry cut-outs
+/// keep `User.veLibvisioEvenoddHole`. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
 /// A three-stop linear whose ends match (BG–FG–BG) is that same
@@ -674,6 +677,68 @@ VsdxPage bakeDegenerateBezierForLibvisioWrite(VsdxPage page) {
   return page.copyWith(shapes: shapes);
 }
 
+/// Stroke nested `NoFill=0` interiors so libvisio evenodd does not punch
+/// icon glyphs as holes. First-aid / no-entry cut-outs opt out.
+bool stencilKeepsLibvisioEvenoddHoles(String stencilName) {
+  final n = stencilName.trim().toLowerCase();
+  return n == 'first aid' ||
+      n.contains('first aid') ||
+      n == 'no entry' ||
+      n.contains('no entry');
+}
+
+VsdxShape strokeNestedFillsOnShapeForLibvisio(
+  VsdxShape shape, {
+  bool keepHoles = false,
+}) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      strokeNestedFillsOnShapeForLibvisio(child, keepHoles: keepHoles),
+  ];
+  var next = shape;
+  if (!keepHoles &&
+      !shape.keepsLibvisioEvenoddHoles &&
+      !_isLibvisioBakePlate(shape)) {
+    final geos = strokeNestedFillsForLibvisio(
+      shape.geometries,
+      width: shape.width,
+      height: shape.height,
+    );
+    if (!identical(geos, shape.geometries)) {
+      next = next.copyWith(geometries: geos);
+    }
+  }
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  if (childrenChanged) next = next.copyWith(children: children);
+  return next;
+}
+
+/// Stroke nested fills Draw would evenodd-punch (`svg:fill-rule=evenodd`).
+VsdxPage bakeNestedFillsForLibvisioWrite(VsdxPage page) {
+  final shapes = <VsdxShape>[
+    for (final shape in page.shapes) strokeNestedFillsOnShapeForLibvisio(shape),
+  ];
+  var same = shapes.length == page.shapes.length;
+  if (same) {
+    for (var i = 0; i < shapes.length; i++) {
+      if (!identical(shapes[i], page.shapes[i])) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) return page;
+  return page.copyWith(shapes: shapes);
+}
+
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
 VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   var pagesChanged = false;
@@ -682,7 +747,9 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     final routed = bakeConnectorRoutesForLibvisioWrite(
       bakeDegenerateBezierForLibvisioWrite(page),
     );
-    final next = bakeLineJumpsForLibvisioWrite(routed);
+    final next = bakeLineJumpsForLibvisioWrite(
+      bakeNestedFillsForLibvisioWrite(routed),
+    );
     pagesChanged |= !identical(next, page);
     pages.add(next);
   }

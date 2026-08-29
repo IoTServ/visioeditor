@@ -590,6 +590,28 @@ void main() {
         .findShapeById(id)!;
     expect(filled(leftover), 1,
         reason: 'a second save must not restore filled message squares');
+    expect(
+      filled(VsdxShapeFactory.eipCompetingConsumers(
+        id: 7,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.1,
+      )),
+      1,
+      reason: 'consumer chevrons evenodd into holes in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.eipMessageDispatcher(
+        id: 8,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.1,
+      )),
+      1,
+      reason: 'dispatcher diamonds evenodd into holes in Draw',
+    );
   });
 
   test('radiation sign keeps a solid centre disc for LibreOffice', () {
@@ -636,5 +658,147 @@ void main() {
         .findShapeById(id)!;
     expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
         reason: 'a second save must not restore two filled ellipses');
+  });
+
+  test('cloud icons stroke nested fills for LibreOffice', () {
+    int filled(VsdxShape s) =>
+        s.geometries.where((g) => !g.noFill && !g.noShow).length;
+    expect(
+      filled(VsdxShapeFactory.awsS3(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'S3 lid evenodd-punches the bucket in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.awsEks(
+        id: 2,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.8,
+      )),
+      1,
+      reason: 'EKS pod ellipses evenodd-punch the hub in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.awsEc2(
+        id: 3,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      3,
+      reason: 'isometric cube faces sit side by side, not nested',
+    );
+    expect(
+      filled(VsdxShapeFactory.azureFunctions(
+        id: 4,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'Functions bolt evenodd-punches the tile in Draw',
+    );
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [
+          VsdxShapeFactory.awsS3(
+            id: 1,
+            pinX: 2,
+            pinY: 2,
+            width: 1.8,
+            height: 1.4,
+          ),
+        ],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.awsEks(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.8,
+          height: 1.8,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(filled(leftover), 1,
+        reason: 'a second save must not restore filled EKS pods');
+  });
+
+  test('first-aid and no-entry keep evenodd cut-outs for LibreOffice', () {
+    int filled(VsdxShape s) =>
+        s.geometries.where((g) => !g.noFill && !g.noShow).length;
+    expect(
+      filled(VsdxShapeFactory.signFirstAid(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 1.5,
+        height: 1.5,
+      )),
+      2,
+      reason: 'the white cross is an intentional evenodd hole',
+    );
+    expect(
+      filled(VsdxShapeFactory.signNoEntry(
+        id: 2,
+        pinX: 2,
+        pinY: 2,
+        width: 1.5,
+        height: 1.5,
+      )),
+      2,
+      reason: 'the white bar is an intentional evenodd hole',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.signFirstAid(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.5,
+          height: 1.5,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(filled(leftover), 2,
+        reason: 'a second save must keep the first-aid evenodd hole');
   });
 }

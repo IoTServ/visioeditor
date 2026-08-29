@@ -43,7 +43,11 @@ class Stencil {
       name: name,
       group: group,
     );
-    return applyStencilStyle(raw, colors: resolved);
+    final styled = applyStencilStyle(raw, colors: resolved);
+    return strokeNestedFillsOnShapeForLibvisio(
+      styled,
+      keepHoles: stencilKeepsLibvisioEvenoddHoles(name),
+    );
   }
 
   Stencil withGroup(String groupName) => Stencil(

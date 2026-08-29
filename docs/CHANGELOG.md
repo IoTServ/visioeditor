@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Cloud architecture icons now keep a solid tile in LibreOffice.
+  Nested inner glyphs (S3 lids, EKS pods, Azure VM screens, load-balancer
+  nodes, …) used `NoFill=0` inside the outer body, so libvisio
+  `_fillAndShadowProperties` (`svg:fill-rule=evenodd`) punched them as
+  holes in Draw. A save and the stencil palette now stroke those nested
+  interiors; isometric cube faces that sit side by side stay filled.
+  First-aid crosses and no-entry bars keep their evenodd cut-outs. A
+  second save does not restore the extra fills.
+- EIP competing-consumer chevrons and dispatcher diamonds now stroke on
+  a filled tile so Draw does not punch them as holes.
 - EIP icons now keep a solid tile in LibreOffice.
   Message squares, arrows and inner glyphs used `NoFill=0` inside the
   outer box, so libvisio `_fillAndShadowProperties`
