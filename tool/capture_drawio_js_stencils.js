@@ -152,6 +152,8 @@ class CanvasRecorder {
       fontColor: null,
       fontBackgroundColor: null,
       fontBorderColor: null,
+      // mxText.apply STYLE_TEXT_OPACITY (percent). Default 100.
+      textOpacity: 100,
       strokeWidth: 1,
       gradientColor: null,
       gradientDir: null,
@@ -430,6 +432,15 @@ class CanvasRecorder {
     }
     if (this.state.verticalText) attrs.push('vertical="1"');
     if (Number.isFinite(rot) && rot !== 0) attrs.push(`rotation="${number(rot)}"`);
+    // mxText.configureCanvas setAlpha(this.opacity/100) from
+    // STYLE_TEXT_OPACITY. Put it on the text node so decoder Char
+    // ColorTrans does not ride the geometry <alpha> token (FillForegndTrans).
+    // Reset after emit so NestedStencil glyphs do not inherit the last cell.
+    const textOpacity = Number(this.state.textOpacity);
+    if (Number.isFinite(textOpacity) && Math.abs(textOpacity - 100) > 1e-6) {
+      attrs.push(`textopacity="${number(textOpacity)}"`);
+    }
+    this.state.textOpacity = 100;
     this.operations.push(`<text ${attrs.join(' ')}/>`);
   }
 
@@ -2802,6 +2813,10 @@ function applyTextStyle(canvas, style) {
     const fs = Number(style.fontStyle);
     canvas.setFontStyle(Number.isFinite(fs) ? fs : 0);
   }
+  // mxText.apply: STYLE_TEXT_OPACITY defaults to 100 (overwriting
+  // STYLE_OPACITY). Skipping omitted keys leaked the previous cell.
+  const textOpacity = Number(style.textOpacity);
+  canvas.state.textOpacity = Number.isFinite(textOpacity) ? textOpacity : 100;
   // mxText.apply: spacing + spacingLeft/Right/Top/Bottom. Default spacing
   // is 2 so an omitted key still pads like configureCanvas.
   const spacing = parseInt(style.spacing != null ? style.spacing : 2, 10);

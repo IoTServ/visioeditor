@@ -1660,6 +1660,105 @@ void main() {
     },
   );
 
+  test(
+    'mxText textOpacity bakes Char ColorTrans for LibreOffice',
+    () {
+      VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first;
+          }
+          final nested = glyphRun(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final topBar = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / Ios / iOS6')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Top bar')
+          .build(105, 3, 3);
+      final carrier = glyphRun(topBar, 'CARRIER');
+      expect(carrier, isNotNull);
+      expect(
+        carrier!.charStyle.transparency,
+        closeTo(0.5, 1e-6),
+        reason: 'textOpacity=50 is Char ColorTrans that collectCharIX cannot '
+            'read; a save bakes it into fo:color',
+      );
+      expect(
+        carrier.charStyle.color?.value,
+        0xFFCCCCCC,
+        reason: 'in-memory Color stays #cccccc until the ColorTrans bake',
+      );
+      final clock = glyphRun(topBar, '11:15AM');
+      expect(clock, isNotNull);
+      expect(clock!.charStyle.transparency, closeTo(0.5, 1e-6));
+
+      final appBar = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / Ios / iOS6')
+          .stencils
+          .singleWhere((entry) => entry.name == 'App bar (portrait)')
+          .build(106, 3, 3);
+      expect(
+        glyphRun(appBar, 'CARRIER')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'omitted textOpacity must reset to 100 like mxText.apply',
+      );
+
+      VsdxTextRun? fadedLabel;
+      for (final stencil in dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Gmdl / GMDL / Text Fields',
+          )
+          .stencils) {
+        final shape = stencil.build(107, 3, 3);
+        final run = glyphRun(shape, 'Label text');
+        if (run != null && run.charStyle.transparency > 0.05) {
+          fadedLabel = run;
+          break;
+        }
+      }
+      expect(fadedLabel, isNotNull);
+      expect(
+        fadedLabel!.charStyle.transparency,
+        closeTo(0.2, 1e-6),
+        reason: 'GMDL textOpacity=80 is 20% ColorTrans',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(topBar.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverCarrier = glyphRun(leftover, 'CARRIER')!;
+      expect(
+        leftoverCarrier.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'ColorTrans is not a token; the bake writes 0',
+      );
+      expect(
+        leftoverCarrier.charStyle.color?.value,
+        colourForLibvisioAlpha(
+          const VsdxColor(0xFFCCCCCC),
+          0.5,
+        ).value,
+        reason: 'a second save must keep the RGB Draw paints as fo:color',
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

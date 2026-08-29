@@ -397,6 +397,9 @@ class _DrawioXmlShapeDecoder {
             fontFamily: _fontFamily,
             color: _fontColor,
             background: _fontBackground,
+            // mxText.apply STYLE_TEXT_OPACITY percent. Char ColorTrans
+            // is not a libvisio token; a save bakes it into Color RGB.
+            textOpacity: _number(node, 'textopacity', fallback: 100),
           ));
         }
         break;
@@ -421,6 +424,9 @@ class _DrawioXmlShapeDecoder {
       // that collectCharIX maps to style:font-name.
       // `fontbackgroundcolor` follows mxText.configureCanvas onto TextBkgnd
       // that collectTextBlock maps to fo:background-color.
+      // `text` `textopacity` follows mxText.apply STYLE_TEXT_OPACITY onto
+      // Char.transparency; ColorTrans is not a token, so a save bakes RGB
+      // that collectCharIX maps to fo:color (xmlStringToColour zeros alpha).
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -1072,6 +1078,7 @@ class _DrawioXmlShapeDecoder {
               underline: (label.fontStyle & 4) != 0,
               strikethrough: (label.fontStyle & 8) != 0,
               color: label.color,
+              transparency: ((100 - label.textOpacity) / 100).clamp(0.0, 1.0),
             ),
             paraStyle: VsdxParaStyle(horizontalAlign: horz),
           ),
@@ -1136,6 +1143,7 @@ class _DrawioStencilLabel {
     this.fontFamily,
     this.color,
     this.background,
+    this.textOpacity = 100,
   });
 
   final String text;
@@ -1157,6 +1165,7 @@ class _DrawioStencilLabel {
   final String? fontFamily;
   final VsdxColor? color;
   final VsdxColor? background;
+  final double textOpacity;
 }
 
 class _DrawioColoredPart {

@@ -636,6 +636,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `TxtAngle` that libvisio maps to `librevenge:rotate`; vertical
   Cabinet panels still use `TextDirection=1` so they are not
   double-rotated. A second save keeps the angle.
+- draw.io mxText `textOpacity` now stays native in LibreOffice.
+  Official `mxText.apply` writes `STYLE_TEXT_OPACITY` onto
+  `this.opacity` and `configureCanvas` calls `setAlpha(opacity/100)`,
+  but capture dropped the key, so iOS Top bar `CARRIER` /
+  `11:15AM` (`textOpacity=50`, `#cccccc`) and GMDL Label text
+  (`textOpacity=80`) stayed fully opaque. Cell labels now map
+  the percent onto Char `ColorTrans`; `readCharIX` never stores
+  that cell and `xmlStringToColour` zeros `Colour.a`, so a save
+  bakes the blend into `Color` that `collectCharIX` maps to
+  `fo:color`. Stencil glyphs and omitted keys reset to 100.
+  A second save keeps the faded RGB.
 - draw.io mxText `fontStyle` now stays native in LibreOffice.
   Official `mxText.configureCanvas` always calls `setFontStyle` and
   `mxXmlCanvas2D` emits the compressed token even when it returns to
