@@ -333,6 +333,9 @@ class _DrawioXmlShapeDecoder {
         if (size > 0) _fontSize = size;
         break;
       case 'fontstyle':
+        // mxXmlCanvas2D compressed setFontStyle, including 0 so a
+        // FONT_ITALIC title does not stick on the next collectCharIX
+        // sibling (fo:font-style).
         _fontStyle = _number(node, 'style').round();
         break;
       case 'fontfamily':

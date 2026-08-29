@@ -626,6 +626,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   offsets like the view; `align` / `verticalAlign` stay in-box.
   NestedStencil glyphs keep their own x/y. A second save keeps the
   outer Pin.
+- draw.io mxText `fontStyle` now stays native in LibreOffice.
+  Official `mxText.configureCanvas` always calls `setFontStyle` and
+  `mxXmlCanvas2D` emits the compressed token even when it returns to
+  0, but capture only wrote `<fontstyle>` when the bits were non-zero,
+  so a SysML Block `fontStyle=2` title (`constraints`) leaked italic
+  onto `{x > y}` that `collectCharIX` maps to `fo:font-style`. Cell
+  labels now reset like `configureCanvas`; stencil `fontstyle` nodes
+  still stick until the next token. A second save keeps Char italic
+  only on the titles.
 - draw.io mxStencil `fontfamily` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
   valves call `c.setFontFamily('Helvetica')`, but capture stubbed

@@ -130,6 +130,7 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._fontFamilyToken = null;
+    this._fontStyleToken = 0;
     this._fontBgToken = 'none';
     this._fontBorderToken = 'none';
     this._strokeWidthToken = 1;
@@ -396,10 +397,6 @@ class CanvasRecorder {
     if (Number.isFinite(fontSize) && fontSize > 0) {
       this.operations.push(`<fontsize size="${number(fontSize)}"/>`);
     }
-    const fontStyle = Number(this.state.fontStyle);
-    if (Number.isFinite(fontStyle) && fontStyle !== 0) {
-      this.operations.push(`<fontstyle style="${number(fontStyle)}"/>`);
-    }
     const p = this.map(x, y);
     const rot = (Number(rotation) || 0) + this.rotTheta;
     const attrs = [
@@ -443,6 +440,7 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._fontFamilyToken = null;
+    this._fontStyleToken = 0;
     this._fontBgToken = 'none';
     this._fontBorderToken = 'none';
     this._strokeWidthToken = 1;
@@ -518,6 +516,7 @@ class CanvasRecorder {
       this.finishPath();
       this.operations.push(`<fontfamily family="${xmlEscape(ff || '')}"/>`);
     }
+    this._reemitFontStyle();
     this._reemitFontPlate();
     const sw = Number(this.state.strokeWidth);
     if (Number.isFinite(sw) && sw !== this._strokeWidthToken) {
@@ -528,6 +527,19 @@ class CanvasRecorder {
     this._reemitAlpha();
     this._reemitLineStyle();
     this._reemitShadow();
+  }
+
+  // mxXmlCanvas2D.setFontStyle is compressed: emit when the token
+  // changes, including 0. text() used to write fontstyle only when
+  // != 0, so SysML Block `fontStyle=2` titles leaked italic onto
+  // `{x > y}` that collectCharIX maps to fo:font-style.
+  _reemitFontStyle() {
+    const n = Number(this.state.fontStyle);
+    const style = Number.isFinite(n) ? n : 0;
+    if (style === this._fontStyleToken) return;
+    this._fontStyleToken = style;
+    this.finishPath();
+    this.operations.push(`<fontstyle style="${number(style)}"/>`);
   }
 
   _reemitFontPlate() {
@@ -808,7 +820,11 @@ class CanvasRecorder {
     this.operations.push(`<fontfamily family="${xmlEscape(family)}"/>`);
   }
   setFontSize(value) { this.state.fontSize = value; }
-  setFontStyle(value) { this.state.fontStyle = value; }
+  setFontStyle(value) {
+    const n = Number(value);
+    this.state.fontStyle = Number.isFinite(n) ? n : 0;
+    this._reemitFontStyle();
+  }
 
   x(value) { return (Number(value) || 0) * this.sx + this.tx; }
   y(value) { return (Number(value) || 0) * this.sy + this.ty; }
@@ -2769,7 +2785,10 @@ function applyTextStyle(canvas, style) {
   if (Number.isFinite(size) && size > 0 && canvas.setFontSize) {
     canvas.setFontSize(size);
   }
-  if (style.fontStyle != null && canvas.setFontStyle) {
+  // mxText.configureCanvas always calls setFontStyle(this.fontStyle)
+  // (default 0). Skipping omitted keys leaked the previous cell's
+  // FONT_ITALIC / FONT_BOLD onto the next sibling.
+  if (canvas.setFontStyle) {
     const fs = Number(style.fontStyle);
     canvas.setFontStyle(Number.isFinite(fs) ? fs : 0);
   }

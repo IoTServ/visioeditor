@@ -1225,6 +1225,90 @@ void main() {
     );
   });
 
+  test(
+    'mxText fontStyle does not leak italic onto the next cell for LibreOffice',
+    () {
+      VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first;
+          }
+          final nested = glyphRun(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final block = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Block')
+          .build(95, 3, 3);
+      expect(
+        glyphRun(block, 'Block1')!.charStyle.style.bold,
+        isTrue,
+        reason: 'fontStyle=1 Block1 must reach collectCharIX Style.bold',
+      );
+      expect(
+        glyphRun(block, 'constraints')!.charStyle.style.italic,
+        isTrue,
+        reason: 'fontStyle=2 compartment titles map to fo:font-style italic',
+      );
+      expect(
+        glyphRun(block, '{x > y}')!.charStyle.style.italic,
+        isFalse,
+        reason: 'the next cell omits fontStyle; mxText.configureCanvas '
+            'resets to 0 so italic must not stick',
+      );
+      expect(
+        glyphRun(block, 'operation1 (p1 : Type1) : Type2')!
+            .charStyle
+            .style
+            .italic,
+        isFalse,
+      );
+
+      final ribbon = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Ribbon')
+          .build(96, 3, 3);
+      expect(
+        glyphRun(ribbon, 'Label')!.charStyle.style.bold,
+        isTrue,
+        reason: 'a lone fontStyle=1 label must stay bold',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc =
+          doc.replacePage(0, doc.pages.first.addShape(block.copyWith(id: id)));
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphRun(leftover, 'constraints')!.charStyle.style.italic,
+        isTrue,
+        reason: 'a second save must keep Char italic on the title',
+      );
+      expect(
+        glyphRun(leftover, '{x > y}')!.charStyle.style.italic,
+        isFalse,
+        reason: 'a second save must keep the body roman',
+      );
+    },
+  );
+
   test('mxText label box and spacing stay TextBlock cells for LibreOffice', () {
     VsdxShape? glyphShape(VsdxShape shape, String text) {
       for (final child in shape.children) {
