@@ -11752,7 +11752,7 @@ abstract final class VsdxShapeFactory {
           LineTo(cx + 0.5 * r, cy - 0.866 * r),
           LineTo(cx + r, cy),
         ];
-    final r = 0.2 * math.min(w, h);
+    final r = 0.16 * math.min(w, h);
     return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
@@ -11761,9 +11761,9 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: hex(0.32 * w, 0.58 * h, r)),
-        VsdxGeometry(commands: hex(0.68 * w, 0.58 * h, r)),
-        VsdxGeometry(commands: hex(0.5 * w, 0.28 * h, r)),
+        VsdxGeometry(commands: hex(0.28 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.72 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.5 * w, 0.22 * h, r)),
       ],
       fill: fill,
       line: line,
@@ -12611,14 +12611,14 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: hex(0.3 * w, 0.58 * h, r)),
-        VsdxGeometry(commands: hex(0.7 * w, 0.58 * h, r)),
-        VsdxGeometry(commands: hex(0.5 * w, 0.28 * h, r)),
+        VsdxGeometry(commands: hex(0.28 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.72 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.5 * w, 0.22 * h, r)),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          MoveTo(0.3 * w, 0.58 * h),
-          LineTo(0.5 * w, 0.28 * h),
-          LineTo(0.7 * w, 0.58 * h),
-          LineTo(0.3 * w, 0.58 * h),
+          MoveTo(0.28 * w, 0.62 * h),
+          LineTo(0.5 * w, 0.22 * h),
+          LineTo(0.72 * w, 0.62 * h),
+          LineTo(0.28 * w, 0.62 * h),
         ]),
       ],
       fill: fill,
@@ -12830,9 +12830,12 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        chevron(0.05 * w, 0.38 * w),
-        chevron(0.34 * w, 0.67 * w),
-        chevron(0.63 * w, 0.96 * w),
+        // Tips share an edge. Overlapping chevrons become one evenodd
+        // path in libvisio `_fillAndShadowProperties` and punch the
+        // join.
+        chevron(0.05 * w, 0.35 * w),
+        chevron(0.35 * w, 0.65 * w),
+        chevron(0.65 * w, 0.95 * w),
       ],
       fill: fill,
       line: line,
@@ -15462,9 +15465,9 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        chevron(0.05 * w, 0.4 * w),
-        chevron(0.35 * w, 0.7 * w),
-        chevron(0.65 * w, 1.0 * w),
+        chevron(0.05 * w, 0.35 * w),
+        chevron(0.35 * w, 0.65 * w),
+        chevron(0.65 * w, 0.95 * w),
       ],
       fill: fill,
       line: line,
@@ -15503,14 +15506,14 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: hex(0.3 * w, 0.55 * h, r)),
-        VsdxGeometry(commands: hex(0.7 * w, 0.55 * h, r)),
-        VsdxGeometry(commands: hex(0.5 * w, 0.28 * h, r)),
+        VsdxGeometry(commands: hex(0.28 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.72 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.5 * w, 0.22 * h, r)),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          MoveTo(0.3 * w, 0.55 * h),
-          LineTo(0.5 * w, 0.28 * h),
-          LineTo(0.7 * w, 0.55 * h),
-          LineTo(0.3 * w, 0.55 * h),
+          MoveTo(0.28 * w, 0.62 * h),
+          LineTo(0.5 * w, 0.22 * h),
+          LineTo(0.72 * w, 0.62 * h),
+          LineTo(0.28 * w, 0.62 * h),
         ]),
       ],
       fill: fill,
@@ -15899,9 +15902,9 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         for (final entry in <List<double>>[
-          [0.12, 0.15, 0.78, 0.4],
-          [0.18, 0.38, 0.84, 0.63],
-          [0.24, 0.61, 0.9, 0.88],
+          [0.12, 0.14, 0.78, 0.38],
+          [0.18, 0.40, 0.84, 0.64],
+          [0.24, 0.66, 0.90, 0.90],
         ])
           VsdxGeometry(commands: <VsdxPathCommand>[
             MoveTo(entry[0] * w, entry[1] * h),
@@ -15911,7 +15914,7 @@ abstract final class VsdxShapeFactory {
             LineTo(entry[0] * w, entry[1] * h),
           ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          for (final y in <double>[0.27, 0.5, 0.74]) ...[
+          for (final y in <double>[0.26, 0.52, 0.78]) ...[
             MoveTo(0.3 * w, y * h),
             LineTo(0.7 * w, y * h),
           ],
@@ -18078,11 +18081,11 @@ abstract final class VsdxShapeFactory {
               bY: 0.5 * h),
         ]),
         VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.42 * w, 0.48 * h),
-          LineTo(0.58 * w, 0.48 * h),
+          MoveTo(0.42 * w, 0.50 * h),
+          LineTo(0.58 * w, 0.50 * h),
           LineTo(0.58 * w, 0.78 * h),
           LineTo(0.42 * w, 0.78 * h),
-          LineTo(0.42 * w, 0.48 * h),
+          LineTo(0.42 * w, 0.50 * h),
         ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(0.58 * w, 0.62 * h),
@@ -18541,9 +18544,12 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        chevron(0.05 * w, 0.38 * w),
-        chevron(0.34 * w, 0.67 * w),
-        chevron(0.63 * w, 0.96 * w),
+        // Tips share an edge. Overlapping chevrons become one evenodd
+        // path in libvisio `_fillAndShadowProperties` and punch the
+        // join.
+        chevron(0.05 * w, 0.35 * w),
+        chevron(0.35 * w, 0.65 * w),
+        chevron(0.65 * w, 0.95 * w),
       ],
       fill: fill,
       line: line,
@@ -18638,14 +18644,14 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: hex(0.3 * w, 0.55 * h, r)),
-        VsdxGeometry(commands: hex(0.7 * w, 0.55 * h, r)),
-        VsdxGeometry(commands: hex(0.5 * w, 0.28 * h, r)),
+        VsdxGeometry(commands: hex(0.28 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.72 * w, 0.62 * h, r)),
+        VsdxGeometry(commands: hex(0.5 * w, 0.22 * h, r)),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          MoveTo(0.3 * w, 0.55 * h),
-          LineTo(0.5 * w, 0.28 * h),
-          LineTo(0.7 * w, 0.55 * h),
-          LineTo(0.3 * w, 0.55 * h),
+          MoveTo(0.28 * w, 0.62 * h),
+          LineTo(0.5 * w, 0.22 * h),
+          LineTo(0.72 * w, 0.62 * h),
+          LineTo(0.28 * w, 0.62 * h),
         ]),
       ],
       fill: fill,
@@ -18843,11 +18849,11 @@ abstract final class VsdxShapeFactory {
               bY: 0.5 * h),
         ]),
         VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.42 * w, 0.48 * h),
-          LineTo(0.58 * w, 0.48 * h),
+          MoveTo(0.42 * w, 0.50 * h),
+          LineTo(0.58 * w, 0.50 * h),
           LineTo(0.58 * w, 0.78 * h),
           LineTo(0.42 * w, 0.78 * h),
-          LineTo(0.42 * w, 0.48 * h),
+          LineTo(0.42 * w, 0.50 * h),
         ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(0.58 * w, 0.62 * h),
@@ -19868,9 +19874,9 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         for (final entry in <List<double>>[
-          [0.12, 0.15, 0.78, 0.4],
-          [0.18, 0.38, 0.84, 0.63],
-          [0.24, 0.61, 0.9, 0.88],
+          [0.12, 0.14, 0.78, 0.38],
+          [0.18, 0.40, 0.84, 0.64],
+          [0.24, 0.66, 0.90, 0.90],
         ])
           VsdxGeometry(commands: <VsdxPathCommand>[
             MoveTo(entry[0] * w, entry[1] * h),
@@ -19880,7 +19886,7 @@ abstract final class VsdxShapeFactory {
             LineTo(entry[0] * w, entry[1] * h),
           ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          for (final y in <double>[0.27, 0.5, 0.74]) ...[
+          for (final y in <double>[0.26, 0.52, 0.78]) ...[
             MoveTo(0.3 * w, y * h),
             LineTo(0.7 * w, y * h),
           ],
@@ -21119,9 +21125,12 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        chevron(0.05 * w, 0.38 * w),
-        chevron(0.34 * w, 0.67 * w),
-        chevron(0.63 * w, 0.96 * w),
+        // Tips share an edge. Overlapping chevrons become one evenodd
+        // path in libvisio `_fillAndShadowProperties` and punch the
+        // join.
+        chevron(0.05 * w, 0.35 * w),
+        chevron(0.35 * w, 0.65 * w),
+        chevron(0.65 * w, 0.95 * w),
       ],
       fill: fill,
       line: line,
@@ -21481,7 +21490,7 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        for (final y in <double>[0.22, 0.45, 0.68])
+        for (final y in <double>[0.18, 0.44, 0.70])
           VsdxGeometry(commands: <VsdxPathCommand>[
             MoveTo(0.08 * w, y * h),
             LineTo(0.62 * w, y * h),
@@ -21520,9 +21529,9 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         for (final entry in <List<double>>[
-          [0.12, 0.12, 0.78, 0.38],
-          [0.18, 0.35, 0.84, 0.62],
-          [0.24, 0.58, 0.9, 0.88],
+          [0.12, 0.12, 0.78, 0.36],
+          [0.18, 0.38, 0.84, 0.62],
+          [0.24, 0.64, 0.90, 0.88],
         ])
           VsdxGeometry(commands: <VsdxPathCommand>[
             MoveTo(entry[0] * w, entry[1] * h),
@@ -21532,7 +21541,7 @@ abstract final class VsdxShapeFactory {
             LineTo(entry[0] * w, entry[1] * h),
           ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          for (final y in <double>[0.25, 0.48, 0.72]) ...[
+          for (final y in <double>[0.24, 0.50, 0.76]) ...[
             MoveTo(0.32 * w, y * h),
             LineTo(0.7 * w, y * h),
           ],
@@ -21827,9 +21836,9 @@ abstract final class VsdxShapeFactory {
       height: h,
       geometries: <VsdxGeometry>[
         for (final entry in <List<double>>[
-          [0.12, 0.15, 0.78, 0.4],
-          [0.18, 0.38, 0.84, 0.63],
-          [0.24, 0.61, 0.9, 0.88],
+          [0.12, 0.14, 0.78, 0.38],
+          [0.18, 0.40, 0.84, 0.64],
+          [0.24, 0.66, 0.90, 0.90],
         ])
           VsdxGeometry(commands: <VsdxPathCommand>[
             MoveTo(entry[0] * w, entry[1] * h),
@@ -21839,7 +21848,7 @@ abstract final class VsdxShapeFactory {
             LineTo(entry[0] * w, entry[1] * h),
           ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          for (final y in <double>[0.27, 0.5, 0.74]) ...[
+          for (final y in <double>[0.26, 0.52, 0.78]) ...[
             MoveTo(0.3 * w, y * h),
             LineTo(0.7 * w, y * h),
           ],

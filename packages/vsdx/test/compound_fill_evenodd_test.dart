@@ -893,6 +893,50 @@ void main() {
       3,
       reason: 'isometric cube faces sit side by side',
     );
+    expect(
+      filled(VsdxShapeFactory.awsCodePipeline(
+        id: 9,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      3,
+      reason: 'pipeline chevrons now share an edge instead of overlapping',
+    );
+    expect(
+      filled(VsdxShapeFactory.gcpCloudTasks(
+        id: 10,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      3,
+      reason: 'stacked cards now share a gap instead of overlapping',
+    );
+    expect(
+      filled(VsdxShapeFactory.alibabaRam(
+        id: 11,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      2,
+      reason: 'key shaft now shares the head edge',
+    );
+    expect(
+      filled(VsdxShapeFactory.awsEcs(
+        id: 12,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.8,
+      )),
+      3,
+      reason: 'hex pods sit side by side, not nested',
+    );
 
     final svg = VsdxToSvgSerializer().serializePage(
       VsdxPage(

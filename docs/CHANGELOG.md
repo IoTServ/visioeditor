@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Pipeline chevrons, stacked cards and hex clusters now stay solid in
+  LibreOffice. Adjacent `NoFill=0` tiles that overlapped even slightly
+  became one evenodd path in libvisio `_fillAndShadowProperties` and
+  punched the join in Draw. Those icons now share an edge (or a small
+  gap) instead of overlapping; isometric cube faces stay filled. A
+  second save keeps the spaced geometry.
 - Overlapping stencil accessories now stay solid in LibreOffice.
   Lock shackles, inversion bubbles, switch port dots and magnifying-glass
   disks used `NoFill=0` that only partly overlapped the outer body, so
