@@ -664,6 +664,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `fo:color`. Cell labels now freeze extra Character rows; stencil
   glyphs without tags stay a single run. A second save keeps Style
   and Color per run.
+- draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
+  Official `mxCellRenderer.getLabelBounds` insets the mxText box via
+  `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
+  capture always painted `canvas.text` on the full cell, so a UML
+  2.5 Comment (`Comment1 body`, `size=25`) sat under the dog-ear that
+  `collectTextBlock` maps to `svg:height` / `svg:y`. Cell labels now
+  shrink like `getLabelMargins`; `labelPosition` still shifts the
+  whole box. A second save keeps the inset Txt pin.
 - draw.io mxText `fontStyle` now stays native in LibreOffice.
   Official `mxText.configureCanvas` always calls `setFontStyle` and
   `mxXmlCanvas2D` emits the compressed token even when it returns to

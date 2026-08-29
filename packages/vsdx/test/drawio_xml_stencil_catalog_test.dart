@@ -3720,4 +3720,91 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxShape getLabelBounds insets note2 and folder Text for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      VsdxShape? labelOf(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = labelOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final comment = stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Comment',
+      ).build(430, 3, 3);
+      final body = labelOf(comment, 'Comment1 body');
+      expect(body, isNotNull,
+          reason: 'note2 cell value must reach collectText');
+      expect(
+        body!.width,
+        closeTo(comment.width, 0.02),
+        reason: 'boundedLbl only insets the dog-ear, not the width',
+      );
+      expect(
+        body.height / comment.height,
+        closeTo(10 / 60, 0.05),
+        reason: 'NoteShape2.getLabelMargins size=25 is top and bottom on a '
+            '60px cell, the TxtHeight collectTextBlock maps below the fold',
+      );
+      expect(
+        body.pinY / comment.height,
+        closeTo(0.5, 0.05),
+        reason: 'the remaining 10px band is still centred on the locPin',
+      );
+
+      final packageShape = stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Package',
+      ).build(431, 3, 3);
+      final pkg = labelOf(packageShape, 'Package1');
+      expect(pkg, isNotNull);
+      expect(
+        pkg!.height / packageShape.height,
+        closeTo(50 / 80, 0.05),
+        reason: 'folder tabHeight=30 is the top margin getLabelMargins returns',
+      );
+      expect(
+        pkg.pinY / packageShape.height,
+        closeTo(25 / 80, 0.05),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          stencil('Draw.io JS / UML25 / uml 2.5', 'Comment').build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverBody = labelOf(leftover, 'Comment1 body')!;
+      expect(
+        leftoverBody.height / leftover.height,
+        closeTo(10 / 60, 0.05),
+        reason: 'a second save must keep the inset TxtHeight',
+      );
+      expect(
+        leftoverBody.pinY / leftover.height,
+        closeTo(0.5, 0.05),
+      );
+    },
+  );
 }

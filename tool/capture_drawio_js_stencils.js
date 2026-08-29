@@ -1600,6 +1600,32 @@ function mxPoint(x, y) {
 }
 mxPoint.prototype.clone = function() { return new mxPoint(this.x, this.y); };
 
+function mxRectangle(x, y, width, height) {
+  this.x = Number(x) || 0;
+  this.y = Number(y) || 0;
+  this.width = Number(width) || 0;
+  this.height = Number(height) || 0;
+}
+mxRectangle.fromRectangle = function(rect) {
+  return new mxRectangle(
+    rect && rect.x, rect && rect.y, rect && rect.width, rect && rect.height,
+  );
+};
+mxRectangle.prototype.clone = function() {
+  return mxRectangle.fromRectangle(this);
+};
+mxRectangle.prototype.add = function(rect) {
+  if (rect == null) return;
+  const minX = Math.min(this.x, rect.x);
+  const minY = Math.min(this.y, rect.y);
+  const maxX = Math.max(this.x + this.width, rect.x + rect.width);
+  const maxY = Math.max(this.y + this.height, rect.y + rect.height);
+  this.x = minX;
+  this.y = minY;
+  this.width = maxX - minX;
+  this.height = maxY - minY;
+};
+
 function mxShape() {
   this.style = {};
   this.scale = 1;
@@ -1663,6 +1689,44 @@ mxShape.prototype.isPaintBoundsInverted = function() {
   return this.stencil == null &&
     (this.direction === mxConstants.DIRECTION_NORTH ||
      this.direction === mxConstants.DIRECTION_SOUTH);
+};
+// mxShape.js getLabelMargins / getLabelBounds. Shapes.js wraps this
+// hook (note2 boundedLbl, folder tab, process2 rails). Must exist
+// before loadJs(Shapes.js) so the wrapper can apply() the original.
+mxShape.prototype.getLabelMargins = function(rect) {
+  return null;
+};
+mxShape.prototype.getLabelBounds = function(rect) {
+  const d = mxUtils.getValue(
+    this.style, mxConstants.STYLE_DIRECTION, mxConstants.DIRECTION_EAST,
+  );
+  let bounds = rect;
+  if (d != mxConstants.DIRECTION_SOUTH && d != mxConstants.DIRECTION_NORTH &&
+      this.state != null && this.state.text != null &&
+      this.state.text.isPaintBoundsInverted()) {
+    bounds = bounds.clone();
+    const tmp = bounds.width;
+    bounds.width = bounds.height;
+    bounds.height = tmp;
+  }
+  const m = this.getLabelMargins(bounds);
+  if (m != null) {
+    let flipH = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPH, false) == '1';
+    let flipV = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPV, false) == '1';
+    if (this.state != null && this.state.text != null &&
+        this.state.text.isPaintBoundsInverted()) {
+      const tmp = m.x;
+      m.x = m.height;
+      m.height = m.width;
+      m.width = m.y;
+      m.y = tmp;
+      const swap = flipH;
+      flipH = flipV;
+      flipV = swap;
+    }
+    return mxUtils.getDirectedBounds(rect, m, this.style, flipH, flipV);
+  }
+  return rect;
 };
 mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
   // mxShape.js ~1032: opacity / fillOpacity / strokeOpacity are 0–100.
@@ -2037,6 +2101,60 @@ const mxUtilsBase = {
     }
     return ccw < 0.0 ? -1 : (ccw > 0.0 ? 1 : 0);
   },
+  // mxUtils.js getDirectedBounds: inset `m` (left/top in x/y, right/bottom
+  // in width/height) then rotate for direction / flip.
+  getDirectedBounds(rect, m, style, flipH, flipV) {
+    const d = mxUtils.getValue(
+      style, mxConstants.STYLE_DIRECTION, mxConstants.DIRECTION_EAST,
+    );
+    flipH = (flipH != null)
+      ? flipH
+      : mxUtils.getValue(style, mxConstants.STYLE_FLIPH, false);
+    flipV = (flipV != null)
+      ? flipV
+      : mxUtils.getValue(style, mxConstants.STYLE_FLIPV, false);
+    m.x = Math.round(Math.max(0, Math.min(rect.width, m.x)));
+    m.y = Math.round(Math.max(0, Math.min(rect.height, m.y)));
+    m.width = Math.round(Math.max(0, Math.min(rect.width, m.width)));
+    m.height = Math.round(Math.max(0, Math.min(rect.height, m.height)));
+    if ((flipV && (d == mxConstants.DIRECTION_SOUTH ||
+         d == mxConstants.DIRECTION_NORTH)) ||
+        (flipH && (d == mxConstants.DIRECTION_EAST ||
+         d == mxConstants.DIRECTION_WEST))) {
+      const tmp = m.x;
+      m.x = m.width;
+      m.width = tmp;
+    }
+    if ((flipH && (d == mxConstants.DIRECTION_SOUTH ||
+         d == mxConstants.DIRECTION_NORTH)) ||
+        (flipV && (d == mxConstants.DIRECTION_EAST ||
+         d == mxConstants.DIRECTION_WEST))) {
+      const tmp = m.y;
+      m.y = m.height;
+      m.height = tmp;
+    }
+    const m2 = mxRectangle.fromRectangle(m);
+    if (d == mxConstants.DIRECTION_SOUTH) {
+      m2.y = m.x;
+      m2.x = m.height;
+      m2.width = m.y;
+      m2.height = m.width;
+    } else if (d == mxConstants.DIRECTION_WEST) {
+      m2.y = m.height;
+      m2.x = m.width;
+      m2.width = m.x;
+      m2.height = m.y;
+    } else if (d == mxConstants.DIRECTION_NORTH) {
+      m2.y = m.width;
+      m2.x = m.y;
+      m2.width = m.height;
+      m2.height = m.x;
+    }
+    return new mxRectangle(
+      rect.x + m2.x, rect.y + m2.y,
+      rect.width - m2.width - m2.x, rect.height - m2.height - m2.y,
+    );
+  },
 };
 const mxUtils = new Proxy(mxUtilsBase, {
   get(target, prop) {
@@ -2051,9 +2169,7 @@ const shapeContext = {
   mxCellRenderer,
   mxConstants,
   mxPoint,
-  mxRectangle: function(x, y, width, height) {
-    this.x = x; this.y = y; this.width = width; this.height = height;
-  },
+  mxRectangle,
   mxConnectionConstraint: function(point, perimeter, name, dx, dy) {
     this.point = point; this.perimeter = perimeter; this.name = name;
     this.dx = dx || 0; this.dy = dy || 0;
@@ -3034,6 +3150,26 @@ function mxVertexLabelBox(style, x, y, w, h) {
   return {x: ox, y: oy, w: width, h: height};
 }
 
+// mxCellRenderer.getLabelBounds: shape.getLabelBounds only when the
+// caption is still on the vertex (center/middle). note2 boundedLbl and
+// folder tabs inset that box; LibreOffice collectTextBlock maps it to
+// TxtWidth / TxtPinY so the fold / tab is not painted over.
+function mxVertexInnerLabelBox(shape, style, x, y, w, h) {
+  const hpos = String((style && style.labelPosition) || 'center');
+  const vpos = String((style && style.verticalLabelPosition) || 'middle');
+  if (shape && typeof shape.getLabelBounds === 'function' &&
+      hpos === 'center' && vpos === 'middle') {
+    try {
+      const inner = shape.getLabelBounds(new mxRectangle(x, y, w, h));
+      if (inner && Number.isFinite(inner.width) && inner.width > 0 &&
+          Number.isFinite(inner.height) && inner.height > 0) {
+        return {x: inner.x, y: inner.y, w: inner.width, h: inner.height};
+      }
+    } catch (_) {}
+  }
+  return mxVertexLabelBox(style, x, y, w, h);
+}
+
 // mxShape.getTextRotation uses getRotation() (STYLE_ROTATION). Vertical
 // text is a separate TextDirection bake; adding verticalTextRotation
 // here would double-rotate Cabinet 25x40. LibreOffice collects TxtAngle
@@ -3043,14 +3179,14 @@ function mxVertexLabelRotation(style) {
   return Number.isFinite(rot) ? rot : 0;
 }
 
-function paintTemplateLabel(entry, style, width, height, canvas) {
+function paintTemplateLabel(entry, style, width, height, canvas, shape) {
   const htmlOn = isHtmlCellStyle(style);
   const label = cellLabel(entry && entry.value, htmlOn);
   if (!label) return;
   applyTextStyle(canvas, style);
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
-  const box = mxVertexLabelBox(style, 0, 0, width, height);
+  const box = mxVertexInnerLabelBox(shape, style, 0, 0, width, height);
   canvas.text(
     box.x, box.y, box.w, box.h, label, align, valign,
     undefined, htmlOn ? 'html' : undefined, undefined, undefined,
@@ -3295,12 +3431,13 @@ function paintCellTree(cells, canvas, width, height) {
       const y = origin.y;
       const cellWidth = Math.max(1, Number(cell.geometry.width) || parentW);
       const cellHeight = Math.max(1, Number(cell.geometry.height) || parentH);
+      let result = null;
       if (isEdge) {
         if (paintEdge(cellStyle, cellWidth, cellHeight, canvas, x, y, cell.geometry)) {
           painted = true;
         }
       } else {
-        const result = paintRegistered(
+        result = paintRegistered(
           cellStyle, cellWidth, cellHeight, canvas, x, y,
           {fallbackRect: true, allowStencil: true},
         );
@@ -3312,7 +3449,9 @@ function paintCellTree(cells, canvas, width, height) {
         applyTextStyle(canvas, cellStyle);
         const align = String(cellStyle.align || 'center');
         const valign = String(cellStyle.verticalAlign || 'middle');
-        const box = mxVertexLabelBox(cellStyle, x, y, cellWidth, cellHeight);
+        const box = mxVertexInnerLabelBox(
+          result, cellStyle, x, y, cellWidth, cellHeight,
+        );
         canvas.text(
           box.x, box.y, box.w, box.h, label, align, valign,
           undefined, htmlOn ? 'html' : undefined, undefined, undefined,
@@ -3407,7 +3546,7 @@ function renderEntry(entry) {
     // createVertexTemplateEntry's 4th arg is the cell value (P&ID TI/##,
     // AWS group titles, Basic Button). paintVertexShape never draws it;
     // LibreOffice's text collector only sees Text children.
-    paintTemplateLabel(entry, style, width, height, canvas);
+    paintTemplateLabel(entry, style, width, height, canvas, shape);
   } else if (entry.kind === 'data' && entry.data) {
     ({width, height} = entrySize(entry));
     const xml = decompressDrawio(entry.data);
