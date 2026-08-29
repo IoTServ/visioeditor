@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io dashed vertices, clouds, cylinders and double ellipses now stay
+  native in LibreOffice. Capture stubbed `configureCanvas` / `c.setDashed`,
+  painted `shape=cloud` as an ellipse, stacked three overlapping cylinder
+  fills, and drew actor subclasses as stick figures because `addPoints`
+  was missing. LibreOffice only calls `VisioDocument::parse`, so Draw never
+  saw those types. Style `dashed=1` is now LinePattern 2, `fillColor=none`
+  drops the fill plate, `mxCylinder` is one body plus a lid stroke so
+  evenodd cannot punch it, and parallelograms / steps use official
+  `redrawPath`. A second save keeps the geometry.
 - draw.io `triangle` / `hexagon` / `actor` now keep mxGraph direction in
   LibreOffice. Capture painted those primitives as diamonds or rectangles
   and stubbed `c.rotate` / `getShapeRotation`, so Bootstrap south chevrons

@@ -111,6 +111,11 @@ class _DrawioXmlShapeDecoder {
         _consume(child);
       }
     }
+    if (_pending != null && _pending!.isNotEmpty) {
+      // fillColor=none / strokeColor=none painters still emit a contour
+      // (Bootstrap "Button, link") that libvisio needs as a hit box.
+      _finish(fill: false, stroke: false);
+    }
 
     final sourceName = element.getAttribute('name')?.trim();
     if (_geometries.isEmpty && _labels.isEmpty) {

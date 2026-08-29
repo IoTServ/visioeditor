@@ -33,6 +33,15 @@ function number(value) {
   return Number.isFinite(Number(value)) ? String(Number(value)) : '0';
 }
 
+function isNoneColor(value) {
+  return value == null || String(value).toLowerCase() === 'none';
+}
+
+function stylePaintColor(value, fallback) {
+  if (value == null || value === '') return fallback;
+  return isNoneColor(value) ? null : value;
+}
+
 class CanvasRecorder {
   constructor() {
     this.tx = 0;
@@ -180,9 +189,25 @@ class CanvasRecorder {
     const p = this.map(x, y);
     this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(w)}" h="${number(h)}"/>`);
   }
-  fill() { this.finishPath(); this.operations.push('<fill/>'); }
-  stroke() { this.finishPath(); this.operations.push('<stroke/>'); }
-  fillAndStroke() { this.finishPath(); this.operations.push('<fillstroke/>'); }
+  fill() {
+    this.finishPath();
+    if (isNoneColor(this.state.fillColor)) return;
+    this.operations.push('<fill/>');
+  }
+  stroke() {
+    this.finishPath();
+    if (isNoneColor(this.state.strokeColor)) return;
+    this.operations.push('<stroke/>');
+  }
+  fillAndStroke() {
+    this.finishPath();
+    const noFill = isNoneColor(this.state.fillColor);
+    const noStroke = isNoneColor(this.state.strokeColor);
+    if (noFill && noStroke) return;
+    if (noFill) this.operations.push('<stroke/>');
+    else if (noStroke) this.operations.push('<fill/>');
+    else this.operations.push('<fillstroke/>');
+  }
   // Raster images stay out of the vector capture. Nested mxStencil painters
   // also call image(); dropping the whole parent would hide Kubernetes / AWS
   // product icons that still have vector geometry.
@@ -225,10 +250,19 @@ class CanvasRecorder {
 
   setAlpha(value) { this.state.alpha = value; }
   setFillAlpha(value) { this.state.fillAlpha = value; }
-  setFillColor(value) { this.state.fillColor = value; }
-  setStrokeColor(value) { this.state.strokeColor = value; }
+  setFillColor(value) {
+    this.state.fillColor = isNoneColor(value) ? null : value;
+  }
+  setStrokeColor(value) {
+    this.state.strokeColor = isNoneColor(value) ? null : value;
+  }
   setStrokeWidth(value) { this.state.strokeWidth = value; }
-  setDashed(value) { this.state.dashed = value; }
+  setDashed(value) {
+    this.state.dashed = !!value;
+    if (!this.state.dashed) return;
+    this.finishPath();
+    this.operations.push('<dashed dashed="1"/>');
+  }
   setGradient() {}
   setLineCap() {}
   setLineJoin() {}
@@ -313,20 +347,37 @@ class NestedStencil {
     this.fgNode = desc.children.find((child) => child.name === 'foreground');
   }
 
-  drawShape(canvas, shape, x, y, w, h) {
-    if (!(w > 0) || !(h > 0)) return;
-    let sx = w / this.w0;
-    let sy = h / this.h0;
+  computeAspect(style, x, y, w, h, direction) {
     let x0 = x;
     let y0 = y;
-    if (this.aspect === 'fixed') {
-      const scale = Math.min(sx, sy);
-      sx = scale;
-      sy = scale;
-      x0 += (w - this.w0 * scale) / 2;
-      y0 += (h - this.h0 * scale) / 2;
+    let sx = w / this.w0;
+    let sy = h / this.h0;
+    const inverse = direction === 'north' || direction === 'south';
+    if (inverse) {
+      sy = w / this.h0;
+      sx = h / this.w0;
+      const delta = (w - h) / 2;
+      x0 += delta;
+      y0 -= delta;
     }
-    const aspect = {x: x0, y: y0, width: sx, height: sy};
+    if (this.aspect === 'fixed') {
+      sy = Math.min(sx, sy);
+      sx = sy;
+      if (inverse) {
+        x0 += (h - this.w0 * sx) / 2;
+        y0 += (w - this.h0 * sy) / 2;
+      } else {
+        x0 += (w - this.w0 * sx) / 2;
+        y0 += (h - this.h0 * sy) / 2;
+      }
+    }
+    return {x: x0, y: y0, width: sx, height: sy};
+  }
+
+  drawShape(canvas, shape, x, y, w, h) {
+    if (!(w > 0) || !(h > 0)) return;
+    const direction = shape && shape.style ? shape.style.direction : null;
+    const aspect = this.computeAspect(shape && shape.style, x, y, w, h, direction);
     this.drawChildren(canvas, this.bgNode, aspect);
     this.drawChildren(canvas, this.fgNode, aspect);
   }
@@ -400,6 +451,8 @@ class NestedStencil {
     } else if (name === 'fillstroke' || name === 'fillstrokecolor') canvas.fillAndStroke();
     else if (name === 'fill') canvas.fill();
     else if (name === 'stroke') canvas.stroke();
+    else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
+    else if (name === 'dashpattern') canvas.setDashed(true);
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
     else if (name === 'fontstyle') canvas.setFontStyle(attrNum(node, 'style'));
   }
@@ -427,6 +480,11 @@ for (const file of fs.readdirSync(stencilRoot, {recursive: true}).filter((name) 
   } catch (_) {}
 }
 
+function mxPoint(x, y) {
+  this.x = x;
+  this.y = y;
+}
+
 function mxShape() {
   this.style = {};
   this.scale = 1;
@@ -448,7 +506,56 @@ mxShape.prototype.getShapeRotation = function() {
   else if (this.direction === mxConstants.DIRECTION_SOUTH) rot += 90;
   return rot;
 };
-mxShape.prototype.configureCanvas = function() {};
+mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
+  if (c.setFillColor) c.setFillColor(this.fill);
+  if (c.setStrokeColor) c.setStrokeColor(this.stroke);
+  if (this.isDashed && c.setDashed) c.setDashed(true);
+};
+mxShape.prototype.addPoints = function(c, pts, rounded, arcSize, close, exclude, initialMove) {
+  if (pts == null || pts.length === 0) return;
+  initialMove = initialMove != null ? initialMove : true;
+  const pe = pts[pts.length - 1];
+  if (close && rounded) {
+    pts = pts.slice();
+    const p0 = pts[0];
+    pts.splice(0, 0, new mxPoint(pe.x + (p0.x - pe.x) / 2, pe.y + (p0.y - pe.y) / 2));
+  }
+  let pt = pts[0];
+  let i = 1;
+  if (initialMove) c.moveTo(pt.x, pt.y);
+  else c.lineTo(pt.x, pt.y);
+  while (i < (close ? pts.length : pts.length - 1)) {
+    let tmp = pts[mxUtils.mod(i, pts.length)];
+    const dx = pt.x - tmp.x;
+    const dy = pt.y - tmp.y;
+    if (rounded && (dx !== 0 || dy !== 0) && (exclude == null || mxUtils.indexOf(exclude, i - 1) < 0)) {
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      const nx1 = dx * Math.min(arcSize, dist / 2) / dist;
+      const ny1 = dy * Math.min(arcSize, dist / 2) / dist;
+      c.lineTo(tmp.x + nx1, tmp.y + ny1);
+      let next = pts[mxUtils.mod(i + 1, pts.length)];
+      while (i < pts.length - 2 && Math.round(next.x - tmp.x) === 0 && Math.round(next.y - tmp.y) === 0) {
+        next = pts[mxUtils.mod(i + 2, pts.length)];
+        i++;
+      }
+      const dx2 = next.x - tmp.x;
+      const dy2 = next.y - tmp.y;
+      dist = Math.max(1, Math.sqrt(dx2 * dx2 + dy2 * dy2));
+      const nx2 = dx2 * Math.min(arcSize, dist / 2) / dist;
+      const ny2 = dy2 * Math.min(arcSize, dist / 2) / dist;
+      const x2 = tmp.x + nx2;
+      const y2 = tmp.y + ny2;
+      c.quadTo(tmp.x, tmp.y, x2, y2);
+      tmp = new mxPoint(x2, y2);
+    } else {
+      c.lineTo(tmp.x, tmp.y);
+    }
+    pt = tmp;
+    i++;
+  }
+  if (close) c.close();
+  else c.lineTo(pe.x, pe.y);
+};
 mxShape.prototype.updateTransform = function(c, x, y, w, h) {
   c.rotate(this.getShapeRotation(), this.flipH, this.flipV, x + w / 2, y + h / 2);
 };
@@ -481,65 +588,152 @@ function createBaseShape(name) {
   function BaseShape() { mxShape.call(this); }
   BaseShape.prototype = Object.create(mxShape.prototype);
   BaseShape.prototype.constructor = BaseShape;
-  if (name === 'mxEllipse' || name === 'mxDoubleEllipse' || name === 'mxCloud') {
+  if (name === 'mxEllipse') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.ellipse(x, y, w, h); c.fillAndStroke();
+    };
+  } else if (name === 'mxDoubleEllipse') {
+    BaseShape.prototype.paintBackground = function(c, x, y, w, h) {
+      c.ellipse(x, y, w, h);
+      c.fillAndStroke();
+    };
+    BaseShape.prototype.paintForeground = function(c, x, y, w, h) {
+      if (this.outline) return;
+      const margin = mxUtils.getValue(
+        this.style, mxConstants.STYLE_MARGIN,
+        Math.min(3 + this.strokewidth, Math.min(w / 5, h / 5)),
+      );
+      x += margin;
+      y += margin;
+      w -= 2 * margin;
+      h -= 2 * margin;
+      if (w > 0 && h > 0) c.ellipse(x, y, w, h);
+      c.stroke();
+    };
+  } else if (name === 'mxCloud') {
+    BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      c.translate(x, y);
+      c.begin();
+      this.redrawPath(c, x, y, w, h);
+      c.fillAndStroke();
+    };
+    BaseShape.prototype.redrawPath = function(c, x, y, w, h) {
+      c.moveTo(0.25 * w, 0.25 * h);
+      c.curveTo(0.05 * w, 0.25 * h, 0, 0.5 * h, 0.16 * w, 0.55 * h);
+      c.curveTo(0, 0.66 * h, 0.18 * w, 0.9 * h, 0.31 * w, 0.8 * h);
+      c.curveTo(0.4 * w, h, 0.7 * w, h, 0.8 * w, 0.8 * h);
+      c.curveTo(w, 0.8 * h, w, 0.6 * h, 0.875 * w, 0.5 * h);
+      c.curveTo(w, 0.3 * h, 0.8 * w, 0.1 * h, 0.625 * w, 0.2 * h);
+      c.curveTo(0.5 * w, 0.05 * h, 0.3 * w, 0.05 * h, 0.25 * w, 0.25 * h);
+      c.close();
     };
   } else if (name === 'mxTriangle') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.translate(x, y);
       c.begin();
-      c.moveTo(0, 0);
-      c.lineTo(w, 0.5 * h);
-      c.lineTo(0, h);
-      c.close();
+      this.redrawPath(c, x, y, w, h);
       c.fillAndStroke();
+    };
+    BaseShape.prototype.redrawPath = function(c, x, y, w, h) {
+      const arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+      this.addPoints(c, [new mxPoint(0, 0), new mxPoint(w, 0.5 * h), new mxPoint(0, h)], this.isRounded, arcSize, true);
     };
   } else if (name === 'mxHexagon') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.translate(x, y);
       c.begin();
-      c.moveTo(0.25 * w, 0);
-      c.lineTo(0.75 * w, 0);
-      c.lineTo(w, 0.5 * h);
-      c.lineTo(0.75 * w, h);
-      c.lineTo(0.25 * w, h);
-      c.lineTo(0, 0.5 * h);
-      c.close();
+      this.redrawPath(c, x, y, w, h);
       c.fillAndStroke();
+    };
+    BaseShape.prototype.redrawPath = function(c, x, y, w, h) {
+      const arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
+      this.addPoints(c, [
+        new mxPoint(0.25 * w, 0), new mxPoint(0.75 * w, 0), new mxPoint(w, 0.5 * h),
+        new mxPoint(0.75 * w, h), new mxPoint(0.25 * w, h), new mxPoint(0, 0.5 * h),
+      ], this.isRounded, arcSize, true);
     };
   } else if (name === 'mxRhombus') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      const hw = w / 2;
+      const hh = h / 2;
+      const arcSize = mxUtils.getValue(this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE) / 2;
       c.begin();
-      c.moveTo(x + w / 2, y);
-      c.lineTo(x + w, y + h / 2);
-      c.lineTo(x + w / 2, y + h);
-      c.lineTo(x, y + h / 2);
-      c.close();
+      this.addPoints(c, [
+        new mxPoint(x + hw, y), new mxPoint(x + w, y + hh),
+        new mxPoint(x + hw, y + h), new mxPoint(x, y + hh),
+      ], this.isRounded, arcSize, true);
       c.fillAndStroke();
     };
   } else if (name === 'mxActor') {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
       c.translate(x, y);
-      const width = w / 3;
       c.begin();
+      this.redrawPath(c, x, y, w, h);
+      c.fillAndStroke();
+    };
+    BaseShape.prototype.redrawPath = function(c, x, y, w, h) {
+      const width = w / 3;
       c.moveTo(0, h);
       c.curveTo(0, 3 * h / 5, 0, 2 * h / 5, w / 2, 2 * h / 5);
       c.curveTo(w / 2 - width, 2 * h / 5, w / 2 - width, 0, w / 2, 0);
       c.curveTo(w / 2 + width, 0, w / 2 + width, 2 * h / 5, w / 2, 2 * h / 5);
       c.curveTo(w, 2 * h / 5, w, 3 * h / 5, w, h);
       c.close();
-      c.fillAndStroke();
     };
   } else if (name === 'mxCylinder') {
+    BaseShape.prototype.maxHeight = 40;
+    BaseShape.prototype.getCylinderSize = function(x, y, w, h) {
+      return Math.min(this.maxHeight, Math.round(h / 5));
+    };
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
-      c.ellipse(x, y, w, h * 0.25); c.fillAndStroke();
-      c.rect(x, y + h * 0.125, w, h * 0.75); c.fillAndStroke();
-      c.ellipse(x, y + h * 0.75, w, h * 0.25); c.fillAndStroke();
+      c.translate(x, y);
+      c.begin();
+      this.redrawPath(c, x, y, w, h, false);
+      c.fillAndStroke();
+      if (!this.outline) {
+        c.setShadow(false);
+        c.begin();
+        this.redrawPath(c, x, y, w, h, true);
+        c.stroke();
+      }
+    };
+    BaseShape.prototype.redrawPath = function(c, x, y, w, h, isForeground) {
+      const dy = this.getCylinderSize(x, y, w, h);
+      if ((isForeground && this.fill != null) || (!isForeground && this.fill == null)) {
+        c.moveTo(0, dy);
+        c.curveTo(0, 2 * dy, w, 2 * dy, w, dy);
+        if (!isForeground) {
+          c.stroke();
+          c.begin();
+        }
+      }
+      if (!isForeground) {
+        c.moveTo(0, dy);
+        c.curveTo(0, -dy / 3, w, -dy / 3, w, dy);
+        c.lineTo(w, h - dy);
+        c.curveTo(w, h + dy / 3, 0, h + dy / 3, 0, h - dy);
+        c.close();
+      }
+    };
+  } else if (name === 'mxLine') {
+    BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
+      c.begin();
+      const vertical = this.vertical ||
+        (this.style && (this.style.vertical == 1 || this.style.vertical === '1'));
+      if (vertical) {
+        const mid = x + w / 2;
+        c.moveTo(mid, y);
+        c.lineTo(mid, y + h);
+      } else {
+        const mid = y + h / 2;
+        c.moveTo(x, mid);
+        c.lineTo(x + w, mid);
+      }
+      c.stroke();
     };
   } else if (
     name === 'mxRectangleShape' || name === 'mxLabel' || name === 'mxSwimlane' ||
-    name === 'mxConnector' || name === 'mxLine' || name === 'mxPolyline' ||
+    name === 'mxConnector' || name === 'mxPolyline' ||
     name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape'
   ) {
     BaseShape.prototype.paintVertexShape = function(c, x, y, w, h) {
@@ -603,6 +797,7 @@ const mxUtilsBase = {
   bind(scope, fn) { return fn.bind(scope); },
   isNode() { return false; },
   indexOf(arr, item) { return arr.indexOf(item); },
+  mod(n, m) { return ((n % m) + m) % m; },
 };
 const mxUtils = new Proxy(mxUtilsBase, {
   get(target, prop) {
@@ -616,7 +811,7 @@ const shapeContext = {
   mxUtils,
   mxCellRenderer,
   mxConstants,
-  mxPoint: function(x, y) { this.x = x; this.y = y; },
+  mxPoint,
   mxRectangle: function(x, y, width, height) {
     this.x = x; this.y = y; this.width = width; this.height = height;
   },
@@ -937,13 +1132,19 @@ function recordingCanvas() {
 
 function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) {
   const name = style && style.shape;
+  const fill = stylePaintColor(style.fillColor, '#ffffff');
+  const stroke = stylePaintColor(style.strokeColor, '#000000');
   let ctor = name ? registry[name] : null;
   if (!ctor && opts.allowStencil && name) {
     const stencil = stencilMap[String(name).toLowerCase()];
     if (stencil) {
-      stencil.drawShape(canvas, null, x, y, width, height);
+      const ghost = {style, fill, stroke, direction: style.direction || null};
+      if (style.dashed === '1') canvas.setDashed(true);
+      if (isNoneColor(fill)) canvas.setFillColor(null);
+      if (isNoneColor(stroke)) canvas.setStrokeColor(null);
+      stencil.drawShape(canvas, ghost, x, y, width, height);
       canvas.finish();
-      return {};
+      return ghost;
     }
   }
   if (!ctor && opts.fallbackRect) {
@@ -951,8 +1152,13 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   }
   if (!ctor) return null;
   if (typeof ctor.prototype.paintVertexShape !== 'function') return null;
-  const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
+  const shape = new ctor(null, fill, stroke, 1);
   shape.style = style;
+  shape.fill = fill;
+  shape.stroke = stroke;
+  shape.strokewidth = Number(style.strokeWidth) || 1;
+  shape.isDashed = style.dashed == 1;
+  shape.isRounded = style.rounded == 1;
   shape.scale = 1;
   shape.bounds = {x, y, width, height};
   shape.direction = style.direction || null;
@@ -987,6 +1193,9 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   try {
     if (typeof shape.updateTransform === 'function') {
       shape.updateTransform(canvas, x, y, width, height);
+    }
+    if (typeof shape.configureCanvas === 'function') {
+      shape.configureCanvas(canvas, x, y, width, height);
     }
     shape.paintVertexShape(canvas, x, y, width, height);
   } catch (error) {
@@ -1156,7 +1365,7 @@ function paintArrowHead(canvas, type, fill, tipX, tipY, fromX, fromY) {
 
 function paintConnectorLine(style, pts, canvas) {
   if (!pts || pts.length < 2) return;
-  if (style.dashed === '1') canvas.operations.push('<dashed dashed="1"/>');
+  if (style.dashed === '1') canvas.setDashed(true);
   canvas.begin();
   canvas.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) canvas.lineTo(pts[i].x, pts[i].y);
@@ -1179,10 +1388,13 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
   if (ctor && typeof ctor.prototype.paintEdgeShape === 'function') {
     const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
     shape.style = style;
+    shape.fill = stylePaintColor(style.fillColor, '#ffffff');
+    shape.stroke = stylePaintColor(style.strokeColor, '#000000');
+    shape.isDashed = style.dashed == 1;
     shape.scale = 1;
     shape.bounds = {x, y, width, height};
     try {
-      if (style.dashed === '1') canvas.operations.push('<dashed dashed="1"/>');
+      if (style.dashed === '1') canvas.setDashed(true);
       shape.paintEdgeShape(canvas, pts);
       canvas.finish();
       return true;

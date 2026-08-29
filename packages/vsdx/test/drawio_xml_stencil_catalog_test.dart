@@ -786,4 +786,134 @@ void main() {
       isTrue,
     );
   });
+
+  test(
+    'mxGraph dashed vertices clouds cylinders and double ellipses stay native for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final signature = stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Template signature',
+      ).build(90, 3, 3);
+      expect(
+        signature.line.pattern,
+        2,
+        reason:
+            'mxShape.configureCanvas dashed=1 is LinePattern 2 in tokens.txt',
+      );
+
+      final cloud = stencil(
+        'Draw.io JS / DFD / Data Flow Diagram',
+        'Object',
+      ).build(91, 3, 3);
+      expect(
+        cloud.geometries.expand((geometry) => geometry.commands).any(
+              (command) => command is CubBezTo,
+            ),
+        isTrue,
+        reason: 'shape=cloud must use mxCloud.redrawPath, not an ellipse',
+      );
+
+      final doubleEllipse = stencil(
+        'Draw.io JS / ThreatModeling / Threat Modeling',
+        'Multi-Process',
+      ).build(92, 3, 3);
+      expect(doubleEllipse.geometries, hasLength(2));
+      expect(doubleEllipse.geometries.first.noFill, isFalse);
+      expect(doubleEllipse.geometries.last.noFill, isTrue);
+
+      final cylinder = stencil(
+        'Draw.io JS / DFD / Data Flow Diagram',
+        'Data Store (3)',
+      ).build(93, 3, 3);
+      expect(
+        cylinder.geometries.where((geometry) => !geometry.noFill),
+        hasLength(1),
+        reason: 'mxCylinder is one filled body plus a lid stroke; stacked '
+            'ellipses would evenodd-punch in collectGeometry',
+      );
+      expect(
+        cylinder.geometries.expand((geometry) => geometry.commands).any(
+              (command) => command is CubBezTo,
+            ),
+        isTrue,
+      );
+
+      final partial = stencil(
+        'Draw.io JS / Basic / basic',
+        'Partial Rectangle (2)',
+      ).build(94, 3, 3);
+      expect(
+        partial.geometries.every((geometry) => geometry.noFill),
+        isTrue,
+        reason: 'fillColor=none must not leave a fill libvisio would paint',
+      );
+      expect(
+        partial.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        greaterThan(1),
+        reason: 'top=0;bottom=0 skips those sides with moveTo',
+      );
+
+      final parallelogram = stencil(
+        'Draw.io JS / DFD / Data Flow Diagram',
+        'Product / Result',
+      ).build(95, 3, 3);
+      expect(
+        parallelogram.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<LineTo>()
+            .length,
+        4,
+        reason: 'parallelogram redrawPath needs addPoints, not mxActor',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final cloudId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / DFD / Data Flow Diagram',
+        'Object',
+      ).build(cloudId, 3, 3));
+      final dashId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Template signature',
+      ).build(dashId, 5, 3));
+      final cylId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / DFD / Data Flow Diagram',
+        'Data Store (3)',
+      ).build(cylId, 7, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(cloudId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isTrue,
+      );
+      expect(leftover.findShapeById(dashId)!.line.pattern, 2);
+      expect(
+        leftover
+            .findShapeById(cylId)!
+            .geometries
+            .where((geometry) => !geometry.noFill),
+        hasLength(1),
+      );
+    },
+  );
 }
