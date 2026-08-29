@@ -616,6 +616,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   decoder `scaleX` exploded past the XForm `collectXFormData` maps to
   `svg:width`. Capture now inverts like `paint`; XML stencils still use
   `computeAspect`. A second save keeps the contour.
+- draw.io mxGraph `labelPosition` / `verticalLabelPosition` now stay
+  native in LibreOffice. Official `mxGraphView.updateVertexLabelOffset`
+  shifts the mxText box by one cell (`left`/`right`/`top`/`bottom`),
+  but capture always painted `canvas.text(x,y,w,h)` on the icon, so
+  UML Port (`labelPosition=right`) and GCP Vertex AI
+  (`verticalLabelPosition=bottom`) stacked the caption on the glyph
+  that `collectXFormData` maps to `svg:x` / `svg:y`. Capture now
+  offsets like the view; `align` / `verticalAlign` stay in-box.
+  NestedStencil glyphs keep their own x/y. A second save keeps the
+  outer Pin.
 - draw.io mxStencil `fontfamily` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `setFontFamily(family)` and PID
   valves call `c.setFontFamily('Helvetica')`, but capture stubbed

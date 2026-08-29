@@ -1082,8 +1082,7 @@ void main() {
     final motor = dynamic
         .singleWhere(
           (group) =>
-              group.name ==
-              'Draw.io JS / PID / Process Engineering / Valves',
+              group.name == 'Draw.io JS / PID / Process Engineering / Valves',
         )
         .stencils
         .singleWhere((entry) => entry.name == 'Gate Valve (Motor)')
@@ -1149,7 +1148,8 @@ void main() {
     );
   });
 
-  test('mxText style fontSize and fontColor stay Char cells for LibreOffice', () {
+  test('mxText style fontSize and fontColor stay Char cells for LibreOffice',
+      () {
     VsdxTextRun? glyphRun(VsdxShape shape, String text) {
       for (final child in shape.children) {
         if (child.text == text && child.richText.runs.isNotEmpty) {
@@ -1164,13 +1164,15 @@ void main() {
     final ammeter = dynamic
         .singleWhere(
           (group) =>
-              group.name == 'Draw.io JS / Electrical / Electrical / Instruments',
+              group.name ==
+              'Draw.io JS / Electrical / Electrical / Instruments',
         )
         .stencils
         .singleWhere((entry) => entry.name == 'Ammeter')
         .build(93, 3, 3);
     final ammeterRun = glyphRun(ammeter, 'A');
-    expect(ammeterRun, isNotNull, reason: 'Ammeter cell value A is a Text child');
+    expect(ammeterRun, isNotNull,
+        reason: 'Ammeter cell value A is a Text child');
     expect(
       ammeterRun!.charStyle.fontSizeInches,
       closeTo(50 * 1.5 / 90, 0.02),
@@ -1202,7 +1204,8 @@ void main() {
       doc.pages.first.addShape(
         dynamic
             .singleWhere(
-              (group) => group.name ==
+              (group) =>
+                  group.name ==
                   'Draw.io JS / Electrical / Electrical / Instruments',
             )
             .stencils
@@ -1235,17 +1238,20 @@ void main() {
     final ammeter = dynamic
         .singleWhere(
           (group) =>
-              group.name == 'Draw.io JS / Electrical / Electrical / Instruments',
+              group.name ==
+              'Draw.io JS / Electrical / Electrical / Instruments',
         )
         .stencils
         .singleWhere((entry) => entry.name == 'Ammeter')
         .build(95, 3, 3);
     final ammeterGlyph = glyphShape(ammeter, 'A');
-    expect(ammeterGlyph, isNotNull, reason: 'Ammeter cell value A is a Text child');
+    expect(ammeterGlyph, isNotNull,
+        reason: 'Ammeter cell value A is a Text child');
     expect(
       ammeterGlyph!.width,
       closeTo(ammeter.width, 0.02),
-      reason: 'mxXmlCanvas2D.text w/h fills the 90px cell, not a tight glyph box',
+      reason:
+          'mxXmlCanvas2D.text w/h fills the 90px cell, not a tight glyph box',
     );
     expect(
       ammeterGlyph.height,
@@ -1254,7 +1260,8 @@ void main() {
     expect(
       ammeterGlyph.pinX,
       closeTo(ammeter.width / 2, 0.02),
-      reason: 'the label pin is the cell centre so collectTextBlock svg:x is centred',
+      reason:
+          'the label pin is the cell centre so collectTextBlock svg:x is centred',
     );
     expect(
       ammeterGlyph.pinY,
@@ -1273,7 +1280,8 @@ void main() {
         .singleWhere((entry) => entry.name == 'Alert')
         .build(96, 3, 3);
     final alertGlyph = glyphShape(alert, 'A simple primary alert!');
-    expect(alertGlyph, isNotNull, reason: 'Bootstrap Alert keeps the cell value');
+    expect(alertGlyph, isNotNull,
+        reason: 'Bootstrap Alert keeps the cell value');
     expect(
       alertGlyph!.width,
       closeTo(alert.width, 0.02),
@@ -1285,7 +1293,8 @@ void main() {
     expect(
       alertGlyph.richText.textBlock.marginLeftInches,
       closeTo(12 * alertScale, 0.002),
-      reason: 'spacingLeft=10 must reach collectTextBlock LeftMargin / fo:padding-left',
+      reason:
+          'spacingLeft=10 must reach collectTextBlock LeftMargin / fo:padding-left',
     );
     expect(
       alertGlyph.richText.textBlock.marginRightInches,
@@ -1309,7 +1318,8 @@ void main() {
     expect(
       andGlyph!.width,
       lessThan(andGate.width * 0.8),
-      reason: 'NestedStencil text(w=0,h=0) must stay a tight glyph, not a cell box',
+      reason:
+          'NestedStencil text(w=0,h=0) must stay a tight glyph, not a cell box',
     );
 
     const writer = VsdxWriter();
@@ -1378,7 +1388,8 @@ void main() {
     final ammeter = dynamic
         .singleWhere(
           (group) =>
-              group.name == 'Draw.io JS / Electrical / Electrical / Instruments',
+              group.name ==
+              'Draw.io JS / Electrical / Electrical / Instruments',
         )
         .stencils
         .singleWhere((entry) => entry.name == 'Ammeter')
@@ -1386,7 +1397,8 @@ void main() {
     expect(
       glyphShape(ammeter, 'A')!.wordWrap,
       isFalse,
-      reason: 'mxText wrap defaults false; veWordWrap=0 bakes TxtWidth for Draw',
+      reason:
+          'mxText wrap defaults false; veWordWrap=0 bakes TxtWidth for Draw',
     );
 
     final cabinet = dynamic
@@ -1403,12 +1415,14 @@ void main() {
     expect(
       verticalGlyph!.richText.textBlock.textDirection,
       1,
-      reason: 'STYLE_HORIZONTAL=0 is TextDirection=1 that a save bakes to TxtAngle',
+      reason:
+          'STYLE_HORIZONTAL=0 is TextDirection=1 that a save bakes to TxtAngle',
     );
     expect(
       verticalGlyph.richText.textBlock.angleRad.abs(),
       lessThan(0.01),
-      reason: 'in-memory vertical labels use TextDirection, not a pre-baked TxtAngle',
+      reason:
+          'in-memory vertical labels use TextDirection, not a pre-baked TxtAngle',
     );
     expect(
       verticalGlyph.wordWrap,
@@ -1442,8 +1456,7 @@ void main() {
             )
             .stencils
             .singleWhere(
-              (entry) =>
-                  entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+              (entry) => entry.name == 'Panel Wiring System 25x40mm (Vertical)',
             )
             .build(id, 3, 3),
       ),
@@ -1457,7 +1470,8 @@ void main() {
     expect(
       leftoverGlyph.richText.textBlock.textDirection,
       0,
-      reason: 'a save bakes TextDirection so canvas reopen does not rotate twice',
+      reason:
+          'a save bakes TextDirection so canvas reopen does not rotate twice',
     );
     expect(
       leftoverGlyph.richText.textBlock.angleRad,
@@ -1796,7 +1810,8 @@ void main() {
                 :final x1,
                 :final y1,
                 :final x2,
-                :final y2):
+                :final y2
+              ):
               acc(x, y);
               acc(x1, y1);
               acc(x2, y2);
@@ -1847,8 +1862,7 @@ void main() {
             )
             .stencils
             .singleWhere(
-              (entry) =>
-                  entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+              (entry) => entry.name == 'Panel Wiring System 25x40mm (Vertical)',
             )
             .build(id, 3, 3),
       ),
@@ -3148,6 +3162,120 @@ void main() {
         leftoverShape.children.map((child) => child.text ?? '').join(),
         contains('TI'),
         reason: 'a second save must keep the instrument letters',
+      );
+    },
+  );
+
+  test(
+    'mxGraph labelPosition and verticalLabelPosition stay outside the cell for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      VsdxShape? labelOf(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = labelOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final port = stencil(
+        'Draw.io JS / UML25 / uml 2.5',
+        'Port',
+      ).build(420, 3, 3);
+      final portLabel = labelOf(port, 'port1');
+      expect(portLabel, isNotNull);
+      expect(
+        portLabel!.pinX,
+        greaterThan(port.width),
+        reason: 'labelPosition=right must pin collectXFormData to the right '
+            'of the 30px cell, not on top of the square',
+      );
+      expect(
+        (portLabel.pinY - port.height / 2).abs(),
+        lessThan(0.05),
+        reason:
+            'verticalLabelPosition=middle keeps the caption on the cell midline',
+      );
+
+      final vertex = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / GCP2 / GCP Icons / AI and Machine Learning',
+          )
+          .stencils
+          .map((entry) => entry.build(421, 3, 3))
+          .firstWhere(
+            (shape) => labelOf(shape, 'Vertex AI') != null,
+            orElse: () => throw StateError('Vertex AI icon missing'),
+          );
+      final vertexLabel = labelOf(vertex, 'Vertex AI')!;
+      expect(
+        vertexLabel.pinY,
+        lessThan(0),
+        reason: 'verticalLabelPosition=bottom must pin the caption below the '
+            'icon that collectXFormData maps to svg:y',
+      );
+
+      final button = stencil(
+        'Draw.io JS / Basic / basic',
+        'Button',
+      ).build(422, 3, 3);
+      final buttonLabel = labelOf(button, 'Button')!;
+      expect(
+        buttonLabel.pinX,
+        closeTo(button.width / 2, 0.05),
+        reason: 'in-cell labels stay on the locPin',
+      );
+      expect(
+        buttonLabel.pinY,
+        closeTo(button.height / 2, 0.05),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      VsdxShape leftoverOf(VsdxShape Function(int id) build) {
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(0, doc.pages.first.addShape(build(id)));
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      final leftoverPort = leftoverOf(
+        (id) => stencil('Draw.io JS / UML25 / uml 2.5', 'Port').build(id, 3, 3),
+      );
+      expect(
+        labelOf(leftoverPort, 'port1')!.pinX,
+        greaterThan(leftoverPort.width),
+        reason: 'a second save must keep Port to the right of the cell',
+      );
+
+      final leftoverVertex = leftoverOf((id) {
+        return dynamic
+            .singleWhere(
+              (group) =>
+                  group.name ==
+                  'Draw.io JS / GCP2 / GCP Icons / AI and Machine Learning',
+            )
+            .stencils
+            .map((entry) => entry.build(id, 3, 3))
+            .firstWhere((shape) => labelOf(shape, 'Vertex AI') != null);
+      });
+      expect(
+        labelOf(leftoverVertex, 'Vertex AI')!.pinY,
+        lessThan(0),
+        reason: 'a second save must keep Vertex AI below the icon',
       );
     },
   );

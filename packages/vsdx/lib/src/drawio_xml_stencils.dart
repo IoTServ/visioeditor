@@ -997,6 +997,9 @@ class _DrawioXmlShapeDecoder {
     // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
     // keep a tight pin; cell values (Ammeter A, Bootstrap Alert) fill
     // the frame collectTextBlock maps to svg:width / fo:padding-*.
+    // mxGraphView.updateVertexLabelOffset shifts that box by one cell
+    // for labelPosition / verticalLabelPosition, so Pin can sit outside
+    // the parent XForm collectXFormData maps to svg:x / svg:y.
     final hasBox = label.boxWidth > 0 && label.boxHeight > 0;
     final width = hasBox
         ? math.max(label.boxWidth * scaleX.abs(), fontInches * 0.5)

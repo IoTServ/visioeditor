@@ -2789,13 +2789,33 @@ function applyTextStyle(canvas, style) {
   canvas.state.wrap = String(style.whiteSpace || '') === 'wrap';
 }
 
+// mxGraphView.updateVertexLabelOffset: STYLE_LABEL_POSITION left/right
+// and STYLE_VERTICAL_LABEL_POSITION top/bottom shift the mxText box by
+// one cell. LibreOffice collectXFormData pins that Text child; keeping
+// the box on the icon (GCP Vertex AI, UML Port) stacked the caption on
+// the glyph. NestedStencil glyphs pass their own x/y and skip this.
+function mxVertexLabelBox(style, x, y, w, h) {
+  let ox = Number(x) || 0;
+  let oy = Number(y) || 0;
+  const width = Number(w) || 0;
+  const height = Number(h) || 0;
+  const hpos = String((style && style.labelPosition) || 'center');
+  const vpos = String((style && style.verticalLabelPosition) || 'middle');
+  if (hpos === 'left') ox -= width;
+  else if (hpos === 'right') ox += width;
+  if (vpos === 'top') oy -= height;
+  else if (vpos === 'bottom') oy += height;
+  return {x: ox, y: oy, w: width, h: height};
+}
+
 function paintTemplateLabel(entry, style, width, height, canvas) {
   const label = cellLabel(entry && entry.value);
   if (!label) return;
   applyTextStyle(canvas, style);
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
-  canvas.text(0, 0, width, height, label, align, valign);
+  const box = mxVertexLabelBox(style, 0, 0, width, height);
+  canvas.text(box.x, box.y, box.w, box.h, label, align, valign);
 }
 
 function cellsFromMxGraphXml(xml) {
@@ -3049,7 +3069,8 @@ function paintCellTree(cells, canvas, width, height) {
         applyTextStyle(canvas, cellStyle);
         const align = String(cellStyle.align || 'center');
         const valign = String(cellStyle.verticalAlign || 'middle');
-        canvas.text(x, y, cellWidth, cellHeight, label, align, valign);
+        const box = mxVertexLabelBox(cellStyle, x, y, cellWidth, cellHeight);
+        canvas.text(box.x, box.y, box.w, box.h, label, align, valign);
         painted = true;
       }
       const next = [...(cell.children || [])];
