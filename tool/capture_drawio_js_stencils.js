@@ -3122,13 +3122,13 @@ function htmlAlignToken(raw) {
 function applyHtmlCss(next, attrs, tag) {
   const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
   if (color) next.fontColor = color;
-  // CSS font-size is px (GCP 11px). HTML size="1"–"7" is not px —
-  // Chromium maps it onto xx-small…xxx-large (10/13/16/18/24/32/48)
-  // which collectCharIX Size maps to fo:font-size. parseFloat("1")
-  // used to freeze 1px and clamp to Visio's 0.04in floor.
+  // CSS font-size is px (GCP 11px) or em (Lean Mapping 2em). HTML
+  // size="1"–"7" is not px — Chromium maps it onto xx-small…xxx-large
+  // (10/13/16/18/24/32/48) which collectCharIX Size maps to fo:font-size.
+  // parseFloat("2em") used to freeze 2px and clamp to Visio's 0.04in floor.
   const cssSize = htmlStyleProp(attrs, 'font-size');
   if (cssSize) {
-    const size = htmlCssPx(cssSize);
+    const size = htmlCssFontSizePx(cssSize, next.fontSize);
     if (size != null && size > 0) next.fontSize = size;
   } else {
     const htmlSize = htmlAttr(attrs, 'size');
@@ -3196,6 +3196,34 @@ function htmlCssLength(raw, percentOf) {
   if (/%$/.test(token)) {
     const n = parseFloat(token);
     return Number.isFinite(n) && percentOf != null ? percentOf * n / 100 : null;
+  }
+  return htmlCssPx(token);
+}
+
+// CSS font-size em/% is of the parent size (mxText default 12). rem is
+// the HTML medium (16px). parseFloat("2em") must not freeze 2px.
+function htmlCssFontSizePx(raw, currentPx) {
+  const token = String(raw || '').trim();
+  if (!token || token === 'auto' || token === 'inherit' || token === 'none') {
+    return null;
+  }
+  if (/rem$/i.test(token)) {
+    const n = parseFloat(token);
+    return Number.isFinite(n) ? n * 16 : null;
+  }
+  if (/em$/i.test(token)) {
+    const n = parseFloat(token);
+    const base = Number(currentPx);
+    return Number.isFinite(n) && Number.isFinite(base) && base > 0
+      ? n * base
+      : null;
+  }
+  if (/%$/.test(token)) {
+    const n = parseFloat(token);
+    const base = Number(currentPx);
+    return Number.isFinite(n) && Number.isFinite(base) && base > 0
+      ? n * base / 100
+      : null;
   }
   return htmlCssPx(token);
 }
@@ -3524,6 +3552,12 @@ function htmlTableRowSpecs(html) {
 // HTML table cellpadding is a presentational hint for td padding.
 // collectTextBlock LeftMargin maps that onto fo:padding-left, on top of
 // mxText.style spacing already on canvas.state.
+function htmlTableFontSizePx(html, currentPx) {
+  const open = /<table\b([^>]*)>/i.exec(String(html || ''));
+  if (!open) return null;
+  return htmlCssFontSizePx(htmlStyleProp(open[1], 'font-size'), currentPx);
+}
+
 function htmlTablePaddingPx(html) {
   const open = /<table\b([^>]*)>/i.exec(String(html || ''));
   if (!open) return 0;
@@ -3620,7 +3654,9 @@ function paintHtmlTableLabel(
 ) {
   const rows = htmlTableRowSpecs(html);
   if (!rows) return false;
-  const fontSize = canvas && canvas.state ? canvas.state.fontSize : 12;
+  const baseSize = canvas && canvas.state ? canvas.state.fontSize : 12;
+  const tableSize = htmlTableFontSizePx(html, baseSize);
+  const fontSize = tableSize != null ? tableSize : baseSize;
   const heights = rows.map((row) => htmlRowHeightPx(
     row.heightToken, h, htmlRowHasText(row), fontSize,
   ));
@@ -3632,6 +3668,8 @@ function paintHtmlTableLabel(
   const prevR = canvas.state.spacingRight;
   const prevT = canvas.state.spacingTop;
   const prevB = canvas.state.spacingBottom;
+  const prevSize = canvas.state.fontSize;
+  if (tableSize != null) canvas.state.fontSize = tableSize;
   if (pad > 0) {
     canvas.state.spacingLeft = (Number(prevL) || 0) + pad;
     canvas.state.spacingRight = (Number(prevR) || 0) + pad;
@@ -3686,6 +3724,7 @@ function paintHtmlTableLabel(
     canvas.state.spacingTop = prevT;
     canvas.state.spacingBottom = prevB;
   }
+  if (tableSize != null) canvas.state.fontSize = prevSize;
   return painted || rows.every((row) => !htmlRowHasText(row));
 }
 

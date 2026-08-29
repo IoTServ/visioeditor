@@ -2886,6 +2886,68 @@ void main() {
   );
 
   test(
+    'mxText html font-size em stays Char Size for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final lean = dynamic.singleWhere(
+        (group) =>
+            group.name == 'Draw.io JS / LeanMapping / Value Stream Mapping',
+      );
+      final kanban = lean.stencils
+          .singleWhere((entry) => entry.name == 'Signal Kanban')
+          .build(457, 3, 3);
+      // 100×90 cell, catalog scale 1.5 / 100. mxText default 12px × 2em.
+      const kanbanScale = 1.5 / 100;
+      expect(
+        runContaining(kanban, 'S')!.charStyle.fontSizeInches,
+        closeTo(24 * kanbanScale, 0.01),
+        reason: 'font-size:2em is 24px, collectCharIX Size that libvisio '
+            'maps to fo:font-size, not parseFloat 2px',
+      );
+
+      final orders = lean.stencils
+          .singleWhere((entry) => entry.name == 'Orders')
+          .build(458, 3, 3);
+      expect(
+        runContaining(orders, 'IN')!.charStyle.fontSizeInches,
+        closeTo(18 * kanbanScale, 0.01),
+        reason: 'table font-size:1.5em inherits onto IN as 18px',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(kanban.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'S')!.charStyle.fontSizeInches,
+        closeTo(24 * kanbanScale, 0.01),
+        reason: 'a second save must keep Char Size from font-size:2em',
+      );
+    },
+  );
+
+  test(
     'mxCell xml placeholder labels stay substituted Text for LibreOffice',
     () {
       String allText(VsdxShape shape) {

@@ -771,6 +771,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Driven `T` sat on the 2px mxText spacing without the LeftMargin that
   `collectTextBlock` maps to `fo:padding-left`. Cell labels now freeze td
   padding on top of cellpadding. A second save keeps the inset.
+- draw.io mxText html CSS `font-size` em now stays native in LibreOffice.
+  Official `mxText` paints `font-size:2em` as twice the parent size, but
+  capture `parseFloat`'d `2em` as 2px, so Lean Mapping Signal Kanban `S`
+  and Production/Withdrawal Kanban hit the 0.04in Char.Size floor that
+  `collectCharIX` maps to `fo:font-size`. Table `font-size:1.5em` (Orders
+  `IN`) now inherits onto the cell runs. CSS `font-size: 11px` stays a
+  length. A second save keeps Size.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but
