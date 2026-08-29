@@ -389,6 +389,9 @@ class _DrawioXmlShapeDecoder {
             vertical: node.getAttribute('vertical') == '1',
             wrap: node.getAttribute('wrap') == '1',
             rotationDegrees: _number(node, 'rotation'),
+            // mxXmlCanvas2D.text rotation is STYLE_ROTATION; decoder
+            // negates into TxtAngle that LibreOffice librevenge:rotate
+            // paints (Y-up). STYLE_HORIZONTAL stays `vertical`.
             fontSize: _fontSize,
             fontStyle: _fontStyle,
             fontFamily: _fontFamily,

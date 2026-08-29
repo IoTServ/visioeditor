@@ -1560,7 +1560,6 @@ function mxShape() {
   this.fillOpacity = 100;
   this.strokeOpacity = 100;
 }
-mxShape.prototype.getTextRotation = function() { return 0; };
 mxShape.prototype.isHtmlAllowed = function() { return false; };
 mxShape.prototype.apply = function(state) {
   this.state = state;
@@ -1586,6 +1585,17 @@ mxShape.prototype.apply = function(state) {
 };
 mxShape.prototype.getRotation = function() {
   return Number(this.rotation) || 0;
+};
+// mxShape.getTextRotation: STYLE_ROTATION plus verticalTextRotation when
+// STYLE_HORIZONTAL != 1. Cell labels apply rotation via
+// mxVertexLabelRotation; vertical stays a TextDirection bake.
+mxShape.prototype.getTextRotation = function() {
+  let rot = this.getRotation();
+  if (this.style != null &&
+      mxUtils.getValue(this.style, mxConstants.STYLE_HORIZONTAL, 1) != 1) {
+    rot += -90;
+  }
+  return rot;
 };
 mxShape.prototype.getShapeRotation = function() {
   let rot = this.getRotation();
@@ -2827,6 +2837,15 @@ function mxVertexLabelBox(style, x, y, w, h) {
   return {x: ox, y: oy, w: width, h: height};
 }
 
+// mxShape.getTextRotation uses getRotation() (STYLE_ROTATION). Vertical
+// text is a separate TextDirection bake; adding verticalTextRotation
+// here would double-rotate Cabinet 25x40. LibreOffice collects TxtAngle
+// as m_txtxform->angle → librevenge:rotate.
+function mxVertexLabelRotation(style) {
+  const rot = Number(style && style.rotation);
+  return Number.isFinite(rot) ? rot : 0;
+}
+
 function paintTemplateLabel(entry, style, width, height, canvas) {
   const label = cellLabel(entry && entry.value);
   if (!label) return;
@@ -2834,7 +2853,10 @@ function paintTemplateLabel(entry, style, width, height, canvas) {
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
   const box = mxVertexLabelBox(style, 0, 0, width, height);
-  canvas.text(box.x, box.y, box.w, box.h, label, align, valign);
+  canvas.text(
+    box.x, box.y, box.w, box.h, label, align, valign,
+    undefined, undefined, undefined, undefined, mxVertexLabelRotation(style),
+  );
 }
 
 function cellsFromMxGraphXml(xml) {
@@ -3089,7 +3111,11 @@ function paintCellTree(cells, canvas, width, height) {
         const align = String(cellStyle.align || 'center');
         const valign = String(cellStyle.verticalAlign || 'middle');
         const box = mxVertexLabelBox(cellStyle, x, y, cellWidth, cellHeight);
-        canvas.text(box.x, box.y, box.w, box.h, label, align, valign);
+        canvas.text(
+          box.x, box.y, box.w, box.h, label, align, valign,
+          undefined, undefined, undefined, undefined,
+          mxVertexLabelRotation(cellStyle),
+        );
         painted = true;
       }
       const next = [...(cell.children || [])];

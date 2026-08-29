@@ -1565,6 +1565,101 @@ void main() {
     );
   });
 
+  test(
+    'mxGraph STYLE_ROTATION stays TxtAngle for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final partition = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Activities',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Activity Partition')
+          .build(102, 3, 3);
+      final partitionGlyph = glyphShape(partition, 'Partition Name');
+      expect(partitionGlyph, isNotNull);
+      expect(
+        partitionGlyph!.richText.textBlock.angleRad,
+        closeTo(3.141592653589793 / 2, 0.05),
+        reason:
+            'rotation=-90 must reach TxtAngle that librevenge:rotate paints',
+      );
+      expect(
+        partitionGlyph.richText.textBlock.textDirection,
+        0,
+        reason: 'STYLE_ROTATION is TxtAngle, not TextDirection=1',
+      );
+
+      final button = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / Basic / basic')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Button')
+          .build(103, 3, 3);
+      expect(
+        glyphShape(button, 'Button')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.01),
+        reason: 'unrotated cell labels stay TxtAngle 0',
+      );
+
+      final cabinet = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Cabinet / cabinets',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Panel Wiring System 25x40mm (Vertical)',
+          )
+          .build(104, 3, 3);
+      expect(
+        glyphShape(cabinet, '25x40')!.richText.textBlock.textDirection,
+        1,
+        reason: 'STYLE_HORIZONTAL=0 must not pick up STYLE_ROTATION',
+      );
+      expect(
+        glyphShape(cabinet, '25x40')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.01),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          dynamic
+              .singleWhere(
+                (group) =>
+                    group.name == 'Draw.io JS / Sysml / SysML / Activities',
+              )
+              .stencils
+              .singleWhere((entry) => entry.name == 'Activity Partition')
+              .build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphShape(leftover, 'Partition Name')!.richText.textBlock.angleRad,
+        closeTo(3.141592653589793 / 2, 0.05),
+        reason: 'a second save must keep TxtAngle',
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

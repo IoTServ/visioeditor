@@ -626,6 +626,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   offsets like the view; `align` / `verticalAlign` stay in-box.
   NestedStencil glyphs keep their own x/y. A second save keeps the
   outer Pin.
+- draw.io mxGraph `rotation` now stays `TxtAngle` in LibreOffice.
+  Official `mxShape.getTextRotation` returns `STYLE_ROTATION` (and
+  adds `verticalTextRotation` only when `STYLE_HORIZONTAL != 1`), but
+  capture stubbed it to 0 and painted `canvas.text` without the
+  rotation argument, so a SysML Activity Partition (`rotation=-90`,
+  value `Partition Name`) stayed upright while `updateTransform`
+  baked the glyph. Cell labels now pass `STYLE_ROTATION` onto
+  `TxtAngle` that libvisio maps to `librevenge:rotate`; vertical
+  Cabinet panels still use `TextDirection=1` so they are not
+  double-rotated. A second save keeps the angle.
 - draw.io mxText `fontStyle` now stays native in LibreOffice.
   Official `mxText.configureCanvas` always calls `setFontStyle` and
   `mxXmlCanvas2D` emits the compressed token even when it returns to
