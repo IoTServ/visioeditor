@@ -395,6 +395,44 @@ class ImageRegistry {
   }
 }
 
+/// PNG/JPEG captured from draw.io `image;` templates (SVG-in-PNG wrappers).
+/// LibreOffice only collects ForeignData, so the decoder registers bytes here
+/// and [mergeDrawioStencilImages] copies missing parts onto the document.
+final Map<String, VsdxImage> _drawioStencilImages = <String, VsdxImage>{};
+
+/// Content-addressed `/visio/media/drawio_<hash>.ext` for [bytes].
+String registerDrawioStencilImage(Uint8List bytes, {String mimeType = 'image/png'}) {
+  final mime = mimeType.isEmpty ? 'image/png' : mimeType;
+  final ext = mime.contains('jpeg') || mime.contains('jpg')
+      ? 'jpg'
+      : mime.contains('gif')
+          ? 'gif'
+          : mime.contains('webp')
+              ? 'webp'
+              : mime.contains('bmp')
+                  ? 'bmp'
+                  : 'png';
+  final partName = '/visio/media/drawio_${_fnv1a64Hex(bytes)}.$ext';
+  _drawioStencilImages[partName] = VsdxImage(
+    partName: partName,
+    bytes: bytes,
+    mimeType: mime,
+  );
+  return partName;
+}
+
+VsdxImage? drawioStencilImageForPart(String partName) =>
+    _drawioStencilImages[partName];
+
+String _fnv1a64Hex(Uint8List bytes) {
+  var hash = 0xcbf29ce484222325;
+  for (final b in bytes) {
+    hash ^= b;
+    hash *= 0x100000001b3;
+  }
+  return hash.toUnsigned(64).toRadixString(16).padLeft(16, '0');
+}
+
 /// `true` when Image Properties or picture SoftEdges would change Draw.
 ///
 /// `tokens.txt` has no Transparency / Brightness / Contrast / Blur, and no

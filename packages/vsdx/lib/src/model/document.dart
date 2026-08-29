@@ -299,3 +299,32 @@ class VsdxDocument {
       'VsdxDocument(title: $title, pages: ${pages.length}, '
       'masters: ${masters.length})';
 }
+
+/// Attach captured draw.io stencil rasters that [document.images] does not
+/// yet own. LibreOffice only collects ForeignData from media parts, so a
+/// palette drop or probe write that only `addShape`s would otherwise emit
+/// an empty picture.
+VsdxDocument mergeDrawioStencilImages(VsdxDocument document) {
+  var images = document.images;
+  var changed = false;
+  void visit(VsdxShape shape) {
+    final part = shape.imagePartName;
+    if (part != null && images.findByPart(part) == null) {
+      final image = drawioStencilImageForPart(part);
+      if (image != null) {
+        images = images.withImage(image);
+        changed = true;
+      }
+    }
+    for (final child in shape.children) {
+      visit(child);
+    }
+  }
+
+  for (final page in document.pages) {
+    for (final shape in page.shapes) {
+      visit(shape);
+    }
+  }
+  return changed ? document.copyWith(images: images) : document;
+}

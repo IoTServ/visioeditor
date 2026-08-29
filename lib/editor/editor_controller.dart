@@ -1253,6 +1253,7 @@ class EditorController extends ChangeNotifier {
     int? undoPageIndex,
     Set<int>? undoSelection,
   }) {
+    next = mergeDrawioStencilImages(next);
     final cur = _document;
     if (cur == null || identical(cur, next)) return;
     if (_txnBase != null) {

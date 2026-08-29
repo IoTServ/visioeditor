@@ -87,6 +87,8 @@ class _DrawioXmlShapeDecoder {
   int _fontStyle = 0;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
+  String? _rasterPart;
+  String? _rasterMime;
   double _penX = 0;
   double _penY = 0;
   double _subX = 0;
@@ -117,6 +119,22 @@ class _DrawioXmlShapeDecoder {
       _finish(fill: false, stroke: false);
     }
 
+    if (_geometries.isEmpty && _rasterPart != null) {
+      // Picture frame matches VsdxShapeFactory.picture: NoFill/NoLine so
+      // only the ForeignData bitmap shows. LibreOffice still needs the box
+      // for hit-testing.
+      _geometries.add(VsdxGeometry(
+        noFill: true,
+        noLine: true,
+        commands: <VsdxPathCommand>[
+          const MoveTo(0, 0),
+          LineTo(targetWidth, 0),
+          LineTo(targetWidth, targetHeight),
+          LineTo(0, targetHeight),
+          const LineTo(0, 0),
+        ],
+      ));
+    }
     final sourceName = element.getAttribute('name')?.trim();
     if (_geometries.isEmpty && _labels.isEmpty) {
       throw StateError(
@@ -158,9 +176,27 @@ class _DrawioXmlShapeDecoder {
       connectionPoints: _connectionPoints(),
       children: children,
       shapeKind: children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
-      line: _dashed && !_solidPaintBeforeDash
-          ? const VsdxLine(pattern: 2)
-          : VsdxLine.defaultLine,
+      fill: _rasterPart != null
+          ? const VsdxFill(pattern: 0)
+          : VsdxFill.defaultFill,
+      line: _rasterPart != null
+          ? const VsdxLine(pattern: 0)
+          : (_dashed && !_solidPaintBeforeDash
+              ? const VsdxLine(pattern: 2)
+              : VsdxLine.defaultLine),
+      imagePartName: _rasterPart,
+      foreignType: _rasterPart == null
+          ? null
+          : VsdxImage.foreignTypeFor(
+              mimeType: _rasterMime ?? '',
+              partName: _rasterPart!,
+            ),
+      foreignCompressionType: _rasterPart == null
+          ? null
+          : VsdxImage.compressionTypeFor(
+              mimeType: _rasterMime ?? '',
+              partName: _rasterPart!,
+            ),
     );
   }
 
@@ -232,6 +268,9 @@ class _DrawioXmlShapeDecoder {
           ));
         }
         break;
+      case 'image':
+        _consumeRaster(node);
+        break;
       // save/restore and remaining paint attributes affect colour, alpha or
       // line style, not geometry. The native stencil palette applies an
       // editable project style after decoding, while retaining every source
@@ -239,6 +278,17 @@ class _DrawioXmlShapeDecoder {
       default:
         break;
     }
+  }
+
+  void _consumeRaster(XmlElement node) {
+    final src = node.getAttribute('src') ?? '';
+    final parsed = _dataUriImage(src);
+    if (parsed == null) return;
+    _rasterMime = parsed.mime;
+    _rasterPart = registerDrawioStencilImage(
+      parsed.bytes,
+      mimeType: parsed.mime,
+    );
   }
 
   void _resetPen() {
@@ -699,6 +749,24 @@ List<_DrawioArcCurve> _svgArcCurves(
 double _number(XmlElement element, String name, {double fallback = 0}) {
   final value = double.tryParse(element.getAttribute(name) ?? '');
   return value?.isFinite == true ? value! : fallback;
+}
+
+({Uint8List bytes, String mime})? _dataUriImage(String src) {
+  final match = RegExp(
+    r'^data:(image/[\w.+-]+)(;base64)?,([\s\S]+)$',
+    caseSensitive: false,
+  ).firstMatch(src.trim());
+  if (match == null) return null;
+  var mime = match.group(1)!.toLowerCase();
+  if (mime == 'image/jpg') mime = 'image/jpeg';
+  final payload = match.group(3)!.replaceAll(RegExp(r'\s+'), '');
+  try {
+    final bytes = Uint8List.fromList(base64Decode(payload));
+    if (bytes.isEmpty) return null;
+    return (bytes: bytes, mime: mime);
+  } catch (_) {
+    return null;
+  }
 }
 
 bool _flag(XmlElement element, String name) =>

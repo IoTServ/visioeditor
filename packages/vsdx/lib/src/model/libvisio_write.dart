@@ -869,6 +869,7 @@ VsdxPage bakeNestedFillsForLibvisioWrite(VsdxPage page) {
 
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
 VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
+  document = mergeDrawioStencilImages(document);
   var pagesChanged = false;
   final pages = <VsdxPage>[];
   for (final page in document.pages) {

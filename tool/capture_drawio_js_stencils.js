@@ -256,11 +256,22 @@ class CanvasRecorder {
     else if (noStroke) this.operations.push('<fill/>');
     else this.operations.push('<fillstroke/>');
   }
-  // Raster images stay out of the vector capture. Nested mxStencil painters
-  // also call image(); dropping the whole parent would hide Kubernetes / AWS
-  // product icons that still have vector geometry.
+  // SVG icons stay vector. Nested mxStencil painters also call image();
+  // dropping the whole parent would hide Kubernetes / AWS product icons
+  // that still have vector geometry. PNG/JPEG (IBM VPC Floating IP's
+  // SVG-in-PNG, clipart) become <image src="data:…"> so the Dart decoder
+  // can emit Visio ForeignData that LibreOffice's collectForeignData paints.
   image(x, y, w, h, src, aspect) {
     if (paintSvgImage(this, x, y, w, h, src, aspect !== false)) return;
+    paintRaster(this, x, y, w, h, src);
+  }
+  raster(x, y, w, h, mime, b64) {
+    this.finishPath();
+    if (!(Number(w) > 0 && Number(h) > 0) || !b64) return;
+    const p = this.map(x, y);
+    this.operations.push(
+      `<image x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}" src="${xmlEscape(`data:${mime};base64,${b64}`)}"/>`,
+    );
   }
   setFillStyle() {}
   setStrokeAlpha() {}
@@ -390,6 +401,45 @@ function xmlLocalName(name) {
 function looksLikeBase64(payload) {
   const compact = String(payload).replace(/\s+/g, '');
   return compact.length >= 8 && /^[A-Za-z0-9+/]+=*$/.test(compact);
+}
+
+function loadRasterSource(src) {
+  if (src == null || src === '') return null;
+  const raw = String(src).trim();
+  const data = /^data:(image\/[a-z0-9.+-]+)(;base64)?,([\s\S]+)$/i.exec(raw);
+  if (data) {
+    let mime = data[1].toLowerCase();
+    if (mime === 'image/jpg') mime = 'image/jpeg';
+    let payload = data[3].replace(/\s+/g, '');
+    try {
+      if (data[2] || looksLikeBase64(payload)) {
+        Buffer.from(payload, 'base64');
+        return {mime, base64: payload};
+      }
+      payload = Buffer.from(decodeURIComponent(data[3])).toString('base64');
+      return {mime, base64: payload};
+    } catch (_) {
+      return null;
+    }
+  }
+  const rel = raw.replace(/^\.\//, '').split('?')[0];
+  if (!/\.(png|jpe?g|gif|webp|bmp)$/i.test(rel)) return null;
+  const file = path.join(webapp, rel);
+  if (!fs.existsSync(file)) return null;
+  const ext = path.extname(rel).toLowerCase();
+  const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+    : ext === '.gif' ? 'image/gif'
+    : ext === '.webp' ? 'image/webp'
+    : ext === '.bmp' ? 'image/bmp'
+    : 'image/png';
+  return {mime, base64: fs.readFileSync(file).toString('base64')};
+}
+
+function paintRaster(canvas, x, y, w, h, src) {
+  const rec = loadRasterSource(src);
+  if (!rec) return false;
+  canvas.raster(x, y, w, h, rec.mime, rec.base64);
+  return true;
 }
 
 function loadSvgSource(src) {
@@ -613,7 +663,7 @@ function paintSvgPath(canvas, d) {
 const svgSkip = new Set([
   'defs', 'title', 'desc', 'metadata', 'namedview', 'rdf', 'work', 'clippath',
   'filter', 'lineargradient', 'radialgradient', 'stop', 'style', 'script',
-  'marker', 'image', 'text', 'tspan',
+  'marker', 'text', 'tspan',
 ]);
 
 function findSvgById(node, id) {
@@ -643,6 +693,15 @@ function paintSvgNode(canvas, node, inherited, root) {
     painted = paintSvgNode(canvas, target, style, root);
     canvas.restore();
     return painted;
+  }
+  if (name === 'image') {
+    const href = node.attrs.href || node.attrs['xlink:href'] || '';
+    const ix = Number(node.attrs.x) || 0;
+    const iy = Number(node.attrs.y) || 0;
+    const iw = Number(node.attrs.width) || 0;
+    const ih = Number(node.attrs.height) || 0;
+    if (!(iw > 0 && ih > 0)) return false;
+    return paintRaster(canvas, ix, iy, iw, ih, href);
   }
   if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
     for (const child of node.children || []) {
@@ -2313,7 +2372,7 @@ function renderEntry(entry) {
     missVertex(entry.kind || 'unknown', entry);
     return null;
   }
-  if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse|text)\b/.test(operation))) {
+  if (!canvas.operations.some((operation) => /<(move|line|curve|quad|arc|rect|roundrect|ellipse|text|image)\b/.test(operation))) {
     renderStats.noGeometry++;
     const image = style && style.image;
     const src = image == null ? '' : String(image);

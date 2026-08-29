@@ -583,6 +583,11 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SVG-in-PNG icons now stay native in LibreOffice. Capture skipped
+  SVG `<image href="data:image/png">` (IBM VPC Floating IP), so
+  `VisioDocument::parse` never saw ForeignData. Those rasters now become
+  media parts that libvisio `collectForeignData` paints. A second save keeps
+  the bitmap.
 - draw.io Entity Relation crow's-foot markers now stay native in LibreOffice.
   Capture stubbed `mxMarker.addMarker` and painted `shape=connector` as a
   polyline plus a generic triangle, so `ERoneToMany` / `ERzeroToMany` /

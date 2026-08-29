@@ -28,7 +28,7 @@ void main() {
     expect(dynamic, hasLength(476));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      13113,
+      13114,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1829,6 +1829,50 @@ void main() {
             .expand((geometry) => geometry.commands)
             .whereType<EllipseCmd>(),
         isNotEmpty,
+      );
+    },
+  );
+
+  test(
+    'IBM VPC Floating IP SVG-in-PNG stays ForeignData for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      const group = 'Draw.io JS / IBM / IBM / VPC';
+      final floating = stencil(group, 'Floating IP').build(400, 3, 3);
+      expect(floating.hasImage, isTrue);
+      expect(floating.imagePartName, startsWith('/visio/media/drawio_'));
+      expect(
+        drawioStencilImageForPart(floating.imagePartName!),
+        isNotNull,
+        reason: 'decoder must register PNG bytes for collectForeignData',
+      );
+      expect(
+        floating.fill.hasFill,
+        isFalse,
+        reason: 'only the bitmap should show, not a filled frame',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(stencil(group, 'Floating IP').build(id, 3, 3)),
+      );
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverShape = leftover.pages.first.findShapeById(id)!;
+      expect(leftoverShape.hasImage, isTrue);
+      expect(
+        leftover.images.findByPart(leftoverShape.imagePartName!),
+        isNotNull,
+        reason: 'a second save must keep the PNG media part',
       );
     },
   );
