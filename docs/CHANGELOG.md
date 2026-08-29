@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil hex `fillcolor` / `fontcolor` now stay native in
+  LibreOffice. `mxStencil.parseColor` applies those nodes, but capture
+  dropped hex and the Dart decoder ignored them, so a Radio Button On
+  inner dot shared one evenodd `FillForegnd` with the chrome
+  (`collectGeometry` + `svg:fill-rule=evenodd`) and On-Off ON stayed
+  black. Hex fills/strokes now become sibling shapes libvisio paints
+  independently; `fontcolor` reaches `collectCharIX`. `fill` / `stroke`
+  keywords still use the parent so the palette can recolor the body.
+  A second save keeps the dot, the purple half and the white letters.
 - draw.io sidebar cell values now stay native in LibreOffice. Capture
   painted `paintVertexShape` but dropped `createVertexTemplateEntry`'s
   value, so P&ID `TI`/`##`, Basic Button and AWS group titles never

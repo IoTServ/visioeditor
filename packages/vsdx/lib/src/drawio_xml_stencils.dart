@@ -82,9 +82,15 @@ class _DrawioXmlShapeDecoder {
 
   final List<VsdxGeometry> _geometries = <VsdxGeometry>[];
   final List<_DrawioStencilLabel> _labels = <_DrawioStencilLabel>[];
+  final List<_DrawioColoredPart> _coloredParts = <_DrawioColoredPart>[];
   List<VsdxPathCommand>? _pending;
   double _fontSize = 12;
   int _fontStyle = 0;
+  VsdxColor? _fontColor;
+  VsdxColor? _fillColor;
+  VsdxColor? _strokeColor;
+  bool _fillIsNone = false;
+  bool _strokeIsNone = false;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
   String? _rasterPart;
@@ -136,14 +142,18 @@ class _DrawioXmlShapeDecoder {
       ));
     }
     final sourceName = element.getAttribute('name')?.trim();
-    if (_geometries.isEmpty && _labels.isEmpty) {
+    if (_geometries.isEmpty &&
+        _labels.isEmpty &&
+        _coloredParts.isEmpty &&
+        _rasterPart == null) {
       throw StateError(
         'draw.io stencil ${sourceName ?? id} produced no geometry',
       );
     }
     if (_geometries.isEmpty) {
       // Text-only mxGraph painters (some JS captures) still need a hit box
-      // libvisio can attach Text children to.
+      // libvisio can attach Text children to. Hex fillcolor children are the
+      // same: the parent is a group locPin box, not a filled evenodd path.
       _geometries.add(VsdxGeometry(
         noFill: true,
         noLine: true,
@@ -156,15 +166,31 @@ class _DrawioXmlShapeDecoder {
         ],
       ));
     }
+    var nextId = id + 1;
     final children = <VsdxShape>[
-      for (var i = 0; i < _labels.length; i++)
-        _labelShape(id: id + 1 + i, label: _labels[i]),
+      for (final part in _coloredParts)
+        _coloredShape(id: nextId++, part: part),
+      for (final label in _labels) _labelShape(id: nextId++, label: label),
     ];
+    final inheritFill = _geometries.any((geometry) => !geometry.noFill);
+    final inheritLine = _geometries.any((geometry) => !geometry.noLine);
     // Use Sheet.N like factory / chart stencils. The catalog keeps the
     // human-readable stencil title for the palette; putting it on shape.name
     // would paint as a label fallback when text is empty. Authored mxGraph
     // <text> glyphs (IEC AND, calendar days, …) become children so
-    // LibreOffice's libvisio text collector still paints them.
+    // LibreOffice's libvisio text collector still paints them. Hex
+    // fillcolor / strokecolor contours are children too: libvisio
+    // collectGeometry concatenates every NoFill=0 section of one shape
+    // into one evenodd path, so a black radio dot on a grey disk would
+    // otherwise punch a hole.
+    final parentFill = _rasterPart != null || (!inheritFill && children.isNotEmpty)
+        ? const VsdxFill(pattern: 0)
+        : VsdxFill.defaultFill;
+    final parentLine = _rasterPart != null || (!inheritLine && children.isNotEmpty)
+        ? const VsdxLine(pattern: 0)
+        : (_dashed && !_solidPaintBeforeDash
+            ? const VsdxLine(pattern: 2)
+            : VsdxLine.defaultLine);
     return VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -176,14 +202,8 @@ class _DrawioXmlShapeDecoder {
       connectionPoints: _connectionPoints(),
       children: children,
       shapeKind: children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
-      fill: _rasterPart != null
-          ? const VsdxFill(pattern: 0)
-          : VsdxFill.defaultFill,
-      line: _rasterPart != null
-          ? const VsdxLine(pattern: 0)
-          : (_dashed && !_solidPaintBeforeDash
-              ? const VsdxLine(pattern: 2)
-              : VsdxLine.defaultLine),
+      fill: parentFill,
+      line: parentLine,
       imagePartName: _rasterPart,
       foreignType: _rasterPart == null
           ? null
@@ -252,6 +272,15 @@ class _DrawioXmlShapeDecoder {
       case 'fontstyle':
         _fontStyle = _number(node, 'style').round();
         break;
+      case 'fillcolor':
+        _applyMxFill(node.getAttribute('color'));
+        break;
+      case 'strokecolor':
+        _applyMxStroke(node.getAttribute('color'));
+        break;
+      case 'fontcolor':
+        _applyMxFont(node.getAttribute('color'));
+        break;
       case 'text':
         final str = node.getAttribute('str') ?? '';
         if (str.isNotEmpty) {
@@ -265,16 +294,18 @@ class _DrawioXmlShapeDecoder {
             rotationDegrees: _number(node, 'rotation'),
             fontSize: _fontSize,
             fontStyle: _fontStyle,
+            color: _fontColor,
           ));
         }
         break;
       case 'image':
         _consumeRaster(node);
         break;
-      // save/restore and remaining paint attributes affect colour, alpha or
-      // line style, not geometry. The native stencil palette applies an
-      // editable project style after decoding, while retaining every source
-      // contour. Authored <text> is kept as a child so Draw paints it.
+      // save/restore and remaining paint attributes affect alpha or line
+      // join. Hex fillcolor / strokecolor / fontcolor are consumed above so
+      // Draw can paint them as sibling shapes (one FillForegnd each).
+      // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
+      // the parent so applyStencilStyle can still recolor the body.
       default:
         break;
     }
@@ -311,15 +342,98 @@ class _DrawioXmlShapeDecoder {
     _pending = commands;
   }
 
+  void _applyMxFill(String? raw) {
+    final token = (raw ?? '').trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'fill' || lower == 'default') {
+      _fillColor = null;
+      _fillIsNone = false;
+      return;
+    }
+    if (lower == 'none') {
+      _fillColor = null;
+      _fillIsNone = true;
+      return;
+    }
+    if (lower == 'stroke') {
+      _fillColor = _strokeColor;
+      _fillIsNone = _strokeIsNone;
+      return;
+    }
+    final parsed = _mxGraphPaintColor(token);
+    _fillColor = parsed;
+    _fillIsNone = false;
+  }
+
+  void _applyMxStroke(String? raw) {
+    final token = (raw ?? '').trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'stroke' || lower == 'default') {
+      _strokeColor = null;
+      _strokeIsNone = false;
+      return;
+    }
+    if (lower == 'none') {
+      _strokeColor = null;
+      _strokeIsNone = true;
+      return;
+    }
+    if (lower == 'fill') {
+      _strokeColor = _fillColor;
+      _strokeIsNone = _fillIsNone;
+      return;
+    }
+    final parsed = _mxGraphPaintColor(token);
+    _strokeColor = parsed;
+    _strokeIsNone = false;
+  }
+
+  void _applyMxFont(String? raw) {
+    final token = (raw ?? '').trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'default' || lower == 'none') {
+      _fontColor = null;
+      return;
+    }
+    if (lower == 'fill') {
+      _fontColor = _fillColor;
+      return;
+    }
+    if (lower == 'stroke' || lower == 'font') {
+      _fontColor = _strokeColor;
+      return;
+    }
+    _fontColor = _mxGraphPaintColor(token);
+  }
+
   void _finish({required bool fill, required bool stroke}) {
     if (!_dashed) _solidPaintBeforeDash = true;
     final commands = _pending;
     _pending = null;
     if (commands == null || commands.isEmpty) return;
+    final doFill = fill && !_fillIsNone;
+    final doStroke = stroke && !_strokeIsNone;
+    if (!doFill && !doStroke && (fill || stroke)) return;
+    final bakeFill = doFill && _fillColor != null;
+    final bakeStroke = doStroke && _strokeColor != null && !doFill;
+    if (bakeFill || bakeStroke) {
+      _coloredParts.add(_DrawioColoredPart(
+        commands: List<VsdxPathCommand>.unmodifiable(commands),
+        fill: bakeFill
+            ? VsdxFill(foreground: _fillColor, pattern: 1)
+            : const VsdxFill(pattern: 0),
+        line: doStroke
+            ? (_strokeColor != null
+                ? VsdxLine.defaultLine.withSolidColor(_strokeColor!)
+                : VsdxLine.defaultLine)
+            : const VsdxLine(pattern: 0),
+      ));
+      return;
+    }
     _geometries.add(VsdxGeometry(
       commands: List<VsdxPathCommand>.unmodifiable(commands),
-      noFill: !fill,
-      noLine: !stroke,
+      noFill: !doFill,
+      noLine: !doStroke,
       ix: _geometries.length,
     ));
   }
@@ -532,6 +646,37 @@ class _DrawioXmlShapeDecoder {
     ];
   }
 
+  VsdxShape _coloredShape({
+    required int id,
+    required _DrawioColoredPart part,
+  }) {
+    final locX = targetWidth / 2;
+    final locY = targetHeight / 2;
+    return VsdxShape(
+      id: id,
+      name: 'Sheet.$id',
+      pinX: locX,
+      pinY: locY,
+      width: targetWidth,
+      height: targetHeight,
+      locPinXInches: locX,
+      locPinYInches: locY,
+      fill: part.fill,
+      line: part.line,
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: !part.fill.hasFill,
+          noLine: !part.line.hasLine,
+          commands: part.commands,
+        ),
+      ],
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[],
+        textBlock: VsdxTextBlock(hideText: true),
+      ),
+    );
+  }
+
   VsdxShape _labelShape({
     required int id,
     required _DrawioStencilLabel label,
@@ -584,6 +729,7 @@ class _DrawioXmlShapeDecoder {
                 italic: (label.fontStyle & 2) != 0,
               ),
               underline: (label.fontStyle & 4) != 0,
+              color: label.color,
             ),
             paraStyle: VsdxParaStyle(horizontalAlign: horz),
           ),
@@ -630,6 +776,7 @@ class _DrawioStencilLabel {
     required this.rotationDegrees,
     required this.fontSize,
     required this.fontStyle,
+    this.color,
   });
 
   final String text;
@@ -641,6 +788,40 @@ class _DrawioStencilLabel {
   final double rotationDegrees;
   final double fontSize;
   final int fontStyle;
+  final VsdxColor? color;
+}
+
+class _DrawioColoredPart {
+  const _DrawioColoredPart({
+    required this.commands,
+    required this.fill,
+    required this.line,
+  });
+
+  final List<VsdxPathCommand> commands;
+  final VsdxFill fill;
+  final VsdxLine line;
+}
+
+/// mxStencil.parseColor hex / rgb, including CSS `#RGB`. Style keys such as
+/// `fillColor2` return null so the parent keeps an editable FillForegnd.
+VsdxColor? _mxGraphPaintColor(String? raw) {
+  if (raw == null) return null;
+  final token = raw.trim();
+  if (token.isEmpty) return null;
+  if (token.startsWith('#') && token.length == 4) {
+    final hex = token.substring(1);
+    if (RegExp(r'^[0-9a-fA-F]{3}$').hasMatch(hex)) {
+      return VsdxColor.tryParse(
+        '#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}',
+      );
+    }
+  }
+  if (!token.startsWith('#') &&
+      RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(token)) {
+    return VsdxColor.tryParse('#$token');
+  }
+  return VsdxColor.tryParse(token);
 }
 
 class _DrawioArcCurve {

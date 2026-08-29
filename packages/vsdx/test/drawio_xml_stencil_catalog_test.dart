@@ -10,6 +10,13 @@ void main() {
       .where((group) => group.name.startsWith('Draw.io JS / '))
       .toList(growable: false);
 
+  Iterable<VsdxGeometry> descendantGeometries(VsdxShape shape) sync* {
+    yield* shape.geometries;
+    for (final child in shape.children) {
+      yield* descendantGeometries(child);
+    }
+  }
+
   test('draw.io XML catalog exposes every generated library and shape', () {
     expect(migrated, hasLength(203));
     expect(
@@ -49,16 +56,17 @@ void main() {
       for (final group in dynamic) {
         for (final stencil in group.stencils) {
           final shape = stencil.build(id++, 5, 5);
+          final geos = descendantGeometries(shape).toList(growable: false);
           if (!shape.width.isFinite ||
               !shape.height.isFinite ||
               shape.width <= 0 ||
               shape.height <= 0 ||
-              shape.geometries.isEmpty ||
-              shape.geometries.any((geometry) => geometry.commands.isEmpty)) {
+              geos.isEmpty ||
+              geos.any((geometry) => geometry.commands.isEmpty)) {
             fail('${group.name} / ${stencil.name} produced invalid geometry');
           }
-          geometryCount += shape.geometries.length;
-          commandCount += shape.geometries.fold<int>(
+          geometryCount += geos.length;
+          commandCount += geos.fold<int>(
             0,
             (sum, geometry) => sum + geometry.commands.length,
           );
@@ -79,16 +87,17 @@ void main() {
       for (final group in migrated) {
         for (final stencil in group.stencils) {
           final shape = stencil.build(id++, 5, 5);
+          final geos = descendantGeometries(shape).toList(growable: false);
           if (!shape.width.isFinite ||
               !shape.height.isFinite ||
               shape.width <= 0 ||
               shape.height <= 0 ||
-              shape.geometries.isEmpty ||
-              shape.geometries.any((geometry) => geometry.commands.isEmpty)) {
+              geos.isEmpty ||
+              geos.any((geometry) => geometry.commands.isEmpty)) {
             fail('${group.name} / ${stencil.name} produced invalid geometry');
           }
-          geometryCount += shape.geometries.length;
-          commandCount += shape.geometries.fold<int>(
+          geometryCount += geos.length;
+          commandCount += geos.fold<int>(
             0,
             (sum, geometry) => sum + geometry.commands.length,
           );
@@ -164,7 +173,9 @@ void main() {
     expect(shapes, hasLength(samples.length));
     expect(shapes.every((shape) => shape.geometries.isNotEmpty), isTrue);
     expect(
-      shapes.expand((shape) => shape.geometries).expand((g) => g.commands),
+      shapes
+          .expand(descendantGeometries)
+          .expand((geometry) => geometry.commands),
       anyOf(
         contains(isA<CubBezTo>()),
         contains(isA<EllipseCmd>()),
@@ -415,8 +426,11 @@ void main() {
       'Draw.io JS / Mockup / Mockup Containers',
       'Dialog Box',
     ).build(40, 3, 3);
-    expect(dialog.geometries.length, greaterThan(2),
-        reason: 'addDataEntry mxGraphModel cells must become native geometry');
+    expect(
+      descendantGeometries(dialog).length,
+      greaterThan(2),
+      reason: 'addDataEntry mxGraphModel cells must become native geometry',
+    );
     expect(
       dialog.children.any((child) => (child.text ?? '').isNotEmpty),
       isTrue,
@@ -445,7 +459,7 @@ void main() {
         .pages
         .first
         .findShapeById(id)!;
-    expect(leftover.geometries.length, greaterThan(2));
+    expect(descendantGeometries(leftover).length, greaterThan(2));
     expect(
       leftover.children.any((child) => (child.text ?? '').isNotEmpty),
       isTrue,
@@ -495,6 +509,106 @@ void main() {
       }),
       isTrue,
       reason: 'a second save must keep the Truck cab crease',
+    );
+  });
+
+  test('mxStencil hex fillcolor stays sibling FillForegnd for LibreOffice', () {
+    final radio = migrated
+        .singleWhere(
+            (group) => group.name == 'Draw.io / Mockup / Form Elements')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Radio Button On')
+        .build(80, 3, 3);
+    expect(
+      radio.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == VsdxColor.black &&
+            !child.isLibvisioFillSplitChild,
+      ),
+      isTrue,
+      reason: 'the inner dot is fillcolor #000000; libvisio evenodd would '
+          'punch it if it stayed on the parent',
+    );
+    expect(
+      radio.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == const VsdxColor(0xFFEEEEEF),
+      ),
+      isTrue,
+      reason: 'the chrome stays #eeeeef, not the mockup palette wash',
+    );
+
+    final toggle = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Mockup / Controls')
+        .stencils
+        .singleWhere((entry) => entry.name == 'On-Off Button 4')
+        .build(81, 3, 3);
+    expect(
+      toggle.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.foreground == const VsdxColor(0xFF4342A9),
+      ),
+      isTrue,
+      reason: 'the ON half is fillcolor #4342a9',
+    );
+    final onLabel = toggle.children.where((child) => child.text == 'ON');
+    expect(onLabel, isNotEmpty);
+    expect(
+      onLabel.first.richText.runs.first.charStyle.color,
+      VsdxColor.white,
+      reason: 'fontcolor #ffffff must reach collectCharIX',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final radioId = doc.pages.first.nextFreeShapeId();
+    var page = doc.pages.first.addShape(
+      migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Mockup / Form Elements',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Radio Button On')
+          .build(radioId, 3, 3),
+    );
+    final toggleId = page.nextFreeShapeId();
+    page = page.addShape(
+      migrated
+          .singleWhere((group) => group.name == 'Draw.io / Mockup / Controls')
+          .stencils
+          .singleWhere((entry) => entry.name == 'On-Off Button 4')
+          .build(toggleId, 5, 3),
+    );
+    doc = doc.replacePage(0, page);
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first;
+    expect(
+      leftover.findShapeById(radioId)!.children.any(
+            (child) =>
+                child.fill.hasFill && child.fill.foreground == VsdxColor.black,
+          ),
+      isTrue,
+      reason: 'a second save must keep the radio dot FillForegnd',
+    );
+    expect(
+      leftover
+          .findShapeById(toggleId)!
+          .children
+          .where((child) => child.text == 'ON')
+          .first
+          .richText
+          .runs
+          .first
+          .charStyle
+          .color,
+      VsdxColor.white,
+      reason: 'a second save must keep the ON glyph Color',
     );
   });
 
@@ -732,7 +846,7 @@ void main() {
       'Button group, vertical',
     ).build(72, 3, 3);
     expect(
-      buttons.geometries.length,
+      descendantGeometries(buttons).length,
       greaterThan(2),
       reason: 'sb.cloneCell stacked buttons must stay native geometry',
     );
@@ -788,7 +902,7 @@ void main() {
       isTrue,
     );
     expect(
-      leftover.findShapeById(btnId)!.geometries.length,
+      descendantGeometries(leftover.findShapeById(btnId)!).length,
       greaterThan(2),
     );
   });
@@ -802,7 +916,7 @@ void main() {
         .singleWhere((entry) => entry.name == 'Button group, horizontal (4)')
         .build(80, 3, 3);
     ({double w, double h, int lines})? chevron;
-    for (final geometry in buttons.geometries) {
+    for (final geometry in descendantGeometries(buttons)) {
       var minX = double.infinity, minY = double.infinity;
       var maxX = -double.infinity, maxY = -double.infinity;
       var lines = 0;
@@ -858,7 +972,7 @@ void main() {
         .first
         .findShapeById(id)!;
     expect(
-      leftover.geometries.any((geometry) {
+      descendantGeometries(leftover).any((geometry) {
         return geometry.commands.whereType<LineTo>().length == 3;
       }),
       isTrue,
@@ -1392,12 +1506,12 @@ void main() {
         'Bot Services',
       ).build(130, 3, 3);
       expect(
-        bot.geometries.where((geometry) => !geometry.noFill),
+        descendantGeometries(bot).where((geometry) => !geometry.noFill),
         isNotEmpty,
         reason: 'Azure2 SVG image; must vectorise, not drop as a raster',
       );
       expect(
-        bot.geometries.expand((geometry) => geometry.commands),
+        descendantGeometries(bot).expand((geometry) => geometry.commands),
         anyOf(
           contains(isA<EllipseCmd>()),
           contains(isA<CubBezTo>()),
@@ -1410,7 +1524,7 @@ void main() {
         'Bonsai',
       ).build(131, 3, 3);
       expect(
-        bonsai.geometries.where((geometry) => !geometry.noFill),
+        descendantGeometries(bonsai).where((geometry) => !geometry.noFill),
         isNotEmpty,
         reason: 'Bonsai.svg <use href="#id"> must paint defs geometry',
       );
@@ -1452,9 +1566,7 @@ void main() {
           .pages
           .first;
       expect(
-        leftover
-            .findShapeById(botId)!
-            .geometries
+        descendantGeometries(leftover.findShapeById(botId)!)
             .where((geometry) => !geometry.noFill),
         isNotEmpty,
       );
@@ -1592,11 +1704,14 @@ void main() {
         reason:
             'UML Class is a swimlane plus stacked compartments, not a rectangle',
       );
-      expect(umlClass.children, hasLength(3),
-          reason: 'Class stacks name, field and method');
       expect(
-        umlClass.children.map((child) => child.text).toList(),
+        umlClass.children
+            .map((child) => child.text)
+            .whereType<String>()
+            .where((text) => text.isNotEmpty)
+            .toList(),
         ['Classname', '+ field: type', '+ method(type): type'],
+        reason: 'Class stacks name, field and method',
       );
 
       final useCase = stencil(group, 'Use Case').build(201, 3, 3);
@@ -1662,12 +1777,12 @@ void main() {
 
       final item2 = stencil(group, 'Item 2').build(206, 3, 3);
       expect(
-        item2.geometries.where((geometry) => !geometry.noFill),
+        descendantGeometries(item2).where((geometry) => !geometry.noFill),
         isNotEmpty,
         reason: 'mxLabel.paintImage must vectorise the gear, not a hollow rect',
       );
       expect(
-        item2.geometries
+        descendantGeometries(item2)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,
@@ -1705,7 +1820,11 @@ void main() {
         greaterThanOrEqualTo(8),
       );
       expect(
-        leftoverClass.children.map((child) => child.text).toList(),
+        leftoverClass.children
+            .map((child) => child.text)
+            .whereType<String>()
+            .where((text) => text.isNotEmpty)
+            .toList(),
         ['Classname', '+ field: type', '+ method(type): type'],
         reason: 'libvisio keeps compartment labels on child shapes',
       );
@@ -1736,9 +1855,7 @@ void main() {
         greaterThanOrEqualTo(6),
       );
       expect(
-        leftover
-            .findShapeById(item2Id)!
-            .geometries
+        descendantGeometries(leftover.findShapeById(item2Id)!)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,

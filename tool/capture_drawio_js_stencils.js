@@ -66,6 +66,33 @@ function isNoneColor(value) {
   return value == null || String(value).toLowerCase() === 'none';
 }
 
+function cssColorKey(value) {
+  if (isNoneColor(value)) return 'none';
+  return String(value).trim().toLowerCase();
+}
+
+function paintToken(value, styleFill, styleStroke) {
+  if (isNoneColor(value)) return 'none';
+  const key = cssColorKey(value);
+  if (styleFill != null && key === cssColorKey(styleFill)) return 'fill';
+  if (styleStroke != null && key === cssColorKey(styleStroke)) return 'stroke';
+  return String(value);
+}
+
+function mxStencilColor(color, shape) {
+  if (color == null || color === '') return color;
+  if (color === 'none') return null;
+  if (color === 'fill') return shape ? shape.fill : null;
+  if (color === 'stroke') return shape ? shape.stroke : null;
+  if (color === 'font') {
+    return (shape && shape.style && shape.style.fontColor) || '#000000';
+  }
+  if (shape && shape.style && Object.prototype.hasOwnProperty.call(shape.style, color)) {
+    return stylePaintColor(shape.style[color], color);
+  }
+  return color;
+}
+
 function stylePaintColor(value, fallback) {
   if (value == null || value === '') return fallback;
   if (String(value).toLowerCase() === 'default') return fallback;
@@ -87,7 +114,12 @@ class CanvasRecorder {
     this.operations = [];
     this.pathOpen = false;
     this.externalAsset = false;
-    this.state = {fillColor: '#ffffff', strokeColor: '#000000', fontSize: 12, fontStyle: 0};
+    this.styleFill = '#ffffff';
+    this.styleStroke = '#000000';
+    this._fillToken = 'fill';
+    this._strokeToken = 'stroke';
+    this._fontToken = null;
+    this.state = {fillColor: '#ffffff', strokeColor: '#000000', fontSize: 12, fontStyle: 0, fontColor: null};
   }
 
   save() {
@@ -111,6 +143,7 @@ class CanvasRecorder {
       this.rotFlipV = saved.rotFlipV;
       this.rotCx = saved.rotCx;
       this.rotCy = saved.rotCy;
+      this._reemitPaint();
     }
   }
 
@@ -309,13 +342,52 @@ class CanvasRecorder {
     this.operations.push(`<text ${attrs.join(' ')}/>`);
   }
 
+  bindStyle(fill, stroke) {
+    this.styleFill = fill;
+    this.styleStroke = stroke;
+    this._fillToken = 'fill';
+    this._strokeToken = 'stroke';
+    this._fontToken = null;
+  }
+
+  _emitPaint(tag, token) {
+    this.finishPath();
+    this.operations.push(`<${tag} color="${xmlEscape(token)}"/>`);
+  }
+
+  _reemitPaint() {
+    const fillToken = paintToken(this.state.fillColor, this.styleFill, this.styleStroke);
+    const strokeToken = paintToken(this.state.strokeColor, this.styleFill, this.styleStroke);
+    if (fillToken !== this._fillToken) {
+      this._fillToken = fillToken;
+      this._emitPaint('fillcolor', fillToken);
+    }
+    if (strokeToken !== this._strokeToken) {
+      this._strokeToken = strokeToken;
+      this._emitPaint('strokecolor', strokeToken);
+    }
+    const fontToken = this.state.fontColor == null ? null : String(this.state.fontColor);
+    if (fontToken !== this._fontToken && fontToken != null) {
+      this._fontToken = fontToken;
+      this._emitPaint('fontcolor', fontToken);
+    }
+  }
+
   setAlpha(value) { this.state.alpha = value; }
   setFillAlpha(value) { this.state.fillAlpha = value; }
   setFillColor(value) {
     this.state.fillColor = isNoneColor(value) ? null : value;
+    const token = paintToken(value, this.styleFill, this.styleStroke);
+    if (token === this._fillToken) return;
+    this._fillToken = token;
+    this._emitPaint('fillcolor', token);
   }
   setStrokeColor(value) {
     this.state.strokeColor = isNoneColor(value) ? null : value;
+    const token = paintToken(value, this.styleFill, this.styleStroke);
+    if (token === this._strokeToken) return;
+    this._strokeToken = token;
+    this._emitPaint('strokecolor', token);
   }
   setStrokeWidth(value) { this.state.strokeWidth = value; }
   setDashed(value) {
@@ -330,7 +402,13 @@ class CanvasRecorder {
   setMiterLimit() {}
   setShadow() {}
   setDashPattern() {}
-  setFontColor() {}
+  setFontColor(value) {
+    this.state.fontColor = isNoneColor(value) ? null : value;
+    const token = isNoneColor(value) ? 'none' : String(value);
+    if (token === this._fontToken) return;
+    this._fontToken = token;
+    this._emitPaint('fontcolor', token);
+  }
   setFontFamily() {}
   setFontSize(value) { this.state.fontSize = value; }
   setFontStyle(value) { this.state.fontStyle = value; }
@@ -948,22 +1026,15 @@ class NestedStencil {
           attrNum(node, 'w') * sx, attrNum(node, 'h') * sy,
         );
       }
-    } else if (name === 'fillstroke' || name === 'fillstrokecolor') canvas.fillAndStroke();
+    }     else if (name === 'fillstroke' || name === 'fillstrokecolor') canvas.fillAndStroke();
     else if (name === 'fill') canvas.fill();
     else if (name === 'stroke') canvas.stroke();
     else if (name === 'fillcolor') {
-      // mxStencil.parseColor: only 'none' / 'fill' / 'stroke' change
-      // NoFill vs fill. Hex palette colours stay the project fill so
-      // LibreOffice still paints FillForegnd.
-      const color = node.attrs.color;
-      if (color === 'none') canvas.setFillColor(null);
-      else if (color === 'stroke' && shape) canvas.setFillColor(shape.stroke);
-      else if (color === 'fill' && shape) canvas.setFillColor(shape.fill);
+      canvas.setFillColor(mxStencilColor(node.attrs.color, shape));
     } else if (name === 'strokecolor') {
-      const color = node.attrs.color;
-      if (color === 'none') canvas.setStrokeColor(null);
-      else if (color === 'fill' && shape) canvas.setStrokeColor(shape.fill);
-      else if (color === 'stroke' && shape) canvas.setStrokeColor(shape.stroke);
+      canvas.setStrokeColor(mxStencilColor(node.attrs.color, shape));
+    } else if (name === 'fontcolor') {
+      canvas.setFontColor(mxStencilColor(node.attrs.color, shape));
     } else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
     else if (name === 'dashpattern') canvas.setDashed(true);
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
@@ -1985,6 +2056,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   const name = style && style.shape;
   const fill = stylePaintColor(style.fillColor, '#ffffff');
   const stroke = stylePaintColor(style.strokeColor, '#000000');
+  if (typeof canvas.bindStyle === 'function') canvas.bindStyle(fill, stroke);
   let ctor = name ? registry[name] : null;
   if (!ctor && opts.allowStencil && name) {
     const stencil = stencilMap[String(name).toLowerCase()];
@@ -2271,6 +2343,9 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
     shape.scale = 1;
     shape.bounds = {x, y, width, height};
     try {
+      if (typeof canvas.bindStyle === 'function') {
+        canvas.bindStyle(shape.fill, shape.stroke);
+      }
       if (style.dashed === '1') canvas.setDashed(true);
       if (canvas.setFillColor) canvas.setFillColor(shape.fill);
       if (canvas.setStrokeColor) canvas.setStrokeColor(shape.stroke);
