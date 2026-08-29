@@ -2872,17 +2872,21 @@ abstract final class VsdxShapeFactory {
           LineTo(tw, 0),
           LineTo(tw, h),
         ]),
+        // Tabs share the body edge at x=tw. Overlapping ears become one
+        // evenodd path in canvas, SVG and libvisio
+        // `_fillAndShadowProperties` (`svg:fill-rule=evenodd`) and punch
+        // holes in the module.
         VsdxGeometry(commands: <VsdxPathCommand>[
           MoveTo(0, h * 0.72),
-          LineTo(tw * 1.4, h * 0.72),
-          LineTo(tw * 1.4, h * 0.72 - th),
+          LineTo(tw, h * 0.72),
+          LineTo(tw, h * 0.72 - th),
           LineTo(0, h * 0.72 - th),
           LineTo(0, h * 0.72),
         ]),
         VsdxGeometry(commands: <VsdxPathCommand>[
           MoveTo(0, h * 0.42),
-          LineTo(tw * 1.4, h * 0.42),
-          LineTo(tw * 1.4, h * 0.42 - th),
+          LineTo(tw, h * 0.42),
+          LineTo(tw, h * 0.42 - th),
           LineTo(0, h * 0.42 - th),
           LineTo(0, h * 0.42),
         ]),
@@ -4923,12 +4927,15 @@ abstract final class VsdxShapeFactory {
           LineTo(0.08 * w, 0.62 * h),
           LineTo(0.08 * w, 0.14 * h),
         ]),
-        // Output tray (front, on top of body).
+        // Output tray shares the body edge at y=0.14h. Overlapping the
+        // chassis becomes one evenodd path in canvas, SVG and libvisio
+        // `_fillAndShadowProperties` (`svg:fill-rule=evenodd`) and punches
+        // a slot through the body.
         VsdxGeometry(commands: <VsdxPathCommand>[
           MoveTo(0.24 * w, 0),
           LineTo(0.76 * w, 0),
-          LineTo(0.76 * w, 0.2 * h),
-          LineTo(0.24 * w, 0.2 * h),
+          LineTo(0.76 * w, 0.14 * h),
+          LineTo(0.24 * w, 0.14 * h),
           LineTo(0.24 * w, 0),
         ]),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
@@ -7163,7 +7170,7 @@ abstract final class VsdxShapeFactory {
           LineTo(0.1 * w, h),
           LineTo(0.1 * w, 0),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
+        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           EllipseCmd(
               cx: 0.82 * w,
               cy: 0.5 * h,
@@ -7765,7 +7772,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     return and.copyWith(geometries: <VsdxGeometry>[
       and.geometries.first,
-      VsdxGeometry(commands: <VsdxPathCommand>[
+      VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: 0.88 * w,
             cy: 0.5 * h,
@@ -7810,7 +7817,7 @@ abstract final class VsdxShapeFactory {
     final h = height.abs();
     return or.copyWith(geometries: <VsdxGeometry>[
       or.geometries.first,
-      VsdxGeometry(commands: <VsdxPathCommand>[
+      VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: 0.9 * w,
             cy: 0.5 * h,
@@ -7898,7 +7905,7 @@ abstract final class VsdxShapeFactory {
     ]);
     geos.insert(
       1,
-      VsdxGeometry(commands: <VsdxPathCommand>[
+      VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
         EllipseCmd(
             cx: 0.9 * w,
             cy: 0.5 * h,
@@ -13294,6 +13301,9 @@ abstract final class VsdxShapeFactory {
             LineTo(0.18 * w, top),
           ],
         );
+    // Cap control points bulge by [ry]. Spacing tops/bottoms by 2*ry keeps
+    // AABBs sharing an edge so libvisio evenodd does not punch the stacked
+    // lids into white lenses.
     return _cloudShape(
       id: id,
       name: name ?? 'Sheet.$id',
@@ -13302,13 +13312,13 @@ abstract final class VsdxShapeFactory {
       width: w,
       height: h,
       geometries: <VsdxGeometry>[
-        drum(0.78 * h, 0.55 * h),
-        drum(0.5 * h, 0.28 * h),
-        drum(0.22 * h, 0.08 * h),
+        drum(0.90 * h, 0.66 * h),
+        drum(0.50 * h, 0.26 * h),
+        drum(0.10 * h, 0.02 * h),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          MoveTo(0.18 * w, 0.78 * h),
+          MoveTo(0.18 * w, 0.90 * h),
           EllipticalArcTo(
-              x: 0.82 * w, y: 0.78 * h, controlX: cx, controlY: 0.78 * h - ry),
+              x: 0.82 * w, y: 0.90 * h, controlX: cx, controlY: 0.90 * h - ry),
         ]),
       ],
       fill: fill,

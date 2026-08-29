@@ -583,6 +583,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Overlapping stencil accessories now stay solid in LibreOffice.
+  Lock shackles, inversion bubbles, switch port dots and magnifying-glass
+  disks used `NoFill=0` that only partly overlapped the outer body, so
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`) punched
+  the intersection as a hole in Draw. Nested-fill baking now strokes
+  those smaller overlapping interiors as well as fully nested glyphs;
+  isometric cube faces, chevrons and stacked database drums stay filled.
+  UML module tabs and the printer output tray now share an edge with the
+  body instead of overlapping it. Azure Blob stacked drums are spaced so
+  their ellipse caps no longer evenodd-punch. A second save does not
+  restore the extra fills. First-aid crosses and no-entry bars keep
+  their evenodd cut-outs.
 - Cloud architecture icons now keep a solid tile in LibreOffice.
   Nested inner glyphs (S3 lids, EKS pods, Azure VM screens, load-balancer
   nodes, …) used `NoFill=0` inside the outer body, so libvisio

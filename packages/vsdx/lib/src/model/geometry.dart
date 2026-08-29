@@ -1672,6 +1672,9 @@ class VsdxGeometry {
   return (minX: minX, minY: minY, maxX: maxX, maxY: maxY);
 }
 
+double _boxArea(({double minX, double minY, double maxX, double maxY}) box) =>
+    (box.maxX - box.minX).abs() * (box.maxY - box.minY).abs();
+
 bool _boxContains(
   ({double minX, double minY, double maxX, double maxY}) outer,
   ({double minX, double minY, double maxX, double maxY}) inner,
@@ -1683,24 +1686,54 @@ bool _boxContains(
       inner.maxY > outer.maxY + eps) {
     return false;
   }
-  final outerArea =
-      (outer.maxX - outer.minX).abs() * (outer.maxY - outer.minY).abs();
-  final innerArea =
-      (inner.maxX - inner.minX).abs() * (inner.maxY - inner.minY).abs();
-  return innerArea < outerArea * 0.999;
+  return _boxArea(inner) < _boxArea(outer) * 0.999;
 }
 
-/// Stroke filled Geometry whose bounds sit inside the largest filled section.
+double _boxOverlapArea(
+  ({double minX, double minY, double maxX, double maxY}) a,
+  ({double minX, double minY, double maxX, double maxY}) b,
+) {
+  final x0 = a.minX > b.minX ? a.minX : b.minX;
+  final x1 = a.maxX < b.maxX ? a.maxX : b.maxX;
+  final y0 = a.minY > b.minY ? a.minY : b.minY;
+  final y1 = a.maxY < b.maxY ? a.maxY : b.maxY;
+  if (x1 <= x0 + 1e-9 || y1 <= y0 + 1e-9) return 0;
+  return (x1 - x0) * (y1 - y0);
+}
+
+/// True when a smaller fill would evenodd-punch [outer] in Draw.
+///
+/// Nested interiors (LEDs, lids) are always punched. Accessories that
+/// only partly overlap the body (lock shackles, inversion bubbles, port
+/// dots, magnifying-glass disks) punch the intersection. Similar-sized
+/// stacked tiles (isometric cube faces, chevrons, database drums) stay
+/// filled — their overlap is a 3-D join, not a glyph.
+bool _libvisioEvenoddPunchesOuter(
+  ({double minX, double minY, double maxX, double maxY}) outer,
+  ({double minX, double minY, double maxX, double maxY}) inner,
+) {
+  if (_boxContains(outer, inner)) return true;
+  final overlap = _boxOverlapArea(outer, inner);
+  if (overlap <= 0) return false;
+  final innerArea = _boxArea(inner);
+  final outerArea = _boxArea(outer);
+  if (innerArea <= 0 || outerArea <= 0) return false;
+  return overlap / innerArea >= 0.18 && innerArea / outerArea <= 0.5;
+}
+
+/// Stroke filled Geometry that libvisio would evenodd-punch through the
+/// largest filled section.
 ///
 /// LibreOffice only calls `VisioDocument::parse`. libvisio
 /// `collectGeometry` concatenates every `NoFill=0` section and
 /// `_fillAndShadowProperties` emits `svg:fill-rule=evenodd`, so an inner
-/// message square / LED / lens punches a hole in Draw. Visio paints those
-/// sections separately (same fill, visible stroke). Marking nested interiors
-/// NoFill keeps the outer body solid in canvas, SVG and Draw. Adjacent
-/// faces (isometric cubes, chevrons, process-bar tiles) are not nested and
-/// stay filled. Intentional cut-outs (first-aid cross, no-entry bar) must
-/// skip this rewrite.
+/// message square / LED / lens / overlapping shackle punches a hole in
+/// Draw. Visio paints those sections separately (same fill, visible
+/// stroke). Marking nested or overlapping interiors NoFill keeps the
+/// outer body solid in canvas, SVG and Draw. Adjacent faces (isometric
+/// cubes, chevrons, process-bar tiles, stacked drums) stay filled.
+/// Intentional cut-outs (first-aid cross, no-entry bar) must skip this
+/// rewrite.
 List<VsdxGeometry> strokeNestedFillsForLibvisio(
   List<VsdxGeometry> geos, {
   required double width,
@@ -1722,7 +1755,7 @@ List<VsdxGeometry> strokeNestedFillsForLibvisio(
   var outerArea = -1.0;
   for (final i in filled) {
     final box = boxes[i]!;
-    final area = (box.maxX - box.minX).abs() * (box.maxY - box.minY).abs();
+    final area = _boxArea(box);
     if (area > outerArea) {
       outerArea = area;
       outerIndex = i;
@@ -1735,7 +1768,7 @@ List<VsdxGeometry> strokeNestedFillsForLibvisio(
   ];
   for (final i in filled) {
     if (i == outerIndex) continue;
-    if (!_boxContains(outer, boxes[i]!)) continue;
+    if (!_libvisioEvenoddPunchesOuter(outer, boxes[i]!)) continue;
     next[i] = geos[i].copyWith(noFill: true);
     changed = true;
   }

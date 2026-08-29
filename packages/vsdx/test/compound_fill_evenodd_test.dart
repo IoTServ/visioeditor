@@ -801,4 +801,140 @@ void main() {
     expect(filled(leftover), 2,
         reason: 'a second save must keep the first-aid evenodd hole');
   });
+
+  test('overlapping accessories stroke so Draw does not evenodd-punch', () {
+    int filled(VsdxShape s) =>
+        s.geometries.where((g) => !g.noFill && !g.noShow).length;
+    expect(
+      filled(VsdxShapeFactory.umlModule(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 2.0,
+        height: 1.6,
+      )),
+      3,
+      reason: 'UML tabs now abut the body instead of overlapping it',
+    );
+    expect(
+      filled(VsdxShapeFactory.networkPrinter(
+        id: 2,
+        pinX: 2,
+        pinY: 2,
+        width: 2.0,
+        height: 1.6,
+      )),
+      2,
+      reason: 'printer tray now shares the chassis edge',
+    );
+    expect(
+      filled(VsdxShapeFactory.electricalNorGate(
+        id: 3,
+        pinX: 2,
+        pinY: 2,
+        width: 2.0,
+        height: 1.4,
+      )),
+      1,
+      reason: 'NOR bubble evenodd-punches the OR shield in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.azureKeyVault(
+        id: 4,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.6,
+      )),
+      1,
+      reason: 'lock shackle evenodd-punches the vault in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.ciscoAtmSwitch(
+        id: 5,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.8,
+      )),
+      1,
+      reason: 'port dots evenodd-punch the diamond in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.awsAthena(
+        id: 6,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'magnifier disk evenodd-punches the tablet in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.azureBlobStorage(
+        id: 7,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.6,
+      )),
+      3,
+      reason: 'stacked drums are similar-sized tiles, not nested glyphs',
+    );
+    expect(
+      filled(VsdxShapeFactory.awsEc2(
+        id: 8,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      3,
+      reason: 'isometric cube faces sit side by side',
+    );
+
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [
+          VsdxShapeFactory.azureKeyVault(
+            id: 1,
+            pinX: 2,
+            pinY: 2,
+            width: 1.8,
+            height: 1.6,
+          ),
+        ],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.azureKeyVault(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.8,
+          height: 1.6,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(filled(leftover), 1,
+        reason: 'a second save must not restore a filled shackle');
+  });
 }
