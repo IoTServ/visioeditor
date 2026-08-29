@@ -2487,6 +2487,12 @@ void main() {
       final title = runContaining(header, 'Diagram Title Goes Here')!;
       final body = runContaining(header, 'Lorem ipsum')!;
       expect(
+        title.charStyle.style.bold,
+        isFalse,
+        reason: 'h3 UA bold is cleared by inner font-weight:normal so '
+            'collectCharIX Style.bold stays off',
+      );
+      expect(
         title.paraStyle.spaceBeforeInches,
         closeTo(h3Margin * headerScale, 0.002),
         reason: 'html h3 UA 1em (of 1.17em) is collectParaIX SpBefore that '
@@ -2549,6 +2555,14 @@ void main() {
       expect(
         runContaining(leftover, 'Lorem ipsum')!.paraStyle.spaceBeforeInches,
         closeTo(h3Margin * headerScale, 0.002),
+      );
+      expect(
+        runContaining(leftover, 'Diagram Title Goes Here')!
+            .charStyle
+            .style
+            .bold,
+        isFalse,
+        reason: 'a second save must keep Style.bold off after font-weight:normal',
       );
     },
   );

@@ -806,6 +806,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   that `collectParaIX` maps to `fo:margin-top`. Adjacent blocks collapse
   like CSS. SysML `margin:0px` still zeroes the UA slot. A second save
   keeps Para spacing.
+- draw.io mxText html UA `<h1>`–`<h6>` size/weight now stay native in
+  LibreOffice. Official `mxText` html=1 keeps the browser heading
+  defaults (h3 1.17em bold), but capture only applied UA margins, so a
+  bare heading would miss Char Size / Style.bold that `collectCharIX`
+  maps to `fo:font-size` / `fo:font-weight`. CSS `font-weight:normal`
+  (Salesforce Header inner `<font>`) still clears the UA bold; inner
+  `font-size:14px` still wins. SysML `margin:0px` is unchanged. A
+  second save keeps Size and Style.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

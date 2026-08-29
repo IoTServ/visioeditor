@@ -3182,6 +3182,9 @@ function htmlAlignToken(raw) {
 // text-decoration, font-family, block text-align. collectCharIX maps
 // Style 0x4 to underline; collectParaIX HorzAlign is fo:text-align.
 function applyHtmlCss(next, attrs, tag) {
+  // Heading UA size/weight first so CSS font-size / font-weight:normal
+  // (Salesforce Header) can clear them. Margins use the computed size.
+  htmlUaHeadingDefaults(next, tag);
   const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
   if (color) next.fontColor = color;
   // CSS font-size is px (GCP 11px) or em (Lean Mapping 2em). HTML
@@ -3200,9 +3203,15 @@ function applyHtmlCss(next, attrs, tag) {
     }
   }
   const weight = htmlStyleProp(attrs, 'font-weight');
-  if (weight && /^(bold|[7-9]00)$/i.test(weight)) next.fontStyle |= 1;
+  if (weight) {
+    if (/^(bold|bolder|[7-9]00)$/i.test(weight)) next.fontStyle |= 1;
+    else if (/^(normal|lighter|[1-4]00)$/i.test(weight)) next.fontStyle &= ~1;
+  }
   const italic = htmlStyleProp(attrs, 'font-style');
-  if (italic && /italic/i.test(italic)) next.fontStyle |= 2;
+  if (italic) {
+    if (/italic|oblique/i.test(italic)) next.fontStyle |= 2;
+    else if (/^normal$/i.test(italic)) next.fontStyle &= ~2;
+  }
   const deco = htmlStyleProp(attrs, 'text-decoration');
   if (deco) {
     if (/underline/i.test(deco)) next.fontStyle |= 4;
@@ -3328,10 +3337,12 @@ function htmlFontSizeAttrPx(raw, currentPx) {
   return htmlFontSizeTablePx(n);
 }
 
-// HTML UA block margins (html.spec.whatwg.org rendering). mxText html=1
+// HTML UA heading / <p> (html.spec.whatwg.org rendering). mxText html=1
 // foreignObject keeps them; SysML authors `margin:0px` to cancel. Bare
-// Salesforce <h3>/<p> would otherwise miss SpBefore that collectParaIX
-// maps to fo:margin-top. Heading size/weight stay on the inner <font>.
+// Salesforce <h3> is 1.17em bold with 1em margin; inner
+// `font-weight:normal; font-size:14px` clears the UA slot so collectCharIX
+// Style.bold / Size stay native. Heading margin is 1em of the computed
+// heading size (parent × sizeEm).
 const kHtmlHeadingUa = {
   h1: {sizeEm: 2, marginEm: 0.67},
   h2: {sizeEm: 1.5, marginEm: 0.83},
@@ -3341,12 +3352,21 @@ const kHtmlHeadingUa = {
   h6: {sizeEm: 0.67, marginEm: 2.33},
 };
 
-function htmlUaBlockMargins(next, tag) {
+function htmlUaHeadingDefaults(next, tag) {
+  const heading = kHtmlHeadingUa[tag];
+  if (!heading) return;
   const parentPx = Number(next.fontSize);
   const base = Number.isFinite(parentPx) && parentPx > 0 ? parentPx : 12;
+  next.fontSize = base * heading.sizeEm;
+  next.fontStyle |= 1;
+}
+
+function htmlUaBlockMargins(next, tag) {
+  const sizePx = Number(next.fontSize);
+  const base = Number.isFinite(sizePx) && sizePx > 0 ? sizePx : 12;
   const heading = kHtmlHeadingUa[tag];
   if (heading) {
-    const m = base * heading.sizeEm * heading.marginEm;
+    const m = base * heading.marginEm;
     next.marginTop = m;
     next.marginBottom = m;
     return;
