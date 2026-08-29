@@ -559,7 +559,17 @@ mxShape.prototype.addPoints = function(c, pts, rounded, arcSize, close, exclude,
 mxShape.prototype.updateTransform = function(c, x, y, w, h) {
   c.rotate(this.getShapeRotation(), this.flipH, this.flipV, x + w / 2, y + h / 2);
 };
-mxShape.prototype.getArcSize = function(w, h) { return Math.min(w, h) * 0.1; };
+mxShape.prototype.getArcSize = function(w, h) {
+  if (mxUtils.getValue(this.style, mxConstants.STYLE_ABSOLUTE_ARCSIZE, 0) == '1') {
+    return Math.min(w / 2, Math.min(h / 2, mxUtils.getValue(
+      this.style, mxConstants.STYLE_ARCSIZE, mxConstants.LINE_ARCSIZE,
+    ) / 2));
+  }
+  const f = mxUtils.getValue(
+    this.style, mxConstants.STYLE_ARCSIZE, mxConstants.RECTANGLE_ROUNDING_FACTOR * 100,
+  ) / 100;
+  return Math.min(w * f, h * f);
+};
 mxShape.prototype.paintBackground = function() {};
 mxShape.prototype.paintForeground = function() {};
 mxShape.prototype.paintVertexShape = function(c, x, y, w, h) {
@@ -731,8 +741,19 @@ function createBaseShape(name) {
       }
       c.stroke();
     };
+  } else if (name === 'mxRectangleShape') {
+    BaseShape.prototype.paintBackground = function(c, x, y, w, h) {
+      if (this.isRounded) {
+        const r = this.getArcSize(w, h);
+        c.roundrect(x, y, w, h, r, r);
+      } else {
+        c.rect(x, y, w, h);
+      }
+      c.fillAndStroke();
+    };
+    BaseShape.prototype.isRoundable = function() { return true; };
   } else if (
-    name === 'mxRectangleShape' || name === 'mxLabel' || name === 'mxSwimlane' ||
+    name === 'mxLabel' || name === 'mxSwimlane' ||
     name === 'mxConnector' || name === 'mxPolyline' ||
     name === 'mxArrow' || name === 'mxArrowConnector' || name === 'mxImageShape'
   ) {

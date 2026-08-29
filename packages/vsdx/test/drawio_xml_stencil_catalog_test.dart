@@ -916,4 +916,75 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxRectangleShape subclasses keep paintForeground rails for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final storage = stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Internal Storage',
+      ).build(96, 3, 3);
+      expect(
+        storage.geometries
+            .where((geometry) => geometry.noFill && !geometry.noLine),
+        hasLength(2),
+        reason: 'internalStorage paintForeground must stroke the T-divider, '
+            'not a bare rectangle',
+      );
+
+      final process = stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Predefined Process',
+      ).build(97, 3, 3);
+      expect(
+        process.geometries.any((geometry) {
+          return geometry.noFill &&
+              !geometry.noLine &&
+              geometry.commands.whereType<MoveTo>().length >= 2 &&
+              geometry.commands.whereType<LineTo>().length >= 2;
+        }),
+        isTrue,
+        reason: 'process paintForeground must stroke the two inner rails',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final storageId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Internal Storage',
+      ).build(storageId, 3, 3));
+      final processId = page.nextFreeShapeId();
+      page = page.addShape(stencil(
+        'Draw.io JS / Flowchart / flowchart',
+        'Predefined Process',
+      ).build(processId, 5, 3));
+      doc = doc.replacePage(0, page);
+      final leftover = parser
+          .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+          .pages
+          .first;
+      expect(
+        leftover
+            .findShapeById(storageId)!
+            .geometries
+            .where((geometry) => geometry.noFill && !geometry.noLine),
+        hasLength(2),
+      );
+      expect(
+        leftover
+            .findShapeById(processId)!
+            .geometries
+            .any((geometry) => geometry.noFill && !geometry.noLine),
+        isTrue,
+      );
+    },
+  );
 }

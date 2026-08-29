@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Internal Storage and Predefined Process now keep their inner
+  rails in LibreOffice. Capture overrode `mxRectangleShape.paintVertexShape`
+  with a sharp rectangle, so subclasses that only paint in `paintForeground`
+  (T-dividers, process bars, plus) never reached `VisioDocument::parse`.
+  Background now matches official rounded/sharp `paintBackground`, and a
+  second save keeps the extra strokes.
 - draw.io dashed vertices, clouds, cylinders and double ellipses now stay
   native in LibreOffice. Capture stubbed `configureCanvas` / `c.setDashed`,
   painted `shape=cloud` as an ellipse, stacked three overlapping cylinder
