@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const zlib = require('zlib');
 
 const webapp = path.resolve(process.argv[2]);
 const sidebarRoot = path.join(webapp, 'js/diagramly/sidebar');
@@ -352,6 +353,7 @@ mxShape.prototype.paintVertexShape = function(c, x, y, w, h) {
   if (c && c.setShadow) c.setShadow(false);
   this.paintForeground(c, x, y, w, h);
 };
+mxShape.prototype.isHorizontal = function() { return true; };
 
 const baseNames = [
   'mxActor', 'mxArrow', 'mxArrowConnector', 'mxCloud', 'mxConnector',
@@ -704,7 +706,18 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
   shape.style = style;
   shape.scale = 1;
-  shape.state = {style, view: {graph: {getLabel() { return ''; }}}};
+  shape.state = {
+    style,
+    view: {
+      graph: {
+        getLabel() { return ''; },
+        isCellCollapsed() { return false; },
+        isCellConnected() { return false; },
+        isSwimlane() { return false; },
+        getModel() { return {getChildCount() { return 0; }, getChildAt() { return null; }}; },
+      },
+    },
+  };
   try {
     shape.paintVertexShape(canvas, x, y, width, height);
   } catch (error) {
@@ -712,10 +725,117 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     const errorKey = String(error);
     paintErrorCounts[errorKey] = (paintErrorCounts[errorKey] || 0) + 1;
     if (paintErrors.length < 30) paintErrors.push({shape: name, error: String(error)});
+    if (opts.fallbackRect) {
+      canvas.rect(x, y, width, height);
+      canvas.fillAndStroke();
+      canvas.finish();
+      return {};
+    }
     return false;
   }
   canvas.finish();
   return shape;
+}
+
+function decompressDrawio(data) {
+  try {
+    const buf = Buffer.from(String(data).replace(/\s+/g, ''), 'base64');
+    let raw;
+    try {
+      raw = zlib.inflateRawSync(buf);
+    } catch (_) {
+      raw = zlib.inflateSync(buf);
+    }
+    const latin1 = raw.toString('latin1');
+    if (latin1.startsWith('%')) return decodeURIComponent(latin1);
+    const utf8 = raw.toString('utf8');
+    if (utf8.includes('<')) return utf8;
+    return decodeURIComponent(latin1);
+  } catch (_) {
+    return null;
+  }
+}
+
+function cellLabel(value) {
+  const source = String(value ?? '');
+  if (!source) return '';
+  const stripped = source
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return stripped;
+}
+
+function cellsFromMxGraphXml(xml) {
+  const parsed = parseXml(xml);
+  const nodes = [];
+  function walk(node) {
+    if (node.name === 'mxCell') nodes.push(node);
+    for (const child of node.children || []) walk(child);
+  }
+  walk(parsed);
+  const byId = {};
+  for (const node of nodes) byId[node.attrs.id] = node;
+  const converted = {};
+  for (const node of nodes) {
+    const geoNode = (node.children || []).find((child) => child.name === 'mxGeometry');
+    const geometry = geoNode
+      ? new Geometry(
+          Number(geoNode.attrs.x) || 0,
+          Number(geoNode.attrs.y) || 0,
+          Number(geoNode.attrs.width) || 0,
+          Number(geoNode.attrs.height) || 0,
+        )
+      : new Geometry(0, 0, 0, 0);
+    converted[node.attrs.id] = new Cell(node.attrs.value, geometry, node.attrs.style);
+  }
+  const tops = [];
+  for (const node of nodes) {
+    if (node.attrs.vertex !== '1') continue;
+    const cell = converted[node.attrs.id];
+    const parent = byId[node.attrs.parent];
+    if (parent && parent.attrs.vertex === '1' && converted[parent.attrs.id]) {
+      converted[parent.attrs.id].children.push(cell);
+    } else {
+      tops.push(cell);
+    }
+  }
+  return tops;
+}
+
+function paintCellTree(cells, canvas, width, height) {
+  let painted = false;
+  const visit = (cell, parentX, parentY) => {
+    if (!cell) return;
+    if (cell.geometry) {
+      const x = parentX + (Number(cell.geometry.x) || 0);
+      const y = parentY + (Number(cell.geometry.y) || 0);
+      const cellWidth = Math.max(1, Number(cell.geometry.width) || width);
+      const cellHeight = Math.max(1, Number(cell.geometry.height) || height);
+      const cellStyle = parseStyle(cell.style);
+      const result = paintRegistered(
+        cellStyle, cellWidth, cellHeight, canvas, x, y,
+        {fallbackRect: true, allowStencil: true},
+      );
+      if (result) painted = true;
+      const label = cellLabel(cell.value);
+      if (label) {
+        canvas.text(x, y, cellWidth, cellHeight, label, 'center', 'middle');
+        painted = true;
+      }
+      for (const child of cell.children || []) visit(child, x, y);
+    } else {
+      for (const child of cell.children || []) visit(child, parentX, parentY);
+    }
+  };
+  for (const cell of cells || []) visit(cell, 0, 0);
+  return painted;
 }
 
 function renderEntry(entry) {
@@ -751,26 +871,21 @@ function renderEntry(entry) {
     height = Math.max(1, Number(entry.height) || 100);
     shape = paintRegistered(style, width, height, canvas);
     if (!shape) return null;
+  } else if (entry.kind === 'data' && entry.data) {
+    width = Math.max(1, Number(entry.width) || 100);
+    height = Math.max(1, Number(entry.height) || 100);
+    const xml = decompressDrawio(entry.data);
+    if (!xml || !paintCellTree(cellsFromMxGraphXml(xml), canvas, width, height)) {
+      renderStats.notVertex++;
+      return null;
+    }
   } else if (entry.kind === 'vertex-cells' && Array.isArray(entry.cells)) {
     width = Math.max(1, Number(entry.width) || 100);
     height = Math.max(1, Number(entry.height) || 100);
-    let painted = false;
-    const visit = (cell, parentX, parentY) => {
-      if (!cell || !cell.geometry) return;
-      const x = parentX + (Number(cell.geometry.x) || 0);
-      const y = parentY + (Number(cell.geometry.y) || 0);
-      const cellWidth = Math.max(1, Number(cell.geometry.width) || width);
-      const cellHeight = Math.max(1, Number(cell.geometry.height) || height);
-      const cellStyle = parseStyle(cell.style);
-      const result = paintRegistered(
-        cellStyle, cellWidth, cellHeight, canvas, x, y,
-        {fallbackRect: true, allowStencil: true},
-      );
-      if (result) painted = true;
-      for (const child of cell.children || []) visit(child, x, y);
-    };
-    for (const cell of entry.cells) visit(cell, 0, 0);
-    if (!painted) { renderStats.notVertex++; return null; }
+    if (!paintCellTree(entry.cells, canvas, width, height)) {
+      renderStats.notVertex++;
+      return null;
+    }
   } else {
     renderStats.notVertex++;
     return null;

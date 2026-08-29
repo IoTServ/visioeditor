@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io compressed sidebar composites now capture native geometry
+  for LibreOffice. `addDataEntry` palettes (mockup dialogs, UML
+  activity partitions, GMDL sheets) store an mxGraphModel as
+  inflateRaw+base64, and capture treated them as non-vertices.
+  LibreOffice only calls `VisioDocument::parse`, so Draw never saw
+  those types. The payload is inflated, cells are painted with the
+  same JS/XML fallbacks, and cell labels become Text children. A
+  second save keeps both.
 - draw.io BPMN 2 tasks, SysML models and Android mockup bars now
   capture native geometry for LibreOffice. Capture loaded only
   `shapes/*.js` and had no `mxCellRenderer.getShape`, so

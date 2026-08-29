@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(189));
+    expect(dynamic, hasLength(207));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      3639,
+      4300,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -403,5 +403,52 @@ void main() {
         .first;
     expect(leftover.findShapeById(taskId)!.geometries.length, greaterThan(1));
     expect(leftover.findShapeById(modelId)!.geometries, isNotEmpty);
+  });
+
+  test('compressed sidebar data entries capture composite geometry', () {
+    Stencil stencil(String groupName, String shapeName) => dynamic
+        .singleWhere((group) => group.name == groupName)
+        .stencils
+        .singleWhere((entry) => entry.name == shapeName);
+
+    final dialog = stencil(
+      'Draw.io JS / Mockup / Mockup Containers',
+      'Dialog Box',
+    ).build(40, 3, 3);
+    expect(dialog.geometries.length, greaterThan(2),
+        reason: 'addDataEntry mxGraphModel cells must become native geometry');
+    expect(
+      dialog.children.any((child) => (child.text ?? '').isNotEmpty),
+      isTrue,
+      reason: 'cell labels must become Text children for LibreOffice',
+    );
+
+    final partition = stencil(
+      'Draw.io JS / UML25 / uml 2.5',
+      'Activity Partition',
+    ).build(41, 3, 3);
+    expect(partition.geometries, isNotEmpty);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(stencil(
+        'Draw.io JS / Mockup / Mockup Containers',
+        'Dialog Box',
+      ).build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries.length, greaterThan(2));
+    expect(
+      leftover.children.any((child) => (child.text ?? '').isNotEmpty),
+      isTrue,
+    );
   });
 }
