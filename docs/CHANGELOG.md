@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io clipart libraries now stay native in LibreOffice.
+  `Sidebar.js` `init` calls `addImagePalette` for Computer, Finance, Various,
+  Networking, People and Telecommunication under `img/lib/clip_art`, but
+  capture never ran those non-zero-arg palettes, so Gear, Laptop and Suit
+  never reached `VisioDocument::parse`. Those PNGs now become ForeignData
+  media parts that libvisio `collectForeignData` paints. Media part names
+  use unsigned 64-bit FNV so Dart's wrapping integers never put a minus in
+  the ZIP. A second save keeps the bitmap.
 - draw.io SVG-in-PNG icons now stay native in LibreOffice. Capture skipped
   SVG `<image href="data:image/png">` (IBM VPC Floating IP), so
   `VisioDocument::parse` never saw ForeignData. Those rasters now become

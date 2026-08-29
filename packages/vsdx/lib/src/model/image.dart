@@ -401,7 +401,8 @@ class ImageRegistry {
 final Map<String, VsdxImage> _drawioStencilImages = <String, VsdxImage>{};
 
 /// Content-addressed `/visio/media/drawio_<hash>.ext` for [bytes].
-String registerDrawioStencilImage(Uint8List bytes, {String mimeType = 'image/png'}) {
+String registerDrawioStencilImage(Uint8List bytes,
+    {String mimeType = 'image/png'}) {
   final mime = mimeType.isEmpty ? 'image/png' : mimeType;
   final ext = mime.contains('jpeg') || mime.contains('jpg')
       ? 'jpg'
@@ -425,12 +426,16 @@ VsdxImage? drawioStencilImageForPart(String partName) =>
     _drawioStencilImages[partName];
 
 String _fnv1a64Hex(Uint8List bytes) {
-  var hash = 0xcbf29ce484222325;
+  // Dart 3.12 integers wrap as signed 64-bit, so `toUnsigned(64)` is a
+  // no-op and hex would start with `-` in OPC part names. FNV-1a stays
+  // unsigned via BigInt.
+  var hash = BigInt.parse('cbf29ce484222325', radix: 16);
+  final prime = BigInt.parse('100000001b3', radix: 16);
+  final mask = (BigInt.one << 64) - BigInt.one;
   for (final b in bytes) {
-    hash ^= b;
-    hash *= 0x100000001b3;
+    hash = ((hash ^ BigInt.from(b)) * prime) & mask;
   }
-  return hash.toUnsigned(64).toRadixString(16).padLeft(16, '0');
+  return hash.toRadixString(16).padLeft(16, '0');
 }
 
 /// `true` when Image Properties or picture SoftEdges would change Draw.

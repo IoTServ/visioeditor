@@ -25,10 +25,10 @@ void main() {
   });
 
   test('draw.io JavaScript Canvas catalog exposes captured native shapes', () {
-    expect(dynamic, hasLength(476));
+    expect(dynamic, hasLength(482));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      13114,
+      13271,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -1873,6 +1873,80 @@ void main() {
         leftover.images.findByPart(leftoverShape.imagePartName!),
         isNotNull,
         reason: 'a second save must keep the PNG media part',
+      );
+    },
+  );
+
+  test(
+    'diagramly clipart PNGs stay ForeignData for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final clipart = dynamic
+          .where((group) => group.name.startsWith('Draw.io JS / Clipart / '))
+          .toList(growable: false);
+      expect(clipart, hasLength(6));
+      expect(
+        clipart.fold<int>(0, (sum, group) => sum + group.stencils.length),
+        157,
+      );
+      expect(
+        clipart.every(
+          (group) => group.stencils.every((entry) => entry.build(1, 3, 3).hasImage),
+        ),
+        isTrue,
+        reason: 'every clipart icon is a bitmap libvisio can ForeignData',
+      );
+
+      const samples = <(String, String)>[
+        ('Draw.io JS / Clipart / Clipart / Various', 'Gear'),
+        ('Draw.io JS / Clipart / Clipart / Various', 'Globe'),
+        ('Draw.io JS / Clipart / Clipart / Computer', 'Laptop'),
+        ('Draw.io JS / Clipart / Clipart / People', 'Suit Man'),
+      ];
+      for (final sample in samples) {
+        final shape = stencil(sample.$1, sample.$2).build(400, 3, 3);
+        expect(shape.hasImage, isTrue, reason: sample.$2);
+        expect(
+          shape.imagePartName,
+          matches(RegExp(r'^/visio/media/drawio_[0-9a-f]{16}\.png$')),
+          reason: 'OPC media names must not use signed hex',
+        );
+        expect(
+          drawioStencilImageForPart(shape.imagePartName!),
+          isNotNull,
+          reason: '${sample.$2} decoder must register PNG bytes',
+        );
+        expect(
+          shape.fill.hasFill,
+          isFalse,
+          reason: '${sample.$2} should show only the bitmap, not a filled frame',
+        );
+      }
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      var id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          stencil('Draw.io JS / Clipart / Clipart / Various', 'Gear')
+              .build(id, 3, 3),
+        ),
+      );
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverShape = leftover.pages.first.findShapeById(id)!;
+      expect(leftoverShape.hasImage, isTrue);
+      expect(
+        leftover.images.findByPart(leftoverShape.imagePartName!),
+        isNotNull,
+        reason: 'a second save must keep the clipart PNG media part',
       );
     },
   );
