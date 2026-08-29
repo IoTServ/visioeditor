@@ -821,6 +821,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `collectFillAndShadow` never saw those FillForegnd hexes. Capture now
   applies the stylesheet (and `fill-opacity`) before presentation
   attributes. A second save keeps the three blues.
+- draw.io mxImageShape SVG `url(#gradient)` now stays native in
+  LibreOffice. Official SAP Logo (`fill="url(#b)"` linearGradient
+  `#00b8f1`→`#1e5fbb`, plus `transform=matrix`) paints through
+  `mxImageShape`, but capture skipped paint servers and left the
+  diamond on inherit FillForegnd that `applyStencilStyle` washed to
+  the palette. Capture now freezes two-stop FillPattern 25–40 that
+  libvisio `_fillAndShadowProperties` maps to ODF `draw:style=linear`,
+  applies SVG translate/scale/matrix, and hex-locks `#ffffff`
+  letters. A second save keeps the ramp.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

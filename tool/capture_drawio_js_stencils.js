@@ -761,7 +761,7 @@ class CanvasRecorder {
   setAlpha(value) { this._setAlphaChannel('alpha', value); }
   setFillAlpha(value) { this._setAlphaChannel('fillalpha', value); }
   setStrokeAlpha(value) { this._setAlphaChannel('strokealpha', value); }
-  setFillColor(value) {
+  setFillColor(value, forceHex) {
     this.state.fillColor = isNoneColor(value) ? null : value;
     this.state.gradientColor = null;
     this.state.gradientDir = null;
@@ -770,7 +770,7 @@ class CanvasRecorder {
     const token = fillPaintToken(
       value,
       this.styleFill,
-      this._effectiveFillOpacity() < 1 - 1e-9,
+      forceHex === true || this._effectiveFillOpacity() < 1 - 1e-9,
     );
     if (token === this._fillToken) return;
     this._fillToken = token;
@@ -1180,6 +1180,10 @@ function svgPresentation(node, inherited, css) {
   if (node.attrs.fill != null) style.fill = node.attrs.fill;
   if (node.attrs.stroke != null) style.stroke = node.attrs.stroke;
   if (node.attrs.opacity != null) style.opacity = node.attrs.opacity;
+  if (node.attrs['stop-color'] != null) style['stop-color'] = node.attrs['stop-color'];
+  if (node.attrs['stop-opacity'] != null) {
+    style['stop-opacity'] = node.attrs['stop-opacity'];
+  }
   return style;
 }
 
@@ -1189,7 +1193,113 @@ function svgPaintIsNone(value) {
   return v === 'none' || v === 'transparent';
 }
 
-function applySvgPaint(canvas, style, kind) {
+function svgPaintUrlId(value) {
+  const match = /url\(\s*['"]?#([^'")\s]+)['"]?\s*\)/i.exec(String(value || ''));
+  return match ? decodeXml(match[1]) : null;
+}
+
+function svgLength(raw, fallback) {
+  if (raw == null || raw === '') return fallback;
+  const n = parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function svgGradientDirection(node) {
+  if (xmlLocalName(node.name) === 'radialgradient') return 'radial';
+  const x1 = svgLength(node.attrs.x1, 0);
+  const y1 = svgLength(node.attrs.y1, 0);
+  const x2 = svgLength(node.attrs.x2, 1);
+  const y2 = svgLength(node.attrs.y2, 0);
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'east' : 'west';
+  return dy >= 0 ? 'south' : 'north';
+}
+
+function svgStopColor(node, css) {
+  const style = svgPresentation(node, {}, css);
+  const raw = style['stop-color'] || node.attrs['stop-color'] || style.fill;
+  if (raw == null || raw === '') return null;
+  return htmlCssColorToHex(raw) || (/^url\(/i.test(raw) ? null : String(raw).trim());
+}
+
+function svgCollectStops(node, css) {
+  const stops = [];
+  const walk = (n) => {
+    if (xmlLocalName(n.name) === 'stop') {
+      const color = svgStopColor(n, css);
+      if (!color) return;
+      const style = svgPresentation(n, {}, css);
+      const off = parseFloat(n.attrs.offset);
+      const alpha = svgCssAlpha(style['stop-opacity'] || n.attrs['stop-opacity']);
+      stops.push({
+        offset: Number.isFinite(off) ? off : stops.length,
+        color,
+        alpha: alpha == null ? 1 : alpha,
+      });
+      return;
+    }
+    for (const child of n.children || []) walk(child);
+  };
+  walk(node);
+  stops.sort((a, b) => a.offset - b.offset);
+  return stops;
+}
+
+function resolveSvgGradientNode(root, id) {
+  const seen = new Set();
+  let node = findSvgById(root, id);
+  while (node) {
+    const name = xmlLocalName(node.name);
+    if (name !== 'lineargradient' && name !== 'radialgradient') return node;
+    const href = node.attrs.href || node.attrs['xlink:href'];
+    if (!href) return node;
+    const next = String(href).replace(/^#/, '');
+    if (!next || seen.has(next)) return node;
+    seen.add(next);
+    const parent = findSvgById(root, next);
+    if (!parent) return node;
+    const hasStops = (node.children || []).some(
+      (child) => xmlLocalName(child.name) === 'stop',
+    );
+    node = {
+      name: node.name,
+      attrs: {...parent.attrs, ...node.attrs},
+      children: hasStops ? node.children : parent.children,
+    };
+  }
+  return node;
+}
+
+// SVG fill="url(#id)" / stop-color class (SAP Logo #b, data-URI .st0).
+// libvisio has no gradient token beyond FillPattern 25–40 two-stops.
+function applySvgPaintServer(canvas, value, root, css, channel) {
+  const id = svgPaintUrlId(value);
+  if (!id || !root) return false;
+  const node = resolveSvgGradientNode(root, id);
+  if (!node) return false;
+  const name = xmlLocalName(node.name);
+  if (name !== 'lineargradient' && name !== 'radialgradient') return false;
+  const stops = svgCollectStops(node, css);
+  if (!stops.length) return false;
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  if (channel === 'stroke') {
+    canvas.setStrokeColor(first.color);
+    return true;
+  }
+  if (stops.length === 1 || cssColorKey(first.color) === cssColorKey(last.color)) {
+    canvas.setFillColor(first.color, true);
+    return true;
+  }
+  canvas.setGradient(
+    first.color, last.color, 0, 0, 1, 1,
+    svgGradientDirection(node), first.alpha, last.alpha,
+  );
+  return true;
+}
+
+function applySvgPaint(canvas, style, kind, root, css) {
   canvas.save();
   const op = svgCssAlpha(style.opacity);
   if (op != null) canvas.setAlpha(op);
@@ -1202,8 +1312,10 @@ function applySvgPaint(canvas, style, kind) {
       canvas.setFillColor(null);
     } else if (style.fill != null && style.fill !== '') {
       const fill = String(style.fill).trim();
-      if (!/^currentcolor$/i.test(fill) && !/^url\(/i.test(fill)) {
-        canvas.setFillColor(htmlCssColorToHex(fill) || fill);
+      if (/^currentcolor$/i.test(fill)) {
+        // inherit the canvas fill
+      } else if (!applySvgPaintServer(canvas, fill, root, css, 'fill')) {
+        canvas.setFillColor(htmlCssColorToHex(fill) || fill, true);
       }
     }
   } else {
@@ -1213,7 +1325,9 @@ function applySvgPaint(canvas, style, kind) {
     if (svgPaintIsNone(style.stroke)) canvas.setStrokeColor(null);
     else if (style.stroke != null && style.stroke !== '') {
       const stroke = String(style.stroke).trim();
-      if (!/^currentcolor$/i.test(stroke) && !/^url\(/i.test(stroke)) {
+      if (/^currentcolor$/i.test(stroke)) {
+        // inherit
+      } else if (!applySvgPaintServer(canvas, stroke, root, css, 'stroke')) {
         canvas.setStrokeColor(htmlCssColorToHex(stroke) || stroke);
       }
     }
@@ -1243,6 +1357,36 @@ function parseSvgNumbers(source) {
   let match;
   while ((match = re.exec(String(source || '')))) values.push(Number(match[0]));
   return values;
+}
+
+// SVG transform="matrix(sx,0,0,sy,tx,ty)" (SAP Logo polyline). Canvas
+// map() is translate+scale+rotate; skip shear. Returns true if save()'d.
+function applySvgTransform(canvas, raw) {
+  const source = String(raw || '').trim();
+  if (!source) return false;
+  const ops = [];
+  const re = /(matrix|translate|scale|rotate)\s*\(([^)]*)\)/gi;
+  let match;
+  while ((match = re.exec(source))) {
+    ops.push({kind: match[1].toLowerCase(), nums: parseSvgNumbers(match[2])});
+  }
+  if (!ops.length) return false;
+  canvas.save();
+  for (const op of ops) {
+    const n = op.nums;
+    if (op.kind === 'translate') {
+      canvas.translate(n[0] || 0, n[1] || 0);
+    } else if (op.kind === 'scale') {
+      const sx = n[0] == null ? 1 : n[0];
+      canvas.scale(sx, n.length > 1 ? n[1] : sx);
+    } else if (op.kind === 'rotate') {
+      canvas.rotate(n[0] || 0, false, false, n[1] || 0, n[2] || 0);
+    } else if (op.kind === 'matrix' && n.length >= 6) {
+      canvas.translate(n[4], n[5]);
+      canvas.scale(n[0], n[3]);
+    }
+  }
+  return true;
 }
 
 function paintSvgPath(canvas, d) {
@@ -1378,79 +1522,90 @@ function findSvgById(node, id) {
 function paintSvgNode(canvas, node, inherited, root, css) {
   const name = xmlLocalName(node.name);
   if (svgSkip.has(name)) return false;
-  const style = svgPresentation(node, inherited, css);
-  let painted = false;
-  if (name === 'use') {
-    const href = node.attrs.href || node.attrs['xlink:href'] || '';
-    const id = String(href).replace(/^#/, '');
-    const target = findSvgById(root, id);
-    if (!target || target === node) return false;
-    canvas.save();
-    const ox = Number(node.attrs.x) || 0;
-    const oy = Number(node.attrs.y) || 0;
-    if (ox || oy) canvas.translate(ox, oy);
-    painted = paintSvgNode(canvas, target, style, root, css);
-    canvas.restore();
-    return painted;
-  }
-  if (name === 'image') {
-    const href = node.attrs.href || node.attrs['xlink:href'] || '';
-    const ix = Number(node.attrs.x) || 0;
-    const iy = Number(node.attrs.y) || 0;
-    const iw = Number(node.attrs.width) || 0;
-    const ih = Number(node.attrs.height) || 0;
-    if (!(iw > 0 && ih > 0)) return false;
-    return paintRaster(canvas, ix, iy, iw, ih, href);
-  }
-  if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
-    for (const child of node.children || []) {
-      if (paintSvgNode(canvas, child, style, root, css)) painted = true;
+  const transformed = applySvgTransform(
+    canvas, node.attrs && node.attrs.transform,
+  );
+  try {
+    const style = svgPresentation(node, inherited, css);
+    let painted = false;
+    if (name === 'use') {
+      const href = node.attrs.href || node.attrs['xlink:href'] || '';
+      const id = String(href).replace(/^#/, '');
+      const target = findSvgById(root, id);
+      if (!target || target === node) return false;
+      canvas.save();
+      const ox = Number(node.attrs.x) || 0;
+      const oy = Number(node.attrs.y) || 0;
+      if (ox || oy) canvas.translate(ox, oy);
+      painted = paintSvgNode(canvas, target, style, root, css);
+      canvas.restore();
+      return painted;
     }
-    return painted;
+    if (name === 'image') {
+      const href = node.attrs.href || node.attrs['xlink:href'] || '';
+      const ix = Number(node.attrs.x) || 0;
+      const iy = Number(node.attrs.y) || 0;
+      const iw = Number(node.attrs.width) || 0;
+      const ih = Number(node.attrs.height) || 0;
+      if (!(iw > 0 && ih > 0)) return false;
+      return paintRaster(canvas, ix, iy, iw, ih, href);
+    }
+    if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
+      for (const child of node.children || []) {
+        if (paintSvgNode(canvas, child, style, root, css)) painted = true;
+      }
+      return painted;
+    }
+    const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
+      name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
+    if (!kind) return false;
+    if (name === 'path') {
+      if (!paintSvgPath(canvas, node.attrs.d)) return false;
+    } else if (name === 'circle') {
+      const cx = Number(node.attrs.cx) || 0;
+      const cy = Number(node.attrs.cy) || 0;
+      const r = Number(node.attrs.r) || 0;
+      if (!(r > 0)) return false;
+      canvas.ellipse(cx - r, cy - r, r * 2, r * 2);
+    } else if (name === 'ellipse') {
+      const cx = Number(node.attrs.cx) || 0;
+      const cy = Number(node.attrs.cy) || 0;
+      const rx = Number(node.attrs.rx) || 0;
+      const ry = Number(node.attrs.ry) || 0;
+      if (!(rx > 0 && ry > 0)) return false;
+      canvas.ellipse(cx - rx, cy - ry, rx * 2, ry * 2);
+    } else if (name === 'rect') {
+      const x = Number(node.attrs.x) || 0;
+      const y = Number(node.attrs.y) || 0;
+      const w = Number(node.attrs.width) || 0;
+      const h = Number(node.attrs.height) || 0;
+      const rx = Number(node.attrs.rx) || 0;
+      if (!(w > 0 && h > 0)) return false;
+      if (rx > 0) canvas.roundrect(x, y, w, h, rx, rx);
+      else canvas.rect(x, y, w, h);
+    } else if (name === 'polygon' || name === 'polyline') {
+      const nums = parseSvgNumbers(node.attrs.points);
+      if (nums.length < 4) return false;
+      canvas.begin();
+      canvas.moveTo(nums[0], nums[1]);
+      for (let i = 2; i + 1 < nums.length; i += 2) canvas.lineTo(nums[i], nums[i + 1]);
+      if (name === 'polygon') canvas.close();
+    } else if (name === 'line') {
+      canvas.begin();
+      canvas.moveTo(Number(node.attrs.x1) || 0, Number(node.attrs.y1) || 0);
+      canvas.lineTo(Number(node.attrs.x2) || 0, Number(node.attrs.y2) || 0);
+    } else {
+      return false;
+    }
+    applySvgPaint(
+      canvas,
+      {...style, fill: style.fill == null ? '#000' : style.fill},
+      kind, root, css,
+    );
+    return true;
+  } finally {
+    if (transformed) canvas.restore();
   }
-  const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
-    name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
-  if (!kind) return false;
-  if (name === 'path') {
-    if (!paintSvgPath(canvas, node.attrs.d)) return false;
-  } else if (name === 'circle') {
-    const cx = Number(node.attrs.cx) || 0;
-    const cy = Number(node.attrs.cy) || 0;
-    const r = Number(node.attrs.r) || 0;
-    if (!(r > 0)) return false;
-    canvas.ellipse(cx - r, cy - r, r * 2, r * 2);
-  } else if (name === 'ellipse') {
-    const cx = Number(node.attrs.cx) || 0;
-    const cy = Number(node.attrs.cy) || 0;
-    const rx = Number(node.attrs.rx) || 0;
-    const ry = Number(node.attrs.ry) || 0;
-    if (!(rx > 0 && ry > 0)) return false;
-    canvas.ellipse(cx - rx, cy - ry, rx * 2, ry * 2);
-  } else if (name === 'rect') {
-    const x = Number(node.attrs.x) || 0;
-    const y = Number(node.attrs.y) || 0;
-    const w = Number(node.attrs.width) || 0;
-    const h = Number(node.attrs.height) || 0;
-    const rx = Number(node.attrs.rx) || 0;
-    if (!(w > 0 && h > 0)) return false;
-    if (rx > 0) canvas.roundrect(x, y, w, h, rx, rx);
-    else canvas.rect(x, y, w, h);
-  } else if (name === 'polygon' || name === 'polyline') {
-    const nums = parseSvgNumbers(node.attrs.points);
-    if (nums.length < 4) return false;
-    canvas.begin();
-    canvas.moveTo(nums[0], nums[1]);
-    for (let i = 2; i + 1 < nums.length; i += 2) canvas.lineTo(nums[i], nums[i + 1]);
-    if (name === 'polygon') canvas.close();
-  } else if (name === 'line') {
-    canvas.begin();
-    canvas.moveTo(Number(node.attrs.x1) || 0, Number(node.attrs.y1) || 0);
-    canvas.lineTo(Number(node.attrs.x2) || 0, Number(node.attrs.y2) || 0);
-  } else {
-    return false;
-  }
-  applySvgPaint(canvas, {...style, fill: style.fill == null ? '#000' : style.fill}, kind);
-  return true;
 }
 
 function findSvgRoot(node) {

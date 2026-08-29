@@ -4668,6 +4668,84 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG url(#gradient) stays FillPattern 25–40 for LibreOffice',
+    () {
+      final cyan = VsdxColor.tryParse('#00B8F1')!;
+      final navy = VsdxColor.tryParse('#1E5FBB')!;
+
+      bool isSapLogoRamp(VsdxFill fill) {
+        if (!fill.hasFill || fill.pattern < 25 || fill.pattern > 40) {
+          return false;
+        }
+        final colors = <VsdxColor?>{fill.foreground, fill.background};
+        return colors.contains(cyan) && colors.contains(navy);
+      }
+
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      final sap = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Brand Names',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP')
+          .build(134, 3, 3);
+      expect(
+        descendantFills(sap).any(isSapLogoRamp),
+        isTrue,
+        reason: 'SAP_Logo.svg fill=url(#b) must become FillPattern 25–40 '
+            'that libvisio _fillAndShadowProperties maps to draw:style=linear',
+      );
+      expect(
+        descendantFills(sap).any(
+          (fill) =>
+              fill.hasFill &&
+              fill.pattern == 1 &&
+              fill.foreground == VsdxColor.white,
+        ),
+        isTrue,
+        reason: 'SAP wordmark fill=#ffffff must stay a sibling, not inherit '
+            'the vertex palette',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          dynamic
+              .singleWhere(
+                (group) =>
+                    group.name == 'Draw.io JS / SAP / SAP / Brand Names',
+              )
+              .stencils
+              .singleWhere((entry) => entry.name == 'SAP')
+              .build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantFills(leftover).any(isSapLogoRamp),
+        isTrue,
+        reason: 'a second save must keep the SAP Logo FillPattern ramp',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic
