@@ -1026,6 +1026,22 @@ function looksLikeBase64(payload) {
   return compact.length >= 8 && /^[A-Za-z0-9+/]+=*$/.test(compact);
 }
 
+// Sidebar-SAP concatenates `image=img/lib/sap/` + the file stem; the
+// files on disk are `Name.svg`. Official mxImageShape still calls
+// c.image() with that stem, and the browser resolves it; capture must
+// try the missing extension or paintSvgImage returns false and LibreOffice
+// only sees the empty mxImageShape box.
+function resolveWebappFile(rel, extensions) {
+  const file = path.join(webapp, rel);
+  if (fs.existsSync(file)) return file;
+  if (path.extname(rel)) return null;
+  for (const ext of extensions) {
+    const candidate = `${file}${ext}`;
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 function loadRasterSource(src) {
   if (src == null || src === '') return null;
   const raw = String(src).trim();
@@ -1045,11 +1061,14 @@ function loadRasterSource(src) {
       return null;
     }
   }
-  const rel = raw.replace(/^\.\//, '').split('?')[0];
-  if (!/\.(png|jpe?g|gif|webp|bmp)$/i.test(rel)) return null;
-  const file = path.join(webapp, rel);
-  if (!fs.existsSync(file)) return null;
-  const ext = path.extname(rel).toLowerCase();
+  const rel = raw.replace(/^\.\//, '').split('?')[0].replace(/^\/+/, '');
+  const file = /\.(png|jpe?g|gif|webp|bmp)$/i.test(rel)
+    ? resolveWebappFile(rel, [])
+    : (rel.startsWith('img/') && !path.extname(rel)
+      ? resolveWebappFile(rel, ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'])
+      : null);
+  if (!file) return null;
+  const ext = path.extname(file).toLowerCase();
   const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
     : ext === '.gif' ? 'image/gif'
     : ext === '.webp' ? 'image/webp'
@@ -1090,10 +1109,10 @@ function loadSvgSource(src) {
     }
   }
   if (/^data:/i.test(raw)) return null;
-  const rel = raw.replace(/^\.\//, '').split('?')[0];
+  const rel = raw.replace(/^\.\//, '').split('?')[0].replace(/^\/+/, '');
   if (!/\.svg$/i.test(rel) && !rel.startsWith('img/')) return null;
-  const file = path.join(webapp, rel);
-  if (!fs.existsSync(file)) return null;
+  const file = resolveWebappFile(rel, ['.svg']);
+  if (!file) return null;
   const text = fs.readFileSync(file, 'utf8');
   return text.includes('<svg') ? text : null;
 }
@@ -1206,10 +1225,22 @@ function svgLength(raw, fallback) {
 
 function svgGradientDirection(node) {
   if (xmlLocalName(node.name) === 'radialgradient') return 'radial';
-  const x1 = svgLength(node.attrs.x1, 0);
-  const y1 = svgLength(node.attrs.y1, 0);
-  const x2 = svgLength(node.attrs.x2, 1);
-  const y2 = svgLength(node.attrs.y2, 0);
+  let x1 = svgLength(node.attrs.x1, 0);
+  let y1 = svgLength(node.attrs.y1, 0);
+  let x2 = svgLength(node.attrs.x2, 1);
+  let y2 = svgLength(node.attrs.y2, 0);
+  // Adobe SAP PKI: gradientTransform="translate(0 12.4) scale(1 -1)"
+  // flips Y so north/south invert before FillPattern 25–40.
+  const tf = node.attrs.gradientTransform;
+
+  if (tf) {
+    const p1 = svgTransformPoint(tf, x1, y1);
+    const p2 = svgTransformPoint(tf, x2, y2);
+    x1 = p1.x;
+    y1 = p1.y;
+    x2 = p2.x;
+    y2 = p2.y;
+  }
   const dx = x2 - x1;
   const dy = y2 - y1;
   if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'east' : 'west';
@@ -1359,17 +1390,61 @@ function parseSvgNumbers(source) {
   return values;
 }
 
-// SVG transform="matrix(sx,0,0,sy,tx,ty)" (SAP Logo polyline). Canvas
-// map() is translate+scale+rotate; skip shear. Returns true if save()'d.
-function applySvgTransform(canvas, raw) {
-  const source = String(raw || '').trim();
-  if (!source) return false;
+// SVG transform="matrix(sx,0,0,sy,tx,ty)" (SAP Logo polyline) and
+// gradientTransform="translate(0 12.4) scale(1 -1)" (Adobe SAP PKI).
+function parseSvgTransformList(raw) {
   const ops = [];
   const re = /(matrix|translate|scale|rotate)\s*\(([^)]*)\)/gi;
   let match;
-  while ((match = re.exec(source))) {
+  while ((match = re.exec(String(raw || '')))) {
     ops.push({kind: match[1].toLowerCase(), nums: parseSvgNumbers(match[2])});
   }
+  return ops;
+}
+
+function svgTransformMultiply(m, a, b, c, d, e, f) {
+  const na = m[0] * a + m[2] * b;
+  const nb = m[1] * a + m[3] * b;
+  const nc = m[0] * c + m[2] * d;
+  const nd = m[1] * c + m[3] * d;
+  const ne = m[0] * e + m[2] * f + m[4];
+  const nf = m[1] * e + m[3] * f + m[5];
+  m[0] = na;
+  m[1] = nb;
+  m[2] = nc;
+  m[3] = nd;
+  m[4] = ne;
+  m[5] = nf;
+}
+
+function svgTransformPoint(raw, x, y) {
+  const m = [1, 0, 0, 1, 0, 0];
+  for (const op of parseSvgTransformList(raw)) {
+    const n = op.nums;
+    if (op.kind === 'translate') {
+      svgTransformMultiply(m, 1, 0, 0, 1, n[0] || 0, n[1] || 0);
+    } else if (op.kind === 'scale') {
+      const sx = n[0] == null ? 1 : n[0];
+      svgTransformMultiply(m, sx, 0, 0, n.length > 1 ? n[1] : sx, 0, 0);
+    } else if (op.kind === 'rotate') {
+      const rad = (n[0] || 0) * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const cx = n[1] || 0;
+      const cy = n[2] || 0;
+      if (cx || cy) svgTransformMultiply(m, 1, 0, 0, 1, cx, cy);
+      svgTransformMultiply(m, cos, sin, -sin, cos, 0, 0);
+      if (cx || cy) svgTransformMultiply(m, 1, 0, 0, 1, -cx, -cy);
+    } else if (op.kind === 'matrix' && n.length >= 6) {
+      svgTransformMultiply(m, n[0], n[1], n[2], n[3], n[4], n[5]);
+    }
+  }
+  return {x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5]};
+}
+
+// Canvas map() is translate+scale+rotate; skip shear. Returns true if save()'d.
+function applySvgTransform(canvas, raw) {
+  const ops = parseSvgTransformList(raw);
   if (!ops.length) return false;
   canvas.save();
   for (const op of ops) {
@@ -2506,7 +2581,11 @@ const shapeContext = {
       return stencilMap[String(name).toLowerCase()] || null;
     },
   },
-  GRAPH_IMAGE_PATH: '',
+  // Init.js: window.GRAPH_IMAGE_PATH || 'img'. mxSAPIconShape.foreground
+  // calls c.image(GRAPH_IMAGE_PATH + '/lib/sap/' + SAPIcon + '.svg'); an
+  // empty stub made that `/lib/sap/Name.svg` (absolute) so paintSvgImage
+  // never opened img/lib/sap/Name.svg.
+  GRAPH_IMAGE_PATH: 'img',
   Graph: Object.assign(function Graph() {}, {
     handleFactory: {},
     createHandle() { return {}; },
@@ -2522,7 +2601,7 @@ const shapeContext = {
     },
   }),
   document: {createElement: () => ({style: {}, getElementsByTagName: () => []})},
-  window: {},
+  window: {GRAPH_IMAGE_PATH: 'img'},
   console,
   mxEvent: {addListener() {}, removeListener() {}, consume() {}, addGestureListeners() {}},
   mxPerimeter: new Proxy({}, {get: () => function() { return null; }}),

@@ -4746,6 +4746,95 @@ void main() {
   );
 
   test(
+    'mxgraph.sap.icon SVG stays FillPattern 25–40 for LibreOffice',
+    () {
+      final cyan = VsdxColor.tryParse('#0195FF')!;
+      final navy = VsdxColor.tryParse('#1147E9')!;
+      final lockCyan = VsdxColor.tryParse('#1348FF')!;
+      final lockNavy = VsdxColor.tryParse('#06238D')!;
+
+      bool hasRamp(VsdxFill fill, VsdxColor a, VsdxColor b) {
+        if (!fill.hasFill || fill.pattern < 25 || fill.pattern > 40) {
+          return false;
+        }
+        final colors = <VsdxColor?>{fill.foreground, fill.background};
+        return colors.contains(a) && colors.contains(b);
+      }
+
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      final pki = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / SAP / SAP / Foundational',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP PKI Certificate Service')
+          .build(135, 3, 3);
+      expect(
+        descendantGeometries(pki)
+            .expand((geometry) => geometry.commands)
+            .whereType<CubBezTo>()
+            .length,
+        greaterThanOrEqualTo(8),
+        reason: 'mxgraph.sap.icon SAPIcon=SAP_PKI_Certificate_Service '
+            'must vectorise img/lib/sap/*.svg, not only the grey ellipse',
+      );
+      expect(
+        descendantFills(pki).any((fill) => hasRamp(fill, cyan, navy)),
+        isTrue,
+        reason: 'linear-gradient #0195ff→#1147e9 plus gradientTransform '
+            'must become FillPattern 25–40 that libvisio maps to '
+            'draw:style=linear',
+      );
+      expect(
+        descendantFills(pki).any((fill) => hasRamp(fill, lockCyan, lockNavy)),
+        isTrue,
+        reason: 'the evenodd lock glyph uses the second linearGradient',
+      );
+      expect(
+        descendantFills(pki).any(
+          (fill) =>
+              fill.hasFill &&
+              fill.pattern >= 25 &&
+              fill.pattern <= 40 &&
+              fill.pattern == 28,
+        ),
+        isTrue,
+        reason: 'Adobe Y-flip gradientTransform must map the ramp to south '
+            '(FillPattern 28), not north (30)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(pki.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantFills(leftover).any((fill) => hasRamp(fill, cyan, navy)),
+        isTrue,
+        reason: 'a second save must keep the SAP PKI FillPattern ramp',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

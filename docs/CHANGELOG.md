@@ -830,6 +830,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   libvisio `_fillAndShadowProperties` maps to ODF `draw:style=linear`,
   applies SVG translate/scale/matrix, and hex-locks `#ffffff`
   letters. A second save keeps the ramp.
+- draw.io `mxgraph.sap.icon` (SAP Foundational) now stays native in
+  LibreOffice. Official `mxSAPIconShape.foreground` paints
+  `GRAPH_IMAGE_PATH + '/lib/sap/' + SAPIcon + '.svg'` (Init.js
+  `GRAPH_IMAGE_PATH='img'`), but capture stubbed that global to `''`,
+  so `c.image` opened `/lib/sap/Name.svg` and LibreOffice only saw
+  the grey ellipse. Capture now uses `img`, appends `.svg` on Generic
+  Icons `image=` stems, and applies Adobe `gradientTransform`
+  (PKI `translate(0 12.4) scale(1 -1)` so FillPattern 28 south
+  matches the flipped Y). A second save keeps the two-stop ramps.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
