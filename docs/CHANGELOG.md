@@ -706,6 +706,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `svg:fill`. Captured `<shape fill>` / `stroke` now seed FillForegnd /
   LineColor; palette wash skips authored hex. A second save keeps the
   navy.
+- draw.io mxText html `font-family` now stays native in LibreOffice.
+  Official `mxText` paints CSS `font-family` / `<font face>` as the
+  HTML face, but capture dropped those properties, so a Bootstrap
+  Alert body (`"open sans", arial, sans-serif`) and SAP Diagram Title
+  (`font-family: arial`) kept the canvas Helvetica that `collectCharIX`
+  maps to `style:font-name`. Cell labels now freeze Char.Font (CSS
+  stack until a Visio face; `"open sans", arial` → Arial). A second
+  save keeps the face.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

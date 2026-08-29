@@ -2071,6 +2071,115 @@ void main() {
   );
 
   test(
+    'mxText html font-family stays Char.Font for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final alert = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+          )
+          .stencils
+          .firstWhere(
+            (entry) =>
+                entry.name.startsWith('Alert') &&
+                () {
+                  final shape = entry.build(443, 3, 3);
+                  return runContaining(shape, 'Title') != null &&
+                      runContaining(shape, 'Lorem ipsum') != null;
+                }(),
+          )
+          .build(443, 3, 3);
+      expect(
+        runContaining(alert, 'Title')!.charStyle.fontFamily,
+        'Helvetica',
+        reason: 'the <b>Title</b> sits outside the CSS font-family span and '
+            'keeps defaultVertex Helvetica',
+      );
+      expect(
+        runContaining(alert, 'Lorem ipsum')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'html font-family "open sans", arial, sans-serif walks to '
+            'Arial (Open Sans is not a Visio face) that collectCharIX maps '
+            'to style:font-name',
+      );
+
+      final sapTitle = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / Essentials',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Diagram Title (2)')
+          .build(444, 3, 3);
+      expect(
+        runContaining(sapTitle, 'Diagram Level L1')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'html font-family: arial is Char.Font Arial',
+      );
+      expect(
+        runContaining(sapTitle, 'Keep it short')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'the description span keeps the same CSS face',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(alert.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Title')!.charStyle.fontFamily,
+        'Helvetica',
+        reason: 'a second save must keep Title on defaultVertex Helvetica',
+      );
+      expect(
+        runContaining(leftover, 'Lorem ipsum')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'a second save must keep Char.Font',
+      );
+
+      var sapDoc = parser.parse(writer.emptyDocument());
+      final sapId = sapDoc.pages.first.nextFreeShapeId();
+      sapDoc = sapDoc.replacePage(
+        0,
+        sapDoc.pages.first.addShape(sapTitle.copyWith(id: sapId)),
+      );
+      final sapLeftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: sapDoc),
+          )
+          .pages
+          .first
+          .findShapeById(sapId)!;
+      expect(
+        runContaining(sapLeftover, 'Diagram Level L1')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'a second save must keep SAP Diagram Title as Arial',
+      );
+    },
+  );
+
+  test(
     'mxText html tables stay row Text boxes for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {

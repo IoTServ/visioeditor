@@ -642,7 +642,8 @@ class _DrawioXmlShapeDecoder {
               'fontstyle',
               fallback: _fontStyle.toDouble(),
             ).round(),
-            fontFamily: el.getAttribute('fontfamily') ?? _fontFamily,
+            fontFamily: _mxFontFamily(el.getAttribute('fontfamily')) ??
+                _fontFamily,
             color: el.getAttribute('fontcolor') != null
                 ? _mxGraphPaintColor(el.getAttribute('fontcolor'))
                 : _fontColor,
@@ -1300,9 +1301,10 @@ String? _mxFontFamily(String? raw) {
   }
   if (token.isEmpty) return null;
   return switch (token.toLowerCase()) {
-    'sans-serif' => 'Arial',
-    'serif' => 'Times New Roman',
-    'monospace' => 'Courier New',
+    'sans-serif' || 'arial' => 'Arial',
+    'serif' || 'times' || 'times new roman' => 'Times New Roman',
+    'monospace' || 'courier' || 'courier new' => 'Courier New',
+    'helvetica' => 'Helvetica',
     _ => token,
   };
 }

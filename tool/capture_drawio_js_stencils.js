@@ -3041,15 +3041,53 @@ function htmlAttr(attrs, name) {
 }
 
 function htmlStyleProp(attrs, prop) {
-  const style = htmlAttr(attrs, 'style') || '';
+  // Decode first: `&quot;open sans&quot;` would otherwise split on the
+  // entity's trailing semicolon and freeze Char.Font as `&quot`.
+  const style = decodeHtmlEntities(htmlAttr(attrs, 'style') || '');
   const re = new RegExp(`(?:^|;)\\s*${prop}\\s*:\\s*([^;]+)`, 'i');
   const match = re.exec(style);
   return match ? match[1].trim() : null;
 }
 
+function htmlFontFamily(raw) {
+  // Walk the CSS stack like the browser. Webfonts such as "open sans" are
+  // not Visio/libvisio faces; skip them so `"open sans", arial, sans-serif`
+  // freezes Char.Font Arial that collectCharIX maps to style:font-name.
+  const named = {
+    arial: 'Arial',
+    helvetica: 'Helvetica',
+    'times new roman': 'Times New Roman',
+    times: 'Times New Roman',
+    'courier new': 'Courier New',
+    courier: 'Courier New',
+    calibri: 'Calibri',
+    verdana: 'Verdana',
+    georgia: 'Georgia',
+    tahoma: 'Tahoma',
+    'comic sans ms': 'Comic Sans MS',
+  };
+  const generics = {
+    'sans-serif': 'Arial',
+    serif: 'Times New Roman',
+    monospace: 'Courier New',
+  };
+  let fallback = null;
+  for (const part of decodeHtmlEntities(raw).split(',')) {
+    const name = part.trim().replace(/^["']+|["']+$/g, '');
+    if (!name) continue;
+    const key = name.toLowerCase();
+    if (named[key]) return named[key];
+    if (generics[key]) {
+      fallback = fallback || generics[key];
+      continue;
+    }
+  }
+  return fallback;
+}
+
 // mxText HTML/CSS on <p>/<span>/<font>: color, size, weight, italic,
-// text-decoration. collectCharIX maps Style 0x4 to underline; line-through
-// is Char Strikethru that Draw still paints.
+// text-decoration, font-family. collectCharIX maps Style 0x4 to underline;
+// line-through is Char Strikethru that Draw still paints; family is Char.Font.
 function applyHtmlCss(next, attrs) {
   const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
   if (color) next.fontColor = color;
@@ -3066,6 +3104,11 @@ function applyHtmlCss(next, attrs) {
   if (deco) {
     if (/underline/i.test(deco)) next.fontStyle |= 4;
     if (/line-through/i.test(deco)) next.fontStyle |= 8;
+  }
+  const family = htmlStyleProp(attrs, 'font-family') || htmlAttr(attrs, 'face');
+  if (family) {
+    const mapped = htmlFontFamily(family);
+    if (mapped) next.fontFamily = mapped;
   }
 }
 
