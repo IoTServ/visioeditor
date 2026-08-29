@@ -46,6 +46,57 @@ function parseStyle(source, base) {
       Object.assign(style, namedStyles[token]);
     }
   }
+  return resolveStyleColorKeys(style);
+}
+
+// mxGraph style values may name another color key (`fillColor=strokeColor`
+// on UML Initial / ArchiMate Junction / electrical diodes). LibreOffice
+// collectFill only sees FillForegnd hex; the keyword is not a token.
+const kStyleColorKeys = [
+  'strokeColor', 'fillColor', 'fontColor',
+  'gradientColor', 'labelBackgroundColor', 'labelBorderColor',
+];
+
+function defaultColorForStyleKey(key) {
+  if (key === 'fillColor' || key === 'labelBackgroundColor') return '#ffffff';
+  if (key === 'strokeColor' || key === 'fontColor' || key === 'labelBorderColor') {
+    return '#000000';
+  }
+  return null;
+}
+
+function resolveStyleColorKeys(style) {
+  const cache = Object.create(null);
+  function lookup(key, stack) {
+    if (Object.prototype.hasOwnProperty.call(cache, key)) return cache[key];
+    if (stack.has(key)) {
+      cache[key] = defaultColorForStyleKey(key);
+      return cache[key];
+    }
+    stack.add(key);
+    const raw = style[key];
+    if (raw == null || raw === '') {
+      cache[key] = defaultColorForStyleKey(key);
+      return cache[key];
+    }
+    const token = String(raw).trim();
+    if (token.toLowerCase() === 'default') {
+      cache[key] = defaultColorForStyleKey(key);
+      return cache[key];
+    }
+    if (kStyleColorKeys.indexOf(token) >= 0) {
+      cache[key] = lookup(token, stack);
+      return cache[key];
+    }
+    cache[key] = raw;
+    return raw;
+  }
+  for (const key of kStyleColorKeys) {
+    const token = style[key] == null ? '' : String(style[key]).trim();
+    if (kStyleColorKeys.indexOf(token) >= 0) {
+      style[key] = lookup(key, new Set());
+    }
+  }
   return style;
 }
 

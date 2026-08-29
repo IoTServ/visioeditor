@@ -786,6 +786,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   collects); omitting wrap lets a save expand TxtWidth (`svg:width`) so
   Draw keeps each `<br>` line unwrapped. A second save keeps the wide
   text frame.
+- draw.io mxGraph `fillColor=strokeColor` now stays native in LibreOffice.
+  Official `mxShape.apply` copies `fillColor=strokeColor` onto the fill
+  (UML Initial, ArchiMate Junction, electrical diodes), but capture left
+  the keyword, so `_mxGraphPaintColor` missed it and `applyStencilStyle`
+  washed a white factory fill into palette `#DAE8FC` that `collectFill`
+  maps to `svg:fill`. Cell styles now freeze the referenced hex. A second
+  save keeps FillForegnd.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

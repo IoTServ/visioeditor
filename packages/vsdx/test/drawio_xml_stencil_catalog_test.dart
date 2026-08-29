@@ -3278,6 +3278,67 @@ void main() {
     },
   );
 
+  test(
+    'mxGraph fillColor=strokeColor stays FillForegnd for LibreOffice',
+    () {
+      final initial = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / UML25 / uml 2.5',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Initial preudostate / node',
+          )
+          .build(460, 3, 3);
+      expect(
+        initial.fill.hasFill,
+        isTrue,
+        reason: 'fillColor=strokeColor is a filled ellipse collectFill maps '
+            'to svg:fill',
+      );
+      expect(
+        initial.fill.foreground?.value,
+        0xFF000000,
+        reason: 'the keyword follows defaultVertex stroke (black), not '
+            'palette #DAE8FC',
+      );
+
+      final junction = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / ArchiMate / archiMate21',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Junction')
+          .build(461, 3, 3);
+      expect(
+        junction.fill.foreground?.value,
+        0xFF000000,
+        reason: 'ArchiMate Junction fillColor=strokeColor is the same disc',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(initial.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.fill.foreground?.value,
+        0xFF000000,
+        reason: 'a second save must keep FillForegnd from fillColor=strokeColor',
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(
