@@ -2980,6 +2980,7 @@ function cloneHtmlStyle(style) {
     fontSize: style.fontSize,
     fontFamily: style.fontFamily,
     textOpacity: style.textOpacity,
+    position: Number(style.position) || 0,
   };
 }
 
@@ -2988,7 +2989,8 @@ function sameHtmlStyle(a, b) {
     && String(a.fontColor || '') === String(b.fontColor || '')
     && Number(a.fontSize) === Number(b.fontSize)
     && String(a.fontFamily || '') === String(b.fontFamily || '')
-    && Number(a.textOpacity) === Number(b.textOpacity);
+    && Number(a.textOpacity) === Number(b.textOpacity)
+    && (Number(a.position) || 0) === (Number(b.position) || 0);
 }
 
 function htmlLabelRunsDiffer(runs, state) {
@@ -3014,11 +3016,16 @@ function htmlRunAttrs(run) {
   if (Number.isFinite(opacity) && Math.abs(opacity - 100) > 1e-6) {
     attrs.push(`textopacity="${number(opacity)}"`);
   }
+  // mxText html <sup>/<sub> → Char.Pos that readCharIX maps to
+  // style:text-position super/sub.
+  const pos = Number(run.position) || 0;
+  if (pos === 1 || pos === 2) attrs.push(`pos="${pos}"`);
   return attrs.join(' ');
 }
 
-// mxText html=1: <b>/<i>/<font color|size> become Char Style / Color / Size
-// that collectCharIX maps to fo:font-weight / fo:color / fo:font-size.
+// mxText html=1: <b>/<i>/<font color|size>/<sup>/<sub> become Char Style /
+// Color / Size / Pos that collectCharIX maps to fo:font-weight / fo:color /
+// fo:font-size / style:text-position.
 function parseHtmlLabel(html, base) {
   const runs = [];
   const stack = [cloneHtmlStyle(base)];
@@ -3061,6 +3068,8 @@ function parseHtmlLabel(html, base) {
     else if (tag === 'i' || tag === 'em') next.fontStyle |= 2;
     else if (tag === 'u') next.fontStyle |= 4;
     else if (tag === 's' || tag === 'strike' || tag === 'del') next.fontStyle |= 8;
+    else if (tag === 'sup') next.position = 1;
+    else if (tag === 'sub') next.position = 2;
     if (tag === 'font' || tag === 'span') {
       const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
       if (color) next.fontColor = color;

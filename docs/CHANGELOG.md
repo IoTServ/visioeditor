@@ -664,6 +664,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `fo:color`. Cell labels now freeze extra Character rows; stencil
   glyphs without tags stay a single run. A second save keeps Style
   and Color per run.
+- draw.io mxText html `<sup>` / `<sub>` now stays native in LibreOffice.
+  Official `mxText` paints those tags as raised / lowered runs, but
+  capture kept one baseline Char row, so Electrical Vdd (`V<sub>dd</sub>`)
+  and GCP Zones `3<sup>rd</sup> Party` lost the Pos that
+  `readCharIX` maps to `style:text-position`. Cell labels now freeze
+  extra Character rows with Pos 1/2. A second save keeps superscript
+  and subscript.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

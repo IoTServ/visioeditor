@@ -1922,6 +1922,83 @@ void main() {
     },
   );
 
+  test(
+    'mxText html sup and sub stay Char Pos for LibreOffice',
+    () {
+      VsdxTextRun? runExact(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.replaceAll('\n', '').trim() == text) return run;
+          }
+          final nested = runExact(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final vdd = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Electrical / Electrical / Misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Vdd')
+          .build(440, 3, 3);
+      expect(
+        runExact(vdd, 'V')!.charStyle.position,
+        VsdxTextPosition.normal,
+        reason: 'the V stays on the baseline',
+      );
+      expect(
+        runExact(vdd, 'dd')!.charStyle.position,
+        VsdxTextPosition.subscript,
+        reason: 'html <sub>dd</sub> is Char.Pos 2 that readCharIX maps to '
+            'style:text-position sub',
+      );
+
+      final zone = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / GCP2 / GCP / Zones',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'External Infrastructure 3rd party',
+          )
+          .build(441, 3, 3);
+      expect(
+        runExact(zone, 'rd')!.charStyle.position,
+        VsdxTextPosition.superscript,
+        reason: 'html <sup>rd</sup> is Char.Pos 1 that collectCharIX maps to '
+            'style:text-position super',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(vdd.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runExact(leftover, 'dd')!.charStyle.position,
+        VsdxTextPosition.subscript,
+        reason: 'a second save must keep Char.Pos subscript',
+      );
+      expect(
+        runExact(leftover, 'V')!.charStyle.position,
+        VsdxTextPosition.normal,
+      );
+    },
+  );
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(

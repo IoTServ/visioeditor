@@ -642,6 +642,8 @@ class _DrawioXmlShapeDecoder {
               'textopacity',
               fallback: parentOpacity,
             ),
+            position:
+                el.getAttribute('pos') == null ? 0 : _number(el, 'pos').round(),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
@@ -1125,6 +1127,11 @@ class _DrawioXmlShapeDecoder {
                 strikethrough: (run.fontStyle & 8) != 0,
                 color: run.color ?? label.color,
                 transparency: ((100 - run.textOpacity) / 100).clamp(0.0, 1.0),
+                position: switch (run.position) {
+                  1 => VsdxTextPosition.superscript,
+                  2 => VsdxTextPosition.subscript,
+                  _ => VsdxTextPosition.normal,
+                },
               ),
               paraStyle: VsdxParaStyle(horizontalAlign: horz),
             ),
@@ -1224,6 +1231,7 @@ class _DrawioStencilLabelRun {
     this.fontFamily,
     this.color,
     this.textOpacity = 100,
+    this.position = 0,
   });
 
   final String text;
@@ -1232,6 +1240,9 @@ class _DrawioStencilLabelRun {
   final String? fontFamily;
   final VsdxColor? color;
   final double textOpacity;
+
+  /// mxText html `<sup>`/`<sub>` → Char.Pos (1 super / 2 sub).
+  final int position;
 }
 
 class _DrawioColoredPart {
