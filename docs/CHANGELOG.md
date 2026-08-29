@@ -740,6 +740,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   / `fo:margin-top`. Cell labels now freeze those Para cells (only the
   first run in a block keeps `margin-top`). A second save keeps the
   inset.
+- draw.io mxText html `<font size>` now stays native in LibreOffice.
+  Official `mxText` paints the HTML size 1–7 presentational hint
+  (Chromium `xx-small`…`xxx-large` at 10/13/16/18/24/32/48px), but
+  capture `parseFloat`'d `size="1"` as 1px, so an SAP Interface and
+  Infographic Roadmap body (`<font size="1">Lorem…`) hit the 0.04in
+  Char.Size floor that `collectCharIX` maps to `fo:font-size`. Cell
+  labels now freeze those px. CSS `font-size: 11px` stays a length.
+  A second save keeps Size.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

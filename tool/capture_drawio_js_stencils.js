@@ -3122,10 +3122,20 @@ function htmlAlignToken(raw) {
 function applyHtmlCss(next, attrs, tag) {
   const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
   if (color) next.fontColor = color;
-  const sizeToken = htmlStyleProp(attrs, 'font-size') || htmlAttr(attrs, 'size');
-  if (sizeToken) {
-    const size = parseFloat(sizeToken);
-    if (Number.isFinite(size) && size > 0) next.fontSize = size;
+  // CSS font-size is px (GCP 11px). HTML size="1"–"7" is not px —
+  // Chromium maps it onto xx-small…xxx-large (10/13/16/18/24/32/48)
+  // which collectCharIX Size maps to fo:font-size. parseFloat("1")
+  // used to freeze 1px and clamp to Visio's 0.04in floor.
+  const cssSize = htmlStyleProp(attrs, 'font-size');
+  if (cssSize) {
+    const size = htmlCssPx(cssSize);
+    if (size != null && size > 0) next.fontSize = size;
+  } else {
+    const htmlSize = htmlAttr(attrs, 'size');
+    if (htmlSize) {
+      const mapped = htmlFontSizeAttrPx(htmlSize, next.fontSize);
+      if (mapped != null) next.fontSize = mapped;
+    }
   }
   const weight = htmlStyleProp(attrs, 'font-weight');
   if (weight && /^(bold|[7-9]00)$/i.test(weight)) next.fontStyle |= 1;
@@ -3174,6 +3184,43 @@ function htmlCssPx(raw) {
   }
   const n = parseFloat(token);
   return Number.isFinite(n) ? n : null;
+}
+
+// HTML <font size=N> presentational hint (html.spec.whatwg.org
+// phrasing-content-3). Chromium HTMLFontElement maps 1–7 onto
+// xx-small…xxx-large at a 16px medium.
+const kHtmlFontSizePx = [0, 10, 13, 16, 18, 24, 32, 48];
+
+function htmlFontSizeTablePx(index) {
+  const i = Math.max(1, Math.min(7, Math.round(Number(index) || 0)));
+  return kHtmlFontSizePx[i];
+}
+
+function htmlFontSizeIndexFromPx(px) {
+  const n = Number(px);
+  let best = 3;
+  let dist = Infinity;
+  for (let i = 1; i <= 7; i++) {
+    const d = Math.abs(kHtmlFontSizePx[i] - n);
+    if (d < dist) {
+      dist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function htmlFontSizeAttrPx(raw, currentPx) {
+  const token = String(raw || '').trim();
+  if (!token) return null;
+  const rel = /^([+-])(\d+)$/.exec(token);
+  if (rel) {
+    const delta = parseInt(rel[2], 10) * (rel[1] === '-' ? -1 : 1);
+    return htmlFontSizeTablePx(htmlFontSizeIndexFromPx(currentPx) + delta);
+  }
+  const n = parseFloat(token);
+  if (!Number.isFinite(n) || n < 1 || n > 7 || n !== Math.round(n)) return null;
+  return htmlFontSizeTablePx(n);
 }
 
 function htmlApplyMargins(next, attrs) {

@@ -2459,6 +2459,74 @@ void main() {
   );
 
   test(
+    'mxText html font size attribute stays Char Size for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final sap = dynamic.singleWhere(
+        (group) =>
+            group.name == 'Draw.io JS / SAP / SAP / Annotations and Interfaces',
+      );
+      final iface = sap.stencils
+          .singleWhere((entry) => entry.name == 'Interface')
+          .build(451, 3, 3);
+      // 57×16 cell, catalog scale 1.5 / max(w,h) = 1.5/57.
+      const ifaceScale = 1.5 / 57;
+      expect(
+        runContaining(iface, 'Interface')!.charStyle.fontSizeInches,
+        closeTo(10 * ifaceScale, 0.01),
+        reason: 'html size="1" is Chromium xx-small 10px, collectCharIX Size '
+            'that libvisio maps to fo:font-size, not parseFloat 1px',
+      );
+
+      final roadmap = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Roadmap (vertical)')
+          .build(452, 3, 3);
+      final title = runContaining(roadmap, 'Label')!;
+      final body = runContaining(roadmap, 'Lorem ipsum')!;
+      expect(
+        body.charStyle.fontSizeInches,
+        closeTo(title.charStyle.fontSizeInches * 10 / 12, 0.01),
+        reason: 'Roadmap body <font size="1"> is 10px under a 12px Label',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(iface.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Interface')!.charStyle.fontSizeInches,
+        closeTo(10 * ifaceScale, 0.01),
+        reason: 'a second save must keep Char Size from html size="1"',
+      );
+    },
+  );
+
+  test(
     'mxText html tables stay row Text boxes for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {
