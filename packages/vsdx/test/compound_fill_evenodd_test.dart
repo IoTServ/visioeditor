@@ -693,8 +693,8 @@ void main() {
         width: 1.8,
         height: 1.4,
       )),
-      3,
-      reason: 'isometric cube faces sit side by side, not nested',
+      1,
+      reason: 'isometric cube faces evenodd-punch the back-right join in Draw',
     );
     expect(
       filled(VsdxShapeFactory.azureFunctions(
@@ -890,8 +890,52 @@ void main() {
         width: 1.8,
         height: 1.4,
       )),
-      3,
-      reason: 'isometric cube faces sit side by side',
+      1,
+      reason: 'isometric cube faces evenodd-punch the back-right join in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.gcpComputeEngine(
+        id: 81,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'Compute Engine faces evenodd-punch the join; LED stays stroked',
+    );
+    expect(
+      filled(VsdxShapeFactory.alibabaEcs(
+        id: 82,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'Alibaba ECS faces evenodd-punch the join in Draw',
+    );
+    expect(
+      filled(VsdxShapeFactory.ibmPowerVs(
+        id: 83,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'Power VS faces evenodd-punch the join; badge stays stroked',
+    );
+    expect(
+      filled(VsdxShapeFactory.oracleComputeInstance(
+        id: 84,
+        pinX: 2,
+        pinY: 2,
+        width: 1.8,
+        height: 1.4,
+      )),
+      1,
+      reason: 'Oracle compute faces evenodd-punch the join in Draw',
     );
     expect(
       filled(VsdxShapeFactory.awsCodePipeline(
@@ -980,6 +1024,29 @@ void main() {
         .findShapeById(id)!;
     expect(filled(leftover), 1,
         reason: 'a second save must not restore a filled shackle');
+
+    var cubeDoc = parser.parse(writer.emptyDocument());
+    final cubeId = cubeDoc.pages.first.nextFreeShapeId();
+    cubeDoc = cubeDoc.replacePage(
+      0,
+      cubeDoc.pages.first.addShape(
+        VsdxShapeFactory.awsEc2(
+          id: cubeId,
+          pinX: 2,
+          pinY: 2,
+          width: 1.8,
+          height: 1.4,
+        ),
+      ),
+    );
+    final cubeLeftover = parser
+        .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: cubeDoc))
+        .pages
+        .first
+        .findShapeById(cubeId)!;
+    expect(filled(cubeLeftover), 1,
+        reason: 'a second save must not restore filled cube faces');
   });
 
   test('nested fills in a secondary tile stroke for LibreOffice', () {

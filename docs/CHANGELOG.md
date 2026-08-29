@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Isometric compute cubes now stay solid in LibreOffice.
+  Three `NoFill=0` faces that share an L-junction became one evenodd
+  path in libvisio `collectGeometry` / `_fillAndShadowProperties`
+  (`svg:fill-rule=evenodd`), so Draw punched a diamond at the back-right
+  join. EC2, GCP Compute Engine, Alibaba ECS, IBM Power VS and Oracle
+  Compute Instance now use the same filled silhouette plus NoFill inner
+  edges as the native Cube stencil. First-aid crosses and no-entry bars
+  keep their evenodd cut-outs. A second save does not restore the extra
+  fills.
 - Nested glyphs on secondary tiles now stay solid in LibreOffice.
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`) concatenates
   every `NoFill=0` Geometry, so an interior that sits inside a *second*

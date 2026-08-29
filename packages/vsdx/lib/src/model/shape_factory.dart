@@ -11098,6 +11098,45 @@ abstract final class VsdxShapeFactory {
     );
   }
 
+  /// One filled isometric-cube silhouette plus NoFill inner edges.
+  ///
+  /// Three `NoFill=0` faces that share an L-junction become one evenodd
+  /// path in libvisio `collectGeometry` / `_fillAndShadowProperties`, so
+  /// Draw punches a diamond at the back-right join. Native [cube] already
+  /// uses this outline. LED / face-line extras go in [accents].
+  static List<VsdxGeometry> _isometricCubeGeometries({
+    required double left,
+    required double bottom,
+    required double right,
+    required double top,
+    required double depth,
+    List<VsdxGeometry> accents = const <VsdxGeometry>[],
+  }) {
+    final d = depth;
+    return <VsdxGeometry>[
+      VsdxGeometry(commands: <VsdxPathCommand>[
+        MoveTo(left, bottom),
+        LineTo(right, bottom),
+        LineTo(right + d, bottom + d),
+        LineTo(right + d, top + d),
+        LineTo(left + d, top + d),
+        LineTo(left, top),
+        LineTo(left, bottom),
+      ]),
+      VsdxGeometry(
+        noFill: true,
+        commands: <VsdxPathCommand>[
+          MoveTo(left, top),
+          LineTo(right, top),
+          LineTo(right, bottom),
+          MoveTo(right, top),
+          LineTo(right + d, top + d),
+        ],
+      ),
+      ...accents,
+    ];
+  }
+
   /// EC2: compute instance (cube with face accents).
   static VsdxShape awsEc2({
     required int id,
@@ -11119,37 +11158,23 @@ abstract final class VsdxShapeFactory {
       pinY: pinY,
       width: w,
       height: h,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0, 0),
-          LineTo(w - d, 0),
-          LineTo(w - d, h - d),
-          LineTo(0, h - d),
-          LineTo(0, 0),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(w - d, 0),
-          LineTo(w, d),
-          LineTo(w, h),
-          LineTo(w - d, h - d),
-          LineTo(w - d, 0),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0, h - d),
-          LineTo(w - d, h - d),
-          LineTo(w, h),
-          LineTo(d, h),
-          LineTo(0, h - d),
-        ]),
-        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          MoveTo(0.18 * w, 0.25 * (h - d)),
-          LineTo(0.72 * (w - d), 0.25 * (h - d)),
-          MoveTo(0.18 * w, 0.45 * (h - d)),
-          LineTo(0.72 * (w - d), 0.45 * (h - d)),
-          MoveTo(0.18 * w, 0.65 * (h - d)),
-          LineTo(0.55 * (w - d), 0.65 * (h - d)),
-        ]),
-      ],
+      geometries: _isometricCubeGeometries(
+        left: 0,
+        bottom: 0,
+        right: w - d,
+        top: h - d,
+        depth: d,
+        accents: <VsdxGeometry>[
+          VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+            MoveTo(0.18 * w, 0.25 * (h - d)),
+            LineTo(0.72 * (w - d), 0.25 * (h - d)),
+            MoveTo(0.18 * w, 0.45 * (h - d)),
+            LineTo(0.72 * (w - d), 0.45 * (h - d)),
+            MoveTo(0.18 * w, 0.65 * (h - d)),
+            LineTo(0.55 * (w - d), 0.65 * (h - d)),
+          ]),
+        ],
+      ),
       fill: fill,
       line: line,
     );
@@ -14665,38 +14690,24 @@ abstract final class VsdxShapeFactory {
       pinY: pinY,
       width: w,
       height: h,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.05 * w, 0.1 * h),
-          LineTo(0.7 * w, 0.1 * h),
-          LineTo(0.7 * w, 0.75 * h),
-          LineTo(0.05 * w, 0.75 * h),
-          LineTo(0.05 * w, 0.1 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.7 * w, 0.1 * h),
-          LineTo(0.7 * w + d, 0.1 * h + d),
-          LineTo(0.7 * w + d, 0.75 * h + d),
-          LineTo(0.7 * w, 0.75 * h),
-          LineTo(0.7 * w, 0.1 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.05 * w, 0.75 * h),
-          LineTo(0.7 * w, 0.75 * h),
-          LineTo(0.7 * w + d, 0.75 * h + d),
-          LineTo(0.05 * w + d, 0.75 * h + d),
-          LineTo(0.05 * w, 0.75 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          EllipseCmd(
-              cx: 0.55 * w,
-              cy: 0.42 * h,
-              aX: 0.62 * w,
-              aY: 0.42 * h,
-              bX: 0.55 * w,
-              bY: 0.5 * h),
-        ]),
-      ],
+      geometries: _isometricCubeGeometries(
+        left: 0.05 * w,
+        bottom: 0.1 * h,
+        right: 0.7 * w,
+        top: 0.75 * h,
+        depth: d,
+        accents: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: 0.55 * w,
+                cy: 0.42 * h,
+                aX: 0.62 * w,
+                aY: 0.42 * h,
+                bX: 0.55 * w,
+                bY: 0.5 * h),
+          ]),
+        ],
+      ),
       fill: fill,
       line: line,
     );
@@ -17598,35 +17609,21 @@ abstract final class VsdxShapeFactory {
       pinY: pinY,
       width: w,
       height: h,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.08 * w, 0.12 * h),
-          LineTo(0.72 * w, 0.12 * h),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.08 * w, 0.78 * h),
-          LineTo(0.08 * w, 0.12 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.72 * w, 0.12 * h),
-          LineTo(0.72 * w + d, 0.12 * h + d),
-          LineTo(0.72 * w + d, 0.78 * h + d),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.72 * w, 0.12 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.08 * w, 0.78 * h),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.72 * w + d, 0.78 * h + d),
-          LineTo(0.08 * w + d, 0.78 * h + d),
-          LineTo(0.08 * w, 0.78 * h),
-        ]),
-        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          for (final y in <double>[0.28, 0.42, 0.56]) ...[
-            MoveTo(0.18 * w, y * h),
-            LineTo(0.58 * w, y * h),
-          ],
-        ]),
-      ],
+      geometries: _isometricCubeGeometries(
+        left: 0.08 * w,
+        bottom: 0.12 * h,
+        right: 0.72 * w,
+        top: 0.78 * h,
+        depth: d,
+        accents: <VsdxGeometry>[
+          VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+            for (final y in <double>[0.28, 0.42, 0.56]) ...[
+              MoveTo(0.18 * w, y * h),
+              LineTo(0.58 * w, y * h),
+            ],
+          ]),
+        ],
+      ),
       fill: fill,
       line: line,
     );
@@ -19973,36 +19970,22 @@ abstract final class VsdxShapeFactory {
       pinY: pinY,
       width: w,
       height: h,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.08 * w, 0.12 * h),
-          LineTo(0.72 * w, 0.12 * h),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.08 * w, 0.78 * h),
-          LineTo(0.08 * w, 0.12 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.72 * w, 0.12 * h),
-          LineTo(0.72 * w + d, 0.12 * h + d),
-          LineTo(0.72 * w + d, 0.78 * h + d),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.72 * w, 0.12 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.08 * w, 0.78 * h),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.72 * w + d, 0.78 * h + d),
-          LineTo(0.08 * w + d, 0.78 * h + d),
-          LineTo(0.08 * w, 0.78 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.55 * w, 0.28 * h),
-          LineTo(0.65 * w, 0.42 * h),
-          LineTo(0.55 * w, 0.56 * h),
-          LineTo(0.45 * w, 0.42 * h),
-          LineTo(0.55 * w, 0.28 * h),
-        ]),
-      ],
+      geometries: _isometricCubeGeometries(
+        left: 0.08 * w,
+        bottom: 0.12 * h,
+        right: 0.72 * w,
+        top: 0.78 * h,
+        depth: d,
+        accents: <VsdxGeometry>[
+          VsdxGeometry(commands: <VsdxPathCommand>[
+            MoveTo(0.55 * w, 0.28 * h),
+            LineTo(0.65 * w, 0.42 * h),
+            LineTo(0.55 * w, 0.56 * h),
+            LineTo(0.45 * w, 0.42 * h),
+            LineTo(0.55 * w, 0.28 * h),
+          ]),
+        ],
+      ),
       fill: fill,
       line: line,
     );
@@ -20482,35 +20465,21 @@ abstract final class VsdxShapeFactory {
       pinY: pinY,
       width: w,
       height: h,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.08 * w, 0.12 * h),
-          LineTo(0.72 * w, 0.12 * h),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.08 * w, 0.78 * h),
-          LineTo(0.08 * w, 0.12 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.72 * w, 0.12 * h),
-          LineTo(0.72 * w + d, 0.12 * h + d),
-          LineTo(0.72 * w + d, 0.78 * h + d),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.72 * w, 0.12 * h),
-        ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.08 * w, 0.78 * h),
-          LineTo(0.72 * w, 0.78 * h),
-          LineTo(0.72 * w + d, 0.78 * h + d),
-          LineTo(0.08 * w + d, 0.78 * h + d),
-          LineTo(0.08 * w, 0.78 * h),
-        ]),
-        VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
-          for (final y in <double>[0.28, 0.42, 0.56]) ...[
-            MoveTo(0.18 * w, y * h),
-            LineTo(0.58 * w, y * h),
-          ],
-        ]),
-      ],
+      geometries: _isometricCubeGeometries(
+        left: 0.08 * w,
+        bottom: 0.12 * h,
+        right: 0.72 * w,
+        top: 0.78 * h,
+        depth: d,
+        accents: <VsdxGeometry>[
+          VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
+            for (final y in <double>[0.28, 0.42, 0.56]) ...[
+              MoveTo(0.18 * w, y * h),
+              LineTo(0.58 * w, y * h),
+            ],
+          ]),
+        ],
+      ),
       fill: fill,
       line: line,
     );

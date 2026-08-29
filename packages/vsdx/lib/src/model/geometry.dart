@@ -1706,8 +1706,9 @@ double _boxOverlapArea(
 /// Nested interiors (LEDs, lids) are always punched. Accessories that
 /// only partly overlap the body (lock shackles, inversion bubbles, port
 /// dots, magnifying-glass disks) punch the intersection. Similar-sized
-/// stacked tiles (isometric cube faces, chevrons, database drums) stay
-/// filled — their overlap is a 3-D join, not a glyph.
+/// stacked tiles (chevrons, database drums) stay filled — their overlap
+/// is a 3-D join, not a glyph. Isometric cubes use a silhouette instead
+/// of three `NoFill=0` faces, so Draw does not punch the back-right join.
 bool _libvisioEvenoddPunchesOuter(
   ({double minX, double minY, double maxX, double maxY}) outer,
   ({double minX, double minY, double maxX, double maxY}) inner,
@@ -1733,9 +1734,9 @@ bool _libvisioEvenoddPunchesOuter(
 /// outer body solid in canvas, SVG and Draw. Each filled section is
 /// checked against every larger neighbour — draw.io icons often nest
 /// glyphs in a secondary tile, not only in the global-largest path.
-/// Adjacent faces (isometric cubes, chevrons, process-bar tiles,
-/// stacked drums) stay filled. Intentional cut-outs (first-aid cross,
-/// no-entry bar) must skip this rewrite.
+/// Adjacent faces (chevrons, process-bar tiles, stacked drums) stay
+/// filled. Intentional cut-outs (first-aid cross, no-entry bar) must
+/// skip this rewrite. Isometric cubes are a filled silhouette instead.
 List<VsdxGeometry> strokeNestedFillsForLibvisio(
   List<VsdxGeometry> geos, {
   required double width,
