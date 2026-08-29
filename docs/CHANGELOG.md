@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Nested glyphs on secondary tiles now stay solid in LibreOffice.
+  libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`) concatenates
+  every `NoFill=0` Geometry, so an interior that sits inside a *second*
+  filled section (draw.io AWS/Veeam/infographic icons with several bodies)
+  still punched a hole when baking only looked at the largest path. Nested
+  and overlapping interiors are now stroked against every larger neighbour;
+  isometric cube faces, chevrons and stacked drums stay filled. First-aid
+  crosses and no-entry bars keep their evenodd cut-outs. A second save
+  does not restore the extra fills.
 - Pipeline chevrons, stacked cards and hex clusters now stay solid in
   LibreOffice. Adjacent `NoFill=0` tiles that overlapped even slightly
   became one evenodd path in libvisio `_fillAndShadowProperties` and

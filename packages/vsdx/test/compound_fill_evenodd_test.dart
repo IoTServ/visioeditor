@@ -981,4 +981,60 @@ void main() {
     expect(filled(leftover), 1,
         reason: 'a second save must not restore a filled shackle');
   });
+
+  test('nested fills in a secondary tile stroke for LibreOffice', () {
+    int filled(VsdxShape s) =>
+        s.geometries.where((g) => !g.noFill && !g.noShow).length;
+    VsdxGeometry box(double x0, double y0, double x1, double y1) =>
+        VsdxGeometry(commands: <VsdxPathCommand>[
+          MoveTo(x0, y0),
+          LineTo(x1, y0),
+          LineTo(x1, y1),
+          LineTo(x0, y1),
+          LineTo(x0, y0),
+        ]);
+    // Two side-by-side bodies, each with a nested square. A largest-only
+    // rewrite would stroke the left interior and miss the right one;
+    // libvisio still concatenates both interiors into evenodd.
+    final shape = VsdxShape(
+      id: 1,
+      name: 'Pair',
+      pinX: 2,
+      pinY: 2,
+      width: 5,
+      height: 2,
+      geometries: <VsdxGeometry>[
+        box(0, 0, 2, 2),
+        box(0.4, 0.4, 1.6, 1.6),
+        box(3, 0, 5, 2),
+        box(3.4, 0.4, 4.6, 1.6),
+      ],
+    );
+    final baked = strokeNestedFillsForLibvisio(
+      shape.geometries,
+      width: shape.width,
+      height: shape.height,
+    );
+    expect(
+      baked.where((g) => !g.noFill && !g.noShow).length,
+      2,
+      reason: 'each nested square evenodd-punches its own tile in Draw',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(shape.copyWith(id: id)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(filled(leftover), 2,
+        reason: 'a second save must not restore the nested squares');
+  });
 }

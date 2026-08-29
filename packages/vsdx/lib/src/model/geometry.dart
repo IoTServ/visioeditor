@@ -1721,8 +1721,8 @@ bool _libvisioEvenoddPunchesOuter(
   return overlap / innerArea >= 0.18 && innerArea / outerArea <= 0.5;
 }
 
-/// Stroke filled Geometry that libvisio would evenodd-punch through the
-/// largest filled section.
+/// Stroke filled Geometry that libvisio would evenodd-punch through a
+/// larger filled section.
 ///
 /// LibreOffice only calls `VisioDocument::parse`. libvisio
 /// `collectGeometry` concatenates every `NoFill=0` section and
@@ -1730,10 +1730,12 @@ bool _libvisioEvenoddPunchesOuter(
 /// message square / LED / lens / overlapping shackle punches a hole in
 /// Draw. Visio paints those sections separately (same fill, visible
 /// stroke). Marking nested or overlapping interiors NoFill keeps the
-/// outer body solid in canvas, SVG and Draw. Adjacent faces (isometric
-/// cubes, chevrons, process-bar tiles, stacked drums) stay filled.
-/// Intentional cut-outs (first-aid cross, no-entry bar) must skip this
-/// rewrite.
+/// outer body solid in canvas, SVG and Draw. Each filled section is
+/// checked against every larger neighbour — draw.io icons often nest
+/// glyphs in a secondary tile, not only in the global-largest path.
+/// Adjacent faces (isometric cubes, chevrons, process-bar tiles,
+/// stacked drums) stay filled. Intentional cut-outs (first-aid cross,
+/// no-entry bar) must skip this rewrite.
 List<VsdxGeometry> strokeNestedFillsForLibvisio(
   List<VsdxGeometry> geos, {
   required double width,
@@ -1751,24 +1753,20 @@ List<VsdxGeometry> strokeNestedFillsForLibvisio(
     boxes[i] = box;
   }
   if (filled.length < 2) return geos;
-  var outerIndex = filled.first;
-  var outerArea = -1.0;
-  for (final i in filled) {
-    final box = boxes[i]!;
-    final area = _boxArea(box);
-    if (area > outerArea) {
-      outerArea = area;
-      outerIndex = i;
-    }
-  }
-  final outer = boxes[outerIndex]!;
   var changed = false;
   final next = <VsdxGeometry>[
     for (var i = 0; i < geos.length; i++) geos[i],
   ];
   for (final i in filled) {
-    if (i == outerIndex) continue;
-    if (!_libvisioEvenoddPunchesOuter(outer, boxes[i]!)) continue;
+    final inner = boxes[i]!;
+    var punch = false;
+    for (final j in filled) {
+      if (j == i) continue;
+      if (!_libvisioEvenoddPunchesOuter(boxes[j]!, inner)) continue;
+      punch = true;
+      break;
+    }
+    if (!punch) continue;
     next[i] = geos[i].copyWith(noFill: true);
     changed = true;
   }
