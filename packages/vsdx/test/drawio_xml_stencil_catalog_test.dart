@@ -2948,6 +2948,77 @@ void main() {
   );
 
   test(
+    'mxText html font-size stays Char Size on wide composites for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          for (final run in child.richText.runs) {
+            if (run.text.contains(text)) return run;
+          }
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final header = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Salesforce / Salesforce / Components',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Header')
+          .build(458, 3, 3);
+      // 930×160 cell, catalog scale 1.5 / 930.
+      const headerScale = 1.5 / 930;
+      final title = runContaining(header, 'Diagram Title Goes Here')!;
+      final body = runContaining(header, 'Lorem ipsum')!;
+      expect(
+        title.charStyle.fontSizeInches,
+        closeTo(14 * headerScale, 0.002),
+        reason: 'html font-size:14px must reach collectCharIX Size, not the '
+            'old 0.04in floor that matched the 9px body',
+      );
+      expect(
+        body.charStyle.fontSizeInches,
+        closeTo(9 * headerScale, 0.002),
+        reason: 'html font-size:9px is a smaller fo:font-size than the title',
+      );
+      expect(
+        title.charStyle.fontSizeInches,
+        greaterThan(body.charStyle.fontSizeInches),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(header.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Diagram Title Goes Here')!
+            .charStyle
+            .fontSizeInches,
+        closeTo(14 * headerScale, 0.002),
+        reason: 'a second save must keep Char Size from html 14px',
+      );
+      expect(
+        runContaining(leftover, 'Lorem ipsum')!.charStyle.fontSizeInches,
+        closeTo(9 * headerScale, 0.002),
+      );
+    },
+  );
+
+  test(
     'mxText html text-wrap nowrap stays unwrapped for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {

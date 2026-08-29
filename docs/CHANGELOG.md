@@ -793,6 +793,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   washed a white factory fill into palette `#DAE8FC` that `collectFill`
   maps to `svg:fill`. Cell styles now freeze the referenced hex. A second
   save keeps FillForegnd.
+- draw.io mxText html font-size now stays native on wide composites in
+  LibreOffice. Official `mxText` paints Salesforce Header `14px` / `9px`
+  at catalog scale `1.5/930`, but the decoder clamped Char.Size to
+  0.04in (~2.88pt), so title and body hit the same `fo:font-size`
+  collectCharIX emits. The floor is Visio's 0.5pt so 14px vs 9px stay
+  distinct. A second save keeps Size.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

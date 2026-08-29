@@ -68,6 +68,12 @@ class _DrawioXmlLibrary {
   }
 }
 
+/// Visio Char.Size UI floor is 0.5pt. The old 0.04in (~2.88pt) clamp
+/// flattened mxText `font-size:14px` / `9px` on wide composites
+/// (Salesforce Header 930px) after catalog scale `1.5 / max(w,h)`, so
+/// collectCharIX `fo:font-size` matched. 0.5pt still rejects empty Size.
+const double _kMxMinCharSizeInches = 0.5 / 72.0;
+
 class _DrawioXmlShapeDecoder {
   _DrawioXmlShapeDecoder(this.element);
 
@@ -1067,7 +1073,7 @@ class _DrawioXmlShapeDecoder {
     required _DrawioStencilLabel label,
   }) {
     final scale = math.min(scaleX.abs(), scaleY.abs());
-    final fontInches = math.max(0.04, label.fontSize * scale);
+    final fontInches = math.max(_kMxMinCharSizeInches, label.fontSize * scale);
     // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
     // keep a tight pin; cell values (Ammeter A, Bootstrap Alert) fill
     // the frame collectTextBlock maps to svg:width / fo:padding-*.
@@ -1128,7 +1134,10 @@ class _DrawioXmlShapeDecoder {
               text: run.text,
               charStyle: VsdxCharStyle(
                 fontFamily: run.fontFamily ?? label.fontFamily,
-                fontSizeInches: math.max(0.04, run.fontSize * scale),
+                fontSizeInches: math.max(
+                  _kMxMinCharSizeInches,
+                  run.fontSize * scale,
+                ),
                 style: VsdxFontStyle(
                   bold: (run.fontStyle & 1) != 0,
                   italic: (run.fontStyle & 2) != 0,
