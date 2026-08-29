@@ -389,6 +389,98 @@ void main() {
         reason: 'a second save must not restore two filled ellipses');
   });
 
+  test('network server keeps a solid chassis for LibreOffice', () {
+    final shape = VsdxShapeFactory.networkServer(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 1.6,
+      height: 2.0,
+    );
+    expect(shape.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'filled LED evenodd into a hole in Draw');
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [shape],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.networkServer(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 1.6,
+          height: 2.0,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'a second save must not restore a filled LED');
+  });
+
+  test('network camera keeps a solid housing for LibreOffice', () {
+    final shape = VsdxShapeFactory.networkSecurityCamera(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2.0,
+      height: 1.6,
+    );
+    expect(shape.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'filled lens evenodd into a hole in Draw');
+    final svg = VsdxToSvgSerializer().serializePage(
+      VsdxPage(
+        id: 0,
+        name: 'Page-1',
+        widthInches: 4,
+        heightInches: 4,
+        shapes: [shape],
+      ),
+    );
+    expect(svg.contains('fill-rule="evenodd"'), isFalse);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        VsdxShapeFactory.networkSecurityCamera(
+          id: id,
+          pinX: 2,
+          pinY: 2,
+          width: 2.0,
+          height: 1.6,
+        ),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(leftover.geometries.where((g) => !g.noFill && !g.noShow).length, 1,
+        reason: 'a second save must not restore a filled lens');
+  });
+
   test('radiation sign keeps a solid centre disc for LibreOffice', () {
     final shape = VsdxShapeFactory.signRadiation(
       id: 1,

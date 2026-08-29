@@ -583,6 +583,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Network servers now keep a solid chassis in LibreOffice.
+  A `NoFill=0` LED square inside the rack becomes one evenodd path in
+  canvas, SVG and libvisio `_fillAndShadowProperties`
+  (`svg:fill-rule=evenodd`), so Draw punched a window. The factory now
+  fills the chassis and strokes the LED. A second save does not restore
+  a filled LED.
+- Network security cameras now keep a solid housing in LibreOffice.
+  A `NoFill=0` lens ellipse inside the body becomes one evenodd path in
+  canvas, SVG and libvisio `_fillAndShadowProperties`
+  (`svg:fill-rule=evenodd`), so Draw punched an aperture. The factory
+  now fills the housing and strokes the lens. A second save does not
+  restore a filled lens.
 - Network hubs now keep a solid disc in LibreOffice.
   Two `NoFill=0` ellipses become one evenodd path in canvas, SVG and
   libvisio `_fillAndShadowProperties` (`svg:fill-rule=evenodd`), so Draw

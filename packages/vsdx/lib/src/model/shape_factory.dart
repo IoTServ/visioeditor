@@ -4650,13 +4650,18 @@ abstract final class VsdxShapeFactory {
           MoveTo(0.32 * w, 0.74 * h),
           LineTo(0.68 * w, 0.74 * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          MoveTo(0.32 * w, 0.1 * h),
-          LineTo(0.44 * w, 0.1 * h),
-          LineTo(0.44 * w, 0.18 * h),
-          LineTo(0.32 * w, 0.18 * h),
-          LineTo(0.32 * w, 0.1 * h),
-        ]),
+        // LED used to be NoFill=0, which evenodd-punched a hole through
+        // the chassis in canvas, SVG and libvisio `_fillAndShadowProperties`.
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            MoveTo(0.32 * w, 0.1 * h),
+            LineTo(0.44 * w, 0.1 * h),
+            LineTo(0.44 * w, 0.18 * h),
+            LineTo(0.32 * w, 0.18 * h),
+            LineTo(0.32 * w, 0.1 * h),
+          ],
+        ),
       ],
       fill: fill,
       line: line,
@@ -6721,15 +6726,20 @@ abstract final class VsdxShapeFactory {
           LineTo(0.15 * w, 0.8 * h),
           LineTo(0.15 * w, 0.35 * h),
         ]),
-        VsdxGeometry(commands: <VsdxPathCommand>[
-          EllipseCmd(
-              cx: 0.5 * w,
-              cy: 0.58 * h,
-              aX: 0.62 * w,
-              aY: 0.58 * h,
-              bX: 0.5 * w,
-              bY: 0.72 * h),
-        ]),
+        // Lens used to be NoFill=0, which evenodd-punched a hole through
+        // the housing in canvas, SVG and libvisio `_fillAndShadowProperties`.
+        VsdxGeometry(
+          noFill: true,
+          commands: <VsdxPathCommand>[
+            EllipseCmd(
+                cx: 0.5 * w,
+                cy: 0.58 * h,
+                aX: 0.62 * w,
+                aY: 0.58 * h,
+                bX: 0.5 * w,
+                bY: 0.72 * h),
+          ],
+        ),
         VsdxGeometry(noFill: true, commands: <VsdxPathCommand>[
           MoveTo(0.35 * w, 0.35 * h),
           LineTo(0.2 * w, 0.1 * h),
