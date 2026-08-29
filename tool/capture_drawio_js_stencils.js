@@ -130,6 +130,11 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._strokeWidthToken = null;
+    this._dashedToken = null;
+    this._dashToken = null;
+    this._lineCapToken = null;
+    this._lineJoinToken = null;
+    this._miterToken = null;
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
     this._strokeAlphaToken = 1;
@@ -147,6 +152,11 @@ class CanvasRecorder {
       alpha: 1,
       fillAlpha: 1,
       strokeAlpha: 1,
+      dashed: false,
+      dashPattern: '',
+      lineCap: null,
+      lineJoin: null,
+      miterLimit: 4,
     };
   }
 
@@ -447,6 +457,28 @@ class CanvasRecorder {
       this.operations.push(`<strokewidth width="${number(sw)}"/>`);
     }
     this._reemitAlpha();
+    this._reemitLineStyle();
+  }
+
+  _reemitLineStyle() {
+    const cap = this.state.lineCap || null;
+    if (cap && cap !== this._lineCapToken) {
+      this._lineCapToken = cap;
+      this.finishPath();
+      this.operations.push(`<linecap cap="${xmlEscape(cap)}"/>`);
+    }
+    const join = this.state.lineJoin || null;
+    if (join && join !== this._lineJoinToken) {
+      this._lineJoinToken = join;
+      this.finishPath();
+      this.operations.push(`<linejoin join="${xmlEscape(join)}"/>`);
+    }
+    const miter = Number(this.state.miterLimit);
+    if (Number.isFinite(miter) && miter !== this._miterToken) {
+      this._miterToken = miter;
+      this.finishPath();
+      this.operations.push(`<miterlimit limit="${number(miter)}"/>`);
+    }
   }
 
   _effectiveFillOpacity() {
@@ -529,11 +561,52 @@ class CanvasRecorder {
     this.finishPath();
     this.operations.push(`<strokewidth width="${number(n)}"/>`);
   }
-  setDashed(value) {
-    this.state.dashed = !!value;
-    if (!this.state.dashed) return;
+  setDashed(value, fixDash) {
+    const dashed = !!value;
+    this.state.dashed = dashed;
+    this.state.fixDash = fixDash === true || fixDash === 1 || fixDash === '1';
+    if (this._dashedToken === dashed) return;
+    this._dashedToken = dashed;
     this.finishPath();
-    this.operations.push('<dashed dashed="1"/>');
+    this.operations.push(`<dashed dashed="${dashed ? '1' : '0'}"/>`);
+  }
+  // mxStencil.drawNode dashpattern: Number(part) * minScale, then
+  // setDashPattern. libvisio collectLine is shape-level LinePattern;
+  // custom arrays become User.veDashPattern / a MoveTo ribbon.
+  setDashPattern(value) {
+    const text = String(value ?? '').trim();
+    this.state.dashPattern = text;
+    if (text === this._dashToken) return;
+    this._dashToken = text;
+    this.finishPath();
+    this.operations.push(`<dashpattern pattern="${xmlEscape(text)}"/>`);
+  }
+  setLineCap(value) {
+    const cap = String(value ?? '').trim().toLowerCase();
+    if (!cap) return;
+    this.state.lineCap = cap;
+    if (cap === this._lineCapToken) return;
+    this._lineCapToken = cap;
+    this.finishPath();
+    this.operations.push(`<linecap cap="${xmlEscape(cap)}"/>`);
+  }
+  setLineJoin(value) {
+    const join = String(value ?? '').trim().toLowerCase();
+    if (!join) return;
+    this.state.lineJoin = join;
+    if (join === this._lineJoinToken) return;
+    this._lineJoinToken = join;
+    this.finishPath();
+    this.operations.push(`<linejoin join="${xmlEscape(join)}"/>`);
+  }
+  setMiterLimit(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n) || n < 1) return;
+    this.state.miterLimit = n;
+    if (this._miterToken === n) return;
+    this._miterToken = n;
+    this.finishPath();
+    this.operations.push(`<miterlimit limit="${number(n)}"/>`);
   }
   // mxAbstractCanvas2D.setGradient: fillColor=c1, gradientColor=c2.
   // Official configureCanvas calls this when STYLE_GRADIENTCOLOR is set.
@@ -559,11 +632,7 @@ class CanvasRecorder {
     this._fillToken = token;
     this._emitFillGradient();
   }
-  setLineCap() {}
-  setLineJoin() {}
-  setMiterLimit() {}
   setShadow() {}
-  setDashPattern() {}
   setFontColor(value) {
     this.state.fontColor = isNoneColor(value) ? null : value;
     const token = isNoneColor(value) ? 'none' : String(value);
@@ -1211,7 +1280,29 @@ class NestedStencil {
     } else if (name === 'strokealpha') {
       canvas.setStrokeAlpha(attrNum(node, 'alpha'));
     } else if (name === 'dashed') canvas.setDashed(node.attrs.dashed === '1');
-    else if (name === 'dashpattern') canvas.setDashed(true);
+    else if (name === 'dashpattern') {
+      // mxStencil.js ~897: split on spaces, scale by minScale, setDashPattern.
+      // "none" is not a numeric array; do not force dashed=true.
+      const value = node.attrs.pattern;
+      if (value == null) return;
+      if (String(value).trim().toLowerCase() === 'none') {
+        canvas.setDashPattern('none');
+        return;
+      }
+      const pat = [];
+      for (const part of String(value).split(/[\s,]+/)) {
+        if (!part) continue;
+        const n = Number(part);
+        if (Number.isFinite(n) && n > 0) pat.push(n * minScale);
+      }
+      if (pat.length) canvas.setDashPattern(pat.join(' '));
+    } else if (name === 'linecap') {
+      if (node.attrs.cap) canvas.setLineCap(node.attrs.cap);
+    } else if (name === 'linejoin') {
+      if (node.attrs.join) canvas.setLineJoin(node.attrs.join);
+    } else if (name === 'miterlimit') {
+      canvas.setMiterLimit(attrNum(node, 'limit'));
+    }
     else if (name === 'fontsize') canvas.setFontSize(attrNum(node, 'size') * minScale);
     else if (name === 'fontstyle') canvas.setFontStyle(attrNum(node, 'style'));
   }
@@ -1301,6 +1392,30 @@ mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
   if (c.setAlpha && Number.isFinite(opacity)) c.setAlpha(opacity / 100);
   if (c.setFillAlpha && Number.isFinite(fillOpacity)) c.setFillAlpha(fillOpacity / 100);
   if (c.setStrokeAlpha && Number.isFinite(strokeOpacity)) c.setStrokeAlpha(strokeOpacity / 100);
+  // mxShape.js ~1025–1082: dashPattern, linecap, linejoin, miterlimit.
+  const dash = this.style != null ? this.style.dashPattern : null;
+  const fixDash = this.style != null &&
+    mxUtils.getValue(this.style, mxConstants.STYLE_FIX_DASH, false) == 1;
+  if (this.isDashed && c.setDashed) c.setDashed(true, fixDash);
+  if (dash != null && c.setDashPattern) {
+    if (fixDash) {
+      c.setDashPattern(dash);
+    } else {
+      const sw = Number(this.strokewidth) || 1;
+      const pat = [];
+      for (const part of String(dash).split(/[\s,]+/)) {
+        if (!part) continue;
+        const n = Number(part) * sw;
+        if (Number.isFinite(n) && n > 0) pat.push(n);
+      }
+      if (pat.length) c.setDashPattern(pat.join(' '));
+    }
+  }
+  if (this.style != null) {
+    if (this.style.linecap != null && c.setLineCap) c.setLineCap(this.style.linecap);
+    if (this.style.linejoin != null && c.setLineJoin) c.setLineJoin(this.style.linejoin);
+    if (this.style.miterlimit != null && c.setMiterLimit) c.setMiterLimit(this.style.miterlimit);
+  }
   // mxShape.js ~1054: fill + gradientColor calls setGradient, else setFillColor.
   if (this.fill != null && this.fill != mxConstants.NONE &&
       this.gradient && this.gradient != mxConstants.NONE &&
@@ -1313,7 +1428,6 @@ mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
     c.setFillColor(this.fill);
   }
   if (c.setStrokeColor) c.setStrokeColor(this.stroke);
-  if (this.isDashed && c.setDashed) c.setDashed(true);
 };
 mxShape.prototype.addPoints = function(c, pts, rounded, arcSize, close, exclude, initialMove) {
   if (pts == null || pts.length === 0) return;
@@ -2198,7 +2312,9 @@ for (const file of fs.readdirSync(sidebarRoot).filter((name) => /^Sidebar-.*\.js
      'Construction_Worker_Woman_Black', 'Doctor_Man', 'Doctor_Man_Black',
      'Doctor_Woman', 'Doctor_Woman_Black', 'Farmer_Man', 'Farmer_Man_Black',
      'Farmer_Woman', 'Farmer_Woman_Black', 'Nurse_Man', 'Nurse_Man_Black',
-     'Nurse_Woman', 'Nurse_Woman_Black', 'Military_Officer',
+     'Nurse_Woman', 'Nurse_Woman_Black', 'Nurse_Man_Green', 'Nurse_Man_Red',
+     'Nurse_Woman_Green', 'Nurse_Woman_Red', 'Soldier', 'Soldier_Black',
+     'Military_Officer',
      'Military_Officer_Black', 'Military_Officer_Woman',
      'Military_Officer_Woman_Black', 'Pilot_Man', 'Pilot_Man_Black',
      'Pilot_Woman', 'Pilot_Woman_Black', 'Scientist_Man', 'Scientist_Man_Black',
@@ -2270,6 +2386,10 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     if (stencil) {
       const ghost = {style, fill, stroke, direction: style.direction || null};
       if (style.dashed === '1') canvas.setDashed(true);
+      if (style.dashPattern) canvas.setDashPattern(style.dashPattern);
+      if (style.linecap) canvas.setLineCap(style.linecap);
+      if (style.linejoin) canvas.setLineJoin(style.linejoin);
+      if (style.miterlimit) canvas.setMiterLimit(style.miterlimit);
       if (isNoneColor(fill)) canvas.setFillColor(null);
       if (isNoneColor(stroke)) canvas.setStrokeColor(null);
       stencil.drawShape(canvas, ghost, x, y, width, height);
@@ -2526,6 +2646,8 @@ function paintArrowHead(canvas, type, fill, tipX, tipY, fromX, fromY) {
 function paintConnectorLine(style, pts, canvas) {
   if (!pts || pts.length < 2) return;
   if (style.dashed === '1') canvas.setDashed(true);
+  if (style.dashPattern) canvas.setDashPattern(style.dashPattern);
+  if (style.linecap) canvas.setLineCap(style.linecap);
   canvas.begin();
   canvas.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) canvas.lineTo(pts[i].x, pts[i].y);
@@ -2562,6 +2684,7 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
         canvas.bindStyle(shape.fill, shape.stroke);
       }
       if (style.dashed === '1') canvas.setDashed(true);
+      if (style.dashPattern) canvas.setDashPattern(style.dashPattern);
       if (canvas.setFillColor) canvas.setFillColor(shape.fill);
       if (canvas.setStrokeColor) canvas.setStrokeColor(shape.stroke);
       // createMarker shortens the endpoint mxPoints in place.

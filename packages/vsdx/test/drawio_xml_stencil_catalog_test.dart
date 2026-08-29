@@ -35,7 +35,7 @@ void main() {
     expect(dynamic, hasLength(482));
     expect(
       dynamic.fold<int>(0, (sum, group) => sum + group.stencils.length),
-      13271,
+      13277,
     );
     expect(
       dynamic.map((group) => group.name).toSet(),
@@ -830,6 +830,119 @@ void main() {
     );
   });
 
+  test('mxStencil dashpattern stays customDashPattern for LibreOffice', () {
+    bool hasFixedDash(VsdxShape shape) {
+      final custom = shape.line.customDashPattern;
+      if (shape.line.hasLine &&
+          custom != null &&
+          custom.length >= 2 &&
+          shape.line.fixedDash) {
+        return true;
+      }
+      return shape.children.any(hasFixedDash);
+    }
+
+    final detour = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Eip')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Detour')
+        .build(87, 3, 3);
+    expect(
+      hasFixedDash(detour),
+      isTrue,
+      reason: 'dashpattern 5 5 must reach collectLine as veDashPattern, '
+          'not a solid sibling that shares the box LinePattern',
+    );
+    expect(
+      detour.children.any(
+        (child) =>
+            !child.fill.hasFill &&
+            child.line.hasLine &&
+            child.line.customDashPattern != null,
+      ),
+      isTrue,
+      reason: 'the diagonal is a sibling so collectLine can dash it '
+          'without also dashing the solid box',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere((group) => group.name == 'Draw.io / Eip')
+            .stencils
+            .singleWhere((entry) => entry.name == 'Detour')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.children.any((child) {
+        if (child.fill.hasFill || !child.line.hasLine) return false;
+        final moves = child.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length;
+        return moves >= 2;
+      }),
+      isTrue,
+      reason: 'a second save bakes veDashPattern into MoveTo gaps '
+          'because libvisio treats custom LinePattern 0xfe as solid',
+    );
+  });
+
+  test('mxStencil linecap stays LineCap for LibreOffice', () {
+    bool hasCap(VsdxShape shape, LineCap cap) {
+      if (shape.line.hasLine && shape.line.cap == cap) return true;
+      return shape.children.any((child) => hasCap(child, cap));
+    }
+
+    final flow = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Lean Mapping')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Electronic Info Flow')
+        .build(88, 3, 3);
+    expect(
+      hasCap(flow, LineCap.extended),
+      isTrue,
+      reason: 'linecap=butt must become LineCap 1 that libvisio '
+          '_lineProperties maps to svg:stroke-linecap=butt',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere((group) => group.name == 'Draw.io / Lean Mapping')
+            .stencils
+            .singleWhere((entry) => entry.name == 'Electronic Info Flow')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      hasCap(leftover, LineCap.extended),
+      isTrue,
+      reason: 'a second save must keep LineCap 1',
+    );
+  });
+
   test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(
@@ -968,14 +1081,23 @@ void main() {
       'Dashed Wire',
     ).build(60, 3, 3);
     expect(
-      wire.geometries.where((g) => g.noFill && !g.noLine),
-      isNotEmpty,
+      wire.geometries.where((g) => g.noFill && !g.noLine).isNotEmpty ||
+          wire.children.any(
+            (child) => child.geometries.any((g) => g.noFill && !g.noLine),
+          ),
+      isTrue,
       reason: 'shape=wire paintEdgeShape must stroke, not a filled rectangle',
     );
     expect(
-      wire.line.pattern,
-      2,
-      reason: 'Dashed Wire style dashed=1 is LinePattern 2 in tokens.txt',
+      wire.line.pattern == 2 ||
+          wire.children.any(
+            (child) =>
+                child.line.hasLine &&
+                (child.line.pattern == 2 ||
+                    (child.line.customDashPattern?.isNotEmpty ?? false)),
+          ),
+      isTrue,
+      reason: 'Dashed Wire style dashed=1 is LinePattern 2 or veDashPattern',
     );
 
     final table = stencil(
@@ -1942,12 +2064,13 @@ void main() {
 
       final lifeline = stencil(group, 'Lifeline').build(202, 3, 4);
       expect(
-        lifeline.geometries.length,
+        descendantGeometries(lifeline).length,
         greaterThanOrEqualTo(2),
-        reason: 'shape=umlLifeline paints a header box and the dashed axis',
+        reason: 'shape=umlLifeline paints a header box and the dashed axis '
+            '(the axis is a sibling so collectLine can dash it)',
       );
       expect(
-        lifeline.geometries
+        descendantGeometries(lifeline)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,
@@ -2053,9 +2176,7 @@ void main() {
         isNotEmpty,
       );
       expect(
-        leftover
-            .findShapeById(lifelineId)!
-            .geometries
+        descendantGeometries(leftover.findShapeById(lifelineId)!)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,
@@ -2285,7 +2406,7 @@ void main() {
       expect(clipart, hasLength(6));
       expect(
         clipart.fold<int>(0, (sum, group) => sum + group.stencils.length),
-        157,
+        163,
       );
       expect(
         clipart.every(
@@ -2301,6 +2422,8 @@ void main() {
         ('Draw.io JS / Clipart / Clipart / Various', 'Globe'),
         ('Draw.io JS / Clipart / Clipart / Computer', 'Laptop'),
         ('Draw.io JS / Clipart / Clipart / People', 'Suit Man'),
+        ('Draw.io JS / Clipart / Clipart / People', 'Nurse Man Green'),
+        ('Draw.io JS / Clipart / Clipart / People', 'Soldier'),
       ];
       for (final sample in samples) {
         final shape = stencil(sample.$1, sample.$2).build(400, 3, 3);

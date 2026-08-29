@@ -98,6 +98,12 @@ class _DrawioXmlShapeDecoder {
   double? _strokeWidth;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
+  bool _parentDashed = false;
+  List<double>? _parentDashPattern;
+  List<double>? _dashPattern;
+  LineCap? _lineCap;
+  VsdxLineJoin? _lineJoin;
+  double? _miterLimit;
   String? _rasterPart;
   String? _rasterMime;
   double _penX = 0;
@@ -191,13 +197,24 @@ class _DrawioXmlShapeDecoder {
         _rasterPart != null || (!inheritFill && children.isNotEmpty)
             ? const VsdxFill(pattern: 0)
             : VsdxFill.defaultFill;
-    final parentLine =
+    var parentLine =
         _rasterPart != null || (!inheritLine && children.isNotEmpty)
             ? const VsdxLine(pattern: 0)
-            : (_dashed && !_solidPaintBeforeDash
-                ? _paintLine(stroke: true).copyWith(pattern: 2)
-                : _paintLine(stroke: true));
-    return VsdxShape(
+            : _paintLine(stroke: true);
+    if (inheritLine && _parentDashed) {
+      // Arrowheads call setDashed(false) after the rail. collectLine is
+      // shape-level, so keep the dash that was in force when parent
+      // Geometry was painted.
+      parentLine = _lineWithDash(parentLine, _parentDashPattern);
+    } else if (inheritLine && _solidPaintBeforeDash) {
+      // Later <dashpattern> belongs on siblings.
+      parentLine = parentLine.copyWith(
+        pattern: parentLine.pattern == 0 ? 0 : 1,
+        customDashPattern: null,
+        fixedDash: false,
+      );
+    }
+    return _withLineUserCells(VsdxShape(
       id: id,
       name: 'Sheet.$id',
       pinX: cx,
@@ -223,7 +240,7 @@ class _DrawioXmlShapeDecoder {
               mimeType: _rasterMime ?? '',
               partName: _rasterPart!,
             ),
-    );
+    ));
   }
 
   void _consume(XmlElement node) {
@@ -259,7 +276,17 @@ class _DrawioXmlShapeDecoder {
         _dashed = node.getAttribute('dashed') != '0';
         break;
       case 'dashpattern':
-        _dashed = true;
+        _dashPattern = _parseMxDashPattern(node.getAttribute('pattern'));
+        break;
+      case 'linecap':
+        _lineCap = _mxLineCap(node.getAttribute('cap'));
+        break;
+      case 'linejoin':
+        _lineJoin = VsdxLineJoin.parse(node.getAttribute('join'));
+        break;
+      case 'miterlimit':
+        final limit = _number(node, 'limit', fallback: 4);
+        if (limit >= 1) _miterLimit = limit;
         break;
       case 'fill':
         _finish(fill: true, stroke: false);
@@ -333,6 +360,9 @@ class _DrawioXmlShapeDecoder {
       // `applyStencilStyle.withSolidForeground` would otherwise beige them.
       // `alpha` / `fillalpha` / `strokealpha` become FillForegndTrans /
       // LineColorTrans that `_fillAndShadowProperties` maps to draw:opacity.
+      // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
+      // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
+      // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -531,7 +561,42 @@ class _DrawioXmlShapeDecoder {
     if (_strokeTransparency > 1e-9) {
       line = line.copyWith(transparency: _strokeTransparency);
     }
+    if (_lineCap != null) {
+      line = line.copyWith(cap: _lineCap);
+    }
+    if (_lineJoin != null) {
+      line = line.copyWith(join: _lineJoin);
+    }
+    if (_miterLimit != null) {
+      line = line.copyWith(miterLimit: _miterLimit);
+    }
+    if (_dashed) {
+      line = _lineWithDash(line, _dashPattern);
+    }
     return line;
+  }
+
+  List<double>? _fixedDashPatternValues([List<double>? raw]) {
+    final source = raw ?? _dashPattern;
+    if (source == null || source.isEmpty) return null;
+    final scale = math.min(scaleX.abs(), scaleY.abs());
+    final values = <double>[
+      for (final value in source)
+        if (value > 0) value * scale / drawioDashUnitInches,
+    ];
+    return values.length >= 2 ? values : null;
+  }
+
+  VsdxLine _lineWithDash(VsdxLine line, List<double>? pattern) {
+    final custom = _fixedDashPatternValues(pattern);
+    if (custom != null) {
+      return line.copyWith(
+        pattern: 1,
+        customDashPattern: custom,
+        fixedDash: true,
+      );
+    }
+    return line.copyWith(pattern: 2);
   }
 
   void _finish({required bool fill, required bool stroke}) {
@@ -544,10 +609,17 @@ class _DrawioXmlShapeDecoder {
     if (!doFill && !doStroke && (fill || stroke)) return;
     final bakeFill = doFill && _fillColor != null;
     final bakeStroke = doStroke && _strokeColor != null && !doFill;
-    if (bakeFill || bakeStroke) {
+    // libvisio collectLine is shape-level. A dash after a solid paint
+    // (EIP Detour diagonal) must be a sibling. A shape that is dashed
+    // from the first paint (Availability Zone, Dashed Wire) keeps
+    // LinePattern on the parent so applyStencilStyle can still recolor it.
+    final bakeDash = doStroke && _dashed && _solidPaintBeforeDash;
+    if (bakeFill || bakeStroke || bakeDash) {
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
-        fill: bakeFill ? _paintFill() : const VsdxFill(pattern: 0),
+        fill: doFill && (bakeFill || bakeDash)
+            ? _paintFill()
+            : const VsdxFill(pattern: 0),
         line: _paintLine(stroke: doStroke),
       ));
       return;
@@ -558,6 +630,10 @@ class _DrawioXmlShapeDecoder {
       noLine: !doStroke,
       ix: _geometries.length,
     ));
+    if (doStroke && _dashed) {
+      _parentDashed = true;
+      _parentDashPattern ??= _dashPattern;
+    }
   }
 
   List<VsdxPathCommand> _decodePath(XmlElement path) {
@@ -774,7 +850,7 @@ class _DrawioXmlShapeDecoder {
   }) {
     final locX = targetWidth / 2;
     final locY = targetHeight / 2;
-    return VsdxShape(
+    return _withLineUserCells(VsdxShape(
       id: id,
       name: 'Sheet.$id',
       pinX: locX,
@@ -796,7 +872,21 @@ class _DrawioXmlShapeDecoder {
         runs: <VsdxTextRun>[],
         textBlock: VsdxTextBlock(hideText: true),
       ),
-    );
+    ));
+  }
+
+  VsdxShape _withLineUserCells(VsdxShape shape) {
+    var next = shape;
+    final join = shape.line.join;
+    if (join != null) next = next.withDrawioLineJoin(join);
+    if (_miterLimit != null && (shape.line.miterLimit - 4.0).abs() > 1e-9) {
+      next = next.withDrawioMiterLimit(shape.line.miterLimit);
+    }
+    final custom = shape.line.customDashPattern;
+    if (custom != null && custom.isNotEmpty) {
+      next = next.withDrawioDashPattern(custom, fixed: shape.line.fixedDash);
+    }
+    return next;
   }
 
   VsdxShape _labelShape({
@@ -944,6 +1034,29 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
   }
   return VsdxColor.tryParse(token);
 }
+
+/// mxStencil.drawNode dashpattern: skip `none` and non-positive lengths.
+List<double>? _parseMxDashPattern(String? raw) {
+  final text = (raw ?? '').trim();
+  if (text.isEmpty || text.toLowerCase() == 'none') return null;
+  final values = <double>[];
+  for (final part in text.split(RegExp(r'[\s,]+'))) {
+    if (part.isEmpty) continue;
+    final value = double.tryParse(part);
+    if (value == null || !value.isFinite || value <= 0) continue;
+    values.add(value);
+  }
+  return values.length >= 2 ? values : null;
+}
+
+/// Visio LineCap: 0 round, 1 extended/butt, 2 square. libvisio
+/// `_lineProperties` maps those onto svg:stroke-linecap.
+LineCap? _mxLineCap(String? raw) => switch ((raw ?? '').trim().toLowerCase()) {
+      'round' => LineCap.round,
+      'square' => LineCap.square,
+      'butt' || 'flat' => LineCap.extended,
+      _ => null,
+    };
 
 class _DrawioArcCurve {
   const _DrawioArcCurve({

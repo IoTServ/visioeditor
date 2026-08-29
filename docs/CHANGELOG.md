@@ -583,6 +583,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `linecap` / `linejoin` / `miterlimit` / `dashpattern`
+  now stay native in LibreOffice. `mxStencil.drawNode` calls
+  `setLineCap` / `setLineJoin` / `setMiterLimit` / `setDashPattern`, but
+  capture stubbed them and the Dart decoder treated every `dashpattern`
+  as `dashed=1` without the array, so an EIP Detour diagonal stayed a
+  solid stroke that shared the box `LinePattern` (`collectLine` is
+  shape-level) and a Lean Mapping arrow used the default round cap.
+  Numeric patterns now become `User.veDashPattern` siblings that bake
+  to a MoveTo ribbon because libvisio treats custom pattern `0xfe` as
+  solid; `linecap=butt` becomes `LineCap` 1 that `_lineProperties` maps
+  to `svg:stroke-linecap=butt`. Disk clipart extras (Nurse Green/Red,
+  Soldier) join the People palette as ForeignData. A second
+  save keeps the dash array and the flat cap.
 - draw.io mxGraph `setGradient` now stays native in LibreOffice.
   Official `mxShape.configureCanvas` calls `c.setGradient(fill,
   gradientColor, …, gradientDirection)` when `STYLE_GRADIENTCOLOR` is
