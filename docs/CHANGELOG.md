@@ -748,6 +748,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Char.Size floor that `collectCharIX` maps to `fo:font-size`. Cell
   labels now freeze those px. CSS `font-size: 11px` stays a length.
   A second save keeps Size.
+- draw.io mxText html `<hr>` now stays native in LibreOffice.
+  Official `mxText` paints HTML rules as a full-width line in the
+  overflow=fill box, but capture folded `<hr>` into a newline, so a
+  SysML Stereotype Property Compartment lost the separator between
+  `Block1` and `property1 = value` that `collectLine` maps to
+  `svg:stroke`. Cell labels now freeze a Line sibling and split the
+  title / body into stacked Text boxes (Bootstrap Alert `border-color`
+  stays LineColor). A second save keeps the rule.
 - draw.io mxShape `getLabelBounds` now stays native in LibreOffice.
   Official `mxCellRenderer.getLabelBounds` insets the mxText box via
   `note2` `boundedLbl` / folder `tabHeight` / `process2` rails, but

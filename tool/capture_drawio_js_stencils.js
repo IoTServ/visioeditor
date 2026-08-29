@@ -3589,6 +3589,134 @@ function paintHtmlTableLabel(
   return painted || rows.every((row) => !htmlRowHasText(row));
 }
 
+// mxText html <hr> (SysML compartment rules, GCP product cards, Bootstrap
+// Alert). libvisio has no hr token; collectLine paints a sibling Line
+// that `_lineProperties` maps to svg:stroke. Splitting the label like
+// overflow=fill table rows keeps title / body Txt pins apart.
+function htmlCssColorToHex(raw) {
+  const token = String(raw || '');
+  const hex = /#([0-9a-f]{3,8})\b/i.exec(token);
+  if (hex) {
+    let h = hex[1];
+    if (h.length === 3) h = `${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;
+    return `#${h.slice(0, 6)}`;
+  }
+  const rgb = /rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i.exec(token);
+  if (!rgb) return null;
+  const to = (n) => Number(n).toString(16).padStart(2, '0');
+  return `#${to(rgb[1])}${to(rgb[2])}${to(rgb[3])}`;
+}
+
+function htmlHrColor(attrs) {
+  const from = htmlStyleProp(attrs, 'border-color')
+    || htmlStyleProp(attrs, 'border-top-color')
+    || htmlStyleProp(attrs, 'color')
+    || htmlStyleProp(attrs, 'background-color')
+    || htmlStyleProp(attrs, 'border-top')
+    || htmlStyleProp(attrs, 'border');
+  return htmlCssColorToHex(from) || htmlCssColorToHex(attrs);
+}
+
+function htmlHrParts(html) {
+  const source = String(html || '');
+  const re = /<hr\b([^>]*)\/?>/gi;
+  const parts = [];
+  const rules = [];
+  let last = 0;
+  let match;
+  while ((match = re.exec(source))) {
+    parts.push(source.slice(last, match.index));
+    rules.push(match[1] || '');
+    last = re.lastIndex;
+  }
+  if (!rules.length) return null;
+  parts.push(source.slice(last));
+  return {parts, rules};
+}
+
+function htmlHrFlowWeight(html) {
+  if (!htmlHasVisibleText(html)) return 0;
+  const text = cellLabel(html, false);
+  return Math.max(1, text.split('\n').filter((s) => s.trim()).length);
+}
+
+function paintHtmlHrRule(canvas, x, y, w, bandH, attrs) {
+  const prevColor = canvas.state.strokeColor;
+  const prevWidth = canvas.state.strokeWidth;
+  const prevDashed = canvas.state.dashed;
+  const color = htmlHrColor(attrs)
+    || canvas.state.fontColor
+    || '#808080';
+  const insetL = Number(canvas.state.spacingLeft) || 0;
+  const insetR = Number(canvas.state.spacingRight) || 0;
+  const left = x + insetL;
+  const right = x + w - insetR;
+  if (!(right - left > 1) || !(bandH > 0)) return;
+  const cy = y + bandH / 2;
+  // paintToken collapses #000000 onto inherit `stroke`. collectGeometry
+  // then evenodd-merges the rule into the rect; force a hex so
+  // bakeStroke makes a collectLine sibling like Weak Key's dash.
+  const savedStyleStroke = canvas.styleStroke;
+  canvas.styleStroke = null;
+  canvas.setStrokeColor(color);
+  canvas.setStrokeWidth(1);
+  canvas.setDashed(false);
+  canvas.begin();
+  canvas.moveTo(left, cy);
+  canvas.lineTo(right, cy);
+  canvas.stroke();
+  canvas.styleStroke = savedStyleStroke;
+  canvas.setStrokeColor(prevColor);
+  if (Number.isFinite(prevWidth) && prevWidth > 0) {
+    canvas.setStrokeWidth(prevWidth);
+  }
+  canvas.setDashed(!!prevDashed);
+}
+
+function paintHtmlHrLabel(
+  canvas, x, y, w, h, html, defaultAlign, defaultValign, rotation,
+) {
+  const spec = htmlHrParts(html);
+  if (!spec) return false;
+  const {parts, rules} = spec;
+  if (!parts.some(htmlHasVisibleText)) return false;
+  const fontSize = canvas && canvas.state ? canvas.state.fontSize : 12;
+  const size = Number(fontSize);
+  const hrBand = Math.max(6, (Number.isFinite(size) && size > 0 ? size : 12) * 0.55);
+  const weights = parts.map(htmlHrFlowWeight);
+  const weightSum = weights.reduce((sum, v) => sum + v, 0) || 1;
+  const available = Math.max(0, h - hrBand * rules.length);
+  const heights = weights.map((wt) => available * wt / weightSum);
+  let top = y;
+  let painted = false;
+  for (let i = 0; i < parts.length; i++) {
+    const rh = heights[i];
+    if (rh > 0 && htmlHasVisibleText(parts[i])) {
+      canvas.text(
+        x, top, w, rh, parts[i], defaultAlign, 'top',
+        undefined, 'html', undefined, undefined, rotation,
+      );
+      painted = true;
+    }
+    top += rh;
+    if (i < rules.length) {
+      paintHtmlHrRule(canvas, x, top, w, hrBand, rules[i]);
+      top += hrBand;
+    }
+  }
+  return painted;
+}
+
+function paintHtmlStructuredLabel(
+  canvas, x, y, w, h, html, defaultAlign, defaultValign, rotation,
+) {
+  return paintHtmlTableLabel(
+    canvas, x, y, w, h, html, defaultAlign, defaultValign, rotation,
+  ) || paintHtmlHrLabel(
+    canvas, x, y, w, h, html, defaultAlign, defaultValign, rotation,
+  );
+}
+
 function isHtmlCellStyle(style) {
   return !!(style && (style.html == 1 || style.html === '1'));
 }
@@ -3698,7 +3826,7 @@ function paintTemplateLabel(entry, style, width, height, canvas, shape) {
   const valign = String((style && style.verticalAlign) || 'middle');
   const box = mxVertexInnerLabelBox(shape, style, 0, 0, width, height);
   const rotation = mxVertexLabelRotation(style);
-  if (htmlOn && paintHtmlTableLabel(
+  if (htmlOn && paintHtmlStructuredLabel(
     canvas, box.x, box.y, box.w, box.h, label, align, valign, rotation,
   )) {
     return;
@@ -3969,7 +4097,7 @@ function paintCellTree(cells, canvas, width, height) {
           result, cellStyle, x, y, cellWidth, cellHeight,
         );
         const rotation = mxVertexLabelRotation(cellStyle);
-        if (!(htmlOn && paintHtmlTableLabel(
+        if (!(htmlOn && paintHtmlStructuredLabel(
           canvas, box.x, box.y, box.w, box.h, label, align, valign, rotation,
         ))) {
           canvas.text(

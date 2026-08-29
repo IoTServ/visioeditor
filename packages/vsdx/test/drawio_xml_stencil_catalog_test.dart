@@ -2527,6 +2527,130 @@ void main() {
   );
 
   test(
+    'mxText html hr stays a Line sibling for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if ((child.text ?? '').contains(text)) return child;
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool geometryHasRule(Iterable<VsdxGeometry> geos, double minDx) {
+        for (final geometry in geos) {
+          if (!geometry.noFill || geometry.noLine) continue;
+          final cmds = geometry.commands;
+          for (var i = 1; i < cmds.length; i++) {
+            final prev = cmds[i - 1];
+            final cur = cmds[i];
+            if (prev is! MoveTo || cur is! LineTo) continue;
+            final dx = (cur.x - prev.x).abs();
+            final dy = (cur.y - prev.y).abs();
+            if (dx > minDx && dy < 0.05) return true;
+          }
+        }
+        return false;
+      }
+
+      bool isHorizontalRule(VsdxShape child) {
+        if ((child.text ?? '').trim().isNotEmpty) return false;
+        if (!child.line.hasLine || child.fill.hasFill) return false;
+        return geometryHasRule(child.geometries, child.width * 0.3);
+      }
+
+      bool hasHorizontalRule(VsdxShape shape) {
+        if (geometryHasRule(shape.geometries, shape.width * 0.3)) return true;
+        if (shape.children.any(isHorizontalRule)) return true;
+        return shape.children.any(hasHorizontalRule);
+      }
+
+      VsdxShape? ruleOn(VsdxShape shape) {
+        for (final child in shape.children) {
+          if (isHorizontalRule(child)) return child;
+          final nested = ruleOn(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final compartment = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Stereotype Property Compartment',
+          )
+          .build(453, 3, 3);
+      final title = glyphContaining(compartment, 'Block1')!;
+      final body = glyphContaining(compartment, 'property1 = value')!;
+      expect(
+        title.id,
+        isNot(body.id),
+        reason: 'html <hr> splits title and property into stacked Text '
+            'children collectXFormData maps to svg:y',
+      );
+      expect(
+        title.pinY,
+        greaterThan(body.pinY),
+        reason: 'the title band sits above the property (Visio Y-up)',
+      );
+      expect(
+        hasHorizontalRule(compartment),
+        isTrue,
+        reason: 'the rule is a collectLine sibling so Draw paints svg:stroke',
+      );
+
+      final alert = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Alert (9)')
+          .build(454, 3, 3);
+      final alertRule = ruleOn(alert);
+      expect(
+        alertRule,
+        isNotNull,
+        reason: 'Bootstrap Alert <hr style="border: 1px solid rgb(89,185,88)">',
+      );
+      expect(
+        alertRule!.line.color,
+        VsdxColor.tryParse('#59b958'),
+        reason: 'hr border-color is LineColor that collectLine maps to '
+            'svg:stroke',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(compartment.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasHorizontalRule(leftover),
+        isTrue,
+        reason: 'a second save must keep the collectLine sibling',
+      );
+      expect(
+        glyphContaining(leftover, 'Block1')!.id,
+        isNot(glyphContaining(leftover, 'property1 = value')!.id),
+      );
+    },
+  );
+
+  test(
     'mxText html tables stay row Text boxes for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {
