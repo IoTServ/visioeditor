@@ -326,7 +326,7 @@ void main() {
       'Draw.io JS / Kubernetes / Kubernetes',
       'API',
     ).build(21, 3, 3);
-    expect(pod.geometries.length, greaterThan(2),
+    expect(descendantGeometries(pod).length, greaterThan(2),
         reason: 'nested mxgraph.kubernetes.frame + icon must be inlined');
 
     final labeledStencil = stencil(
@@ -663,6 +663,78 @@ void main() {
       ),
       isTrue,
       reason: 'a second save must keep the check LineWeight',
+    );
+  });
+
+  test('mxGraph setGradient stays FillPattern 25–34 for LibreOffice', () {
+    const magenta = VsdxColor(0xFFBC1356);
+    const pink = VsdxColor(0xFFF34482);
+    const beige = VsdxColor(0xFFFFF8E7);
+
+    bool isSumerianRamp(VsdxFill fill) {
+      if (!fill.hasFill || fill.pattern < 25 || fill.pattern > 40) {
+        return false;
+      }
+      if (fill.foreground == beige || fill.background == beige) return false;
+      final colors = <VsdxColor?>{fill.foreground, fill.background};
+      return colors.contains(magenta) && colors.contains(pink);
+    }
+
+    final sumerian = dynamic
+        .singleWhere(
+          (group) => group.name == 'Draw.io JS / AWS4 / AWS / AR & VR',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Sumerian')
+        .build(83, 3, 3);
+    expect(
+      sumerian.children.any((child) => isSumerianRamp(child.fill)),
+      isTrue,
+      reason: 'mxShape.configureCanvas setGradient must become FillBkgnd/'
+          'FillForegnd FillPattern 25–34; libvisio has no FillGradient token',
+    );
+    expect(
+      sumerian.fill.hasFill,
+      isFalse,
+      reason:
+          'the brand ramp is a sibling so applyStencilStyle cannot beige it',
+    );
+    expect(
+      sumerian.children.any(
+        (child) =>
+            child.fill.hasFill &&
+            child.fill.pattern == 1 &&
+            child.fill.foreground == VsdxColor.white,
+      ),
+      isTrue,
+      reason: 'resourceIcon paints the glyph with strokeColor #ffffff',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / AWS4 / AWS / AR & VR',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Sumerian')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.children.any((child) => isSumerianRamp(child.fill)),
+      isTrue,
+      reason: 'a second save must keep the Sumerian FillPattern ramp',
     );
   });
 
@@ -1646,7 +1718,7 @@ void main() {
       final note =
           stencil('Draw.io JS / General / general', 'Note').build(140, 3, 3);
       expect(
-        note.geometries
+        descendantGeometries(note)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,
@@ -1657,7 +1729,7 @@ void main() {
       final cube =
           stencil('Draw.io JS / General / general', 'Cube').build(141, 3, 3);
       expect(
-        cube.geometries.length,
+        descendantGeometries(cube).length,
         greaterThanOrEqualTo(3),
         reason: 'shape=cube paints isometric faces, not a single rectangle',
       );
@@ -1709,9 +1781,7 @@ void main() {
           .pages
           .first;
       expect(
-        leftover
-            .findShapeById(noteId)!
-            .geometries
+        descendantGeometries(leftover.findShapeById(noteId)!)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,

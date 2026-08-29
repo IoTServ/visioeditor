@@ -88,6 +88,7 @@ class _DrawioXmlShapeDecoder {
   int _fontStyle = 0;
   VsdxColor? _fontColor;
   VsdxColor? _fillColor;
+  VsdxFill? _fillOverride;
   VsdxColor? _strokeColor;
   bool _fillIsNone = false;
   bool _strokeIsNone = false;
@@ -277,6 +278,9 @@ class _DrawioXmlShapeDecoder {
       case 'fillcolor':
         _applyMxFill(node.getAttribute('color'));
         break;
+      case 'fillgradient':
+        _applyMxFillGradient(node);
+        break;
       case 'strokecolor':
         _applyMxStroke(node.getAttribute('color'));
         break;
@@ -312,6 +316,9 @@ class _DrawioXmlShapeDecoder {
       // save/restore and remaining paint attributes affect alpha or line
       // join. Hex fillcolor / strokecolor / fontcolor are consumed above so
       // Draw can paint them as sibling shapes (one FillForegnd each).
+      // `fillgradient` bakes FillPattern 25–34 so libvisio's two-stop
+      // linear (`_fillAndShadowProperties`) keeps AWS brand ramps;
+      // `applyStencilStyle.withSolidForeground` would otherwise beige them.
       // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
       // the parent so applyStencilStyle can still recolor the body.
       default:
@@ -351,6 +358,7 @@ class _DrawioXmlShapeDecoder {
   }
 
   void _applyMxFill(String? raw) {
+    _fillOverride = null;
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'fill' || lower == 'default') {
@@ -371,6 +379,55 @@ class _DrawioXmlShapeDecoder {
     final parsed = _mxGraphPaintColor(token);
     _fillColor = parsed;
     _fillIsNone = false;
+  }
+
+  /// mxGraph south: fill at top, gradient at bottom. libvisio linear
+  /// `draw:start-color=FillBkgnd`, `draw:end-color=FillForegnd`, and ODF
+  /// `draw:angle` 0 is bottom→top (north), 180 top→bottom (south),
+  /// 90 left→right (east), 270 right→left (west).
+  void _applyMxFillGradient(XmlElement node) {
+    final start = _mxGraphPaintColor(node.getAttribute('color1'));
+    final end = _mxGraphPaintColor(node.getAttribute('color2'));
+    if (start == null) {
+      _applyMxFill(node.getAttribute('color1'));
+      return;
+    }
+    if (end == null || start == end) {
+      _applyMxFill(node.getAttribute('color1'));
+      return;
+    }
+    final dir = (node.getAttribute('direction') ?? 'south').toLowerCase();
+    final alpha1 = node.getAttribute('alpha1') == null
+        ? 1.0
+        : _number(node, 'alpha1', fallback: 1);
+    final alpha2 = node.getAttribute('alpha2') == null
+        ? 1.0
+        : _number(node, 'alpha2', fallback: 1);
+    final pattern = switch (dir) {
+      'north' => 30,
+      'east' => 27,
+      'west' => 25,
+      'radial' => 40,
+      _ => 28,
+    };
+    _fillColor = start;
+    _fillIsNone = false;
+    final radial = dir == 'radial';
+    _fillOverride = VsdxFill(
+      foreground: radial ? start : end,
+      background: radial ? end : start,
+      pattern: pattern,
+      foregroundTransparency: (1 - (radial ? alpha1 : alpha2)).clamp(0.0, 1.0),
+      backgroundTransparency: (1 - (radial ? alpha2 : alpha1)).clamp(0.0, 1.0),
+    );
+  }
+
+  VsdxFill _paintFill() {
+    if (_fillOverride != null) return _fillOverride!;
+    if (_fillColor != null) {
+      return VsdxFill(foreground: _fillColor, pattern: 1);
+    }
+    return VsdxFill.defaultFill;
   }
 
   void _applyMxStroke(String? raw) {
@@ -448,9 +505,7 @@ class _DrawioXmlShapeDecoder {
     if (bakeFill || bakeStroke) {
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
-        fill: bakeFill
-            ? VsdxFill(foreground: _fillColor, pattern: 1)
-            : const VsdxFill(pattern: 0),
+        fill: bakeFill ? _paintFill() : const VsdxFill(pattern: 0),
         line: _paintLine(stroke: doStroke),
       ));
       return;

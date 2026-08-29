@@ -79,6 +79,16 @@ function paintToken(value, styleFill, styleStroke) {
   return String(value);
 }
 
+// Fill must not collapse to 'stroke'. AWS resourceIcon does
+// setFillColor(strokeColor) for the white glyph; that token became
+// inherit FillForegnd and applyStencilStyle painted it as the palette.
+function fillPaintToken(value, styleFill) {
+  if (isNoneColor(value)) return 'none';
+  const key = cssColorKey(value);
+  if (styleFill != null && key === cssColorKey(styleFill)) return 'fill';
+  return String(value);
+}
+
 function mxStencilColor(color, shape) {
   if (color == null || color === '') return color;
   if (color === 'none') return null;
@@ -120,7 +130,18 @@ class CanvasRecorder {
     this._strokeToken = 'stroke';
     this._fontToken = null;
     this._strokeWidthToken = null;
-    this.state = {fillColor: '#ffffff', strokeColor: '#000000', fontSize: 12, fontStyle: 0, fontColor: null, strokeWidth: 1};
+    this.state = {
+      fillColor: '#ffffff',
+      strokeColor: '#000000',
+      fontSize: 12,
+      fontStyle: 0,
+      fontColor: null,
+      strokeWidth: 1,
+      gradientColor: null,
+      gradientDir: null,
+      gradientAlpha1: 1,
+      gradientAlpha2: 1,
+    };
   }
 
   save() {
@@ -357,13 +378,47 @@ class CanvasRecorder {
     this.operations.push(`<${tag} color="${xmlEscape(token)}"/>`);
   }
 
+  _gradientToken() {
+    return [
+      'grad',
+      cssColorKey(this.state.fillColor),
+      cssColorKey(this.state.gradientColor),
+      this.state.gradientDir || 'south',
+      this.state.gradientAlpha1,
+      this.state.gradientAlpha2,
+    ].join('|');
+  }
+
+  _emitFillGradient() {
+    this.finishPath();
+    const dir = this.state.gradientDir || 'south';
+    const attrs = [
+      `color1="${xmlEscape(this.state.fillColor)}"`,
+      `color2="${xmlEscape(this.state.gradientColor)}"`,
+      `direction="${xmlEscape(dir)}"`,
+    ];
+    const a1 = Number(this.state.gradientAlpha1);
+    const a2 = Number(this.state.gradientAlpha2);
+    if (Number.isFinite(a1) && a1 !== 1) attrs.push(`alpha1="${number(a1)}"`);
+    if (Number.isFinite(a2) && a2 !== 1) attrs.push(`alpha2="${number(a2)}"`);
+    this.operations.push(`<fillgradient ${attrs.join(' ')}/>`);
+  }
+
   _reemitPaint() {
-    const fillToken = paintToken(this.state.fillColor, this.styleFill, this.styleStroke);
-    const strokeToken = paintToken(this.state.strokeColor, this.styleFill, this.styleStroke);
-    if (fillToken !== this._fillToken) {
-      this._fillToken = fillToken;
-      this._emitPaint('fillcolor', fillToken);
+    if (this.state.gradientColor && !isNoneColor(this.state.gradientColor)) {
+      const token = this._gradientToken();
+      if (token !== this._fillToken) {
+        this._fillToken = token;
+        this._emitFillGradient();
+      }
+    } else {
+      const fillToken = fillPaintToken(this.state.fillColor, this.styleFill);
+      if (fillToken !== this._fillToken) {
+        this._fillToken = fillToken;
+        this._emitPaint('fillcolor', fillToken);
+      }
     }
+    const strokeToken = paintToken(this.state.strokeColor, this.styleFill, this.styleStroke);
     if (strokeToken !== this._strokeToken) {
       this._strokeToken = strokeToken;
       this._emitPaint('strokecolor', strokeToken);
@@ -385,7 +440,11 @@ class CanvasRecorder {
   setFillAlpha(value) { this.state.fillAlpha = value; }
   setFillColor(value) {
     this.state.fillColor = isNoneColor(value) ? null : value;
-    const token = paintToken(value, this.styleFill, this.styleStroke);
+    this.state.gradientColor = null;
+    this.state.gradientDir = null;
+    this.state.gradientAlpha1 = 1;
+    this.state.gradientAlpha2 = 1;
+    const token = fillPaintToken(value, this.styleFill);
     if (token === this._fillToken) return;
     this._fillToken = token;
     this._emitPaint('fillcolor', token);
@@ -412,7 +471,30 @@ class CanvasRecorder {
     this.finishPath();
     this.operations.push('<dashed dashed="1"/>');
   }
-  setGradient() {}
+  // mxAbstractCanvas2D.setGradient: fillColor=c1, gradientColor=c2.
+  // Official configureCanvas calls this when STYLE_GRADIENTCOLOR is set.
+  // Emit actual hex so the Dart decoder can bake FillPattern 25–34
+  // siblings; paintToken('fill') would let applyStencilStyle wash AWS
+  // brand ramps into kStencilAws beige.
+  setGradient(color1, color2, x, y, w, h, direction, alpha1, alpha2) {
+    if (isNoneColor(color1)) {
+      this.setFillColor(null);
+      return;
+    }
+    if (isNoneColor(color2) || cssColorKey(color1) === cssColorKey(color2)) {
+      this.setFillColor(color1);
+      return;
+    }
+    this.state.fillColor = color1;
+    this.state.gradientColor = color2;
+    this.state.gradientDir = direction || 'south';
+    this.state.gradientAlpha1 = alpha1 == null ? 1 : Number(alpha1);
+    this.state.gradientAlpha2 = alpha2 == null ? 1 : Number(alpha2);
+    const token = this._gradientToken();
+    if (token === this._fillToken) return;
+    this._fillToken = token;
+    this._emitFillGradient();
+  }
   setLineCap() {}
   setLineJoin() {}
   setMiterLimit() {}
@@ -1098,6 +1180,8 @@ function mxShape() {
   this.rotation = 0;
   this.flipH = false;
   this.flipV = false;
+  this.gradient = null;
+  this.gradientDirection = null;
 }
 mxShape.prototype.getTextRotation = function() { return 0; };
 mxShape.prototype.isHtmlAllowed = function() { return false; };
@@ -1106,12 +1190,19 @@ mxShape.prototype.apply = function(state) {
   if (!state || !state.style) return;
   this.style = state.style;
   this.fill = mxUtils.getValue(this.style, mxConstants.STYLE_FILLCOLOR, this.fill);
+  this.gradient = mxUtils.getValue(this.style, mxConstants.STYLE_GRADIENTCOLOR, this.gradient);
+  this.gradientDirection = mxUtils.getValue(
+    this.style, mxConstants.STYLE_GRADIENT_DIRECTION, this.gradientDirection,
+  );
   this.stroke = mxUtils.getValue(this.style, mxConstants.STYLE_STROKECOLOR, this.stroke);
   this.strokewidth = mxUtils.getNumber(this.style, mxConstants.STYLE_STROKEWIDTH, this.strokewidth);
   this.rotation = mxUtils.getValue(this.style, mxConstants.STYLE_ROTATION, this.rotation);
   this.direction = mxUtils.getValue(this.style, mxConstants.STYLE_DIRECTION, this.direction);
   this.flipH = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPH, 0) == 1;
   this.flipV = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPV, 0) == 1;
+  if (this.fill == mxConstants.NONE) this.fill = null;
+  if (this.gradient == mxConstants.NONE || isNoneColor(this.gradient)) this.gradient = null;
+  if (this.stroke == mxConstants.NONE) this.stroke = null;
 };
 mxShape.prototype.getRotation = function() {
   return Number(this.rotation) || 0;
@@ -1124,7 +1215,17 @@ mxShape.prototype.getShapeRotation = function() {
   return rot;
 };
 mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
-  if (c.setFillColor) c.setFillColor(this.fill);
+  // mxShape.js ~1054: fill + gradientColor calls setGradient, else setFillColor.
+  if (this.fill != null && this.fill != mxConstants.NONE &&
+      this.gradient && this.gradient != mxConstants.NONE &&
+      !isNoneColor(this.gradient) && c.setGradient) {
+    c.setGradient(
+      this.fill, this.gradient, x, y, w, h,
+      this.gradientDirection || mxConstants.DIRECTION_SOUTH,
+    );
+  } else if (c.setFillColor) {
+    c.setFillColor(this.fill);
+  }
   if (c.setStrokeColor) c.setStrokeColor(this.stroke);
   if (this.isDashed && c.setDashed) c.setDashed(true);
 };
@@ -2098,6 +2199,8 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   const shape = new ctor(null, fill, stroke, 1);
   shape.style = style;
   shape.fill = fill;
+  shape.gradient = stylePaintColor(style.gradientColor, null);
+  shape.gradientDirection = style.gradientDirection || mxConstants.DIRECTION_SOUTH;
   shape.stroke = stroke;
   shape.strokewidth = Number(style.strokeWidth) || 1;
   shape.isDashed = style.dashed == 1;

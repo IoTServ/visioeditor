@@ -583,6 +583,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxGraph `setGradient` now stays native in LibreOffice.
+  Official `mxShape.configureCanvas` calls `c.setGradient(fill,
+  gradientColor, …, gradientDirection)` when `STYLE_GRADIENTCOLOR` is
+  set, but capture stubbed it and the decoder never saw a two-stop
+  wash, so AWS4 Sumerian (`fillColor=#BC1356;gradientColor=#F34482;
+  gradientDirection=north`) used inherit FillForegnd that
+  `applyStencilStyle` painted as `kStencilAws` beige. Capture now
+  emits `fillgradient`; the decoder bakes sibling FillPattern 25–34
+  (`FillBkgnd`→`FillForegnd`) that libvisio `_fillAndShadowProperties`
+  collects. `setFillColor` no longer collapses a hex that happens to
+  match `strokeColor` into inherit FillForegnd, so a Sumerian glyph
+  and a Note dog-ear stay siblings `collectGeometry` can paint. A
+  second save keeps the magenta/pink ramp.
 - draw.io mxStencil `strokewidth` now stays native in LibreOffice.
   `mxStencil.drawNode` calls `setStrokeWidth(width * minScale)`, but
   capture dropped it and the Dart decoder ignored the node, so a
