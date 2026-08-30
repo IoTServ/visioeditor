@@ -1085,6 +1085,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `url(#A)` stays FillPattern 32; Task Center two-stop ticks stay 40;
   Azure Applied AI's three unique colours still leftover PNG. A second
   save keeps the polygons.
+- draw.io mxImageShape SVG multi-stop `radialGradient` now stays native
+  in LibreOffice. Official Azure Applied AI paints `#9cebff`→`#50e6ff`→
+  `#32bedd` with an elliptical `gradientTransform` plus three four-stop
+  highlight discs, but FillPattern 40 only stores FillForegnd /
+  FillBkgnd and leftover FillGradient is a circle on the child XForm
+  (`_fillAndShadowProperties` `svg:cx/cy=0.5`) whose SoftEdges PNG
+  composites onto opaque white over the navy sail. Capture now
+  tessellates those washes as concentric FillForegnd discs like the
+  two-stop ellipse case. Task Center two-stop ticks stay 40. A second
+  save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

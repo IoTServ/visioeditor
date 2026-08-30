@@ -6661,18 +6661,17 @@ void main() {
   );
 
   test(
-    'mxImageShape SVG radial url(#gradient) bakes FillGradient for LibreOffice',
+    'mxImageShape SVG multi-stop radial url(#gradient) stays native for LibreOffice',
     () {
-      final midCyan = VsdxColor.tryParse('#50E6FF')!;
-
-      bool hasThreeStopRadial(VsdxFill fill) {
-        final gradient = fill.gradient;
-        if (gradient == null ||
-            gradient.type != VsdxGradientType.radial ||
-            gradient.stops.length < 3) {
+      bool isAppliedMidBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
           return false;
         }
-        return gradient.stops.any((stop) => stop.color == midCyan);
+        return color.red > 45 &&
+            color.red < 120 &&
+            color.green > 200 &&
+            color.blue > 230;
       }
 
       bool isInsetRadialBand(VsdxFill fill) {
@@ -6709,11 +6708,22 @@ void main() {
           .singleWhere((entry) => entry.name == 'Applied AI')
           .build(164, 3, 3);
       expect(
-        descendantFills(applied).any(hasThreeStopRadial),
-        isTrue,
+        descendantFills(applied).where(isAppliedMidBand).length,
+        greaterThanOrEqualTo(4),
         reason: 'Azure_Applied_AI.svg radial #9cebff→#50e6ff→#32bedd must '
-            'keep the middle stop as FillGradient; FillPattern 40 only '
-            'stores FillForegnd / FillBkgnd that collectFillAndShadow maps',
+            'tessellate as FillForegnd discs; FillPattern 40 drops the '
+            'middle stop and leftover SoftEdges PNG is a circle on the '
+            'icon box that covers the navy sail',
+      );
+      expect(
+        descendantFills(applied).any(
+          (fill) =>
+              fill.pattern == 40 &&
+              fill.gradient != null &&
+              fill.gradient!.stops.length >= 3,
+        ),
+        isFalse,
+        reason: 'the three-stop blob must not leftover FillPattern 40',
       );
 
       final cosmos = dynamic
@@ -6748,9 +6758,17 @@ void main() {
         leftover.pages.first.shapes
             .expand(descendants)
             .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
-        reason: 'a save must bake the three-stop radial into a SoftEdges '
-            'PNG LibreOffice Draw can paint',
+        isEmpty,
+        reason: 'Applied AI discs stay native; leftover must not bake a '
+            'white SoftEdges PNG over the navy sail',
+      );
+      expect(
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where((shape) => isAppliedMidBand(shape.fill))
+            .length,
+        greaterThanOrEqualTo(4),
+        reason: 'a second save must keep the Applied AI FillForegnd discs',
       );
 
       doc = parser.parse(writer.emptyDocument());

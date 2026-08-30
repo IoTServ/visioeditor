@@ -1748,7 +1748,9 @@ function svgLinearNeedsLocalBands(node, viewBox, stops) {
 
 // FillPattern 40 only stores FillForegnd / FillBkgnd at the disc centre
 // and edge. Azure Applied AI's three unique stops and Cosmos DB's
-// offset=".183" two-stop cannot survive that collapse.
+// offset=".183" two-stop cannot survive that collapse; capture
+// tessellates them (svgRadialNeedsEllipseBands) so this leftover
+// path is the fallback when the glyph has no drawable rings.
 function svgRadialNeedsFillGradient(node, stops) {
   if (xmlLocalName(node.name) !== 'radialgradient') return false;
   if (!stops || stops.length < 2) return false;
@@ -1812,15 +1814,18 @@ function svgRadialNeedsLocalBands(node, viewBox) {
 // undersized circular userSpaceOnUse discs have the same problem
 // because the child XForm is the viewBox. Inset Positions (Cosmos DB
 // 0.183) leftover a SoftEdges PNG on that full-box XForm whose
-// opaque white covers sibling glyphs. Tessellate concentric discs
-// in gradient space. Three unique colours stay on FillGradient
-// leftover (Azure Applied AI). Compound evenodd holes (Azure OpenAI
-// swirl / Task Center donuts) stay one Geometry so collectGeometry
-// svg:fill-rule=evenodd still punches.
+// opaque white covers sibling glyphs. Three unique colours (Azure
+// Applied AI #9cebff→#50e6ff→#32bedd, plus the four-stop highlight
+// radials) have the same leftover: FillPattern 40 drops the middle
+// stop and the SoftEdges PNG is a circle on the icon box. Tessellate
+// concentric discs in gradient space (`svgStopsColorAt` keeps the
+// extra stops; `gradientTransform` keeps the ellipse). Compound
+// evenodd holes (Azure OpenAI swirl / Task Center donuts) stay one
+// Geometry so collectGeometry svg:fill-rule=evenodd still punches.
 function svgRadialNeedsEllipseBands(node, stops, viewBox) {
   if (!stops || stops.length < 2) return false;
   if (svgStopsHaveAlphaRamp(stops)) return false;
-  if (svgOpaqueUniqueColorCount(stops) > 2) return false;
+  if (svgOpaqueUniqueColorCount(stops) > 2) return true;
   if (svgRadialIsElliptical(node)) return true;
   if (svgRadialNeedsLocalBands(node, viewBox)) return true;
   return !svgStopsFitClassicSpan(stops);
@@ -3316,12 +3321,13 @@ function paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css) {
 }
 
 // FillPattern 40 is a circle at the XForm centre. Tessellate an
-// elliptical, offset/undersized, or inset-stop userSpaceOnUse radial
-// as concentric solid discs clipped to the glyph so
-// collectFillAndShadow sees FillForegnd siblings Draw can paint
-// (SAP Build Apps / Work Zone blobs; Open Supply Chain corner discs;
-// Cosmos DB offset=".183"). Compound evenodd holes stay one Geometry
-// (Azure OpenAI swirl, Task Center donuts).
+// elliptical, offset/undersized, inset-stop, or >2-colour
+// userSpaceOnUse radial as concentric solid discs clipped to the
+// glyph so collectFillAndShadow sees FillForegnd siblings Draw can
+// paint (SAP Build Apps / Work Zone blobs; Open Supply Chain corner
+// discs; Cosmos DB offset=".183"; Azure Applied AI three-stop
+// ellipse). Compound evenodd holes stay one Geometry (Azure OpenAI
+// swirl, Task Center donuts).
 function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css) {
   if (kind !== 'fill' && kind !== 'fillstroke') return false;
   const fill = style.fill == null ? '#000' : style.fill;
