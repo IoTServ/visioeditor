@@ -1053,6 +1053,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   case. Near-centred discs larger than the box (SAP Build Apps blob D)
   stay native 40; Azure Applied AI's three unique colours still leftover
   PNG. A second save keeps the polygons.
+- draw.io mxImageShape SVG short `userSpaceOnUse` gradient strokes now stay
+  native in LibreOffice. Official SAP Secure Login Service for SAP GUI
+  paints the check as `stroke=url(#B)` (`#1348ff`→`#06238d` from
+  `(10.7,13.3)` to `(14.5,19.3)`), but `collectLine` has no LineGradient
+  so capture filled the ribbon with FillPattern 32 / leftover FillGradient
+  that `_fillAndShadowProperties` still interpolates 0→1 across the icon
+  XForm. Capture now tessellates that ribbon as FillForegnd slabs like the
+  short fill case. The diamond fill `url(#A)` and Analytics Cloud crescent
+  `url(#A)` stay FillPattern 32; Task Center radial ticks stay 40. A
+  second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

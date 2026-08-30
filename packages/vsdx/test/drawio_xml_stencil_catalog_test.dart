@@ -5103,6 +5103,143 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG short userSpaceOnUse gradient stroke stays native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isCheckStrokeBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
+          return false;
+        }
+        return color.red < 30 &&
+            color.green < 90 &&
+            color.blue > 130;
+      }
+
+      int lineCommands(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<LineTo>().length;
+          n += geometry.commands.whereType<RelLineTo>().length;
+        }
+        return n;
+      }
+
+      final login = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / Foundational',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'SAP Secure Login Service for SAP GUI',
+          )
+          .build(175, 3, 3);
+      expect(
+        descendantFills(login).where(isCheckStrokeBand).length,
+        greaterThanOrEqualTo(6),
+        reason: 'SAP_Secure_Login_Service_for_SAP_GUI.svg stroke url(#B) '
+            '(10.7,13.3)→(14.5,19.3) must tessellate as FillForegnd slabs; '
+            'collectLine has no LineGradient and FillPattern 32 0→1s the '
+            'icon XForm',
+      );
+      expect(
+        descendants(login).any(
+          (shape) =>
+              shape.fill.pattern == 32 &&
+              shape.fill.foreground == VsdxColor.tryParse('#1147E9') &&
+              shape.fill.background == VsdxColor.tryParse('#0195FF') &&
+              shape.fill.gradient == null,
+        ),
+        isTrue,
+        reason: 'diamond fill url(#A) across the viewBox stays FillPattern 32',
+      );
+
+      final cloud = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Data Analytics',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'SAP Analytics Cloud Embedded Edition',
+          )
+          .build(176, 3, 3);
+      expect(
+        descendants(cloud).any(
+          (shape) =>
+              shape.fill.pattern == 32 &&
+              shape.fill.foreground == VsdxColor.tryParse('#1147E9') &&
+              shape.fill.background == VsdxColor.tryParse('#0195FF') &&
+              !shape.line.hasLine &&
+              lineCommands(shape) > 40,
+        ),
+        isTrue,
+        reason: 'full-box crescent stroke url(#A) stays FillPattern 32',
+      );
+
+      final ticks = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Task Center')
+          .build(177, 3, 3);
+      expect(
+        descendants(ticks).where(
+          (shape) =>
+              shape.fill.pattern == 40 &&
+              shape.fill.foreground == VsdxColor.tryParse('#00BBFF'),
+        ).length,
+        greaterThanOrEqualTo(4),
+        reason: 'Task Center radial stroke ticks stay native FillPattern 40',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(login.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'short stroke slabs stay native; leftover must not bake a '
+            'full-box FillGradient PNG',
+      );
+      expect(
+        descendants(leftover)
+            .where((shape) => isCheckStrokeBand(shape.fill))
+            .length,
+        greaterThanOrEqualTo(6),
+        reason: 'a second save must keep the check stroke slabs',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG feOffset filter stays ShdwPattern for LibreOffice',
     () {
       Iterable<VsdxShape> descendants(VsdxShape shape) sync* {

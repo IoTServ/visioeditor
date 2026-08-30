@@ -2825,6 +2825,65 @@ function paintSvgGradientStroke(canvas, name, node, style, kind, root, css) {
     stroke: 'none',
     'fill-opacity': style['stroke-opacity'] || style['fill-opacity'],
   };
+  const id = svgPaintUrlId(style.stroke);
+  const gradNode = id && root ? resolveSvgGradientNode(root, id) : null;
+  const stops = gradNode ? svgCollectStops(gradNode, css) : null;
+  // collectLine has no LineGradient. FillPattern 25–34 on the ribbon
+  // still 0→1s the child XForm (the icon box). A short check stroke
+  // (SAP Secure Login #B) must tessellate like fill slabs. Full-box
+  // crescent url(#A) and Task Center radial ticks stay 25–40.
+  if (gradNode &&
+      stops &&
+      stops.length >= 2 &&
+      !svgStopsHaveAlphaRamp(stops) &&
+      xmlLocalName(gradNode.name) === 'lineargradient' &&
+      svgLinearNeedsLocalBands(gradNode, canvas.viewBox)) {
+    const mapped = [];
+    for (const ring of ribbons) {
+      const shapeMapped = ring.map((p) => canvas.map(p.x, p.y));
+      if (canvas.clipRings && canvas.clipRings.length) {
+        for (const piece of svgClipMappedToRings(shapeMapped, canvas.clipRings)) {
+          mapped.push(piece);
+        }
+      } else {
+        mapped.push(shapeMapped);
+      }
+    }
+    if (!mapped.length) return false;
+    const emitBand = (fillRings, t) => {
+      if (!canvas.emitMappedRings(fillRings)) return 0;
+      applySvgPaint(
+        canvas,
+        {...fillStyle, fill: svgStopsColorAt(stops, t)},
+        'fill',
+        root,
+        css,
+      );
+      return 1;
+    };
+    const clipToRibbon = (clipRing) => {
+      const band = [];
+      for (const outer of mapped) {
+        for (const hit of svgIntersectPolygons(clipRing, outer)) band.push(hit);
+      }
+      return band;
+    };
+    let painted = false;
+    const bands = 8;
+    const span = svgRingsSpan(ribbons);
+    const {tMin, tMax} = svgRingsGradientTRange(gradNode, ribbons);
+    const spanT = Math.max(tMax - tMin, 1e-6);
+    for (let i = 0; i < bands; i++) {
+      const t0 = tMin + spanT * i / bands;
+      const t1 = tMin + spanT * (i + 1) / bands;
+      const slab = svgGradientSlabRing(gradNode, t0, t1, span);
+      if (!slab) continue;
+      const slabMapped = slab.map((p) => canvas.map(p.x, p.y));
+      const sampleT = Math.max(0, Math.min(1, (t0 + t1) / 2));
+      if (emitBand(clipToRibbon(slabMapped), sampleT)) painted = true;
+    }
+    return painted;
+  }
   let painted = false;
   for (const ring of ribbons) {
     if (canvas.clipRings && canvas.clipRings.length) {
