@@ -196,15 +196,12 @@ class _DrawioXmlShapeDecoder {
     final inheritLine = _geometries.any((geometry) => !geometry.noLine);
     var nextId = id + 1;
     final children = <VsdxShape>[];
-    var childShadowPending =
-        !inheritFill && _parentShadow != null && _parentShadow!.enabled;
     for (final part in _coloredParts) {
-      var partShadow = VsdxShadow.disabled;
-      if (childShadowPending && part.fill.hasFill) {
-        partShadow = _parentShadow!;
-        childShadowPending = false;
-      }
-      children.add(_coloredShape(id: nextId++, part: part, shadow: partShadow));
+      children.add(_coloredShape(
+        id: nextId++,
+        part: part,
+        shadow: part.shadow.enabled ? part.shadow : VsdxShadow.disabled,
+      ));
     }
     for (final label in _labels) {
       children.add(_labelShape(id: nextId++, label: label));
@@ -793,6 +790,7 @@ class _DrawioXmlShapeDecoder {
             ? _paintFill()
             : const VsdxFill(pattern: 0),
         line: _paintLine(stroke: doStroke),
+        shadow: _shadow ?? VsdxShadow.disabled,
       ));
       if (_shadow != null) _parentShadow ??= _shadow;
       return;
@@ -1291,11 +1289,13 @@ class _DrawioColoredPart {
     required this.commands,
     required this.fill,
     required this.line,
+    this.shadow = VsdxShadow.disabled,
   });
 
   final List<VsdxPathCommand> commands;
   final VsdxFill fill;
   final VsdxLine line;
+  final VsdxShadow shadow;
 }
 
 /// mxStencil.parseColor hex / rgb, including CSS `#RGB`. Style keys such as

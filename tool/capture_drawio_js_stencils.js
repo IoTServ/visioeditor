@@ -293,6 +293,7 @@ class CanvasRecorder {
       this.clipRings = saved.clipRings;
       this.viewBox = saved.viewBox;
       this._reemitPaint();
+      this._reemitShadow();
     }
   }
 
@@ -2387,6 +2388,60 @@ function applySvgMask(canvas, node, root, css) {
   );
 }
 
+// SVG feOffset + SourceGraphic blend is a drop shadow. libvisio has no
+// filter token; `_fillAndShadowProperties` maps ShdwPattern to ODF
+// draw:shadow (SAP Build Work Zone / Product Insights). Blur-only
+// filters stay unmapped — Draw cannot gaussian-blur a native cell.
+function svgFilterDropShadow(filterNode) {
+  let dx = 0;
+  let dy = 0;
+  let best = 0;
+  let hasOffset = false;
+  let alpha = 0.4;
+  const walk = (n) => {
+    const name = xmlLocalName(n && n.name);
+    if (name === 'feoffset') {
+      const odx = Number(n.attrs.dx) || 0;
+      const ody = Number(n.attrs.dy) || 0;
+      const mag = odx * odx + ody * ody;
+      if (mag >= best) {
+        dx = odx;
+        dy = ody;
+        best = mag;
+      }
+      hasOffset = true;
+    } else if (name === 'fecolormatrix') {
+      const vals = parseSvgNumbers(n.attrs.values);
+      if (vals.length >= 20) {
+        const aScale = vals[18];
+        if (aScale > 0 && aScale <= 1) alpha = aScale;
+      }
+    }
+    for (const child of (n && n.children) || []) walk(child);
+  };
+  walk(filterNode);
+  if (!hasOffset || best < 1e-18) return null;
+  return {dx, dy, alpha, color: '#000000'};
+}
+
+function applySvgFilter(canvas, node, root, css) {
+  const raw = svgOwnCssUrl(node, css, 'filter');
+  if (!raw || /^none$/i.test(raw)) return false;
+  const id = svgPaintUrlId(raw);
+  if (!id || !root) return false;
+  const filterNode = findSvgById(root, id);
+  if (!filterNode || xmlLocalName(filterNode.name) !== 'filter') return false;
+  const shadow = svgFilterDropShadow(filterNode);
+  if (!shadow) return false;
+  const origin = canvas.map(0, 0);
+  const tip = canvas.map(shadow.dx, shadow.dy);
+  canvas.setShadowColor(shadow.color);
+  canvas.setShadowAlpha(shadow.alpha);
+  canvas.setShadowOffset(tip.x - origin.x, tip.y - origin.y);
+  canvas.setShadow(true);
+  return true;
+}
+
 function paintSvgClippedShape(canvas, name, node, style, kind, root, css) {
   const rings = svgDrawableRings(name, node);
   if (!rings.length) return false;
@@ -2959,6 +3014,7 @@ function paintSvgNode(canvas, node, inherited, root, css) {
     const style = svgPresentation(node, inherited, css);
     const clipApplied = applySvgClipPath(canvas, node, root, css);
     const maskApplied = applySvgMask(canvas, node, root, css);
+    const filterApplied = applySvgFilter(canvas, node, root, css);
     try {
       let painted = false;
       if (name === 'text' || name === 'tspan') {
@@ -3046,6 +3102,7 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       );
       return true;
     } finally {
+      if (filterApplied) canvas.setShadow(false);
       if (maskApplied) canvas.restore();
       if (clipApplied) canvas.restore();
     }

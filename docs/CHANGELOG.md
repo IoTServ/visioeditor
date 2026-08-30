@@ -919,6 +919,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   into filled ribbons and applies FillPattern 25–40 that
   `collectFillAndShadow` maps to ODF `draw:style=linear` / `radial`.
   A second save keeps the wash.
+- draw.io mxImageShape SVG `filter` / `feOffset` now stays native in
+  LibreOffice. Official SAP Build Work Zone Advanced Edition paints
+  three radial blobs under `filter=url(#…)` `feOffset` + SourceGraphic
+  blend, but capture skipped `<filter>` so Draw never collected
+  `draw:shadow`. Capture now freezes those offsets as ShdwPattern 1 that
+  `_fillAndShadowProperties` maps to ODF `draw:shadow`. Blur-only
+  filters stay unmapped. A second save keeps the hard offset.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

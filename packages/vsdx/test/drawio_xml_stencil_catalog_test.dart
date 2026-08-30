@@ -4922,6 +4922,66 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG feOffset filter stays ShdwPattern for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isDropShadow(VsdxShape shape) {
+        final shadow = shape.shadow;
+        return shadow.enabled &&
+            shadow.pattern == 1 &&
+            shadow.blurInches.abs() < 1e-9 &&
+            shadow.offsetXInches.abs() > 1e-4 &&
+            shape.fill.hasFill;
+      }
+
+      final zone = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'SAP Build Work Zone - Advanced Edition',
+          )
+          .build(138, 3, 3);
+      expect(
+        descendants(zone).where(isDropShadow).length,
+        greaterThanOrEqualTo(3),
+        reason: 'feOffset dx/dy drop-shadows must become ShdwPattern 1 that '
+            'collectFillAndShadow maps to draw:shadow; blur-only filters stay '
+            'unmapped',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(zone.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isDropShadow).length,
+        greaterThanOrEqualTo(3),
+        reason: 'a second save must keep the SVG feOffset ShdwPattern',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG text stays Char cells for LibreOffice',
     () {
       VsdxShape? labelOf(VsdxShape shape, String text) {
