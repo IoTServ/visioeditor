@@ -1230,6 +1230,12 @@ function svgPresentation(node, inherited, css) {
   if (node.attrs.fill != null) style.fill = node.attrs.fill;
   if (node.attrs.stroke != null) style.stroke = node.attrs.stroke;
   if (node.attrs.opacity != null) style.opacity = node.attrs.opacity;
+  if (node.attrs['fill-opacity'] != null) {
+    style['fill-opacity'] = node.attrs['fill-opacity'];
+  }
+  if (node.attrs['stroke-opacity'] != null) {
+    style['stroke-opacity'] = node.attrs['stroke-opacity'];
+  }
   if (node.attrs['stop-color'] != null) style['stop-color'] = node.attrs['stop-color'];
   if (node.attrs['stop-opacity'] != null) {
     style['stop-opacity'] = node.attrs['stop-opacity'];

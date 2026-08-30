@@ -5125,6 +5125,75 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG fill-opacity stays FillForegndTrans for LibreOffice',
+    () {
+      bool isFadedBlack(VsdxShape shape, double trans) {
+        return shape.fill.hasFill &&
+            shape.fill.pattern == 1 &&
+            shape.fill.foreground == VsdxColor.black &&
+            (shape.fill.foregroundTransparency - trans).abs() < 0.02;
+      }
+
+      final powerBi = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Power Platform',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'PowerBI')
+          .build(141, 3, 3);
+      expect(
+        powerBi.children.any((child) => isFadedBlack(child, 0.80)),
+        isTrue,
+        reason: 'PowerBI.svg fill-opacity="0.2" must reach collectFillAndShadow '
+            'as FillForegndTrans 0.80, not an opaque black overlay',
+      );
+      expect(
+        powerBi.children.any((child) => isFadedBlack(child, 0.82)),
+        isTrue,
+        reason: 'PowerBI.svg fill-opacity="0.18" must reach '
+            'collectFillAndShadow as FillForegndTrans 0.82',
+      );
+
+      final fieldService = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Dynamics365 / Dynamics365 / App',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Field Service')
+          .build(142, 3, 3);
+      expect(
+        fieldService.children.any((child) => isFadedBlack(child, 0.80)),
+        isTrue,
+        reason: 'FieldService.svg fill="#000" fill-opacity=".2" must not stay '
+            'opaque black',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(powerBi.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children.any((child) => isFadedBlack(child, 0.80)),
+        isTrue,
+        reason: 'a second save must keep the Power BI shadow FillForegndTrans',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

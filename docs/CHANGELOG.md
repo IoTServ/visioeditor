@@ -880,6 +880,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `veDashPattern`. libvisio treats custom pattern `0xfe` as solid, so
   a save bakes MoveTo gaps. `stroke-dasharray:none` stays undashed.
   A second save keeps the ticks.
+- draw.io mxImageShape SVG `fill-opacity` now stays native in
+  LibreOffice. Official Azure Power BI and Dynamics Field Service paint
+  black shadow blobs at `fill-opacity="0.2"` / `.18`, but capture never
+  copied those presentation attributes, so `collectFillAndShadow` only
+  saw opaque FillForegnd and Draw drew a solid black overlay. Capture
+  now forwards `fill-opacity` / `stroke-opacity` into `fillalpha` that
+  becomes FillForegndTrans (`draw:opacity`). A second save keeps the
+  fade.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
