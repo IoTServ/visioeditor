@@ -1863,9 +1863,24 @@ function svgIntersectPolygons(subject, clip) {
 }
 
 function svgClipMappedToRings(subject, clipRings) {
+  let clipSpan = 0;
+  for (const clip of clipRings) {
+    const box = svgRingAabb(clip);
+    clipSpan = Math.max(
+      clipSpan, box.maxx - box.minx, box.maxy - box.miny,
+    );
+  }
+  const minSpan = clipSpan * 0.004;
   const out = [];
   for (const clip of clipRings) {
-    for (const piece of svgIntersectPolygons(subject, clip)) out.push(piece);
+    for (const piece of svgIntersectPolygons(subject, clip)) {
+      const box = svgRingAabb(piece);
+      const w = box.maxx - box.minx;
+      const h = box.maxy - box.miny;
+      if (Math.abs(svgPolyArea(piece)) < 1e-8) continue;
+      if (minSpan > 0 && Math.min(w, h) < minSpan) continue;
+      out.push(piece);
+    }
   }
   return out;
 }
@@ -2160,33 +2175,33 @@ function svgClipPathRings(clipNode) {
   return rings;
 }
 
-function svgOwnClipPath(node, css) {
+function svgOwnCssUrl(node, css, prop) {
   let fromStyle = '';
   for (const part of String(node.attrs.style || '').split(';')) {
     const token = part.trim();
     const split = token.indexOf(':');
     if (split < 0) continue;
-    if (token.slice(0, split).trim().toLowerCase() === 'clip-path') {
+    if (token.slice(0, split).trim().toLowerCase() === prop) {
       fromStyle = token.slice(split + 1).trim();
     }
   }
-  const fromCss = svgCssForNode(node, css)['clip-path'];
-  return String(node.attrs['clip-path'] || fromStyle || fromCss || '').trim();
+  const fromCss = svgCssForNode(node, css)[prop];
+  return String(node.attrs[prop] || fromStyle || fromCss || '').trim();
 }
 
-// SVG clip-path has no libvisio token. Intersect fill contours in map()
-// space (Azure2 Globe meridians, Cosmos DB clouds, MFA shield, Power BI
-// Embedded stairs). ViewBox-sized rect clips are identity and skipped so
-// ellipse commands stay ellipses.
-function applySvgClipPath(canvas, node, root, css) {
-  const raw = svgOwnClipPath(node, css);
+// SVG clip-path / luminance mask have no libvisio token. Intersect fill
+// contours in map() space (Globe meridians, SAP Build letter). ViewBox
+// rect clips are identity so ellipses stay ellipses. mask default units
+// are objectBoundingBox — only userSpaceOnUse (SAP Build) is mapped.
+function applySvgClipLike(canvas, raw, expectedName, unitsKey, root) {
   if (!raw || /^none$/i.test(raw)) return false;
   const id = svgPaintUrlId(raw);
   if (!id || !root) return false;
   const clipNode = findSvgById(root, id);
-  if (!clipNode || xmlLocalName(clipNode.name) !== 'clippath') return false;
-  const units = String(clipNode.attrs.clipPathUnits || '').toLowerCase();
+  if (!clipNode || xmlLocalName(clipNode.name) !== expectedName) return false;
+  const units = String(clipNode.attrs[unitsKey] || '').toLowerCase();
   if (units === 'objectboundingbox') return false;
+  if (expectedName === 'mask' && !units) return false;
   const userRings = svgClipPathRings(clipNode);
   if (!userRings.length) return false;
   if (!canvas.clipRings && svgClipCoversViewBox(userRings, canvas.viewBox)) {
@@ -2206,6 +2221,19 @@ function applySvgClipPath(canvas, node, root, css) {
     canvas.clipRings = mapped;
   }
   return true;
+}
+
+function applySvgClipPath(canvas, node, root, css) {
+  return applySvgClipLike(
+    canvas, svgOwnCssUrl(node, css, 'clip-path'), 'clippath', 'clipPathUnits',
+    root,
+  );
+}
+
+function applySvgMask(canvas, node, root, css) {
+  return applySvgClipLike(
+    canvas, svgOwnCssUrl(node, css, 'mask'), 'mask', 'maskUnits', root,
+  );
 }
 
 function paintSvgClippedShape(canvas, name, node, style, kind, root, css) {
@@ -2566,8 +2594,8 @@ function svgStartOffset(raw, total) {
 
 const svgSkip = new Set([
   'defs', 'title', 'desc', 'metadata', 'namedview', 'rdf', 'work', 'clippath',
-  'filter', 'lineargradient', 'radialgradient', 'stop', 'style', 'script',
-  'marker',
+  'mask', 'filter', 'lineargradient', 'radialgradient', 'stop', 'style',
+  'script', 'marker',
 ]);
 
 function svgTextContent(node) {
@@ -2779,6 +2807,7 @@ function paintSvgNode(canvas, node, inherited, root, css) {
   try {
     const style = svgPresentation(node, inherited, css);
     const clipApplied = applySvgClipPath(canvas, node, root, css);
+    const maskApplied = applySvgMask(canvas, node, root, css);
     try {
       let painted = false;
       if (name === 'text' || name === 'tspan') {
@@ -2863,6 +2892,7 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       );
       return true;
     } finally {
+      if (maskApplied) canvas.restore();
       if (clipApplied) canvas.restore();
     }
   } finally {

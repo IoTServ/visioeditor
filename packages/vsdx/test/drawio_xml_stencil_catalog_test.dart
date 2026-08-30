@@ -5501,6 +5501,139 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG mask stays intersected geometry for LibreOffice',
+    () {
+      List<({double x, double y})> geometryPoints(VsdxShape shape) {
+        final points = <({double x, double y})>[];
+        void point(double x, double y) => points.add((x: x, y: y));
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            switch (command) {
+              case MoveTo(:final x, :final y):
+                point(x, y);
+              case LineTo(:final x, :final y):
+                point(x, y);
+              case CubBezTo(:final x, :final y):
+                point(x, y);
+              case RelMoveTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              case RelLineTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              case RelCubBezTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              default:
+                break;
+            }
+          }
+        }
+        return points;
+      }
+
+      int lineCommands(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<LineTo>().length;
+          n += geometry.commands.whereType<RelLineTo>().length;
+        }
+        return n;
+      }
+
+      bool insideParent(VsdxShape child, VsdxShape parent) {
+        const pad = 0.03;
+        return geometryPoints(child).every(
+          (point) =>
+              point.x >= -pad &&
+              point.y >= -pad &&
+              point.x <= parent.width + pad &&
+              point.y <= parent.height + pad,
+        );
+      }
+
+      final sapBuild = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Build')
+          .build(149, 3, 3);
+      const navy = VsdxColor(0xFF103CD8);
+      const azure = VsdxColor(0xFF0874F6);
+      const cyan = VsdxColor(0xFF01ABFF);
+      final blobs = sapBuild.children
+          .where(
+            (child) =>
+                child.fill.foreground == navy ||
+                child.fill.foreground == azure ||
+                child.fill.foreground == cyan,
+          )
+          .toList();
+      expect(
+        blobs,
+        hasLength(3),
+        reason: 'SAP_Build.svg paints three fills under maskUnits=userSpaceOnUse',
+      );
+      for (final child in blobs) {
+        expect(
+          lineCommands(child),
+          greaterThan(8),
+          reason: 'mask letterform must intersect the overflowing gradient '
+              'blobs so collectGeometry does not paint outside the glyph '
+              'LibreOffice would show',
+        );
+        expect(
+          insideParent(child, sapBuild),
+          isTrue,
+          reason: 'unmasked SAP Build blobs extend to x=-6 / y=-4 in SVG units',
+        );
+      }
+
+      final coreHr = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Dynamics365 / Dynamics365 / App',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Core HR')
+          .build(150, 3, 3);
+      expect(
+        coreHr.children.every((child) => insideParent(child, coreHr)),
+        isTrue,
+        reason: 'CoreHR.svg mask-type=alpha rounded rect must clip the '
+            'person silhouette that otherwise spills minY < 0',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(sapBuild.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children
+            .where(
+              (child) =>
+                  child.fill.foreground == navy ||
+                  child.fill.foreground == azure ||
+                  child.fill.foreground == cyan,
+            )
+            .every((child) => lineCommands(child) > 8),
+        isTrue,
+        reason: 'a second save must keep SAP Build mask polygons',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

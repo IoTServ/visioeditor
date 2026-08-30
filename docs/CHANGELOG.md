@@ -904,6 +904,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   overflow LibreOffice Draw would paint. Capture now intersects fill
   contours in `map()` space; viewBox-sized rect clips stay identity so
   ellipses are not tessellated. A second save keeps the clipped polygons.
+- draw.io mxImageShape SVG `mask` now stays native in LibreOffice.
+  Official SAP Build letterform and Dynamics Core HR rounded plate paint
+  fills under `maskUnits="userSpaceOnUse"`, but capture skipped `<mask>`
+  so `collectGeometry` saw overflowing blobs (SAP Build to x=-6) that
+  Draw would paint outside the glyph. Capture now intersects those fills
+  like `clip-path`. Default `objectBoundingBox` masks stay unmapped.
+  A second save keeps the masked polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
