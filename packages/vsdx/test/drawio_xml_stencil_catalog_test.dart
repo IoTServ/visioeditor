@@ -5723,6 +5723,99 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG mask use stays intersected geometry for LibreOffice',
+    () {
+      int lineCommands(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<LineTo>().length;
+          n += geometry.commands.whereType<RelLineTo>().length;
+        }
+        return n;
+      }
+
+      final voip = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / AlliedTelesis / Allied Telesis / Computer and Terminals',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'VOIP IP Phone')
+          .build(151, 3, 3);
+      const grey = VsdxColor(0xFF626366);
+      final clippedStrokes = voip.children
+          .where(
+            (child) =>
+                child.fill.foreground == grey &&
+                child.fill.hasFill &&
+                lineCommands(child) > 6,
+          )
+          .toList();
+      expect(
+        clippedStrokes.length,
+        greaterThan(20),
+        reason: 'VOIP_IP_phone.svg masks reference <use href> paths and the '
+            'handset strokes are fill:none; capture must resolve those uses '
+            'and expand the strokes into clipped ribbons so collectGeometry '
+            'sees polygons LibreOffice can paint',
+      );
+
+      final building = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / AlliedTelesis / Allied Telesis / Buildings',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Secure Building')
+          .build(152, 3, 3);
+      final bushes = building.children
+          .where(
+            (child) =>
+                child.fill.pattern >= 25 &&
+                child.fill.pattern <= 40 &&
+                lineCommands(child) > 20,
+          )
+          .toList();
+      expect(
+        bushes,
+        isNotEmpty,
+        reason: 'Secure_Building.svg paints FillPattern 25–40 bushes under '
+            'mask+<use>; skipping use left unclipped CubBez fills that Draw '
+            'would paint outside the mask letter',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(voip.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children
+            .where(
+              (child) =>
+                  child.fill.foreground == grey && child.fill.hasFill,
+            )
+            .where((child) => lineCommands(child) > 6)
+            .length,
+        greaterThan(20),
+        reason: 'a second save must keep VOIP mask+use stroke ribbons',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

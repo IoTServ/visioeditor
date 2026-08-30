@@ -926,6 +926,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `draw:shadow`. Capture now freezes those offsets as ShdwPattern 1 that
   `_fillAndShadowProperties` maps to ODF `draw:shadow`. Blur-only
   filters stay unmapped. A second save keeps the hard offset.
+- draw.io mxImageShape SVG `mask` `<use>` now stays native in
+  LibreOffice. Official Allied Telesis VOIP IP Phone handset ticks and
+  Secure Building bushes paint under `mask` whose content is
+  `<use href="#path">` (and VOIP strokes are `fill:none`), but capture
+  skipped `<use>` inside clip/mask so `collectGeometry` never saw the
+  intersected polygons Draw would paint. Capture now resolves those
+  uses, maps mask content via `maskContentUnits` (default
+  `userSpaceOnUse`), and expands clipped strokes into filled ribbons.
+  A second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

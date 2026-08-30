@@ -2306,17 +2306,32 @@ function svgDrawableRings(name, node) {
   return [];
 }
 
-function svgClipPathRings(clipNode) {
+function svgClipPathRings(clipNode, root) {
   const rings = [];
+  const seen = new Set();
   const walk = (node, tf) => {
     const name = xmlLocalName(node.name);
     if (name === '#text' || svgSkip.has(name)) return;
     const local = svgComposeTransformRaw(tf, node.attrs && node.attrs.transform);
-    if (name === 'g' || name === 'svg') {
+    if (name === 'g' || name === 'svg' || name === 'symbol' || name === 'a') {
       for (const child of node.children || []) walk(child, local);
       return;
     }
-    if (name === 'use') return;
+    if (name === 'use') {
+      const href = node.attrs.href || node.attrs['xlink:href'] || '';
+      const id = String(href).replace(/^#/, '');
+      if (!id || !root || seen.has(id)) return;
+      const target = findSvgById(root, id);
+      if (!target || target === node) return;
+      seen.add(id);
+      const ox = Number(node.attrs.x) || 0;
+      const oy = Number(node.attrs.y) || 0;
+      let useTf = local;
+      if (ox || oy) useTf = svgComposeTransformRaw(useTf, `translate(${ox} ${oy})`);
+      walk(target, useTf);
+      seen.delete(id);
+      return;
+    }
     for (const ring of svgDrawableRings(name, node)) {
       const mapped = svgCloseRing(svgMapRing(ring, local));
       if (mapped.length >= 3) rings.push(mapped);
@@ -2343,8 +2358,9 @@ function svgOwnCssUrl(node, css, prop) {
 
 // SVG clip-path / luminance mask have no libvisio token. Intersect fill
 // contours in map() space (Globe meridians, SAP Build letter). ViewBox
-// rect clips are identity so ellipses stay ellipses. mask default units
-// are objectBoundingBox — only userSpaceOnUse (SAP Build) is mapped.
+// rect clips are identity so ellipses stay ellipses. Mask content follows
+// maskContentUnits (default userSpaceOnUse); maskUnits only sizes the
+// region so a missing maskUnits is not a skip (Allied Telesis VOIP / Secure Building).
 function applySvgClipLike(canvas, raw, expectedName, unitsKey, root) {
   if (!raw || /^none$/i.test(raw)) return false;
   const id = svgPaintUrlId(raw);
@@ -2353,8 +2369,7 @@ function applySvgClipLike(canvas, raw, expectedName, unitsKey, root) {
   if (!clipNode || xmlLocalName(clipNode.name) !== expectedName) return false;
   const units = String(clipNode.attrs[unitsKey] || '').toLowerCase();
   if (units === 'objectboundingbox') return false;
-  if (expectedName === 'mask' && !units) return false;
-  const userRings = svgClipPathRings(clipNode);
+  const userRings = svgClipPathRings(clipNode, root);
   if (!userRings.length) return false;
   if (!canvas.clipRings && svgClipCoversViewBox(userRings, canvas.viewBox)) {
     return false;
@@ -2384,7 +2399,7 @@ function applySvgClipPath(canvas, node, root, css) {
 
 function applySvgMask(canvas, node, root, css) {
   return applySvgClipLike(
-    canvas, svgOwnCssUrl(node, css, 'mask'), 'mask', 'maskUnits', root,
+    canvas, svgOwnCssUrl(node, css, 'mask'), 'mask', 'maskContentUnits', root,
   );
 }
 
@@ -2442,7 +2457,39 @@ function applySvgFilter(canvas, node, root, css) {
   return true;
 }
 
+function paintSvgClippedStrokeRibbons(canvas, name, node, style, root, css) {
+  const width = svgLength(style['stroke-width'], 1);
+  if (!(width > 0)) return false;
+  const ribbons = svgShapeStrokeRibbons(
+    name, node, width, style['stroke-linecap'],
+  );
+  if (!ribbons.length) return false;
+  const fillStyle = {
+    ...style,
+    fill: style.stroke,
+    stroke: 'none',
+    'fill-opacity': style['stroke-opacity'] || style['fill-opacity'],
+  };
+  let painted = false;
+  for (const ring of ribbons) {
+    const mapped = ring.map((p) => canvas.map(p.x, p.y));
+    const pieces = svgClipMappedToRings(mapped, canvas.clipRings);
+    for (const piece of pieces) {
+      if (!canvas.emitMappedRing(piece)) continue;
+      applySvgPaint(canvas, fillStyle, 'fill', root, css);
+      painted = true;
+    }
+  }
+  return painted;
+}
+
 function paintSvgClippedShape(canvas, name, node, style, kind, root, css) {
+  // Open stroke paths have no fill ring. Intersecting the path chord would
+  // drop Allied Telesis VOIP handset strokes; expand to a ribbon like gradient strokes
+  // so collectFillAndShadow sees a polygon LibreOffice can paint.
+  if (kind === 'stroke') {
+    return paintSvgClippedStrokeRibbons(canvas, name, node, style, root, css);
+  }
   const rings = svgDrawableRings(name, node);
   if (!rings.length) return false;
   let painted = false;
