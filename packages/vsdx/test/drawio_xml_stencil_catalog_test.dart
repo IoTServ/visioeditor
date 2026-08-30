@@ -5194,6 +5194,140 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG matrix(a,b,c,d) stays rotated geometry for LibreOffice',
+    () {
+      double geometrySpan(VsdxShape shape) {
+        var minX = double.infinity, maxX = -double.infinity;
+        var minY = double.infinity, maxY = -double.infinity;
+        void point(double x, double y) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            switch (command) {
+              case EllipseCmd(:final cx, :final cy, :final aX, :final aY,
+                    :final bX, :final bY):
+                point(cx, cy);
+                point(aX, aY);
+                point(bX, bY);
+              case MoveTo(:final x, :final y):
+                point(x, y);
+              case LineTo(:final x, :final y):
+                point(x, y);
+              case CubBezTo(:final x, :final y, :final x1, :final y1,
+                    :final x2, :final y2):
+                point(x, y);
+                point(x1, y1);
+                point(x2, y2);
+              case RelMoveTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              case RelLineTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              case RelCubBezTo(
+                  :final fx,
+                  :final fy,
+                  :final fx1,
+                  :final fy1,
+                  :final fx2,
+                  :final fy2
+                ):
+                point(fx * shape.width, fy * shape.height);
+                point(fx1 * shape.width, fy1 * shape.height);
+                point(fx2 * shape.width, fy2 * shape.height);
+              default:
+                break;
+            }
+          }
+        }
+        if (!minX.isFinite) return 0;
+        final dx = (maxX - minX).clamp(0.0, 99.0);
+        final dy = (maxY - minY).clamp(0.0, 99.0);
+        return (dx < dy ? dx : dy).toDouble();
+      }
+
+      final topics = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / MSCAE / CAE / Integration Service',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Event Grid Topics')
+          .build(143, 3, 3);
+      const lime = VsdxColor(0xFFB8D432);
+      const cyan = VsdxColor(0xFF59B4D9);
+      final limeDots = topics.children
+          .where((child) => child.fill.foreground == lime)
+          .toList();
+      expect(
+        limeDots.length,
+        2,
+        reason: 'Event_Grid_Topics.svg has two lime status dots',
+      );
+      for (final dot in limeDots) {
+        expect(
+          geometrySpan(dot),
+          greaterThan(0.10),
+          reason: 'matrix(.707 -.707 .707 .707) must not scale(0.707) the '
+              'lime circle — collectGeometry would shrink the fill LibreOffice '
+              'paints',
+        );
+      }
+      expect(
+        topics.children.any(
+          (child) =>
+              child.fill.foreground == cyan && geometrySpan(child) > 0.10,
+        ),
+        isTrue,
+        reason: 'the cyan matrix() dot must keep r=3.9 in stencil units',
+      );
+
+      final micro = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / IBM / IBM / Miscellaneous',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Microservices Application')
+          .build(144, 3, 3);
+      expect(
+        micro.children.any(
+          (child) => !child.fill.hasFill && geometrySpan(child) > 0.7,
+        ),
+        isTrue,
+        reason: 'matrix(.02 -.999 .999 .02) must not scale(0.02) the white '
+            'circle into a pin LibreOffice would drop',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(topics.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children
+            .where((child) => child.fill.foreground == lime)
+            .every((child) => geometrySpan(child) > 0.10),
+        isTrue,
+        reason: 'a second save must keep the Event Grid matrix() dots',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

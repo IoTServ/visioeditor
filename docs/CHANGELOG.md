@@ -888,6 +888,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   now forwards `fill-opacity` / `stroke-opacity` into `fillalpha` that
   becomes FillForegndTrans (`draw:opacity`). A second save keeps the
   fade.
+- draw.io mxImageShape SVG `transform="matrix(a b c d e f)"` now stays
+  native in LibreOffice. Official MSCAE Event Grid Topics and IBM
+  Microservices Application rotate circles with off-diagonal `b`/`c`
+  (`matrix(.707 -.707 .707 .707)` / `matrix(.02 -1 1 .02)`), but
+  capture only applied `translate(e,f)` plus `scale(a,d)`, so
+  `collectGeometry` saw a 0.707× / 0.02× ellipse and Draw dropped or
+  misplaced the glyph. Capture now composes the 2×3 affine into `map()`
+  and emits the rotated contour. Axis-aligned `matrix(sx,0,0,sy,tx,ty)`
+  still uses translate+scale. A second save keeps the dots.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

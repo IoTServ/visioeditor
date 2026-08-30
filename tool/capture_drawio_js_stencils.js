@@ -188,6 +188,10 @@ class CanvasRecorder {
     this.ty = 0;
     this.sx = 1;
     this.sy = 1;
+    // SVG matrix(a,b,c,d,e,f) with off-diagonal b/c (Event Grid 45°, IBM
+    // Microservices ~90°). map() applies this before sx/tx; axis-aligned
+    // matrix still uses translate+scale so ellipse w/h keep sx.
+    this.affine = [1, 0, 0, 1, 0, 0];
     this.rotTheta = 0;
     this.rotFlipH = false;
     this.rotFlipV = false;
@@ -260,6 +264,7 @@ class CanvasRecorder {
   save() {
     this.stack.push({
       tx: this.tx, ty: this.ty, sx: this.sx, sy: this.sy, state: {...this.state},
+      affine: this.affine.slice(),
       rotTheta: this.rotTheta, rotFlipH: this.rotFlipH, rotFlipV: this.rotFlipV,
       rotCx: this.rotCx, rotCy: this.rotCy,
     });
@@ -272,6 +277,7 @@ class CanvasRecorder {
       this.ty = saved.ty;
       this.sx = saved.sx;
       this.sy = saved.sy;
+      this.affine = saved.affine;
       this.state = saved.state;
       this.rotTheta = saved.rotTheta;
       this.rotFlipH = saved.rotFlipH;
@@ -300,12 +306,38 @@ class CanvasRecorder {
     this.rotCx = Number(cx) || 0;
     this.rotCy = Number(cy) || 0;
   }
+  composeAffine(a, b, c, d, e, f) {
+    svgTransformMultiply(
+      this.affine,
+      Number(a) || 0, Number(b) || 0, Number(c) || 0,
+      Number(d) || 0, Number(e) || 0, Number(f) || 0,
+    );
+  }
+  affineScaleX() {
+    return Math.hypot(this.affine[0], this.affine[1]) || 1;
+  }
+  affineScaleY() {
+    return Math.hypot(this.affine[2], this.affine[3]) || 1;
+  }
+  hasSkewAffine() {
+    return Math.abs(this.affine[1]) > 1e-8 || Math.abs(this.affine[2]) > 1e-8;
+  }
   isRotated() {
-    return this.rotTheta !== 0 || this.rotFlipH || this.rotFlipV;
+    return this.rotTheta !== 0 || this.rotFlipH || this.rotFlipV
+      || this.hasSkewAffine();
   }
   map(px, py) {
-    let x = (Number(px) || 0) * this.sx + this.tx;
-    let y = (Number(py) || 0) * this.sy + this.ty;
+    let x = Number(px) || 0;
+    let y = Number(py) || 0;
+    const m = this.affine;
+    if (m[0] !== 1 || m[1] || m[2] || m[3] !== 1 || m[4] || m[5]) {
+      const nx = m[0] * x + m[2] * y + m[4];
+      const ny = m[1] * x + m[3] * y + m[5];
+      x = nx;
+      y = ny;
+    }
+    x = x * this.sx + this.tx;
+    y = y * this.sy + this.ty;
     if (!this.isRotated()) return {x, y};
     let theta = this.rotTheta;
     const cx = this.rotCx;
@@ -345,8 +377,8 @@ class CanvasRecorder {
   arcTo(rx, ry, rotation, largeArc, sweep, x, y) {
     const p = this.map(x, y);
     this.command('arc', {
-      rx: (Number(rx) || 0) * Math.abs(this.sx),
-      ry: (Number(ry) || 0) * Math.abs(this.sy),
+      rx: (Number(rx) || 0) * Math.abs(this.sx) * this.affineScaleX(),
+      ry: (Number(ry) || 0) * Math.abs(this.sy) * this.affineScaleY(),
       'x-axis-rotation': (Number(rotation) || 0) + this.rotTheta,
       'large-arc-flag': largeArc, 'sweep-flag': sweep, x: p.x, y: p.y,
     });
@@ -1269,8 +1301,10 @@ function svgPresentation(node, inherited, css) {
 }
 
 function canvasMinScale(canvas) {
-  const sx = Math.abs(Number(canvas.sx) || 1);
-  const sy = Math.abs(Number(canvas.sy) || 1);
+  const asx = canvas.affineScaleX ? canvas.affineScaleX() : 1;
+  const asy = canvas.affineScaleY ? canvas.affineScaleY() : 1;
+  const sx = Math.abs(Number(canvas.sx) || 1) * asx;
+  const sy = Math.abs(Number(canvas.sy) || 1) * asy;
   const scale = Math.min(sx, sy);
   return scale > 0 ? scale : 1;
 }
@@ -1559,7 +1593,9 @@ function svgTransformPoint(raw, x, y) {
   return {x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5]};
 }
 
-// Canvas map() is translate+scale+rotate; skip shear. Returns true if save()'d.
+// Canvas map() is translate+scale+rotate. Off-diagonal SVG matrix(a,b,c,d,e,f)
+// (MSCAE Event Grid Topics 45°, IBM Microservices ~90°) is composeAffine so
+// collectGeometry sees the rotated contour; scale(a,d) alone shrinks the glyph.
 function applySvgTransform(canvas, raw) {
   const ops = parseSvgTransformList(raw);
   if (!ops.length) return false;
@@ -1574,8 +1610,12 @@ function applySvgTransform(canvas, raw) {
     } else if (op.kind === 'rotate') {
       canvas.rotate(n[0] || 0, false, false, n[1] || 0, n[2] || 0);
     } else if (op.kind === 'matrix' && n.length >= 6) {
-      canvas.translate(n[4], n[5]);
-      canvas.scale(n[0], n[3]);
+      if (Math.abs(n[1]) < 1e-8 && Math.abs(n[2]) < 1e-8) {
+        canvas.translate(n[4], n[5]);
+        canvas.scale(n[0], n[3]);
+      } else {
+        canvas.composeAffine(n[0], n[1], n[2], n[3], n[4], n[5]);
+      }
     }
   }
   return true;
