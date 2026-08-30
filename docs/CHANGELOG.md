@@ -897,6 +897,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   misplaced the glyph. Capture now composes the 2×3 affine into `map()`
   and emits the rotated contour. Axis-aligned `matrix(sx,0,0,sy,tx,ty)`
   still uses translate+scale. A second save keeps the dots.
+- draw.io mxImageShape SVG `clip-path` now stays native in LibreOffice.
+  Official Azure2 Globe meridians, Cosmos DB clouds, MFA shield highlights
+  and Power BI Embedded bars paint inside `clip-path` circles/stairs, but
+  capture skipped `<clipPath>` so `collectGeometry` saw the unclipped
+  overflow LibreOffice Draw would paint. Capture now intersects fill
+  contours in `map()` space; viewBox-sized rect clips stay identity so
+  ellipses are not tessellated. A second save keeps the clipped polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

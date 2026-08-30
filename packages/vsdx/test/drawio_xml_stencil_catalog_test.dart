@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:test/test.dart';
 import 'package:vsdx/stencils.dart';
 import 'package:vsdx/vsdx.dart';
@@ -5323,6 +5325,177 @@ void main() {
             .every((child) => geometrySpan(child) > 0.10),
         isTrue,
         reason: 'a second save must keep the Event Grid matrix() dots',
+      );
+    },
+  );
+
+  test(
+    'mxImageShape SVG clip-path stays intersected geometry for LibreOffice',
+    () {
+      List<({double x, double y})> geometryPoints(VsdxShape shape) {
+        final points = <({double x, double y})>[];
+        void point(double x, double y) => points.add((x: x, y: y));
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            switch (command) {
+              case EllipseCmd(:final cx, :final cy, :final aX, :final aY,
+                    :final bX, :final bY):
+                point(cx, cy);
+                point(aX, aY);
+                point(bX, bY);
+              case MoveTo(:final x, :final y):
+                point(x, y);
+              case LineTo(:final x, :final y):
+                point(x, y);
+              case CubBezTo(:final x, :final y):
+                point(x, y);
+              case RelMoveTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              case RelLineTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              case RelCubBezTo(:final fx, :final fy):
+                point(fx * shape.width, fy * shape.height);
+              default:
+                break;
+            }
+          }
+        }
+        return points;
+      }
+
+      int lineCommands(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<LineTo>().length;
+          n += geometry.commands.whereType<RelLineTo>().length;
+        }
+        return n;
+      }
+
+      final globe = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / General',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Globe')
+          .build(145, 3, 3);
+      const teal = VsdxColor(0xFF42E8CA);
+      final disk = globe.children.firstWhere(
+        (child) => child.fill.pattern == 27,
+      );
+      final ellipse = disk.geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<EllipseCmd>()
+          .first;
+      final radius = math.max(
+        math.sqrt(
+          math.pow(ellipse.aX - ellipse.cx, 2) +
+              math.pow(ellipse.aY - ellipse.cy, 2),
+        ),
+        math.sqrt(
+          math.pow(ellipse.bX - ellipse.cx, 2) +
+              math.pow(ellipse.bY - ellipse.cy, 2),
+        ),
+      );
+      final meridians = globe.children
+          .where((child) => child.fill.foreground == teal)
+          .toList();
+      expect(
+        meridians,
+        isNotEmpty,
+        reason: 'Globe.svg clips teal meridians to the globe disk',
+      );
+      for (final child in meridians) {
+        for (final point in geometryPoints(child)) {
+          final dist = math.sqrt(
+            math.pow(point.x - ellipse.cx, 2) +
+                math.pow(point.y - ellipse.cy, 2),
+          );
+          expect(
+            dist,
+            lessThan(radius * 1.08),
+            reason: 'clip-path circle must intersect meridians so '
+                'collectGeometry does not paint teal outside the disk '
+                'LibreOffice would show',
+          );
+        }
+        expect(
+          lineCommands(child),
+          greaterThan(8),
+          reason: 'clipped meridians become polygons, not overflowing paths',
+        );
+      }
+
+      final cosmos = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Databases',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Cosmos DB')
+          .build(146, 3, 3);
+      expect(
+        cosmos.children
+            .where((child) => child.fill.foreground == const VsdxColor(0xFFF2F2F2))
+            .every((child) => lineCommands(child) > 8),
+        isTrue,
+        reason: 'Cosmos DB gray clouds are clip-path intersected with the '
+            'blue globe so they cannot spill outside collectGeometry',
+      );
+
+      final embedded = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Analytics',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Power BI Embedded')
+          .build(147, 3, 3);
+      expect(embedded.children, hasLength(3));
+      expect(
+        embedded.children.every((child) => lineCommands(child) > 20),
+        isTrue,
+        reason: 'Power BI Embedded clip-path stairs must round the three '
+            'bar rectangles instead of leaving sharp overflowing rects',
+      );
+
+      final vuln = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / Foundational',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Application Vulnerability Report',
+          )
+          .build(148, 3, 3);
+      expect(
+        vuln.children,
+        hasLength(3),
+        reason: 'viewBox-sized rect clip-path is identity and must not '
+            'tessellate ellipses/paths into extra children',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(globe.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children
+            .where((child) => child.fill.foreground == teal)
+            .every((child) => lineCommands(child) > 8),
+        isTrue,
+        reason: 'a second save must keep Globe meridians as clipped polygons',
       );
     },
   );

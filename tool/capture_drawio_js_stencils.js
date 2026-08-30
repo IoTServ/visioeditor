@@ -197,6 +197,10 @@ class CanvasRecorder {
     this.rotFlipV = false;
     this.rotCx = 0;
     this.rotCy = 0;
+    // SVG clip-path rings in map() space. libvisio has no clip token, so
+    // capture intersects fill contours (Globe meridians, Cosmos clouds).
+    this.clipRings = null;
+    this.viewBox = null;
     this.stack = [];
     this.operations = [];
     this.pathOpen = false;
@@ -267,6 +271,8 @@ class CanvasRecorder {
       affine: this.affine.slice(),
       rotTheta: this.rotTheta, rotFlipH: this.rotFlipH, rotFlipV: this.rotFlipV,
       rotCx: this.rotCx, rotCy: this.rotCy,
+      clipRings: this.clipRings,
+      viewBox: this.viewBox,
     });
   }
 
@@ -284,6 +290,8 @@ class CanvasRecorder {
       this.rotFlipV = saved.rotFlipV;
       this.rotCx = saved.rotCx;
       this.rotCy = saved.rotCy;
+      this.clipRings = saved.clipRings;
+      this.viewBox = saved.viewBox;
       this._reemitPaint();
     }
   }
@@ -384,6 +392,17 @@ class CanvasRecorder {
     });
   }
   close() { this.operations.push('<close/>'); }
+  // Clip intersection already ran in map() space; do not map again.
+  emitMappedRing(ring) {
+    if (!ring || ring.length < 3) return false;
+    this.begin();
+    this.command('move', {x: ring[0].x, y: ring[0].y});
+    for (let i = 1; i < ring.length; i++) {
+      this.command('line', {x: ring[i].x, y: ring[i].y});
+    }
+    this.close();
+    return true;
+  }
   poly(points) {
     if (!points || points.length < 2) return;
     this.begin();
@@ -1593,6 +1612,619 @@ function svgTransformPoint(raw, x, y) {
   return {x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5]};
 }
 
+function svgComposeTransformRaw(a, b) {
+  const left = String(a || '').trim();
+  const right = String(b || '').trim();
+  if (!left) return right;
+  if (!right) return left;
+  return `${left} ${right}`;
+}
+
+function svgMapRing(ring, raw) {
+  if (!raw) return ring;
+  return ring.map((p) => svgTransformPoint(raw, p.x, p.y));
+}
+
+function svgPolyArea(ring) {
+  let area = 0;
+  for (let i = 0, n = ring.length; i < n; i++) {
+    const a = ring[i];
+    const b = ring[(i + 1) % n];
+    area += a.x * b.y - b.x * a.y;
+  }
+  return area / 2;
+}
+
+function svgCloseRing(pts) {
+  if (!pts || pts.length < 3) return [];
+  const out = pts.slice();
+  const first = out[0];
+  const last = out[out.length - 1];
+  if (Math.abs(first.x - last.x) < 1e-9 && Math.abs(first.y - last.y) < 1e-9) {
+    out.pop();
+  }
+  return out.length >= 3 ? out : [];
+}
+
+function svgEnsureCcw(ring) {
+  return svgPolyArea(ring) < 0 ? ring.slice().reverse() : ring;
+}
+
+function svgRingAabb(ring) {
+  let minx = Infinity;
+  let miny = Infinity;
+  let maxx = -Infinity;
+  let maxy = -Infinity;
+  for (const p of ring) {
+    if (p.x < minx) minx = p.x;
+    if (p.x > maxx) maxx = p.x;
+    if (p.y < miny) miny = p.y;
+    if (p.y > maxy) maxy = p.y;
+  }
+  return {minx, miny, maxx, maxy};
+}
+
+function svgIsAabbRect(ring) {
+  if (ring.length !== 4) return false;
+  const box = svgRingAabb(ring);
+  if (!(box.maxx > box.minx && box.maxy > box.miny)) return false;
+  return ring.every((p) =>
+    (Math.abs(p.x - box.minx) < 1e-6 || Math.abs(p.x - box.maxx) < 1e-6) &&
+    (Math.abs(p.y - box.miny) < 1e-6 || Math.abs(p.y - box.maxy) < 1e-6)
+  );
+}
+
+function svgClipCoversViewBox(rings, viewBox) {
+  if (!viewBox || rings.length !== 1 || !svgIsAabbRect(rings[0])) return false;
+  const box = svgRingAabb(rings[0]);
+  const eps = Math.max(viewBox.w, viewBox.h) * 0.02 + 1e-6;
+  return box.minx <= viewBox.x + eps && box.miny <= viewBox.y + eps &&
+    box.maxx >= viewBox.x + viewBox.w - eps &&
+    box.maxy >= viewBox.y + viewBox.h - eps;
+}
+
+function svgIsConvexRing(ring) {
+  const n = ring.length;
+  if (n < 3) return false;
+  let sign = 0;
+  for (let i = 0; i < n; i++) {
+    const p = ring[i];
+    const q = ring[(i + 1) % n];
+    const r = ring[(i + 2) % n];
+    const cross = (q.x - p.x) * (r.y - q.y) - (q.y - p.y) * (r.x - q.x);
+    if (Math.abs(cross) < 1e-12) continue;
+    const s = cross > 0 ? 1 : -1;
+    if (!sign) sign = s;
+    else if (s !== sign) return false;
+  }
+  return true;
+}
+
+function svgInsideEdge(p, a, b) {
+  return (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x) >= -1e-12;
+}
+
+function svgEdgeIntersect(s, e, a, b) {
+  const dx = e.x - s.x;
+  const dy = e.y - s.y;
+  const ex = b.x - a.x;
+  const ey = b.y - a.y;
+  const den = dx * ey - dy * ex;
+  if (Math.abs(den) < 1e-18) return {x: e.x, y: e.y};
+  const t = ((a.x - s.x) * ey - (a.y - s.y) * ex) / den;
+  return {x: s.x + t * dx, y: s.y + t * dy};
+}
+
+function svgSutherlandHodgman(subject, clip) {
+  let output = subject;
+  for (let i = 0, n = clip.length; i < n; i++) {
+    const a = clip[i];
+    const b = clip[(i + 1) % n];
+    const input = output;
+    output = [];
+    if (!input.length) break;
+    let prev = input[input.length - 1];
+    for (const cur of input) {
+      const curIn = svgInsideEdge(cur, a, b);
+      const prevIn = svgInsideEdge(prev, a, b);
+      if (curIn) {
+        if (!prevIn) output.push(svgEdgeIntersect(prev, cur, a, b));
+        output.push(cur);
+      } else if (prevIn) {
+        output.push(svgEdgeIntersect(prev, cur, a, b));
+      }
+      prev = cur;
+    }
+  }
+  const ring = svgCloseRing(output);
+  return Math.abs(svgPolyArea(ring)) > 1e-10 ? ring : [];
+}
+
+function svgPointInTriangle(p, a, b, c) {
+  const s1 = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+  const s2 = (c.x - b.x) * (p.y - b.y) - (c.y - b.y) * (p.x - b.x);
+  const s3 = (a.x - c.x) * (p.y - c.y) - (a.y - c.y) * (p.x - c.x);
+  const hasNeg = s1 < -1e-12 || s2 < -1e-12 || s3 < -1e-12;
+  const hasPos = s1 > 1e-12 || s2 > 1e-12 || s3 > 1e-12;
+  return !(hasNeg && hasPos);
+}
+
+function svgEarClip(ring) {
+  const verts = svgEnsureCcw(svgCloseRing(ring)).map((p) => ({x: p.x, y: p.y}));
+  if (verts.length < 3) return [];
+  if (verts.length === 3 || svgIsConvexRing(verts)) return [verts];
+  const rest = verts;
+  const tris = [];
+  let guard = 0;
+  while (rest.length > 3 && guard++ < 8000) {
+    let clipped = false;
+    for (let i = 0; i < rest.length; i++) {
+      const prev = rest[(i + rest.length - 1) % rest.length];
+      const curr = rest[i];
+      const next = rest[(i + 1) % rest.length];
+      const cross = (curr.x - prev.x) * (next.y - prev.y) -
+        (curr.y - prev.y) * (next.x - prev.x);
+      if (cross <= 1e-12) continue;
+      let inside = false;
+      for (let j = 0; j < rest.length; j++) {
+        if (j === i || j === (i + 1) % rest.length ||
+            j === (i + rest.length - 1) % rest.length) {
+          continue;
+        }
+        if (svgPointInTriangle(rest[j], prev, curr, next)) {
+          inside = true;
+          break;
+        }
+      }
+      if (inside) continue;
+      tris.push([prev, curr, next]);
+      rest.splice(i, 1);
+      clipped = true;
+      break;
+    }
+    if (!clipped) break;
+  }
+  if (rest.length >= 3 && Math.abs(svgPolyArea(rest)) > 1e-12) {
+    tris.push(rest.slice());
+  }
+  return tris.filter((tri) => tri.length >= 3 && Math.abs(svgPolyArea(tri)) > 1e-12);
+}
+
+function svgPtKey(p) {
+  return `${p.x.toFixed(7)},${p.y.toFixed(7)}`;
+}
+
+function svgMergeSimpleRings(rings) {
+  if (rings.length <= 1) return rings;
+  const undirected = (a, b) => {
+    const ka = svgPtKey(a);
+    const kb = svgPtKey(b);
+    return ka < kb ? `${ka}|${kb}` : `${kb}|${ka}`;
+  };
+  const edgeCount = new Map();
+  for (const ring of rings) {
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const k = undirected(ring[i], ring[(i + 1) % n]);
+      edgeCount.set(k, (edgeCount.get(k) || 0) + 1);
+    }
+  }
+  const next = new Map();
+  const addDir = (a, b) => {
+    if (edgeCount.get(undirected(a, b)) !== 1) return;
+    const sk = svgPtKey(a);
+    if (!next.has(sk)) next.set(sk, []);
+    next.get(sk).push(b);
+  };
+  for (const ring of rings) {
+    for (let i = 0, n = ring.length; i < n; i++) {
+      addDir(ring[i], ring[(i + 1) % n]);
+    }
+  }
+  const used = new Set();
+  const out = [];
+  for (const startKey of next.keys()) {
+    if (used.has(startKey)) continue;
+    const ring = [];
+    let curKey = startKey;
+    let guard = 0;
+    while (curKey && !used.has(curKey) && guard++ < 8000) {
+      used.add(curKey);
+      const parts = curKey.split(',');
+      ring.push({x: Number(parts[0]), y: Number(parts[1])});
+      const opts = (next.get(curKey) || []).filter((p) => !used.has(svgPtKey(p)));
+      if (!opts.length) {
+        const back = (next.get(curKey) || [])[0];
+        if (back && svgPtKey(back) === startKey) {
+          ring.push(back);
+        }
+        break;
+      }
+      curKey = svgPtKey(opts[0]);
+    }
+    const closed = svgCloseRing(ring);
+    if (closed.length >= 3 && Math.abs(svgPolyArea(closed)) > 1e-10) {
+      out.push(closed);
+    }
+  }
+  return out.length ? out : rings;
+}
+
+function svgIntersectPolygons(subject, clip) {
+  const subj = svgEnsureCcw(svgCloseRing(subject));
+  const ccw = svgEnsureCcw(svgCloseRing(clip));
+  if (subj.length < 3 || ccw.length < 3) return [];
+  const pieces = svgIsConvexRing(ccw) ? [ccw] : svgEarClip(ccw);
+  const hits = [];
+  for (const piece of pieces) {
+    const hit = svgSutherlandHodgman(subj, svgEnsureCcw(piece));
+    if (hit.length >= 3) hits.push(hit);
+  }
+  return svgMergeSimpleRings(hits);
+}
+
+function svgClipMappedToRings(subject, clipRings) {
+  const out = [];
+  for (const clip of clipRings) {
+    for (const piece of svgIntersectPolygons(subject, clip)) out.push(piece);
+  }
+  return out;
+}
+
+function svgCircleRing(cx, cy, r, steps) {
+  const n = steps || 64;
+  const ring = [];
+  for (let i = 0; i < n; i++) {
+    const t = (2 * Math.PI * i) / n;
+    ring.push({x: cx + r * Math.cos(t), y: cy + r * Math.sin(t)});
+  }
+  return ring;
+}
+
+function svgEllipseRing(cx, cy, rx, ry, steps) {
+  const n = steps || 64;
+  const ring = [];
+  for (let i = 0; i < n; i++) {
+    const t = (2 * Math.PI * i) / n;
+    ring.push({x: cx + rx * Math.cos(t), y: cy + ry * Math.sin(t)});
+  }
+  return ring;
+}
+
+function svgRectRing(x, y, w, h, rx, ry) {
+  const radx = Math.min(Math.abs(rx) || 0, Math.abs(w) / 2);
+  const rady = Math.min(Math.abs(ry) || 0, Math.abs(h) / 2);
+  if (!(radx > 0 || rady > 0)) {
+    return [{x, y}, {x: x + w, y}, {x: x + w, y: y + h}, {x, y: y + h}];
+  }
+  const ring = [];
+  const corner = (cx, cy, start, sweep) => {
+    const n = 8;
+    for (let i = 0; i <= n; i++) {
+      const t = start + (sweep * i) / n;
+      ring.push({x: cx + radx * Math.cos(t), y: cy + rady * Math.sin(t)});
+    }
+  };
+  corner(x + radx, y + rady, Math.PI, Math.PI / 2);
+  corner(x + w - radx, y + rady, -Math.PI / 2, Math.PI / 2);
+  corner(x + w - radx, y + h - rady, 0, Math.PI / 2);
+  corner(x + radx, y + h - rady, Math.PI / 2, Math.PI / 2);
+  return svgCloseRing(ring);
+}
+
+function svgArcSample(pts, x0, y0, rx, ry, phiDeg, large, sweep, x1, y1, steps) {
+  rx = Math.abs(rx);
+  ry = Math.abs(ry);
+  if (!(rx > 0 && ry > 0)) {
+    svgPathAddPoint(pts, x1, y1);
+    return;
+  }
+  const phi = (Number(phiDeg) || 0) * Math.PI / 180;
+  const cos = Math.cos(phi);
+  const sin = Math.sin(phi);
+  const dx = (x0 - x1) / 2;
+  const dy = (y0 - y1) / 2;
+  const x1p = cos * dx + sin * dy;
+  const y1p = -sin * dx + cos * dy;
+  let rx2 = rx * rx;
+  let ry2 = ry * ry;
+  const lam = (x1p * x1p) / rx2 + (y1p * y1p) / ry2;
+  if (lam > 1) {
+    const s = Math.sqrt(lam);
+    rx *= s;
+    ry *= s;
+    rx2 = rx * rx;
+    ry2 = ry * ry;
+  }
+  const sign = Number(large) !== Number(sweep) ? 1 : -1;
+  const num = rx2 * ry2 - rx2 * y1p * y1p - ry2 * x1p * x1p;
+  const den = rx2 * y1p * y1p + ry2 * x1p * x1p;
+  const coef = sign * Math.sqrt(Math.max(0, den ? num / den : 0));
+  const cxp = coef * (rx * y1p) / ry;
+  const cyp = -coef * (ry * x1p) / rx;
+  const cx = cos * cxp - sin * cyp + (x0 + x1) / 2;
+  const cy = sin * cxp + cos * cyp + (y0 + y1) / 2;
+  const vecAng = (ux, uy, vx, vy) => {
+    const u = Math.hypot(ux, uy);
+    const v = Math.hypot(vx, vy);
+    if (!(u > 0 && v > 0)) return 0;
+    let ang = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (u * v))));
+    if (ux * vy - uy * vx < 0) ang = -ang;
+    return ang;
+  };
+  const theta1 = vecAng(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry);
+  let dtheta = vecAng(
+    (x1p - cxp) / rx, (y1p - cyp) / ry,
+    (-x1p - cxp) / rx, (-y1p - cyp) / ry,
+  );
+  if (!sweep && dtheta > 0) dtheta -= 2 * Math.PI;
+  if (sweep && dtheta < 0) dtheta += 2 * Math.PI;
+  const n = Math.max(steps || 16, Math.ceil(Math.abs(dtheta) / (Math.PI / 16)));
+  for (let i = 1; i <= n; i++) {
+    const t = theta1 + dtheta * i / n;
+    svgPathAddPoint(
+      pts,
+      cx + rx * Math.cos(t) * cos - ry * Math.sin(t) * sin,
+      cy + rx * Math.cos(t) * sin + ry * Math.sin(t) * cos,
+    );
+  }
+}
+
+function svgPathToRings(d) {
+  const tokens = [];
+  const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)/g;
+  let match;
+  while ((match = re.exec(String(d || '')))) {
+    if (match[1]) tokens.push(match[1]);
+    else tokens.push(Number(match[2]));
+  }
+  const rings = [];
+  let current = [];
+  const flush = () => {
+    const ring = svgCloseRing(current);
+    if (ring.length >= 3) rings.push(ring);
+    current = [];
+  };
+  if (!tokens.length) return rings;
+  let x = 0;
+  let y = 0;
+  let sx = 0;
+  let sy = 0;
+  let lastCmd = '';
+  let c2x = 0;
+  let c2y = 0;
+  let q1x = 0;
+  let q1y = 0;
+  let i = 0;
+  const take = () => Number(tokens[i++]) || 0;
+  const steps = 16;
+  while (i < tokens.length) {
+    let cmd = tokens[i];
+    const prevCmd = lastCmd;
+    if (typeof cmd === 'string') {
+      i++;
+      lastCmd = cmd;
+    } else {
+      cmd = lastCmd;
+      if (!cmd) break;
+    }
+    const rel = cmd === cmd.toLowerCase();
+    const up = cmd.toUpperCase();
+    if (up === 'Z') {
+      svgPathAddPoint(current, sx, sy);
+      flush();
+      x = sx;
+      y = sy;
+      continue;
+    }
+    if (up === 'M') {
+      if (current.length) flush();
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      svgPathAddPoint(current, x, y);
+      sx = x;
+      sy = y;
+      lastCmd = rel ? 'l' : 'L';
+      continue;
+    }
+    if (up === 'L') {
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      svgPathAddPoint(current, x, y);
+    } else if (up === 'H') {
+      x = rel ? x + take() : take();
+      svgPathAddPoint(current, x, y);
+    } else if (up === 'V') {
+      y = rel ? y + take() : take();
+      svgPathAddPoint(current, x, y);
+    } else if (up === 'C') {
+      const x1 = rel ? x + take() : take();
+      const y1 = rel ? y + take() : take();
+      const x2 = rel ? x + take() : take();
+      const y2 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgCubicSample(current, {x, y}, {x: x1, y: y1}, {x: x2, y: y2}, {x: nx, y: ny}, steps);
+      c2x = x2;
+      c2y = y2;
+      x = nx;
+      y = ny;
+    } else if (up === 'S') {
+      const x2 = rel ? x + take() : take();
+      const y2 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      const prevUp = String(prevCmd).toUpperCase();
+      const x1 = prevUp === 'C' || prevUp === 'S' ? 2 * x - c2x : x;
+      const y1 = prevUp === 'C' || prevUp === 'S' ? 2 * y - c2y : y;
+      svgCubicSample(current, {x, y}, {x: x1, y: y1}, {x: x2, y: y2}, {x: nx, y: ny}, steps);
+      c2x = x2;
+      c2y = y2;
+      x = nx;
+      y = ny;
+    } else if (up === 'Q') {
+      const x1 = rel ? x + take() : take();
+      const y1 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgQuadSample(current, {x, y}, {x: x1, y: y1}, {x: nx, y: ny}, steps);
+      q1x = x1;
+      q1y = y1;
+      x = nx;
+      y = ny;
+    } else if (up === 'T') {
+      const prevUp = String(prevCmd).toUpperCase();
+      const x1 = prevUp === 'Q' || prevUp === 'T' ? 2 * x - q1x : x;
+      const y1 = prevUp === 'Q' || prevUp === 'T' ? 2 * y - q1y : y;
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgQuadSample(current, {x, y}, {x: x1, y: y1}, {x: nx, y: ny}, steps);
+      q1x = x1;
+      q1y = y1;
+      x = nx;
+      y = ny;
+    } else if (up === 'A') {
+      const rx = take();
+      const ry = take();
+      const rot = take();
+      const large = take();
+      const sweep = take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgArcSample(current, x, y, rx, ry, rot, large, sweep, nx, ny, 24);
+      x = nx;
+      y = ny;
+    } else {
+      break;
+    }
+  }
+  if (current.length) flush();
+  return rings;
+}
+
+function svgDrawableRings(name, node) {
+  if (name === 'path') return svgPathToRings(node.attrs.d);
+  if (name === 'circle') {
+    const r = Number(node.attrs.r) || 0;
+    if (!(r > 0)) return [];
+    return [svgCircleRing(Number(node.attrs.cx) || 0, Number(node.attrs.cy) || 0, r)];
+  }
+  if (name === 'ellipse') {
+    const rx = Number(node.attrs.rx) || 0;
+    const ry = Number(node.attrs.ry) || 0;
+    if (!(rx > 0 && ry > 0)) return [];
+    return [svgEllipseRing(
+      Number(node.attrs.cx) || 0, Number(node.attrs.cy) || 0, rx, ry,
+    )];
+  }
+  if (name === 'rect') {
+    const w = Number(node.attrs.width) || 0;
+    const h = Number(node.attrs.height) || 0;
+    if (!(w > 0 && h > 0)) return [];
+    return [svgRectRing(
+      Number(node.attrs.x) || 0, Number(node.attrs.y) || 0, w, h,
+      Number(node.attrs.rx) || 0, Number(node.attrs.ry) || Number(node.attrs.rx) || 0,
+    )];
+  }
+  if (name === 'polygon' || name === 'polyline') {
+    const nums = parseSvgNumbers(node.attrs.points);
+    const ring = [];
+    for (let i = 0; i + 1 < nums.length; i += 2) {
+      ring.push({x: nums[i], y: nums[i + 1]});
+    }
+    return name === 'polygon' || ring.length >= 3 ? [svgCloseRing(ring)].filter((r) => r.length >= 3) : [];
+  }
+  if (name === 'line') {
+    return [];
+  }
+  return [];
+}
+
+function svgClipPathRings(clipNode) {
+  const rings = [];
+  const walk = (node, tf) => {
+    const name = xmlLocalName(node.name);
+    if (name === '#text' || svgSkip.has(name)) return;
+    const local = svgComposeTransformRaw(tf, node.attrs && node.attrs.transform);
+    if (name === 'g' || name === 'svg') {
+      for (const child of node.children || []) walk(child, local);
+      return;
+    }
+    if (name === 'use') return;
+    for (const ring of svgDrawableRings(name, node)) {
+      const mapped = svgCloseRing(svgMapRing(ring, local));
+      if (mapped.length >= 3) rings.push(mapped);
+    }
+  };
+  const clipTf = clipNode.attrs && clipNode.attrs.transform;
+  for (const child of clipNode.children || []) walk(child, clipTf);
+  return rings;
+}
+
+function svgOwnClipPath(node, css) {
+  let fromStyle = '';
+  for (const part of String(node.attrs.style || '').split(';')) {
+    const token = part.trim();
+    const split = token.indexOf(':');
+    if (split < 0) continue;
+    if (token.slice(0, split).trim().toLowerCase() === 'clip-path') {
+      fromStyle = token.slice(split + 1).trim();
+    }
+  }
+  const fromCss = svgCssForNode(node, css)['clip-path'];
+  return String(node.attrs['clip-path'] || fromStyle || fromCss || '').trim();
+}
+
+// SVG clip-path has no libvisio token. Intersect fill contours in map()
+// space (Azure2 Globe meridians, Cosmos DB clouds, MFA shield, Power BI
+// Embedded stairs). ViewBox-sized rect clips are identity and skipped so
+// ellipse commands stay ellipses.
+function applySvgClipPath(canvas, node, root, css) {
+  const raw = svgOwnClipPath(node, css);
+  if (!raw || /^none$/i.test(raw)) return false;
+  const id = svgPaintUrlId(raw);
+  if (!id || !root) return false;
+  const clipNode = findSvgById(root, id);
+  if (!clipNode || xmlLocalName(clipNode.name) !== 'clippath') return false;
+  const units = String(clipNode.attrs.clipPathUnits || '').toLowerCase();
+  if (units === 'objectboundingbox') return false;
+  const userRings = svgClipPathRings(clipNode);
+  if (!userRings.length) return false;
+  if (!canvas.clipRings && svgClipCoversViewBox(userRings, canvas.viewBox)) {
+    return false;
+  }
+  const mapped = userRings.map((ring) => ring.map((p) => canvas.map(p.x, p.y)));
+  canvas.save();
+  if (canvas.clipRings && canvas.clipRings.length) {
+    const next = [];
+    for (const prev of canvas.clipRings) {
+      for (const ring of mapped) {
+        for (const piece of svgIntersectPolygons(prev, ring)) next.push(piece);
+      }
+    }
+    canvas.clipRings = next;
+  } else {
+    canvas.clipRings = mapped;
+  }
+  return true;
+}
+
+function paintSvgClippedShape(canvas, name, node, style, kind, root, css) {
+  const rings = svgDrawableRings(name, node);
+  if (!rings.length) return false;
+  let painted = false;
+  const fillStyle = {...style, fill: style.fill == null ? '#000' : style.fill};
+  for (const userRing of rings) {
+    const mapped = userRing.map((p) => canvas.map(p.x, p.y));
+    const pieces = svgClipMappedToRings(mapped, canvas.clipRings);
+    for (const piece of pieces) {
+      if (!canvas.emitMappedRing(piece)) continue;
+      applySvgPaint(canvas, fillStyle, kind, root, css);
+      painted = true;
+    }
+  }
+  return painted;
+}
+
 // Canvas map() is translate+scale+rotate. Off-diagonal SVG matrix(a,b,c,d,e,f)
 // (MSCAE Event Grid Topics 45°, IBM Microservices ~90°) is composeAffine so
 // collectGeometry sees the rotated contour; scale(a,d) alone shrinks the glyph.
@@ -1873,14 +2505,16 @@ function svgPathPolyline(d) {
       x = nx;
       y = ny;
     } else if (up === 'A') {
-      take();
-      take();
-      take();
-      take();
-      take();
-      x = rel ? x + take() : take();
-      y = rel ? y + take() : take();
-      svgPathAddPoint(pts, x, y);
+      const rx = take();
+      const ry = take();
+      const rot = take();
+      const large = take();
+      const sweep = take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgArcSample(pts, x, y, rx, ry, rot, large, sweep, nx, ny, 16);
+      x = nx;
+      y = ny;
     } else {
       break;
     }
@@ -2144,85 +2778,93 @@ function paintSvgNode(canvas, node, inherited, root, css) {
   );
   try {
     const style = svgPresentation(node, inherited, css);
-    let painted = false;
-    if (name === 'text' || name === 'tspan') {
-      return paintSvgText(canvas, node, inherited, css, root);
-    }
-    if (name === 'use') {
-      const href = node.attrs.href || node.attrs['xlink:href'] || '';
-      const id = String(href).replace(/^#/, '');
-      const target = findSvgById(root, id);
-      if (!target || target === node) return false;
-      canvas.save();
-      const ox = Number(node.attrs.x) || 0;
-      const oy = Number(node.attrs.y) || 0;
-      if (ox || oy) canvas.translate(ox, oy);
-      painted = paintSvgNode(canvas, target, style, root, css);
-      canvas.restore();
-      return painted;
-    }
-    if (name === 'image') {
-      const href = node.attrs.href || node.attrs['xlink:href'] || '';
-      const ix = Number(node.attrs.x) || 0;
-      const iy = Number(node.attrs.y) || 0;
-      const iw = Number(node.attrs.width) || 0;
-      const ih = Number(node.attrs.height) || 0;
-      if (!(iw > 0 && ih > 0)) return false;
-      return paintRaster(canvas, ix, iy, iw, ih, href);
-    }
-    if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
-      for (const child of node.children || []) {
-        if (paintSvgNode(canvas, child, style, root, css)) painted = true;
+    const clipApplied = applySvgClipPath(canvas, node, root, css);
+    try {
+      let painted = false;
+      if (name === 'text' || name === 'tspan') {
+        return paintSvgText(canvas, node, inherited, css, root);
       }
-      return painted;
+      if (name === 'use') {
+        const href = node.attrs.href || node.attrs['xlink:href'] || '';
+        const id = String(href).replace(/^#/, '');
+        const target = findSvgById(root, id);
+        if (!target || target === node) return false;
+        canvas.save();
+        const ox = Number(node.attrs.x) || 0;
+        const oy = Number(node.attrs.y) || 0;
+        if (ox || oy) canvas.translate(ox, oy);
+        painted = paintSvgNode(canvas, target, style, root, css);
+        canvas.restore();
+        return painted;
+      }
+      if (name === 'image') {
+        const href = node.attrs.href || node.attrs['xlink:href'] || '';
+        const ix = Number(node.attrs.x) || 0;
+        const iy = Number(node.attrs.y) || 0;
+        const iw = Number(node.attrs.width) || 0;
+        const ih = Number(node.attrs.height) || 0;
+        if (!(iw > 0 && ih > 0)) return false;
+        return paintRaster(canvas, ix, iy, iw, ih, href);
+      }
+      if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
+        for (const child of node.children || []) {
+          if (paintSvgNode(canvas, child, style, root, css)) painted = true;
+        }
+        return painted;
+      }
+      const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
+        name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
+      if (!kind) return false;
+      if (canvas.clipRings && canvas.clipRings.length) {
+        return paintSvgClippedShape(canvas, name, node, style, kind, root, css);
+      }
+      if (name === 'path') {
+        if (!paintSvgPath(canvas, node.attrs.d)) return false;
+      } else if (name === 'circle') {
+        const cx = Number(node.attrs.cx) || 0;
+        const cy = Number(node.attrs.cy) || 0;
+        const r = Number(node.attrs.r) || 0;
+        if (!(r > 0)) return false;
+        canvas.ellipse(cx - r, cy - r, r * 2, r * 2);
+      } else if (name === 'ellipse') {
+        const cx = Number(node.attrs.cx) || 0;
+        const cy = Number(node.attrs.cy) || 0;
+        const rx = Number(node.attrs.rx) || 0;
+        const ry = Number(node.attrs.ry) || 0;
+        if (!(rx > 0 && ry > 0)) return false;
+        canvas.ellipse(cx - rx, cy - ry, rx * 2, ry * 2);
+      } else if (name === 'rect') {
+        const x = Number(node.attrs.x) || 0;
+        const y = Number(node.attrs.y) || 0;
+        const w = Number(node.attrs.width) || 0;
+        const h = Number(node.attrs.height) || 0;
+        const rx = Number(node.attrs.rx) || 0;
+        if (!(w > 0 && h > 0)) return false;
+        if (rx > 0) canvas.roundrect(x, y, w, h, rx, rx);
+        else canvas.rect(x, y, w, h);
+      } else if (name === 'polygon' || name === 'polyline') {
+        const nums = parseSvgNumbers(node.attrs.points);
+        if (nums.length < 4) return false;
+        canvas.begin();
+        canvas.moveTo(nums[0], nums[1]);
+        for (let i = 2; i + 1 < nums.length; i += 2) canvas.lineTo(nums[i], nums[i + 1]);
+        if (name === 'polygon') canvas.close();
+      } else if (name === 'line') {
+        canvas.begin();
+        canvas.moveTo(Number(node.attrs.x1) || 0, Number(node.attrs.y1) || 0);
+        canvas.lineTo(Number(node.attrs.x2) || 0, Number(node.attrs.y2) || 0);
+      } else {
+        return false;
+      }
+      applySvgPaint(
+        canvas,
+        {...style, fill: style.fill == null ? '#000' : style.fill},
+        kind, root, css,
+      );
+      return true;
+    } finally {
+      if (clipApplied) canvas.restore();
     }
-    const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
-      name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
-    if (!kind) return false;
-    if (name === 'path') {
-      if (!paintSvgPath(canvas, node.attrs.d)) return false;
-    } else if (name === 'circle') {
-      const cx = Number(node.attrs.cx) || 0;
-      const cy = Number(node.attrs.cy) || 0;
-      const r = Number(node.attrs.r) || 0;
-      if (!(r > 0)) return false;
-      canvas.ellipse(cx - r, cy - r, r * 2, r * 2);
-    } else if (name === 'ellipse') {
-      const cx = Number(node.attrs.cx) || 0;
-      const cy = Number(node.attrs.cy) || 0;
-      const rx = Number(node.attrs.rx) || 0;
-      const ry = Number(node.attrs.ry) || 0;
-      if (!(rx > 0 && ry > 0)) return false;
-      canvas.ellipse(cx - rx, cy - ry, rx * 2, ry * 2);
-    } else if (name === 'rect') {
-      const x = Number(node.attrs.x) || 0;
-      const y = Number(node.attrs.y) || 0;
-      const w = Number(node.attrs.width) || 0;
-      const h = Number(node.attrs.height) || 0;
-      const rx = Number(node.attrs.rx) || 0;
-      if (!(w > 0 && h > 0)) return false;
-      if (rx > 0) canvas.roundrect(x, y, w, h, rx, rx);
-      else canvas.rect(x, y, w, h);
-    } else if (name === 'polygon' || name === 'polyline') {
-      const nums = parseSvgNumbers(node.attrs.points);
-      if (nums.length < 4) return false;
-      canvas.begin();
-      canvas.moveTo(nums[0], nums[1]);
-      for (let i = 2; i + 1 < nums.length; i += 2) canvas.lineTo(nums[i], nums[i + 1]);
-      if (name === 'polygon') canvas.close();
-    } else if (name === 'line') {
-      canvas.begin();
-      canvas.moveTo(Number(node.attrs.x1) || 0, Number(node.attrs.y1) || 0);
-      canvas.lineTo(Number(node.attrs.x2) || 0, Number(node.attrs.y2) || 0);
-    } else {
-      return false;
-    }
-    applySvgPaint(
-      canvas,
-      {...style, fill: style.fill == null ? '#000' : style.fill},
-      kind, root, css,
-    );
-    return true;
   } finally {
     if (transformed) canvas.restore();
   }
@@ -2261,6 +2903,7 @@ function paintSvgImage(canvas, x, y, w, h, src, preserveAspect) {
     dy = y + (h - dh) / 2;
   }
   canvas.save();
+  canvas.viewBox = {x: vx, y: vy, w: vw, h: vh};
   canvas.translate(dx, dy);
   canvas.scale(dw / vw, dh / vh);
   canvas.translate(-vx, -vy);
