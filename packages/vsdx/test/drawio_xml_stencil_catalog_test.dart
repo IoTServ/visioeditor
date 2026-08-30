@@ -4832,13 +4832,31 @@ void main() {
   );
 
   test(
-    'mxImageShape SVG stroke-width stays LineWeight for LibreOffice',
+    'mxImageShape SVG stroke url(#gradient) stays FillPattern for LibreOffice',
     () {
       Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
         yield shape;
         for (final child in shape.children) {
           yield* descendants(child);
         }
+      }
+
+      int lineCommands(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<LineTo>().length;
+          n += geometry.commands.whereType<RelLineTo>().length;
+        }
+        return n;
+      }
+
+      bool isCrescent(VsdxShape shape) {
+        return shape.fill.hasFill &&
+            shape.fill.pattern == 27 &&
+            shape.fill.foreground == VsdxColor.tryParse('#1147E9') &&
+            shape.fill.background == VsdxColor.tryParse('#0195FF') &&
+            !shape.line.hasLine &&
+            lineCommands(shape) > 40;
       }
 
       final cloud = dynamic
@@ -4850,18 +4868,34 @@ void main() {
             (entry) => entry.name == 'SAP Analytics Cloud Embedded Edition',
           )
           .build(136, 3, 3);
-      final arc = descendants(cloud).where(
-        (shape) =>
-            !shape.fill.hasFill &&
-            shape.line.hasLine &&
-            shape.line.color == VsdxColor.tryParse('#0195FF'),
-      );
-      expect(arc, isNotEmpty, reason: 'the crescent is fill=none + stroke');
       expect(
-        arc.first.line.weightInches,
-        greaterThan(0.04),
-        reason: 'SVG stroke-width=1.875 (scaled into the icon) must reach '
-            'collectLine LineWeight, not the 0.01 in palette default',
+        descendants(cloud).any(isCrescent),
+        isTrue,
+        reason: 'stroke=url(#A) #0195ff→#1147e9 must become FillPattern 27 '
+            'because collectLine does not read LineGradient; the 1.875 '
+            'width is the ribbon collectFillAndShadow paints',
+      );
+
+      final ticks = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Task Center')
+          .build(137, 3, 3);
+      expect(
+        descendants(ticks)
+            .where(
+              (shape) =>
+                  shape.fill.pattern == 40 &&
+                  shape.fill.foreground == VsdxColor.tryParse('#00BBFF') &&
+                  lineCommands(shape) > 8,
+            )
+            .length,
+        greaterThanOrEqualTo(4),
+        reason: 'Task Center stroke=url(#A) ticks must be radial FillPattern '
+            '40 ribbons, not a first-stop solid LineColor',
       );
 
       const writer = VsdxWriter();
@@ -4880,14 +4914,9 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        descendants(leftover).any(
-          (shape) =>
-              !shape.fill.hasFill &&
-              shape.line.hasLine &&
-              shape.line.weightInches > 0.04,
-        ),
+        descendants(leftover).any(isCrescent),
         isTrue,
-        reason: 'a second save must keep the SVG stroke LineWeight',
+        reason: 'a second save must keep the SVG gradient-stroke ribbon',
       );
     },
   );

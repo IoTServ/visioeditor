@@ -1984,7 +1984,7 @@ function svgArcSample(pts, x0, y0, rx, ry, phiDeg, large, sweep, x1, y1, steps) 
   }
 }
 
-function svgPathToRings(d) {
+function svgPathTrace(d) {
   const tokens = [];
   const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)/g;
   let match;
@@ -1992,11 +1992,12 @@ function svgPathToRings(d) {
     if (match[1]) tokens.push(match[1]);
     else tokens.push(Number(match[2]));
   }
-  const rings = [];
+  const polylines = [];
   let current = [];
-  const flush = () => {
-    const ring = svgCloseRing(current);
-    if (ring.length >= 3) rings.push(ring);
+  const flush = (closed) => {
+    if (current.length >= 2) {
+      polylines.push({pts: current.slice(), closed: !!closed});
+    }
     current = [];
   };
   if (!tokens.length) return rings;
@@ -2026,13 +2027,13 @@ function svgPathToRings(d) {
     const up = cmd.toUpperCase();
     if (up === 'Z') {
       svgPathAddPoint(current, sx, sy);
-      flush();
+      flush(true);
       x = sx;
       y = sy;
       continue;
     }
     if (up === 'M') {
-      if (current.length) flush();
+      if (current.length) flush(false);
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
       svgPathAddPoint(current, x, y);
@@ -2112,8 +2113,158 @@ function svgPathToRings(d) {
       break;
     }
   }
-  if (current.length) flush();
+  if (current.length) flush(false);
+  return polylines;
+}
+
+function svgPathToRings(d) {
+  const rings = [];
+  for (const poly of svgPathTrace(d)) {
+    const ring = svgCloseRing(poly.pts);
+    if (ring.length >= 3) rings.push(ring);
+  }
   return rings;
+}
+
+function svgOffsetPoly(pts, dist, closed) {
+  const n = pts.length;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const prev = pts[closed ? (i + n - 1) % n : Math.max(0, i - 1)];
+    const next = pts[closed ? (i + 1) % n : Math.min(n - 1, i + 1)];
+    const dx = next.x - prev.x;
+    const dy = next.y - prev.y;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 1e-12)) {
+      out.push({x: pts[i].x, y: pts[i].y});
+      continue;
+    }
+    out.push({
+      x: pts[i].x + (-dy / len) * dist,
+      y: pts[i].y + (dx / len) * dist,
+    });
+  }
+  return out;
+}
+
+function svgSemicircle(center, from, to, radius) {
+  const a0 = Math.atan2(from.y - center.y, from.x - center.x);
+  let a1 = Math.atan2(to.y - center.y, to.x - center.x);
+  let d = a1 - a0;
+  while (d <= -Math.PI) d += 2 * Math.PI;
+  while (d > Math.PI) d -= 2 * Math.PI;
+  const sweep = d >= 0 ? Math.PI : -Math.PI;
+  const pts = [];
+  const steps = 8;
+  for (let i = 1; i < steps; i++) {
+    const t = a0 + sweep * i / steps;
+    pts.push({
+      x: center.x + radius * Math.cos(t),
+      y: center.y + radius * Math.sin(t),
+    });
+  }
+  return pts;
+}
+
+// libvisio collectLine does not read LineGradient. Expand a gradient
+// stroke into a filled ribbon so collectFillAndShadow FillPattern 25–40
+// paints the SAP Analytics Cloud crescent / Task Center ticks.
+function svgStrokeRibbon(pts, width, closed, cap) {
+  const radius = width / 2;
+  if (!(radius > 0) || !pts || pts.length < 2) return [];
+  const left = svgOffsetPoly(pts, radius, closed);
+  const right = svgOffsetPoly(pts, -radius, closed);
+  const round = /^round$/i.test(String(cap || ''));
+  const ring = [];
+  for (const p of left) ring.push(p);
+  if (!closed && round) {
+    const end = pts[pts.length - 1];
+    for (const p of svgSemicircle(end, left[left.length - 1], right[right.length - 1], radius)) {
+      ring.push(p);
+    }
+  }
+  for (let i = right.length - 1; i >= 0; i--) ring.push(right[i]);
+  if (!closed && round) {
+    const start = pts[0];
+    for (const p of svgSemicircle(start, right[0], left[0], radius)) {
+      ring.push(p);
+    }
+  }
+  return svgCloseRing(ring);
+}
+
+function svgShapeStrokeRibbons(name, node, width, cap) {
+  const out = [];
+  if (name === 'path') {
+    for (const poly of svgPathTrace(node.attrs.d)) {
+      const ring = svgStrokeRibbon(poly.pts, width, poly.closed, cap);
+      if (ring.length >= 3) out.push(ring);
+    }
+    return out;
+  }
+  if (name === 'line') {
+    const ring = svgStrokeRibbon(
+      [
+        {x: Number(node.attrs.x1) || 0, y: Number(node.attrs.y1) || 0},
+        {x: Number(node.attrs.x2) || 0, y: Number(node.attrs.y2) || 0},
+      ],
+      width, false, cap,
+    );
+    if (ring.length >= 3) out.push(ring);
+    return out;
+  }
+  for (const center of svgDrawableRings(name, node)) {
+    const ring = svgStrokeRibbon(center, width, true, cap);
+    if (ring.length >= 3) out.push(ring);
+  }
+  return out;
+}
+
+function svgPaintIsTwoStopUrl(value, root, css) {
+  const id = svgPaintUrlId(value);
+  if (!id || !root) return false;
+  const node = resolveSvgGradientNode(root, id);
+  if (!node) return false;
+  const stops = svgCollectStops(node, css);
+  if (stops.length < 2) return false;
+  return cssColorKey(stops[0].color) !== cssColorKey(stops[stops.length - 1].color);
+}
+
+function paintSvgGradientStroke(canvas, name, node, style, kind, root, css) {
+  if (kind !== 'stroke') return false;
+  if (!svgPaintIsTwoStopUrl(style.stroke, root, css)) return false;
+  const width = svgLength(style['stroke-width'], 1);
+  if (!(width > 0)) return false;
+  const ribbons = svgShapeStrokeRibbons(
+    name, node, width, style['stroke-linecap'],
+  );
+  if (!ribbons.length) return false;
+  const fillStyle = {
+    ...style,
+    fill: style.stroke,
+    stroke: 'none',
+    'fill-opacity': style['stroke-opacity'] || style['fill-opacity'],
+  };
+  let painted = false;
+  for (const ring of ribbons) {
+    if (canvas.clipRings && canvas.clipRings.length) {
+      const mapped = ring.map((p) => canvas.map(p.x, p.y));
+      const pieces = svgClipMappedToRings(mapped, canvas.clipRings);
+      for (const piece of pieces) {
+        if (!canvas.emitMappedRing(piece)) continue;
+        applySvgPaint(canvas, fillStyle, 'fill', root, css);
+        painted = true;
+      }
+      continue;
+    }
+    canvas.begin();
+    canvas.moveTo(ring[0].x, ring[0].y);
+    for (let i = 1; i < ring.length; i++) canvas.lineTo(ring[i].x, ring[i].y);
+    canvas.close();
+    applySvgPaint(canvas, fillStyle, 'fill', root, css);
+    painted = true;
+  }
+  return painted;
 }
 
 function svgDrawableRings(name, node) {
@@ -2844,6 +2995,9 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
         name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
       if (!kind) return false;
+      if (paintSvgGradientStroke(canvas, name, node, style, kind, root, css)) {
+        return true;
+      }
       if (canvas.clipRings && canvas.clipRings.length) {
         return paintSvgClippedShape(canvas, name, node, style, kind, root, css);
       }

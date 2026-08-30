@@ -911,6 +911,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Draw would paint outside the glyph. Capture now intersects those fills
   like `clip-path`. Default `objectBoundingBox` masks stay unmapped.
   A second save keeps the masked polygons.
+- draw.io mxImageShape SVG `stroke="url(#gradient)"` now stays native in
+  LibreOffice. Official SAP Analytics Cloud Embedded Edition crescent and
+  SAP Task Center ticks paint two-stop `stroke=url(#…)` (width 1.875 /
+  round-cap arcs), but `collectLine` never reads LineGradient so Draw
+  only saw a first-stop solid hairline. Capture now expands those strokes
+  into filled ribbons and applies FillPattern 25–40 that
+  `collectFillAndShadow` maps to ODF `draw:style=linear` / `radial`.
+  A second save keeps the wash.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
