@@ -1095,6 +1095,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   tessellates those washes as concentric FillForegnd discs like the
   two-stop ellipse case. Task Center two-stop ticks stay 40. A second
   save keeps the polygons.
+- draw.io `sketch=1` / `fillStyle` now stays native in LibreOffice.
+  Official General / misc Ellipse Sketch (`fillStyle=dots`), Diamond
+  Sketch (`cross-hatch`) and Rectangle Sketch (`hachureAngle=45`) wrap
+  the canvas with mxRoughCanvas2D, but capture left `setFillStyle` a
+  stub, so leftover wrote solid FillPattern 1. `collectFillAndShadow`
+  already maps FillPattern 2–24 to `draw:fill=hatch`. Capture now
+  records the Sketch style and leftover maps it onto those hatches
+  (plus jiggle stroke plates). A second save keeps the hatch.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

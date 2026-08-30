@@ -7834,6 +7834,74 @@ void main() {
   );
 
   test(
+    'mxShape sketch=1 fillStyle stays hatch for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isHatch(VsdxFill fill) =>
+          fill.pattern >= 2 && fill.pattern <= 24 && fill.gradient == null;
+
+      const group = 'Draw.io JS / General / misc';
+      final ellipse = stencil(group, 'Ellipse Sketch').build(410, 3, 3);
+      expect(ellipse.sketchEffect, isTrue);
+      expect(ellipse.sketchFillStyle, VsdxSketchFillStyle.dots);
+      expect(ellipse.fill.pattern, 1,
+          reason: 'capture keeps FillPattern 1; leftover maps dots to hatch');
+
+      final diamond = stencil(group, 'Diamond Sketch').build(411, 3, 3);
+      expect(diamond.sketchEffect, isTrue);
+      expect(diamond.sketchFillStyle, VsdxSketchFillStyle.crossHatch);
+
+      final rect = stencil(group, 'Rectangle Sketch').build(412, 3, 3);
+      expect(rect.sketchEffect, isTrue);
+      expect(rect.sketchFillStyle, VsdxSketchFillStyle.auto);
+      expect(rect.sketchHachureAngleDegrees, closeTo(45, 0.01));
+      expect(rect.sketchHachureGapPx, closeTo(8, 0.01));
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(ellipse.copyWith(id: id)),
+      );
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverEllipse = leftover.pages.first.findShapeById(id)!;
+      expect(
+        isHatch(leftoverEllipse.fill),
+        isTrue,
+        reason: 'leftover must map sketch fillStyle=dots onto FillPattern '
+            '2–24 that collectFillAndShadow emits as draw:fill=hatch',
+      );
+      expect(
+        leftoverEllipse.sketchEffect,
+        isFalse,
+        reason: 'veSketch is frozen to 0 after the hatch bake',
+      );
+      expect(
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'sketch hatch stays native; leftover must not bake PNG',
+      );
+    },
+  );
+
+  test(
     'diagramly clipart PNGs stay ForeignData for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

@@ -557,7 +557,28 @@ class CanvasRecorder {
       `<image x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}" src="${xmlEscape(`data:${mime};base64,${b64}`)}"/>`,
     );
   }
-  setFillStyle() {}
+  setFillStyle(value) {
+    // mxShape.configureCanvas: STYLE_FILL_STYLE after setFillColor.
+    this.state.fillStyle = value == null || value === '' ? null : String(value);
+  }
+  // Graph wraps the canvas with mxRoughCanvas2D when sketch=1. Capture
+  // records the style so leftover can map onto FillPattern 2–24
+  // (_fillAndShadowProperties draw:fill=hatch) and jiggle stroke plates.
+  setSketch(opts) {
+    const o = opts || {};
+    const attrs = ['enabled="1"'];
+    const fill = o.fill != null && o.fill !== '' ? String(o.fill) : this.state.fillStyle;
+    if (fill) attrs.push(`fill="${xmlEscape(fill)}"`);
+    const gap = Number(o.gap);
+    if (Number.isFinite(gap) && gap > 0) attrs.push(`gap="${number(gap)}"`);
+    const angle = Number(o.angle);
+    if (Number.isFinite(angle)) attrs.push(`angle="${number(angle)}"`);
+    const weight = Number(o.weight);
+    if (Number.isFinite(weight) && weight > 0) attrs.push(`weight="${number(weight)}"`);
+    const jiggle = Number(o.jiggle);
+    if (Number.isFinite(jiggle) && jiggle > 0) attrs.push(`jiggle="${number(jiggle)}"`);
+    this.operations.push(`<sketch ${attrs.join(' ')}/>`);
+  }
   // mxText.configureCanvas / mxXmlCanvas2D: fontbackgroundcolor / fontbordercolor.
   // LibreOffice collectTextBlock maps TextBkgnd onto fo:background-color.
   setFontBackgroundColor(value) {
@@ -2610,7 +2631,7 @@ function svgPathTrace(d) {
     }
     current = [];
   };
-  if (!tokens.length) return rings;
+  if (!tokens.length) return [];
   let x = 0;
   let y = 0;
   let sx = 0;
@@ -4506,6 +4527,7 @@ mxShape.prototype.apply = function(state) {
   this.strokeOpacity = mxUtils.getValue(this.style, mxConstants.STYLE_STROKE_OPACITY, this.strokeOpacity);
   this.stroke = mxUtils.getValue(this.style, mxConstants.STYLE_STROKECOLOR, this.stroke);
   this.strokewidth = mxUtils.getNumber(this.style, mxConstants.STYLE_STROKEWIDTH, this.strokewidth);
+  this.fillStyle = mxUtils.getValue(this.style, mxConstants.STYLE_FILL_STYLE, this.fillStyle);
   this.rotation = mxUtils.getValue(this.style, mxConstants.STYLE_ROTATION, this.rotation);
   this.direction = mxUtils.getValue(this.style, mxConstants.STYLE_DIRECTION, this.direction);
   this.flipH = mxUtils.getValue(this.style, mxConstants.STYLE_FLIPH, 0) == 1;
@@ -4624,7 +4646,19 @@ mxShape.prototype.configureCanvas = function(c, x, y, w, h) {
   } else if (c.setFillColor) {
     c.setFillColor(this.fill);
   }
+  if (c.setFillStyle) c.setFillStyle(this.fillStyle);
   if (c.setStrokeColor) c.setStrokeColor(this.stroke);
+  const sketchOn = this.style != null &&
+    (this.style.sketch == 1 || this.style.sketch == '1');
+  if (sketchOn && c.setSketch) {
+    c.setSketch({
+      fill: this.fillStyle || this.style.fillStyle,
+      gap: this.style.hachureGap,
+      angle: this.style.hachureAngle,
+      weight: this.style.fillWeight,
+      jiggle: this.style.jiggle,
+    });
+  }
 };
 mxShape.prototype.addPoints = function(c, pts, rounded, arcSize, close, exclude, initialMove) {
   if (pts == null || pts.length === 0) return;
@@ -5708,6 +5742,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.strokeOpacity = Number.isFinite(strokeOpacity) ? strokeOpacity : 100;
   shape.stroke = stroke;
   shape.strokewidth = Number(style.strokeWidth) || 1;
+  shape.fillStyle = style.fillStyle || null;
   shape.isDashed = style.dashed == 1;
   shape.isShadow = style.shadow == 1;
   shape.isRounded = style.rounded == 1;

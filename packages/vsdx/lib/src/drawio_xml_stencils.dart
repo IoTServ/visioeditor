@@ -121,6 +121,12 @@ class _DrawioXmlShapeDecoder {
   VsdxShadow? _parentShadow;
   String? _rasterPart;
   String? _rasterMime;
+  bool _sketchEnabled = false;
+  String? _sketchFill;
+  double? _sketchGap;
+  double? _sketchAngle;
+  double? _sketchWeight;
+  double? _sketchJiggle;
   double _penX = 0;
   double _penY = 0;
   double _subX = 0;
@@ -368,6 +374,19 @@ class _DrawioXmlShapeDecoder {
       case 'strokealpha':
         _strokeAlpha = _alphaValue(node);
         break;
+      case 'sketch':
+        _sketchEnabled = node.getAttribute('enabled') != '0';
+        final fill = node.getAttribute('fill');
+        if (fill != null && fill.isNotEmpty) _sketchFill = fill;
+        final gap = double.tryParse(node.getAttribute('gap') ?? '');
+        if (gap != null && gap.isFinite) _sketchGap = gap;
+        final angle = double.tryParse(node.getAttribute('angle') ?? '');
+        if (angle != null && angle.isFinite) _sketchAngle = angle;
+        final weight = double.tryParse(node.getAttribute('weight') ?? '');
+        if (weight != null && weight.isFinite) _sketchWeight = weight;
+        final jiggle = double.tryParse(node.getAttribute('jiggle') ?? '');
+        if (jiggle != null && jiggle.isFinite) _sketchJiggle = jiggle;
+        break;
       case 'strokecolor':
         _applyMxStroke(node.getAttribute('color'));
         break;
@@ -529,14 +548,12 @@ class _DrawioXmlShapeDecoder {
     if (packedStops.length >= 2) {
       final pattern = _mxFillPatternForDirection(dir);
       final angleAttr = node.getAttribute('angle');
-      final angleRad = double.tryParse(angleAttr ?? '') ??
-          _mxFillGradientAngleRad(dir);
+      final angleRad =
+          double.tryParse(angleAttr ?? '') ?? _mxFillGradientAngleRad(dir);
       final radial = dir == 'radial';
       _fillOverride = VsdxFill(
-        foreground:
-            radial ? packedStops.first.color : packedStops.last.color,
-        background:
-            radial ? packedStops.last.color : packedStops.first.color,
+        foreground: radial ? packedStops.first.color : packedStops.last.color,
+        background: radial ? packedStops.last.color : packedStops.first.color,
         pattern: pattern,
         foregroundTransparency:
             (1 - (radial ? alpha1 : alpha2)).clamp(0.0, 1.0),
@@ -680,8 +697,8 @@ class _DrawioXmlShapeDecoder {
               'fontstyle',
               fallback: _fontStyle.toDouble(),
             ).round(),
-            fontFamily: _mxFontFamily(el.getAttribute('fontfamily')) ??
-                _fontFamily,
+            fontFamily:
+                _mxFontFamily(el.getAttribute('fontfamily')) ?? _fontFamily,
             color: el.getAttribute('fontcolor') != null
                 ? _mxGraphPaintColor(el.getAttribute('fontcolor'))
                 : _fontColor,
@@ -1098,6 +1115,23 @@ class _DrawioXmlShapeDecoder {
     if (custom != null && custom.isNotEmpty) {
       next = next.withDrawioDashPattern(custom, fixed: shape.line.fixedDash);
     }
+    return _withSketchUserCells(next);
+  }
+
+  VsdxShape _withSketchUserCells(VsdxShape shape) {
+    if (!_sketchEnabled) return shape;
+    var next = shape.withSketchEffect(true);
+    if (_sketchFill != null && _sketchFill!.isNotEmpty) {
+      next = next.withSketchFillStyle(VsdxSketchFillStyle.parse(_sketchFill));
+    }
+    if (_sketchGap != null) next = next.withSketchHachureGap(_sketchGap!);
+    if (_sketchAngle != null) {
+      next = next.withSketchHachureAngle(_sketchAngle!);
+    }
+    if (_sketchWeight != null && _sketchWeight! > 0) {
+      next = next.withSketchFillWeight(_sketchWeight!);
+    }
+    if (_sketchJiggle != null) next = next.withSketchJiggle(_sketchJiggle!);
     return next;
   }
 
