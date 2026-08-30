@@ -7985,6 +7985,68 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG default stop-color stays FillForegndTrans for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isBlackWash(VsdxShape shape) =>
+          shape.fill.pattern == 1 &&
+          shape.fill.foreground == VsdxColor.black &&
+          shape.fill.gradient == null &&
+          shape.fill.foregroundTransparency > 0.05;
+
+      final dataverse = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Azure2 / Azure / Power Platform',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Dataverse')
+          .build(415, 3, 3);
+      expect(
+        descendants(dataverse).where(isBlackWash).length,
+        greaterThanOrEqualTo(8),
+        reason: 'Dataverse.svg paint2_linear stops omit stop-color (SVG '
+            'default black) and only set stop-opacity; those must tessellate '
+            'as FillPattern 1 + FillForegndTrans so collectFillAndShadow '
+            'emits draw:opacity for the 0.25 highlight stripe',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(dataverse.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'default-black stop-opacity ramps stay native; leftover must '
+            'not bake an opaque-white SoftEdges PNG over the green plate',
+      );
+      expect(
+        descendants(leftover).where(isBlackWash).length,
+        greaterThanOrEqualTo(8),
+        reason: 'a second save must keep the FillForegndTrans highlight wash',
+      );
+    },
+  );
+
+  test(
     'diagramly clipart PNGs stay ForeignData for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

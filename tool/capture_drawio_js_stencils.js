@@ -2018,9 +2018,15 @@ function svgPackGradientStops(stops) {
 
 function svgStopColor(node, css) {
   const style = svgPresentation(node, {}, css);
-  const raw = style['stop-color'] || node.attrs['stop-color'] || style.fill;
-  if (raw == null || raw === '') return null;
-  return htmlCssColorToHex(raw) || (/^url\(/i.test(raw) ? null : String(raw).trim());
+  const raw = style['stop-color'] || node.attrs['stop-color'];
+  if (raw == null || raw === '' || /^currentcolor$/i.test(raw)) {
+    // SVG default stop-color is black. Dataverse paint2_linear / Azure A
+    // highlight stripes only set stop-opacity; skipping them dropped the
+    // FillForegndTrans wash collectFillAndShadow maps to draw:opacity.
+    return '#000000';
+  }
+  if (/^none$/i.test(String(raw).trim())) return '#000000';
+  return htmlCssColorToHex(raw) || (/^url\(/i.test(raw) ? '#000000' : String(raw).trim());
 }
 
 function svgCollectStops(node, css) {
@@ -2028,12 +2034,11 @@ function svgCollectStops(node, css) {
   const walk = (n) => {
     if (xmlLocalName(n.name) === 'stop') {
       const color = svgStopColor(n, css);
-      if (!color) return;
       const style = svgPresentation(n, {}, css);
       const off = parseFloat(n.attrs.offset);
       const alpha = svgCssAlpha(style['stop-opacity'] || n.attrs['stop-opacity']);
       stops.push({
-        offset: Number.isFinite(off) ? off : stops.length,
+        offset: Number.isFinite(off) ? off : (stops.length === 0 ? 0 : 1),
         color,
         alpha: alpha == null ? 1 : alpha,
       });

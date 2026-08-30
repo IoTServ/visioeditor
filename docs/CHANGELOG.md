@@ -1112,6 +1112,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   hard edge. Capture now outsets the contour as FillPattern 1 +
   FillForegndTrans rings (`collectFillAndShadow` `draw:opacity`). Tiny
   σ (`<0.5`) still stays a single fill. A second save keeps the rings.
+- draw.io mxImageShape SVG default `stop-color` now stays native in
+  LibreOffice. Dataverse `paint2_linear` (and Azure A highlights) only
+  set `stop-opacity` on black stops — SVG defaults `stop-color` to
+  black — but capture skipped those stops, so the 0.25 rotated wash
+  never reached `collectFillAndShadow` `draw:opacity`. Capture now
+  keeps the default black and tessellates the ramp as FillPattern 1 +
+  FillForegndTrans. A second save keeps the wash.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
