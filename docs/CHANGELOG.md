@@ -1040,6 +1040,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Server LED mid-stop, and Cell Phone's axial peak use the same slabs
   (leftover FillGradient still 0→1s the XForm). A second save keeps
   the polygons.
+- draw.io mxImageShape SVG offset / undersized circular `radialGradient`
+  now stays native in LibreOffice. Official Open Supply Chain Platform
+  paints four `userSpaceOnUse` discs (`r≈2.25` on an 18 box, plus the
+  inner `r≈4.4` cyan), and User Subscriptions puts gold `#ffd70f`→`#fea11b`
+  on a key whose centre is ~0.85 of the viewBox radius from the icon
+  middle, but FillPattern 40 and leftover FillGradient both interpolate
+  0→1 from the child XForm centre (`_fillAndShadowProperties`
+  `svg:cx/cy=0.5`). Capture sizes every mxImageShape child to the full
+  icon box, so those washes sampled the edge stop. Capture now
+  tessellates them as concentric FillForegnd discs like the elliptical
+  case. Near-centred discs larger than the box (SAP Build Apps blob D)
+  stay native 40; Azure Applied AI's three unique colours still leftover
+  PNG. A second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

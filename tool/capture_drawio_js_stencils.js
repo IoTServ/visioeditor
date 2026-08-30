@@ -1756,18 +1756,49 @@ function svgRadialIsElliptical(node) {
   return aspect > 1.35 || skew > 0.2;
 }
 
+function svgRadialDiscUserSpace(node) {
+  const cx = svgLength(node.attrs.cx, 0.5);
+  const cy = svgLength(node.attrs.cy, 0.5);
+  const r = svgLength(node.attrs.r, 0.5);
+  const tf = node.attrs && node.attrs.gradientTransform;
+  const c = tf ? svgTransformPoint(tf, cx, cy) : {x: cx, y: cy};
+  const e = tf ? svgTransformPoint(tf, cx + r, cy) : {x: cx + r, y: cy};
+  return {cx: c.x, cy: c.y, r: Math.hypot(e.x - c.x, e.y - c.y)};
+}
+
+// FillPattern 40 is a circle at the child XForm centre, and capture
+// sizes every mxImageShape child to the full icon box. A corner key
+// (User Subscriptions gold) or an r=2 disc on an 18 box (Open Supply
+// Chain cyan) therefore samples the edge stop. Build Apps blob D is
+// a slightly offset disc larger than the box — keep native 40.
+function svgRadialNeedsLocalBands(node, viewBox) {
+  if (xmlLocalName(node.name) !== 'radialgradient') return false;
+  if (svgRadialIsElliptical(node)) return false;
+  if (!viewBox || !(viewBox.w > 0) || !(viewBox.h > 0)) return false;
+  const disc = svgRadialDiscUserSpace(node);
+  const boxCx = viewBox.x + viewBox.w / 2;
+  const boxCy = viewBox.y + viewBox.h / 2;
+  const boxR = Math.min(viewBox.w, viewBox.h) / 2;
+  if (!(boxR > 1e-12)) return false;
+  const off = Math.hypot(disc.cx - boxCx, disc.cy - boxCy) / boxR;
+  const relR = disc.r / boxR;
+  return off > 0.55 || relR < 0.55;
+}
+
 // Two-stop 0→1 ellipses cannot use FillPattern 40 (a circle) or
-// leftover FillGradient (canvas radial is still a circle). Tessellate
-// concentric discs in gradient space. Three unique colours stay on
-// FillGradient leftover (Azure Applied AI). Compound evenodd holes
-// (Azure OpenAI swirl / Task Center donuts) stay one Geometry so
-// collectGeometry svg:fill-rule=evenodd still punches.
-function svgRadialNeedsEllipseBands(node, stops) {
-  if (!svgRadialIsElliptical(node)) return false;
+// leftover FillGradient (canvas radial is still a circle). Offset /
+// undersized circular userSpaceOnUse discs have the same problem
+// because the child XForm is the viewBox. Tessellate concentric
+// discs in gradient space. Three unique colours stay on FillGradient
+// leftover (Azure Applied AI). Compound evenodd holes (Azure OpenAI
+// swirl / Task Center donuts) stay one Geometry so collectGeometry
+// svg:fill-rule=evenodd still punches.
+function svgRadialNeedsEllipseBands(node, stops, viewBox) {
   if (!stops || stops.length < 2) return false;
   if (svgStopsHaveAlphaRamp(stops)) return false;
   if (svgOpaqueUniqueColorCount(stops) > 2) return false;
-  return true;
+  if (svgRadialIsElliptical(node)) return true;
+  return svgRadialNeedsLocalBands(node, viewBox);
 }
 
 function svgHexFromRgb(rgb) {
@@ -3198,10 +3229,11 @@ function paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css) {
   return painted;
 }
 
-// FillPattern 40 is a circle. Tessellate an elliptical userSpaceOnUse
-// radial as concentric solid discs clipped to the glyph so
-// collectFillAndShadow sees FillForegnd siblings Draw can paint
-// (SAP Build Apps / Work Zone blobs). Compound evenodd holes stay
+// FillPattern 40 is a circle at the XForm centre. Tessellate an
+// elliptical or offset/undersized userSpaceOnUse radial as concentric
+// solid discs clipped to the glyph so collectFillAndShadow sees
+// FillForegnd siblings Draw can paint (SAP Build Apps / Work Zone
+// blobs; Open Supply Chain corner discs). Compound evenodd holes stay
 // one Geometry (Azure OpenAI swirl, Task Center donuts).
 function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css) {
   if (kind !== 'fill' && kind !== 'fillstroke') return false;
@@ -3211,7 +3243,7 @@ function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css
   const gradNode = resolveSvgGradientNode(root, id);
   if (!gradNode) return false;
   const stops = svgCollectStops(gradNode, css);
-  if (!svgRadialNeedsEllipseBands(gradNode, stops)) return false;
+  if (!svgRadialNeedsEllipseBands(gradNode, stops, canvas.viewBox)) return false;
   const rings = svgDrawableRings(name, node);
   if (!rings.length) return false;
   const mapped = [];

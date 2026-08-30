@@ -6816,6 +6816,159 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG offset circular radial stays native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isCyanBlobBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
+          return false;
+        }
+        return color.red > 140 &&
+            color.red < 210 &&
+            color.green > 220 &&
+            color.blue > 240;
+      }
+
+      bool isGoldKeyBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
+          return false;
+        }
+        return color.red > 240 &&
+            color.green > 140 &&
+            color.green < 230 &&
+            color.blue < 50;
+      }
+
+      final cyan = VsdxColor.tryParse('#C3F1FF')!;
+      final gold = VsdxColor.tryParse('#FFD70F')!;
+      final disc = VsdxColor.tryParse('#1348FF')!;
+
+      final oscp = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Other',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Open Supply Chain Platform',
+          )
+          .build(172, 3, 3);
+      expect(
+        descendantFills(oscp).where(isCyanBlobBand).length,
+        greaterThanOrEqualTo(12),
+        reason: 'Open_Supply_Chain_Platform.svg r=2.25 corner discs and '
+            'the inner r=4.4 wash sit off the viewBox centre; FillPattern '
+            '40 interpolates 0→1 from the icon XForm so the highlights '
+            'would miss #c3f1ff',
+      );
+      expect(
+        descendantFills(oscp).any(
+          (fill) => fill.pattern == 40 && fill.foreground == cyan,
+        ),
+        isFalse,
+        reason: 'offset circular cyan discs must not stay FillPattern 40',
+      );
+      expect(
+        descendantFills(oscp).any(
+          (fill) =>
+              fill.pattern == 28 &&
+              fill.foreground == VsdxColor.tryParse('#773ADC') &&
+              fill.background == VsdxColor.tryParse('#A67AF4'),
+        ),
+        isTrue,
+        reason: 'the full-box south linear plate stays FillPattern 28',
+      );
+
+      final keys = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Azure Stack',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'User Subscriptions')
+          .build(173, 3, 3);
+      expect(
+        descendantFills(keys).where(isGoldKeyBand).length,
+        greaterThanOrEqualTo(6),
+        reason: 'User_Subscriptions.svg gold radial (centre ~0.85 of the '
+            'viewBox radius from the icon middle) must tessellate as '
+            'FillForegnd discs; leftover FillGradient is still a circle '
+            'on the XForm',
+      );
+      expect(
+        descendantFills(keys).any(
+          (fill) =>
+              fill.pattern == 40 &&
+              fill.foreground == gold &&
+              fill.gradient != null,
+        ),
+        isFalse,
+        reason: 'gold key must not leftover a full-box radial FillGradient',
+      );
+
+      final apps = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Build Apps')
+          .build(174, 3, 3);
+      expect(
+        descendantFills(apps).any(
+          (fill) => fill.pattern == 40 && fill.foreground == disc,
+        ),
+        isTrue,
+        reason: 'near-circular blob D (aspect≈1.04, larger than the box) '
+            'stays FillPattern 40',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(oscp.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'offset circular discs stay native; leftover must not bake '
+            'a full-box FillGradient PNG',
+      );
+      expect(
+        descendants(leftover)
+            .where((shape) => isCyanBlobBand(shape.fill))
+            .length,
+        greaterThanOrEqualTo(12),
+        reason: 'a second save must keep the cyan disc slabs',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG stop-opacity ramps stay native for LibreOffice',
     () {
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
