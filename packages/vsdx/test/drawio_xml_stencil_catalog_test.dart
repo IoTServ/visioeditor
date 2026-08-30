@@ -7352,6 +7352,100 @@ void main() {
   );
 
   test(
+    'mxShape setGradient fillAlpha stays FillForegndTrans for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isTranslucentBand(VsdxFill fill) =>
+          fill.pattern == 1 &&
+          fill.gradient == null &&
+          fill.foregroundTransparency > 0.05;
+
+      final cylinder = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Cylinder')
+          .build(180, 3, 3);
+      expect(
+        descendantFills(cylinder).any(
+          (fill) =>
+              fill.pattern >= 25 &&
+              fill.pattern <= 40 &&
+              fill.foregroundTransparency > 0.02,
+        ),
+        isFalse,
+        reason: 'mxShape Infographic Cylinder setGradient + fillAlpha must '
+            'tessellate as FillPattern 1 + FillForegndTrans; FillPattern '
+            '25–40 drop draw:opacity so Draw would hide the cyan body',
+      );
+      expect(
+        descendantFills(cylinder).where(isTranslucentBand),
+        isNotEmpty,
+        reason: 'the highlight wash must stay FillPattern 1 + FillForegndTrans',
+      );
+
+      final alert = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Ios / iOS6',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Alert Box')
+          .build(181, 3, 3);
+      expect(
+        descendantFills(alert).any(
+          (fill) =>
+              fill.pattern >= 25 &&
+              fill.pattern <= 40 &&
+              fill.foregroundTransparency > 0.02,
+        ),
+        isFalse,
+        reason: 'iOS6 Alert Box glass setGradient + fillAlpha must tessellate',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cylinder.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'mxShape translucent gradients stay native; a save '
+            'must not bake an opaque SoftEdges PNG over the body',
+      );
+      expect(
+        descendants(leftover).where((shape) => isTranslucentBand(shape.fill)),
+        isNotEmpty,
+        reason: 'a second save must keep the FillForegndTrans highlight',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG opaque url(#gradient) element opacity stays native for LibreOffice',
     () {
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {

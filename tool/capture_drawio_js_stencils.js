@@ -205,6 +205,8 @@ class CanvasRecorder {
     this.stack = [];
     this.operations = [];
     this.pathOpen = false;
+    this._liveRings = [];
+    this._liveRing = [];
     this.externalAsset = false;
     this.styleFill = '#ffffff';
     this.styleStroke = '#000000';
@@ -371,31 +373,122 @@ class CanvasRecorder {
     }
     return {x, y};
   }
-  begin() { this.finishPath(); this.operations.push('<path>'); this.pathOpen = true; }
+  begin() {
+    this.finishPath();
+    this._liveRings = [];
+    this._liveRing = [];
+    this.operations.push('<path>');
+    this.pathOpen = true;
+  }
   end() { this.finishPath(); }
-  moveTo(x, y) { const p = this.map(x, y); this.command('move', {x: p.x, y: p.y}); }
-  lineTo(x, y) { const p = this.map(x, y); this.command('line', {x: p.x, y: p.y}); }
+  _flushLiveRing() {
+    if (this._liveRing && this._liveRing.length >= 3) {
+      this._liveRings.push(this._liveRing);
+    }
+    this._liveRing = [];
+  }
+  _liveLast() {
+    if (this._liveRing && this._liveRing.length) {
+      return this._liveRing[this._liveRing.length - 1];
+    }
+    const rings = this._liveRings;
+    if (rings.length && rings[rings.length - 1].length) {
+      const ring = rings[rings.length - 1];
+      return ring[ring.length - 1];
+    }
+    return {x: 0, y: 0};
+  }
+  _appendLiveCubic(p1, p2, p3, steps) {
+    const p0 = this._liveLast();
+    const n = steps || 8;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const u = 1 - t;
+      this._liveRing.push({
+        x: u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+        y: u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+      });
+    }
+  }
+  _appendLiveQuad(p1, p2, steps) {
+    const p0 = this._liveLast();
+    const n = steps || 8;
+    for (let i = 1; i <= n; i++) {
+      const t = i / n;
+      const u = 1 - t;
+      this._liveRing.push({
+        x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+        y: u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+      });
+    }
+  }
+  _setLiveMappedRect(x, y, w, h) {
+    this._liveRings = [[
+      {x, y},
+      {x: x + w, y},
+      {x: x + w, y: y + h},
+      {x, y: y + h},
+    ]];
+    this._liveRing = [];
+  }
+  _setLiveMappedEllipse(x, y, w, h) {
+    const rx = w / 2;
+    const ry = h / 2;
+    const cx = x + rx;
+    const cy = y + ry;
+    const ring = [];
+    const n = 48;
+    for (let i = 0; i < n; i++) {
+      const a = i * 2 * Math.PI / n;
+      ring.push({x: cx + rx * Math.cos(a), y: cy + ry * Math.sin(a)});
+    }
+    this._liveRings = [ring];
+    this._liveRing = [];
+  }
+  moveTo(x, y) {
+    this._flushLiveRing();
+    const p = this.map(x, y);
+    this._liveRing = [p];
+    this.command('move', {x: p.x, y: p.y});
+  }
+  lineTo(x, y) {
+    const p = this.map(x, y);
+    this._liveRing.push(p);
+    this.command('line', {x: p.x, y: p.y});
+  }
   curveTo(x1, y1, x2, y2, x3, y3) {
     const p1 = this.map(x1, y1);
     const p2 = this.map(x2, y2);
     const p3 = this.map(x3, y3);
+    this._appendLiveCubic(p1, p2, p3);
     this.command('curve', {x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, x3: p3.x, y3: p3.y});
   }
   quadTo(x1, y1, x2, y2) {
     const p1 = this.map(x1, y1);
     const p2 = this.map(x2, y2);
+    this._appendLiveQuad(p1, p2);
     this.command('quad', {x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y});
   }
   arcTo(rx, ry, rotation, largeArc, sweep, x, y) {
+    const p0 = this._liveLast();
     const p = this.map(x, y);
+    const mrx = (Number(rx) || 0) * Math.abs(this.sx) * this.affineScaleX();
+    const mry = (Number(ry) || 0) * Math.abs(this.sy) * this.affineScaleY();
+    const rot = (Number(rotation) || 0) + this.rotTheta;
+    const pts = [];
+    svgArcSample(pts, p0.x, p0.y, mrx, mry, rot, largeArc, sweep, p.x, p.y, 24);
+    for (const pt of pts) this._liveRing.push(pt);
     this.command('arc', {
-      rx: (Number(rx) || 0) * Math.abs(this.sx) * this.affineScaleX(),
-      ry: (Number(ry) || 0) * Math.abs(this.sy) * this.affineScaleY(),
-      'x-axis-rotation': (Number(rotation) || 0) + this.rotTheta,
+      rx: mrx,
+      ry: mry,
+      'x-axis-rotation': rot,
       'large-arc-flag': largeArc, 'sweep-flag': sweep, x: p.x, y: p.y,
     });
   }
-  close() { this.operations.push('<close/>'); }
+  close() {
+    this._flushLiveRing();
+    this.operations.push('<close/>');
+  }
   // Clip intersection already ran in map() space; do not map again.
   // Several rings in one <path> become one Geometry so collectGeometry
   // evenodd punches holes (Azure OpenAI swirl, Task Center donuts).
@@ -430,7 +523,10 @@ class CanvasRecorder {
       return;
     }
     const p = this.map(x, y);
-    this.operations.push(`<rect x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}"/>`);
+    const sw = w * this.sx;
+    const sh = h * this.sy;
+    this._setLiveMappedRect(p.x, p.y, sw, sh);
+    this.operations.push(`<rect x="${number(p.x)}" y="${number(p.y)}" w="${number(sw)}" h="${number(sh)}"/>`);
   }
   roundrect(x, y, w, h, rx, ry) {
     this.finishPath();
@@ -447,7 +543,7 @@ class CanvasRecorder {
     // <roundrect> token. A sharp 4-point poly dropped Azure Search's
     // 45° capsule handle (rx≈h/2) that collectGeometry would paint.
     // Tessellate cubics through map() like ellipse().
-    if (this.isRotated()) {
+    if (this.isRotated() || this._gradientNeedsAlphaBands()) {
       if (!(radX > 1e-9 || radY > 1e-9)) {
         this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
         return;
@@ -462,6 +558,7 @@ class CanvasRecorder {
       Math.max(Math.abs(this.sx), Math.abs(this.sy)) /
       Math.max(1e-9, Math.min(Math.abs(sw), Math.abs(sh))));
     this.operations.push(`<roundrect x="${number(p.x)}" y="${number(p.y)}" w="${number(sw)}" h="${number(sh)}" arcsize="${number(arc)}"/>`);
+    this._setLiveMappedRect(p.x, p.y, sw, sh);
   }
   // SVG rounded-rect corners as cubic quarters (k=0.55228), same as
   // ellipse() under rotate. Lines of zero length are fine when rx=w/2.
@@ -506,7 +603,7 @@ class CanvasRecorder {
   ellipse(x, y, w, h) {
     this.finishPath();
     if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
-    if (this.isRotated()) {
+    if (this.isRotated() || this._gradientNeedsAlphaBands()) {
       const rx = w / 2;
       const ry = h / 2;
       const cx = x + rx;
@@ -522,9 +619,13 @@ class CanvasRecorder {
       return;
     }
     const p = this.map(x, y);
-    this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}"/>`);
+    const sw = w * this.sx;
+    const sh = h * this.sy;
+    this._setLiveMappedEllipse(p.x, p.y, sw, sh);
+    this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(sw)}" h="${number(sh)}"/>`);
   }
   fill() {
+    if (this._paintMxGradientAlphaBands(false)) return;
     this.finishPath();
     if (isNoneColor(this.state.fillColor)) return;
     this.operations.push('<fill/>');
@@ -535,6 +636,7 @@ class CanvasRecorder {
     this.operations.push('<stroke/>');
   }
   fillAndStroke() {
+    if (this._paintMxGradientAlphaBands(true)) return;
     this.finishPath();
     const noFill = isNoneColor(this.state.fillColor);
     const noStroke = isNoneColor(this.state.strokeColor);
@@ -768,7 +870,7 @@ class CanvasRecorder {
       const token = this._gradientToken();
       if (token !== this._fillToken) {
         this._fillToken = token;
-        this._emitFillGradient();
+        if (!this._gradientNeedsAlphaBands()) this._emitFillGradient();
       }
     } else {
       const fillToken = fillPaintToken(
@@ -879,6 +981,110 @@ class CanvasRecorder {
     const a = Number(this.state.alpha);
     const f = Number(this.state.fillAlpha);
     return (Number.isFinite(a) ? a : 1) * (Number.isFinite(f) ? f : 1);
+  }
+
+  _gradientNeedsAlphaBands() {
+    if (!this.state.gradientColor || isNoneColor(this.state.gradientColor)) {
+      return false;
+    }
+    if (this._effectiveFillOpacity() < 1 - 1e-9) return true;
+    const a1 = this.state.gradientAlpha1 == null ? 1 : Number(this.state.gradientAlpha1);
+    const a2 = this.state.gradientAlpha2 == null ? 1 : Number(this.state.gradientAlpha2);
+    return (Number.isFinite(a1) && a1 < 1 - 1e-9) ||
+      (Number.isFinite(a2) && a2 < 1 - 1e-9);
+  }
+
+  _discardPendingShape() {
+    this.finishPath();
+    if (this.pathOpen) {
+      const idx = this.operations.lastIndexOf('<path>');
+      if (idx >= 0) this.operations.length = idx;
+      this.pathOpen = false;
+      return;
+    }
+    const last = this.operations[this.operations.length - 1];
+    if (last && /^<(rect|ellipse|roundrect)\b/.test(last)) {
+      this.operations.pop();
+      return;
+    }
+    const idx = this.operations.lastIndexOf('<path>');
+    const end = this.operations.lastIndexOf('</path>');
+    if (idx >= 0 && end > idx && end === this.operations.length - 1) {
+      this.operations.length = idx;
+    }
+  }
+
+  _paintMxGradientAlphaBands(strokeToo) {
+    if (!this._gradientNeedsAlphaBands()) return false;
+    this._flushLiveRing();
+    const rings = (this._liveRings || []).filter((ring) => ring && ring.length >= 3);
+    if (!rings.length) return false;
+    this._discardPendingShape();
+    const color1 = this.state.fillColor;
+    const color2 = this.state.gradientColor;
+    const a1 = this.state.gradientAlpha1 == null ? 1 : Number(this.state.gradientAlpha1);
+    const a2 = this.state.gradientAlpha2 == null ? 1 : Number(this.state.gradientAlpha2);
+    const inheritOp = this._effectiveFillOpacity();
+    const dir = this.state.gradientDir || 'south';
+    const stops = [
+      {color: color1, offset: 0, alpha: Number.isFinite(a1) ? a1 : 1},
+      {color: color2, offset: 1, alpha: Number.isFinite(a2) ? a2 : 1},
+    ];
+    const box = mxRingsAabb(rings);
+    const span = Math.max(box.maxx - box.minx, box.maxy - box.miny, 1) * 8;
+    const saved = {
+      fillColor: this.state.fillColor,
+      gradientColor: this.state.gradientColor,
+      gradientDir: this.state.gradientDir,
+      gradientAlpha1: this.state.gradientAlpha1,
+      gradientAlpha2: this.state.gradientAlpha2,
+      fillAlpha: this.state.fillAlpha,
+      fillToken: this._fillToken,
+      fillAlphaToken: this._fillAlphaToken,
+    };
+    const bands = 8;
+    const radial = dir === 'radial';
+    let painted = false;
+    const emitBand = (fillRings, t) => {
+      const alpha = inheritOp * svgStopsAlphaAt(stops, t);
+      if (!(alpha > 1e-9)) return 0;
+      if (!this.emitMappedRings(fillRings)) return 0;
+      this.setFillColor(svgStopsColorAt(stops, t), true);
+      this.setFillAlpha(alpha);
+      this.operations.push('<fill/>');
+      return 1;
+    };
+    if (radial) {
+      if (emitBand(rings, 0.5)) painted = true;
+    } else {
+      const v = mxMappedGradientVector(box, dir);
+      for (let i = 0; i < bands; i++) {
+        const t0 = i / bands;
+        const t1 = (i + 1) / bands;
+        const slab = mxGradientSlabRing(v, t0, t1, span);
+        if (!slab) continue;
+        const band = [];
+        for (const ring of rings) {
+          for (const hit of svgIntersectPolygons(ring, slab)) band.push(hit);
+        }
+        if (emitBand(band, (t0 + t1) / 2)) painted = true;
+      }
+      if (!painted && emitBand(rings, 0.5)) painted = true;
+    }
+    this.state.fillColor = saved.fillColor;
+    this.state.gradientColor = saved.gradientColor;
+    this.state.gradientDir = saved.gradientDir;
+    this.state.gradientAlpha1 = saved.gradientAlpha1;
+    this.state.gradientAlpha2 = saved.gradientAlpha2;
+    this.state.fillAlpha = saved.fillAlpha;
+    this._fillToken = saved.fillToken;
+    this._emitAlpha('fillalpha', saved.fillAlpha);
+    this._fillAlphaToken = saved.fillAlpha;
+    if (strokeToo && !isNoneColor(this.state.strokeColor)) {
+      this.emitMappedRings(rings);
+      this.operations.push('<stroke/>');
+    }
+    return painted || inheritOp < 1e-9;
   }
 
   _emitAlpha(tag, value) {
@@ -1108,6 +1314,10 @@ class CanvasRecorder {
     const token = this._gradientToken();
     if (token === this._fillToken) return;
     this._fillToken = token;
+    // FillPattern 25–40 drop draw:opacity. Infographic Cylinder and
+    // iOS6 Alert Box setGradient + fillAlpha; leftover would bake an
+    // opaque SoftEdges PNG. Tessellate at fill().
+    if (this._gradientNeedsAlphaBands()) return;
     this._emitFillGradient();
   }
   // SVG linear/radial that FillPattern 25–40 cannot paint: a middle
@@ -1132,6 +1342,7 @@ class CanvasRecorder {
     const token = this._gradientToken();
     if (token === this._fillToken) return;
     this._fillToken = token;
+    if (this._gradientNeedsAlphaBands()) return;
     this._emitFillGradient();
   }
   setFontColor(value) {
@@ -1170,6 +1381,7 @@ class CanvasRecorder {
     this.operations.push(`<${name}${values}/>`);
   }
   finishPath() {
+    this._flushLiveRing();
     if (this.pathOpen) {
       this.operations.push('</path>');
       this.pathOpen = false;
@@ -2315,6 +2527,67 @@ function svgRingAabb(ring) {
     if (p.y > maxy) maxy = p.y;
   }
   return {minx, miny, maxx, maxy};
+}
+
+function mxRingsAabb(rings) {
+  let minx = Infinity;
+  let miny = Infinity;
+  let maxx = -Infinity;
+  let maxy = -Infinity;
+  for (const ring of rings || []) {
+    for (const p of ring || []) {
+      if (p.x < minx) minx = p.x;
+      if (p.y < miny) miny = p.y;
+      if (p.x > maxx) maxx = p.x;
+      if (p.y > maxy) maxy = p.y;
+    }
+  }
+  return {minx, miny, maxx, maxy};
+}
+
+function mxDirUnit(dir) {
+  switch (String(dir || 'south').toLowerCase()) {
+    case 'east': return {dx: 1, dy: 0};
+    case 'west': return {dx: -1, dy: 0};
+    case 'north': return {dx: 0, dy: 1};
+    case 'south': return {dx: 0, dy: -1};
+    case 'northeast': return {dx: 1, dy: 1};
+    case 'northwest': return {dx: -1, dy: 1};
+    case 'southeast': return {dx: 1, dy: -1};
+    case 'southwest': return {dx: -1, dy: -1};
+    default: return {dx: 0, dy: -1};
+  }
+}
+
+function mxMappedGradientVector(box, dir) {
+  const u = mxDirUnit(dir);
+  const dx = box.maxx - box.minx;
+  const dy = box.maxy - box.miny;
+  const cx = (box.minx + box.maxx) / 2;
+  const cy = (box.miny + box.maxy) / 2;
+  return {
+    x1: cx - 0.5 * dx * u.dx,
+    y1: cy - 0.5 * dy * u.dy,
+    dx: dx * u.dx,
+    dy: dy * u.dy,
+  };
+}
+
+function mxGradientSlabRing(v, t0, t1, span) {
+  const len = Math.hypot(v.dx, v.dy);
+  if (!(len > 1e-12)) return null;
+  const ux = v.dx / len;
+  const uy = v.dy / len;
+  const px = -uy * span;
+  const py = ux * span;
+  const a0 = t0 * len;
+  const a1 = t1 * len;
+  return [
+    {x: v.x1 + ux * a0 + px, y: v.y1 + uy * a0 + py},
+    {x: v.x1 + ux * a1 + px, y: v.y1 + uy * a1 + py},
+    {x: v.x1 + ux * a1 - px, y: v.y1 + uy * a1 - py},
+    {x: v.x1 + ux * a0 - px, y: v.y1 + uy * a0 - py},
+  ];
 }
 
 function svgIsAabbRect(ring) {

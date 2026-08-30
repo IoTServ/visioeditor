@@ -583,12 +583,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxShape `setGradient` + fillAlpha now stays native in LibreOffice.
+  Infographic Cylinder and iOS6 Alert Box / iPhone glass call official
+  `mxAbstractCanvas2D.setGradient` then `setFillAlpha`, but capture emitted
+  FillPattern 25–40 and `collectFillAndShadow` `_fillAndShadowProperties`
+  always `remove(draw:opacity)`. A save would bake an opaque
+  SoftEdges PNG over the body. Capture now tessellates those fills as
+  `FillPattern` 1 + `FillForegndTrans` slabs. A second save keeps the wash.
 - draw.io mxImageShape SVG far-field `stop-opacity` visors now stay native
   in LibreOffice. Azure Sphere's white highlight is `#fff`→`#fff` with
   `stop-opacity` 0.9→0.8 on a `userSpaceOnUse` vector at y≈-3114, so
   tessellation slabs miss the glyph and capture fell through to
   `FillGradient`. `collectFillAndShadow` FillPattern 25–40 drop
-  `draw:opacity`, and leftover leftover would bake an opaque SoftEdges
+  `draw:opacity`, and a save would bake an opaque SoftEdges
   PNG over the cyan body. Capture now paints the contour once as
   `FillPattern` 1 + `FillForegndTrans` (and refuses FillGradient for
   alpha ramps). A second save keeps the visor.
