@@ -7446,6 +7446,69 @@ void main() {
   );
 
   test(
+    'mxShape inherit-fill siblings stay unions for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      int filledGeoms(VsdxShape shape) =>
+          shape.geometries.where((g) => !g.noFill && !g.noShow).length;
+
+      final cloud = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / AWS / AWS / General',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Cloud')
+          .build(182, 3, 3);
+      expect(
+        descendants(cloud).where((shape) => filledGeoms(shape) >= 2),
+        isEmpty,
+        reason: 'AWS Cloud puffs are three inherit-fill contours; '
+            'collectGeometry concatenates NoFill=0 into one evenodd path '
+            'so overlaps punch. Extra inherit fills must be siblings',
+      );
+      expect(
+        descendants(cloud)
+            .where(
+              (shape) =>
+                  shape.fill.pattern == 1 &&
+                  shape.fill.foreground == VsdxColor.tryParse('#E3F2FD') &&
+                  filledGeoms(shape) == 1,
+            )
+            .length,
+        greaterThanOrEqualTo(3),
+        reason: 'each puff stays a filled sibling Draw paints independently',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cloud.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where((shape) => filledGeoms(shape) >= 2),
+        isEmpty,
+        reason: 'a second save must keep the puff siblings',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG opaque url(#gradient) element opacity stays native for LibreOffice',
     () {
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {

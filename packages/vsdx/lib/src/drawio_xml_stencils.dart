@@ -835,12 +835,26 @@ class _DrawioXmlShapeDecoder {
     // from the first paint (Availability Zone, Dashed Wire) keeps
     // LinePattern on the parent so applyStencilStyle can still recolor it.
     final bakeDash = doStroke && _dashed && _solidPaintBeforeDash;
-    if (bakeFill || bakeStroke || bakeDash) {
+    // collectGeometry concatenates every NoFill=0 section into one
+    // evenodd path (`_fillAndShadowProperties` svg:fill-rule=evenodd).
+    // A second inherit-fill (AWS Cloud puffs, Citrix server blobs)
+    // would punch overlaps. One compound path + one fill stays on the
+    // parent so OpenAI swirl holes still punch.
+    final extraInheritFill = doFill &&
+        !bakeFill &&
+        _geometries.any((geometry) => !geometry.noFill);
+    if (bakeFill || bakeStroke || bakeDash || extraInheritFill) {
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
-        fill: doFill && (bakeFill || bakeDash)
-            ? _paintFill()
-            : const VsdxFill(pattern: 0),
+        fill: extraInheritFill
+            ? VsdxFill(
+                pattern: 1,
+                foreground: _styleFill,
+                foregroundTransparency: _fillTransparency,
+              )
+            : doFill && (bakeFill || bakeDash)
+                ? _paintFill()
+                : const VsdxFill(pattern: 0),
         line: _paintLine(stroke: doStroke),
         shadow: _shadow ?? VsdxShadow.disabled,
       ));

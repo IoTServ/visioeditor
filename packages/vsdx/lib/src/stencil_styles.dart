@@ -668,10 +668,13 @@ StencilColors? resolveStencilColors({
 
 /// Apply fill/stroke to a freshly built shape. Skips text boxes (no fill & no
 /// line). Preserves arrowheads and dash patterns on 1D / connector-like shapes.
+/// Walks children so extra inherit-fill siblings (AWS Cloud puffs) receive
+/// the palette; authored hex on nested glyphs stays.
 VsdxShape applyStencilStyle(
   VsdxShape shape, {
   StencilColors? colors,
   double lineWeightInches = 0.012,
+  bool isRoot = true,
 }) {
   if (colors == null) return shape;
 
@@ -700,13 +703,15 @@ VsdxShape applyStencilStyle(
     final fg = fill.foreground;
     // Factory white and unresolved theme slots take the palette. Authored
     // hex (C4 Person #083F75) must stay so collectFill does not wash it.
-    if (fg == null || fg == VsdxColor.white) {
+    // Child inherit-fill siblings have a null foreground; white child
+    // highlights must not be washed (AWS white glyphs).
+    if (fg == null || (isRoot && fg == VsdxColor.white)) {
       fill = fill.withSolidForeground(fillColor);
     }
   }
   if (lineColor != null && line.hasLine) {
     final c = line.color;
-    if (c == null || c == VsdxColor.black) {
+    if (c == null || (isRoot && c == VsdxColor.black)) {
       line = line.withSolidColor(lineColor);
       // mxStencil <strokewidth> already froze LineWeight in stencil
       // units. Overwriting it with the palette default would drop the
@@ -717,8 +722,26 @@ VsdxShape applyStencilStyle(
       }
     }
   }
-  if (identical(fill, shape.fill) && identical(line, shape.line)) {
-    return shape;
+  var next = shape;
+  if (!identical(fill, shape.fill) || !identical(line, shape.line)) {
+    next = shape.copyWith(fill: fill, line: line);
   }
-  return shape.copyWith(fill: fill, line: line);
+  if (next.children.isEmpty) return next;
+  final children = <VsdxShape>[
+    for (final child in next.children)
+      applyStencilStyle(
+        child,
+        colors: colors,
+        lineWeightInches: lineWeightInches,
+        isRoot: false,
+      ),
+  ];
+  var childrenChanged = false;
+  for (var i = 0; i < children.length; i++) {
+    if (!identical(children[i], next.children[i])) {
+      childrenChanged = true;
+      break;
+    }
+  }
+  return childrenChanged ? next.copyWith(children: children) : next;
 }

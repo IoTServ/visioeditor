@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxShape inherit-fill siblings now stay unions in LibreOffice.
+  Official AWS Cloud, VPC NAT Gateway and Citrix server painters call
+  `fill()` more than once with the cell fill colour, but the decoder
+  stacked those contours as extra NoFill=0 Geometry. `collectGeometry`
+  `_fillAndShadowProperties` `svg:fill-rule=evenodd` then punched
+  overlaps as holes. Extra inherit fills become sibling shapes; a
+  compound path with one fill (OpenAI swirl, Task Center donuts) stays
+  one Geometry so evenodd still punches. A second save keeps the
+  children.
 - draw.io mxShape `setGradient` + fillAlpha now stays native in LibreOffice.
   Infographic Cylinder and iOS6 Alert Box / iPhone glass call official
   `mxAbstractCanvas2D.setGradient` then `setFillAlpha`, but capture emitted
