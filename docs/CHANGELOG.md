@@ -1000,6 +1000,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   a token). Capture now writes FillGradient rows; leftover bakes
   SoftEdges PNG. SAP Task Center's two-stop 0→1 ticks stay native 40.
   A second save keeps the plate.
+- draw.io mxImageShape SVG elliptical `radialGradient` now stays native
+  in LibreOffice. Official SAP Build Apps / Work Zone blobs paint
+  two-stop `userSpaceOnUse` radials whose `gradientTransform` is an
+  ellipse (aspect ≈1.85), but FillPattern 40 and leftover FillGradient
+  are both circles in the XForm box that `_fillAndShadowProperties`
+  maps to ODF `draw:style=radial`. Capture now tessellates those
+  washes as concentric solid FillForegnd discs clipped to the glyph.
+  Circular two-stop discs (SAP Task Center ticks, Build Apps blob D)
+  stay native 40; Azure Applied AI's three unique colours still
+  leftover PNG. A second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

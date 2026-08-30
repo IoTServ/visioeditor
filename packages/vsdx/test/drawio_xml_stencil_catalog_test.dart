@@ -6493,6 +6493,102 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG elliptical radial url(#gradient) stays native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final navy = VsdxColor.tryParse('#1147E9')!;
+      final disc = VsdxColor.tryParse('#1348FF')!;
+
+      final apps = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Build Apps')
+          .build(167, 3, 3);
+      final bandColors = descendantFills(apps)
+          .where(
+            (fill) =>
+                fill.pattern == 1 &&
+                fill.gradient == null &&
+                fill.foreground != null,
+          )
+          .map((fill) => fill.foreground!.value & 0x00FFFFFF)
+          .toSet();
+      expect(
+        bandColors.length,
+        greaterThanOrEqualTo(8),
+        reason: 'SAP_Build_Apps.svg blob E/F gradientTransform ellipses '
+            'must tessellate as solid FillForegnd discs; FillPattern 40 '
+            'is a circle collectFillAndShadow maps to ODF radial',
+      );
+      expect(
+        bandColors,
+        contains(navy.value & 0x00FFFFFF),
+        reason: 'the outer band must keep stop-color #1147e9',
+      );
+      expect(
+        descendantFills(apps).any(
+          (fill) => fill.pattern == 40 && fill.foreground == disc,
+        ),
+        isTrue,
+        reason: 'near-circular blob D (aspect≈1.04) stays FillPattern 40',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(apps.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'concentric solid discs stay native; leftover must not '
+            'bake a circular FillGradient PNG',
+      );
+      expect(
+        descendants(leftover)
+            .where((shape) => shape.fill.pattern == 1)
+            .length,
+        greaterThanOrEqualTo(8),
+        reason: 'a second save must keep the tessellated FillForegnd discs',
+      );
+      expect(
+        descendants(leftover).any(
+          (shape) =>
+              shape.fill.pattern == 40 && shape.fill.foreground == disc,
+        ),
+        isTrue,
+        reason: 'a second save must keep circular blob D as FillPattern 40',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

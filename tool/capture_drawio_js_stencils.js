@@ -1680,6 +1680,73 @@ function svgRadialNeedsFillGradient(node, stops) {
   return false;
 }
 
+// FillPattern 40 / ODF radial is a circle in the XForm box.
+// userSpaceOnUse gradientTransform with unequal column lengths
+// (SAP Build Apps blob E aspect≈1.85) is an ellipse Draw would
+// clip to a disc. Task Center tick A (≈1.21) stays a disc.
+function svgRadialEllipseMetrics(node) {
+  const m = svgTransformMatrix(node.attrs && node.attrs.gradientTransform);
+  const sx = Math.hypot(m[0], m[1]);
+  const sy = Math.hypot(m[2], m[3]);
+  if (!(sx > 1e-12 && sy > 1e-12)) return {aspect: 1, skew: 0};
+  return {
+    aspect: Math.max(sx, sy) / Math.min(sx, sy),
+    skew: Math.abs((m[0] * m[2] + m[1] * m[3]) / (sx * sy)),
+  };
+}
+
+function svgRadialIsElliptical(node) {
+  if (xmlLocalName(node.name) !== 'radialgradient') return false;
+  const {aspect, skew} = svgRadialEllipseMetrics(node);
+  return aspect > 1.35 || skew > 0.2;
+}
+
+// Two-stop 0→1 ellipses cannot use FillPattern 40 (a circle) or
+// leftover FillGradient (canvas radial is still a circle). Tessellate
+// concentric discs in gradient space. Three unique colours stay on
+// FillGradient leftover (Azure Applied AI). Compound evenodd holes
+// skip this (Azure OpenAI swirl / Task Center donuts).
+function svgRadialNeedsEllipseBands(node, stops) {
+  if (!svgRadialIsElliptical(node)) return false;
+  if (!stops || stops.length < 2) return false;
+  if (svgOpaqueUniqueColorCount(stops) > 2) return false;
+  return true;
+}
+
+function svgHexFromRgb(rgb) {
+  const h = (n) => Math.max(0, Math.min(255, n | 0)).toString(16).padStart(2, '0');
+  return `#${h(rgb[0])}${h(rgb[1])}${h(rgb[2])}`;
+}
+
+function svgStopsColorAt(stops, t) {
+  const {units, scale} = svgStopsUnitScale(stops);
+  const u = Math.max(0, Math.min(1, Number(t) || 0));
+  if (!stops || !stops.length) return '#000000';
+  let i = 0;
+  while (i + 1 < stops.length && units[i + 1] / scale < u - 1e-12) i++;
+  if (i + 1 >= stops.length) return stops[stops.length - 1].color;
+  const u0 = units[i] / scale;
+  const u1 = units[i + 1] / scale;
+  const a = svgParseRgb(stops[i].color);
+  const b = svgParseRgb(stops[i + 1].color);
+  if (!a || !b) return stops[i].color;
+  const tt = Math.abs(u1 - u0) < 1e-12 ? 0 : (u - u0) / (u1 - u0);
+  return svgHexFromRgb([
+    Math.round(a[0] + (b[0] - a[0]) * tt),
+    Math.round(a[1] + (b[1] - a[1]) * tt),
+    Math.round(a[2] + (b[2] - a[2]) * tt),
+  ]);
+}
+
+function svgRadialDiscRing(gradNode, t, steps) {
+  const cx = svgLength(gradNode.attrs.cx, 0.5);
+  const cy = svgLength(gradNode.attrs.cy, 0.5);
+  const r = svgLength(gradNode.attrs.r, 0.5) * Math.max(Number(t) || 0, 1e-6);
+  const ring = svgCircleRing(cx, cy, r, steps || 48);
+  const tf = gradNode.attrs && gradNode.attrs.gradientTransform;
+  return tf ? svgMapRing(ring, tf) : ring;
+}
+
 // Middle stop far from first→last lerp cannot use FillPattern 25–34
 // (Windows Server (2) LED #f2580a→#fea15f→#a11a00). SAP Logo's six
 // cyan–navy stops stay on the lerp so they keep native 25–40.
@@ -1910,7 +1977,7 @@ function svgTransformMultiply(m, a, b, c, d, e, f) {
   m[5] = nf;
 }
 
-function svgTransformPoint(raw, x, y) {
+function svgTransformMatrix(raw) {
   const m = [1, 0, 0, 1, 0, 0];
   for (const op of parseSvgTransformList(raw)) {
     const n = op.nums;
@@ -1936,6 +2003,11 @@ function svgTransformPoint(raw, x, y) {
       svgTransformMultiply(m, n[0], n[1], n[2], n[3], n[4], n[5]);
     }
   }
+  return m;
+}
+
+function svgTransformPoint(raw, x, y) {
+  const m = svgTransformMatrix(raw);
   return {x: m[0] * x + m[2] * y + m[4], y: m[1] * x + m[3] * y + m[5]};
 }
 
@@ -2801,6 +2873,57 @@ function applySvgFilter(canvas, node, root, css) {
   return true;
 }
 
+// FillPattern 40 is a circle. Tessellate an elliptical userSpaceOnUse
+// radial as concentric solid discs clipped to the glyph so
+// collectFillAndShadow sees FillForegnd siblings Draw can paint
+// (SAP Build Apps / Work Zone blobs).
+function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css) {
+  if (kind !== 'fill' && kind !== 'fillstroke') return false;
+  const fill = style.fill == null ? '#000' : style.fill;
+  const id = svgPaintUrlId(fill);
+  if (!id || !root) return false;
+  const gradNode = resolveSvgGradientNode(root, id);
+  if (!gradNode) return false;
+  const stops = svgCollectStops(gradNode, css);
+  if (!svgRadialNeedsEllipseBands(gradNode, stops)) return false;
+  const rings = svgDrawableRings(name, node);
+  if (rings.length !== 1) return false;
+  const shapeMapped = rings[0].map((p) => canvas.map(p.x, p.y));
+  let clips = [shapeMapped];
+  if (canvas.clipRings && canvas.clipRings.length) {
+    clips = svgClipMappedToRings(shapeMapped, canvas.clipRings);
+  }
+  if (!clips.length) return false;
+  const emitSolid = (pieces, color) => {
+    let n = 0;
+    const fillStyle = {...style, fill: color, stroke: 'none'};
+    for (const piece of pieces) {
+      if (!canvas.emitMappedRing(piece)) continue;
+      applySvgPaint(canvas, fillStyle, 'fill', root, css);
+      n++;
+    }
+    return n;
+  };
+  let painted = false;
+  if (emitSolid(clips, svgStopsColorAt(stops, 1))) painted = true;
+  const bands = 8;
+  for (let i = bands - 1; i >= 1; i--) {
+    const t = i / bands;
+    const discMapped = svgRadialDiscRing(gradNode, t).map((p) => canvas.map(p.x, p.y));
+    const pieces = [];
+    for (const clip of clips) {
+      for (const hit of svgIntersectPolygons(discMapped, clip)) pieces.push(hit);
+    }
+    if (emitSolid(pieces, svgStopsColorAt(stops, t))) painted = true;
+  }
+  if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
+    if (canvas.clipRings && canvas.clipRings.length) {
+      paintSvgClippedStrokeRibbons(canvas, name, node, style, root, css);
+    }
+  }
+  return painted;
+}
+
 function paintSvgClippedStrokeRibbons(canvas, name, node, style, root, css) {
   const width = svgLength(style['stroke-width'], 1);
   if (!(width > 0)) return false;
@@ -3493,6 +3616,9 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
         name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
       if (!kind) return false;
+      if (paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css)) {
+        return true;
+      }
       if (paintSvgGradientStroke(canvas, name, node, style, kind, root, css)) {
         return true;
       }
