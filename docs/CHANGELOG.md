@@ -854,8 +854,24 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `parseXml`, so `collectCharIX` never saw the glyph — only the
   sidebar IP label. Capture now keeps character data, scales
   `font-size` with the SVG `map()` transform, and freezes
-  `fo:font-size` / `fo:color` / `style:font-name`. `textPath` is
-  still skipped. A second save keeps the run.
+  `fo:font-size` / `fo:color` / `style:font-name`. A second save keeps
+  the run.
+- draw.io mxImageShape SVG `<textPath>` now stays native in
+  LibreOffice. Official IBM Key Management paints `KEY MGMT` along
+  path `#A` (`startOffset="67%"`), but capture returned false on any
+  `textPath`, so `collectCharIX` never saw the glyph. Capture now
+  flattens the guide, pins each letter as a Char sibling, and writes
+  `TxtAngle` that libvisio collectTextBlock maps to
+  `librevenge:rotate`. `MyriadPro-Bold` becomes Arial plus Style bold.
+  A second save keeps the run.
+- draw.io mxImageShape SVG white strokes now stay native in
+  LibreOffice. Official IBM Key Management's shaft is
+  `stroke="#fff"` with `fill="none"`, but `paintToken` collapsed that
+  hex onto the `fill` keyword (default fillColor is white). After
+  `fillcolor=none`, the decoder copied none onto the stroke and
+  dropped the LineWeight sibling `collectLine` maps to
+  `svg:stroke-width`. SVG presentation strokes now force hex like
+  fills. A second save keeps the tick.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

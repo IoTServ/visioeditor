@@ -2115,8 +2115,7 @@ void main() {
 
       final sapTitle = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / SAP / SAP / Essentials',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Essentials',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Diagram Title (2)')
@@ -2298,9 +2297,7 @@ void main() {
           )
           .build(447, 3, 3);
       expect(
-        runContaining(compartment, 'Block1')!
-            .paraStyle
-            .horizontalAlign,
+        runContaining(compartment, 'Block1')!.paraStyle.horizontalAlign,
         VsdxHorzAlign.center,
         reason: 'html text-align:center on the title <p> is collectParaIX '
             'HorzAlign that libvisio maps to fo:text-align',
@@ -2348,9 +2345,7 @@ void main() {
         reason: 'a second save must keep HorzAlign center on Block1',
       );
       expect(
-        runContaining(leftover, 'property1 = value')!
-            .paraStyle
-            .horizontalAlign,
+        runContaining(leftover, 'property1 = value')!.paraStyle.horizontalAlign,
         VsdxHorzAlign.left,
         reason: 'a second save must keep HorzAlign left on the property',
       );
@@ -2474,7 +2469,8 @@ void main() {
 
       final header = dynamic
           .singleWhere(
-            (group) => group.name ==
+            (group) =>
+                group.name ==
                 'Draw.io JS / Salesforce / Salesforce / Components',
           )
           .stencils
@@ -2562,7 +2558,8 @@ void main() {
             .style
             .bold,
         isFalse,
-        reason: 'a second save must keep Style.bold off after font-weight:normal',
+        reason:
+            'a second save must keep Style.bold off after font-weight:normal',
       );
     },
   );
@@ -2946,8 +2943,7 @@ void main() {
           )
           .stencils
           .singleWhere(
-            (entry) =>
-                entry.name == 'Centrifugal Compressor - Turbine Driven',
+            (entry) => entry.name == 'Centrifugal Compressor - Turbine Driven',
           )
           .build(456, 3, 3);
       final tee = glyphContaining(compressor, 'T')!;
@@ -3073,7 +3069,8 @@ void main() {
 
       final header = dynamic
           .singleWhere(
-            (group) => group.name ==
+            (group) =>
+                group.name ==
                 'Draw.io JS / Salesforce / Salesforce / Components',
           )
           .stencils
@@ -3142,8 +3139,7 @@ void main() {
 
       final title = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / SAP / SAP / Essentials',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Essentials',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Diagram Title (2)')
@@ -3515,7 +3511,8 @@ void main() {
       expect(
         leftover.fill.foreground?.value,
         0xFF000000,
-        reason: 'a second save must keep FillForegnd from fillColor=strokeColor',
+        reason:
+            'a second save must keep FillForegnd from fillColor=strokeColor',
       );
     },
   );
@@ -4647,7 +4644,8 @@ void main() {
       const parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
       final id = doc.pages.first.nextFreeShapeId();
-      doc = doc.replacePage(0, doc.pages.first.addShape(vertex.copyWith(id: id)));
+      doc =
+          doc.replacePage(0, doc.pages.first.addShape(vertex.copyWith(id: id)));
       final leftover = parser
           .parse(
             writer.write(originalBytes: writer.emptyDocument(), edited: doc),
@@ -4722,8 +4720,7 @@ void main() {
         doc.pages.first.addShape(
           dynamic
               .singleWhere(
-                (group) =>
-                    group.name == 'Draw.io JS / SAP / SAP / Brand Names',
+                (group) => group.name == 'Draw.io JS / SAP / SAP / Brand Names',
               )
               .stencils
               .singleWhere((entry) => entry.name == 'SAP')
@@ -4770,9 +4767,7 @@ void main() {
 
       final pki = dynamic
           .singleWhere(
-            (group) =>
-                group.name ==
-                'Draw.io JS / SAP / SAP / Foundational',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Foundational',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'SAP PKI Certificate Service')
@@ -4846,9 +4841,7 @@ void main() {
 
       final cloud = dynamic
           .singleWhere(
-            (group) =>
-                group.name ==
-                'Draw.io JS / SAP / SAP / Data Analytics',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Data Analytics',
           )
           .stencils
           .singleWhere(
@@ -4956,6 +4949,96 @@ void main() {
         labelOf(leftover, 'DDos'),
         isNotNull,
         reason: 'a second save must keep the SVG text glyph',
+      );
+    },
+  );
+
+  test(
+    'mxImageShape SVG textPath stays rotated Char cells for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final keyMgmt = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / IBM / IBM / Blockchain',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Key Management')
+          .build(138, 3, 3);
+      final letters = descendants(keyMgmt)
+          .where((shape) => (shape.text ?? '').trim().isNotEmpty)
+          .toList(growable: false);
+      expect(
+        letters.map((shape) => shape.text).join(),
+        'KEYMGMT',
+        reason: 'key_management.svg <textPath>KEY MGMT</textPath> must reach '
+            'collectCharIX as Char siblings, not be skipped',
+      );
+      expect(
+        letters.every(
+          (shape) =>
+              shape.richText.runs.first.charStyle.color == VsdxColor.white &&
+              shape.richText.runs.first.charStyle.style.bold &&
+              shape.richText.runs.first.charStyle.fontSizeInches > 0.04 &&
+              shape.richText.textBlock.angleRad.abs() > 0.2,
+        ),
+        isTrue,
+        reason: 'fill="#fff" / MyriadPro-Bold / startOffset tangent become '
+            'Char Color / Style / TxtAngle that collectCharIX and '
+            'collectTextBlock map to fo:color / fo:font-weight / '
+            'librevenge:rotate',
+      );
+      expect(
+        descendants(keyMgmt).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.color == VsdxColor.white &&
+              shape.line.weightInches > 0.04,
+        ),
+        isTrue,
+        reason: 'shaft stroke="#fff" must stay a collectLine sibling, not '
+            'collapse to fillcolor=none',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(keyMgmt.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover)
+            .where((shape) => (shape.text ?? '').trim().isNotEmpty)
+            .map((shape) => shape.text)
+            .join(),
+        'KEYMGMT',
+        reason: 'a second save must keep the SVG textPath glyphs',
+      );
+      expect(
+        descendants(leftover).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.color == VsdxColor.white &&
+              shape.line.weightInches > 0.04,
+        ),
+        isTrue,
+        reason: 'a second save must keep the SVG white stroke LineWeight',
       );
     },
   );

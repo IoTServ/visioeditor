@@ -776,9 +776,15 @@ class CanvasRecorder {
     this._fillToken = token;
     this._emitPaint('fillcolor', token);
   }
-  setStrokeColor(value) {
+  // SVG presentation strokes pass forceHex so IBM Key Mgmt's white
+  // shaft (`#fff` == default fillColor) does not collapse to the
+  // `fill` token. After fillcolor=none that token became none and
+  // collectLine never saw the LineWeight sibling.
+  setStrokeColor(value, forceHex) {
     this.state.strokeColor = isNoneColor(value) ? null : value;
-    const token = paintToken(value, this.styleFill, this.styleStroke);
+    const token = (forceHex === true && !isNoneColor(value))
+      ? String(value)
+      : paintToken(value, this.styleFill, this.styleStroke);
     if (token === this._strokeToken) return;
     this._strokeToken = token;
     this._emitPaint('strokecolor', token);
@@ -1230,6 +1236,12 @@ function svgPresentation(node, inherited, css) {
   if (node.attrs['font-family'] != null) {
     style['font-family'] = node.attrs['font-family'];
   }
+  if (node.attrs['font-weight'] != null) {
+    style['font-weight'] = node.attrs['font-weight'];
+  }
+  if (node.attrs['font-style'] != null) {
+    style['font-style'] = node.attrs['font-style'];
+  }
   return style;
 }
 
@@ -1366,7 +1378,7 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
   const first = stops[0];
   const last = stops[stops.length - 1];
   if (channel === 'stroke') {
-    canvas.setStrokeColor(first.color);
+    canvas.setStrokeColor(first.color, true);
     return true;
   }
   if (stops.length === 1 || cssColorKey(first.color) === cssColorKey(last.color)) {
@@ -1409,7 +1421,7 @@ function applySvgPaint(canvas, style, kind, root, css) {
       if (/^currentcolor$/i.test(stroke)) {
         // inherit
       } else if (!applySvgPaintServer(canvas, stroke, root, css, 'stroke')) {
-        canvas.setStrokeColor(htmlCssColorToHex(stroke) || stroke);
+        canvas.setStrokeColor(htmlCssColorToHex(stroke) || stroke, true);
       }
       applySvgStrokeStyle(canvas, style);
     }
@@ -1629,6 +1641,201 @@ function paintSvgPath(canvas, d) {
   return true;
 }
 
+function svgPathAddPoint(pts, x, y) {
+  const last = pts.length ? pts[pts.length - 1] : null;
+  if (last && Math.abs(last.x - x) < 1e-9 && Math.abs(last.y - y) < 1e-9) return;
+  pts.push({x, y});
+}
+
+function svgCubicSample(pts, p0, p1, p2, p3, steps) {
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const u = 1 - t;
+    svgPathAddPoint(
+      pts,
+      u * u * u * p0.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+      u * u * u * p0.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+    );
+  }
+}
+
+function svgQuadSample(pts, p0, p1, p2, steps) {
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const u = 1 - t;
+    svgPathAddPoint(
+      pts,
+      u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
+      u * u * p0.y + 2 * u * t * p1.y + t * t * p2.y,
+    );
+  }
+}
+
+// Flatten SVG path `d` into a polyline so textPath startOffset can pin
+// Char cells. IBM Key Mgmt's guide is cubics around the badge.
+function svgPathPolyline(d) {
+  const tokens = [];
+  const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)/g;
+  let match;
+  while ((match = re.exec(String(d || '')))) {
+    if (match[1]) tokens.push(match[1]);
+    else tokens.push(Number(match[2]));
+  }
+  const pts = [];
+  if (!tokens.length) return {segs: [], total: 0};
+  let x = 0;
+  let y = 0;
+  let sx = 0;
+  let sy = 0;
+  let lastCmd = '';
+  let c2x = 0;
+  let c2y = 0;
+  let q1x = 0;
+  let q1y = 0;
+  let i = 0;
+  const take = () => Number(tokens[i++]) || 0;
+  const steps = 24;
+  while (i < tokens.length) {
+    let cmd = tokens[i];
+    const prevCmd = lastCmd;
+    if (typeof cmd === 'string') {
+      i++;
+      lastCmd = cmd;
+    } else {
+      cmd = lastCmd;
+      if (!cmd) break;
+    }
+    const rel = cmd === cmd.toLowerCase();
+    const up = cmd.toUpperCase();
+    if (up === 'Z') {
+      svgPathAddPoint(pts, sx, sy);
+      x = sx;
+      y = sy;
+      continue;
+    }
+    if (up === 'M') {
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      svgPathAddPoint(pts, x, y);
+      sx = x;
+      sy = y;
+      lastCmd = rel ? 'l' : 'L';
+      continue;
+    }
+    if (up === 'L') {
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      svgPathAddPoint(pts, x, y);
+    } else if (up === 'H') {
+      x = rel ? x + take() : take();
+      svgPathAddPoint(pts, x, y);
+    } else if (up === 'V') {
+      y = rel ? y + take() : take();
+      svgPathAddPoint(pts, x, y);
+    } else if (up === 'C') {
+      const x1 = rel ? x + take() : take();
+      const y1 = rel ? y + take() : take();
+      const x2 = rel ? x + take() : take();
+      const y2 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgCubicSample(pts, {x, y}, {x: x1, y: y1}, {x: x2, y: y2}, {x: nx, y: ny}, steps);
+      c2x = x2;
+      c2y = y2;
+      x = nx;
+      y = ny;
+    } else if (up === 'S') {
+      const x2 = rel ? x + take() : take();
+      const y2 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      const prevUp = String(prevCmd).toUpperCase();
+      const x1 = prevUp === 'C' || prevUp === 'S' ? 2 * x - c2x : x;
+      const y1 = prevUp === 'C' || prevUp === 'S' ? 2 * y - c2y : y;
+      svgCubicSample(pts, {x, y}, {x: x1, y: y1}, {x: x2, y: y2}, {x: nx, y: ny}, steps);
+      c2x = x2;
+      c2y = y2;
+      x = nx;
+      y = ny;
+    } else if (up === 'Q') {
+      const x1 = rel ? x + take() : take();
+      const y1 = rel ? y + take() : take();
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgQuadSample(pts, {x, y}, {x: x1, y: y1}, {x: nx, y: ny}, steps);
+      q1x = x1;
+      q1y = y1;
+      x = nx;
+      y = ny;
+    } else if (up === 'T') {
+      const prevUp = String(prevCmd).toUpperCase();
+      const x1 = prevUp === 'Q' || prevUp === 'T' ? 2 * x - q1x : x;
+      const y1 = prevUp === 'Q' || prevUp === 'T' ? 2 * y - q1y : y;
+      const nx = rel ? x + take() : take();
+      const ny = rel ? y + take() : take();
+      svgQuadSample(pts, {x, y}, {x: x1, y: y1}, {x: nx, y: ny}, steps);
+      q1x = x1;
+      q1y = y1;
+      x = nx;
+      y = ny;
+    } else if (up === 'A') {
+      take();
+      take();
+      take();
+      take();
+      take();
+      x = rel ? x + take() : take();
+      y = rel ? y + take() : take();
+      svgPathAddPoint(pts, x, y);
+    } else {
+      break;
+    }
+  }
+  const segs = [];
+  let total = 0;
+  for (let n = 1; n < pts.length; n++) {
+    const dx = pts[n].x - pts[n - 1].x;
+    const dy = pts[n].y - pts[n - 1].y;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 0)) continue;
+    segs.push({
+      x0: pts[n - 1].x, y0: pts[n - 1].y,
+      x1: pts[n].x, y1: pts[n].y,
+      len, acc: total,
+    });
+    total += len;
+  }
+  return {segs, total};
+}
+
+function svgPathAt(poly, dist) {
+  if (!poly.segs.length || !(poly.total > 0)) return null;
+  let d = dist;
+  if (d < 0) d = 0;
+  if (d > poly.total) d = poly.total;
+  for (let i = 0; i < poly.segs.length; i++) {
+    const s = poly.segs[i];
+    if (d > s.acc + s.len && i < poly.segs.length - 1) continue;
+    const u = s.len > 0 ? (d - s.acc) / s.len : 0;
+    return {
+      x: s.x0 + (s.x1 - s.x0) * u,
+      y: s.y0 + (s.y1 - s.y0) * u,
+      angle: Math.atan2(s.y1 - s.y0, s.x1 - s.x0) * 180 / Math.PI,
+    };
+  }
+  return null;
+}
+
+function svgStartOffset(raw, total) {
+  const s = String(raw == null ? '0' : raw).trim();
+  if (!s) return 0;
+  if (/%$/.test(s)) {
+    const n = parseFloat(s);
+    return Number.isFinite(n) ? (n / 100) * total : 0;
+  }
+  return svgLength(s, 0);
+}
+
 const svgSkip = new Set([
   'defs', 'title', 'desc', 'metadata', 'namedview', 'rdf', 'work', 'clippath',
   'filter', 'lineargradient', 'radialgradient', 'stop', 'style', 'script',
@@ -1645,67 +1852,182 @@ function svgTextContent(node) {
   return parts.join('');
 }
 
-function svgHasTextPath(node) {
-  if (!node) return false;
-  if (xmlLocalName(node.name) === 'textpath') return true;
-  return (node.children || []).some(svgHasTextPath);
-}
-
 function svgFontFamily(raw) {
   const mapped = htmlFontFamily(raw);
   if (mapped) return mapped;
   const first = String(raw || '').split(',')[0].trim().replace(/^["']+|["']+$/g, '');
   if (!first) return null;
   if (/^arial/i.test(first)) return 'Arial';
+  if (/^helvetica/i.test(first)) return 'Helvetica';
+  // PostScript "MyriadPro-Bold" is not a Visio/libvisio face.
+  // collectCharIX style:font-name needs Arial; bold is a Style bit.
+  if (/^myriad/i.test(first)) return 'Arial';
+  if (/bold|italic|regular|medium|light/i.test(first) && !/\s/.test(first)) {
+    return 'Arial';
+  }
   return first;
+}
+
+function svgFontStyleBits(style, family) {
+  let bits = 0;
+  const weight = String((style && style['font-weight']) || '').trim().toLowerCase();
+  const fs = String((style && style['font-style']) || '').trim().toLowerCase();
+  const name = String(family || (style && style['font-family']) || '');
+  if (weight === 'bold' || weight === 'bolder' || parseInt(weight, 10) >= 700) {
+    bits |= 1;
+  }
+  if (/bold/i.test(name.replace(/[\s_-]+/g, ''))) bits |= 1;
+  if (fs === 'italic' || fs === 'oblique') bits |= 2;
+  if (/italic/i.test(name)) bits |= 2;
+  return bits;
+}
+
+function paintSvgTextRun(canvas, raw, st, x, y, rotation) {
+  const str = String(raw || '').replace(/\s+/g, ' ');
+  if (!str.trim()) return false;
+  const size = svgLength(st['font-size'], NaN);
+  if (Number.isFinite(size) && size > 0 && canvas.setFontSize) {
+    canvas.setFontSize(size * canvasMinScale(canvas));
+  }
+  const family = svgFontFamily(st['font-family'] || '');
+  if (family && canvas.setFontFamily) canvas.setFontFamily(family);
+  if (canvas.setFontStyle) {
+    canvas.setFontStyle(svgFontStyleBits(st, st['font-family'] || family));
+  }
+  const fill = st.fill;
+  if (fill && !svgPaintIsNone(fill) && canvas.setFontColor) {
+    if (!/^currentcolor$/i.test(fill) && !/^url\(/i.test(fill)) {
+      canvas.setFontColor(htmlCssColorToHex(fill) || fill);
+    }
+  }
+  // SVG y is baseline. Pass a box whose bottom sits on y so
+  // collectTextBlock svg:height is wide enough that Draw does not wrap
+  // "DDos" (pdftotext was splitting DDo/s on a zero-size glyph pin).
+  const fs = Number(canvas.state.fontSize) || 12;
+  const rot = Number(rotation) || 0;
+  if (rot) {
+    // canvas.text multiplies w/h by map() scale. Use SVG user units so
+    // each textPath glyph stays a letter-sized frame (IBM KEY MGMT).
+    const scale = canvasMinScale(canvas);
+    const userFs = scale > 0 ? fs / scale : fs;
+    const bw = Math.max(userFs * 0.9, str.length * userFs * 0.62);
+    const bh = userFs * 1.2;
+    const rad = rot * Math.PI / 180;
+    const cx = x + Math.sin(rad) * (bh / 2);
+    const cy = y - Math.cos(rad) * (bh / 2);
+    canvas.text(
+      cx - bw / 2, cy - bh / 2, bw, bh, str, 'center', 'middle',
+      false, null, null, null, rot,
+    );
+  } else {
+    const bw = Math.max(fs * 1.2, str.length * fs * 0.75);
+    const bh = fs * 1.4;
+    canvas.text(x, y - bh, bw, bh, str, 'left', 'bottom');
+  }
+  return true;
+}
+
+function svgGlyphAdvance(ch, fs) {
+  if (ch === ' ') return fs * 0.33;
+  return fs * 0.55;
+}
+
+// SVG <textPath> (IBM Key Management `KEY MGMT`). Visio has no native
+// text-along-path cell; each glyph becomes a Char sibling with TxtAngle
+// that libvisio collectTextBlock maps to librevenge:rotate.
+function paintSvgTextPath(canvas, node, inherited, css, root) {
+  const href = node.attrs.href || node.attrs['xlink:href'] || '';
+  const id = String(href).replace(/^#/, '');
+  const target = id ? findSvgById(root, id) : null;
+  const d = target && target.attrs ? target.attrs.d : node.attrs.d;
+  const poly = svgPathPolyline(d);
+  if (!(poly.total > 0)) return false;
+  const base = svgPresentation(node, inherited, css);
+  const chunks = [];
+  const spans = (node.children || []).filter(
+    (child) => xmlLocalName(child.name) === 'tspan',
+  );
+  if (spans.length) {
+    for (const span of spans) {
+      chunks.push({
+        text: svgTextContent(span),
+        style: svgPresentation(span, base, css),
+      });
+    }
+  } else {
+    chunks.push({text: svgTextContent(node), style: base});
+  }
+  const chars = [];
+  for (const chunk of chunks) {
+    const compact = String(chunk.text || '').replace(/\s+/g, ' ');
+    const fs = svgLength(
+      chunk.style['font-size'], Number(canvas.state.fontSize) || 12,
+    );
+    for (const ch of Array.from(compact)) {
+      chars.push({ch, style: chunk.style, fs, adv: svgGlyphAdvance(ch, fs)});
+    }
+  }
+  if (!chars.some((c) => c.ch.trim())) return false;
+  let offset = svgStartOffset(node.attrs.startOffset, poly.total);
+  const anchor = String(base['text-anchor'] || node.attrs['text-anchor'] || 'start')
+    .trim().toLowerCase();
+  const measured = chars.reduce((sum, c) => sum + c.adv, 0);
+  if (anchor === 'middle') offset -= measured / 2;
+  else if (anchor === 'end') offset -= measured;
+  let painted = false;
+  for (const glyph of chars) {
+    if (glyph.ch === ' ') {
+      offset += glyph.adv;
+      continue;
+    }
+    const at = svgPathAt(poly, offset + glyph.adv / 2);
+    if (!at) break;
+    if (paintSvgTextRun(canvas, glyph.ch, glyph.style, at.x, at.y, at.angle)) {
+      painted = true;
+    }
+    offset += glyph.adv;
+  }
+  return painted;
+}
+
+function svgCollectTextPaths(node, into) {
+  if (!node) return into;
+  if (xmlLocalName(node.name) === 'textpath') into.push(node);
+  for (const child of node.children || []) svgCollectTextPaths(child, into);
+  return into;
 }
 
 // SVG <text>/<tspan> (Cumulus DDos Server). y is baseline; mxXmlCanvas2D
 // valign=bottom puts that point at the box bottom so collectCharIX Size
-// / fo:color match the glyph. Skip textPath (IBM Key Mgmt follows a curve).
-function paintSvgText(canvas, node, inherited, css) {
-  if (svgHasTextPath(node)) return false;
+// / fo:color match the glyph. textPath (IBM Key Mgmt) is flattened onto
+// rotated Char cells — Visio/libvisio have no native text-along-path.
+function paintSvgText(canvas, node, inherited, css, root) {
+  const paths = svgCollectTextPaths(node, []);
+  if (paths.length) {
+    const style = svgPresentation(node, inherited, css);
+    let painted = false;
+    for (const tp of paths) {
+      if (paintSvgTextPath(canvas, tp, style, css, root)) painted = true;
+    }
+    return painted;
+  }
   const style = svgPresentation(node, inherited, css);
   const x0 = svgLength(node.attrs.x, 0);
   const y0 = svgLength(node.attrs.y, 0);
-  const paintRun = (raw, st, x, y) => {
-    const str = String(raw || '').replace(/\s+/g, ' ');
-    if (!str.trim()) return false;
-    const size = svgLength(st['font-size'], NaN);
-    if (Number.isFinite(size) && size > 0 && canvas.setFontSize) {
-      canvas.setFontSize(size * canvasMinScale(canvas));
-    }
-    const family = svgFontFamily(st['font-family'] || '');
-    if (family && canvas.setFontFamily) canvas.setFontFamily(family);
-    const fill = st.fill;
-    if (fill && !svgPaintIsNone(fill) && canvas.setFontColor) {
-      if (!/^currentcolor$/i.test(fill) && !/^url\(/i.test(fill)) {
-        canvas.setFontColor(htmlCssColorToHex(fill) || fill);
-      }
-    }
-    // SVG y is baseline. Pass a box whose bottom sits on y so
-    // collectTextBlock svg:height is wide enough that Draw does not wrap
-    // "DDos" (pdftotext was splitting DDo/s on a zero-size glyph pin).
-    const fs = Number(canvas.state.fontSize) || 12;
-    const bw = Math.max(fs * 1.2, str.length * fs * 0.75);
-    const bh = fs * 1.4;
-    canvas.text(x, y - bh, bw, bh, str, 'left', 'bottom');
-    return true;
-  };
   const kids = node.children || [];
   const spans = kids.filter((child) => xmlLocalName(child.name) === 'tspan');
-  if (!spans.length) return paintRun(svgTextContent(node), style, x0, y0);
+  if (!spans.length) return paintSvgTextRun(canvas, svgTextContent(node), style, x0, y0);
   let painted = false;
   for (const child of kids) {
     if (child.name === '#text') {
-      if (paintRun(child.text, style, x0, y0)) painted = true;
+      if (paintSvgTextRun(canvas, child.text, style, x0, y0)) painted = true;
       continue;
     }
     if (xmlLocalName(child.name) !== 'tspan') continue;
     const st = svgPresentation(child, style, css);
     const x = child.attrs.x != null ? svgLength(child.attrs.x, x0) : x0;
     const y = child.attrs.y != null ? svgLength(child.attrs.y, y0) : y0;
-    if (paintRun(svgTextContent(child), st, x, y)) painted = true;
+    if (paintSvgTextRun(canvas, svgTextContent(child), st, x, y)) painted = true;
   }
   return painted;
 }
@@ -1730,7 +2052,7 @@ function paintSvgNode(canvas, node, inherited, root, css) {
     const style = svgPresentation(node, inherited, css);
     let painted = false;
     if (name === 'text' || name === 'tspan') {
-      return paintSvgText(canvas, node, inherited, css);
+      return paintSvgText(canvas, node, inherited, css, root);
     }
     if (name === 'use') {
       const href = node.attrs.href || node.attrs['xlink:href'] || '';
