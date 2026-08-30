@@ -5044,6 +5044,87 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG stroke-dasharray stays veDashPattern for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasFixedDash(VsdxShape shape) {
+        final custom = shape.line.customDashPattern;
+        return !shape.fill.hasFill &&
+            shape.line.hasLine &&
+            shape.line.color == VsdxColor.white &&
+            custom != null &&
+            custom.length >= 2 &&
+            shape.line.fixedDash;
+      }
+
+      final partition = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / ActiveDirectory / Active Directory',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Database Partition 2')
+          .build(139, 3, 3);
+      expect(
+        descendants(partition).any(hasFixedDash),
+        isTrue,
+        reason: 'database_partition_2.svg stroke-dasharray="8,8" must reach '
+            'collectLine as veDashPattern, not a solid white slash',
+      );
+
+      final partition4 = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / ActiveDirectory / Active Directory',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Database Partition 4')
+          .build(140, 3, 3);
+      expect(
+        descendants(partition4).where(hasFixedDash).length,
+        2,
+        reason: 'Partition 4 has two dashed slashes',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(partition.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).any((shape) {
+          if (shape.fill.hasFill || !shape.line.hasLine) return false;
+          if (shape.line.color != VsdxColor.white) return false;
+          final moves = shape.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          return moves >= 2;
+        }),
+        isTrue,
+        reason: 'a second save bakes veDashPattern into MoveTo gaps '
+            'because libvisio treats custom LinePattern 0xfe as solid',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

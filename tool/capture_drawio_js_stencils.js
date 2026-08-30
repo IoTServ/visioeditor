@@ -710,6 +710,20 @@ class CanvasRecorder {
       this.finishPath();
       this.operations.push(`<miterlimit limit="${number(miter)}"/>`);
     }
+    const dashed = !!this.state.dashed;
+    if (this._dashedToken !== dashed && (this._dashedToken != null || dashed)) {
+      this._dashedToken = dashed;
+      this.finishPath();
+      this.operations.push(`<dashed dashed="${dashed ? '1' : '0'}"/>`);
+    }
+    const rawDash = String(this.state.dashPattern || '').trim();
+    const dashToken = !rawDash || rawDash.toLowerCase() === 'none' ? 'none' : rawDash;
+    if (dashToken !== this._dashToken &&
+        (this._dashToken != null || dashToken !== 'none')) {
+      this._dashToken = dashToken;
+      this.finishPath();
+      this.operations.push(`<dashpattern pattern="${xmlEscape(dashToken)}"/>`);
+    }
   }
 
   _effectiveFillOpacity() {
@@ -1232,6 +1246,9 @@ function svgPresentation(node, inherited, css) {
   if (node.attrs['stroke-miterlimit'] != null) {
     style['stroke-miterlimit'] = node.attrs['stroke-miterlimit'];
   }
+  if (node.attrs['stroke-dasharray'] != null) {
+    style['stroke-dasharray'] = node.attrs['stroke-dasharray'];
+  }
   if (node.attrs['font-size'] != null) style['font-size'] = node.attrs['font-size'];
   if (node.attrs['font-family'] != null) {
     style['font-family'] = node.attrs['font-family'];
@@ -1266,6 +1283,37 @@ function applySvgStrokeStyle(canvas, style) {
   if (join) canvas.setLineJoin(String(join).trim().toLowerCase());
   const miter = svgLength(style['stroke-miterlimit'], NaN);
   if (Number.isFinite(miter) && miter >= 1) canvas.setMiterLimit(miter);
+  applySvgDash(canvas, style);
+}
+
+// SVG stroke-dasharray is in user units (AD Database Partition 2 `8,8`).
+// Scale with map() like LineWeight so collectLine veDashPattern / the
+// MoveTo ribbon libvisio_write bakes (custom LinePattern 0xfe is solid)
+// matches the contour. "none" must not force dashed=true.
+function applySvgDash(canvas, style) {
+  const raw = style['stroke-dasharray'];
+  if (raw == null || raw === '') return;
+  const token = String(raw).trim().toLowerCase();
+  if (token === 'none' || token === 'solid') {
+    canvas.setDashed(false);
+    canvas.setDashPattern('none');
+    return;
+  }
+  const scale = canvasMinScale(canvas);
+  const pat = [];
+  for (const part of String(raw).split(/[\s,]+/)) {
+    if (!part) continue;
+    const n = svgLength(part, NaN);
+    if (Number.isFinite(n) && n > 0) pat.push(n * scale);
+  }
+  if (!pat.length) {
+    canvas.setDashed(false);
+    canvas.setDashPattern('none');
+    return;
+  }
+  if (pat.length === 1) pat.push(pat[0]);
+  canvas.setDashed(true);
+  canvas.setDashPattern(pat.join(' '));
 }
 
 function svgPaintIsNone(value) {

@@ -872,6 +872,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   dropped the LineWeight sibling `collectLine` maps to
   `svg:stroke-width`. SVG presentation strokes now force hex like
   fills. A second save keeps the tick.
+- draw.io mxImageShape SVG `stroke-dasharray` now stays native in
+  LibreOffice. Official Active Directory Database Partition 2 paints a
+  white `stroke-dasharray="8,8"` slash, but capture never copied that
+  presentation attribute, so `collectLine` only saw solid LinePattern 1.
+  Capture now scales the array with the SVG `map()` transform into
+  `veDashPattern`. libvisio treats custom pattern `0xfe` as solid, so
+  a save bakes MoveTo gaps. `stroke-dasharray:none` stays undashed.
+  A second save keeps the ticks.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
