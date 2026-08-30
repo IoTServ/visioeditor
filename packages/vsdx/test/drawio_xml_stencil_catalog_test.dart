@@ -5939,6 +5939,118 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG symbol use stays one disk for LibreOffice',
+    () {
+      const orange = VsdxColor(0xFFBF6328);
+
+      List<VsdxShape> disks(VsdxShape shape) => shape.children
+          .where(
+            (child) =>
+                child.fill.foreground == orange && child.fill.hasFill,
+          )
+          .toList();
+
+      bool diskCentered(VsdxShape disk) {
+        var minX = double.infinity, maxX = -double.infinity;
+        var minY = double.infinity, maxY = -double.infinity;
+        void point(double x, double y) {
+          if (x < minX) minX = x;
+          if (x > maxX) maxX = x;
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+
+        for (final geometry in disk.geometries) {
+          for (final command in geometry.commands) {
+            switch (command) {
+              case EllipseCmd(:final cx, :final cy, :final aX, :final aY,
+                    :final bX, :final bY):
+                point(cx, cy);
+                point(aX, aY);
+                point(bX, bY);
+              case MoveTo(:final x, :final y):
+              case LineTo(:final x, :final y):
+                point(x, y);
+              case CubBezTo(:final x, :final y):
+                point(x, y);
+              case RelMoveTo(:final fx, :final fy):
+                point(fx * disk.width, fy * disk.height);
+              case RelLineTo(:final fx, :final fy):
+                point(fx * disk.width, fy * disk.height);
+              case RelCubBezTo(:final fx, :final fy):
+                point(fx * disk.width, fy * disk.height);
+              default:
+                break;
+            }
+          }
+        }
+        if (!minX.isFinite) return false;
+        final midX = (minX + maxX) / 2;
+        final midY = (minY + maxY) / 2;
+        return midX > 0.4 &&
+            midX < 1.1 &&
+            midY > 0.4 &&
+            midY < 1.1 &&
+            minX > -0.05 &&
+            maxX < disk.width + 0.05;
+      }
+
+      final live = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / IBM / IBM / Social',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Live Collaboration')
+          .build(155, 3, 3);
+      final liveDisks = disks(live);
+      expect(
+        liveDisks,
+        hasLength(1),
+        reason: 'live_collaboration.svg <symbol> must not paint as a second '
+            'circle at the viewBox origin; only <use> maps the disk',
+      );
+      expect(
+        diskCentered(liveDisks.first),
+        isTrue,
+        reason: 'use viewBox must place the orange disk on the badge, not '
+            'translate(x,y) without mapping symbol viewBox',
+      );
+
+      final sync = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / IBM / IBM / Social',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'File Sync')
+          .build(156, 3, 3);
+      expect(disks(sync), hasLength(1));
+      expect(diskCentered(disks(sync).first), isTrue);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(live.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        disks(leftover),
+        hasLength(1),
+        reason: 'a second save must keep a single Live Collaboration disk',
+      );
+      expect(diskCentered(disks(leftover).first), isTrue);
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

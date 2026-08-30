@@ -2383,7 +2383,25 @@ function svgClipPathRings(clipNode, root) {
       const ox = Number(node.attrs.x) || 0;
       const oy = Number(node.attrs.y) || 0;
       let useTf = local;
-      if (ox || oy) useTf = svgComposeTransformRaw(useTf, `translate(${ox} ${oy})`);
+      if (xmlLocalName(target.name) === 'symbol') {
+        const vb = parseSvgNumbers(target.attrs.viewBox);
+        const vx = vb.length >= 4 ? vb[0] : 0;
+        const vy = vb.length >= 4 ? vb[1] : 0;
+        const vw = vb.length >= 4 ? vb[2] : 0;
+        const vh = vb.length >= 4 ? vb[3] : 0;
+        const w = Number(node.attrs.width) || vw;
+        const h = Number(node.attrs.height) || vh;
+        if (vw > 0 && vh > 0 && w > 0 && h > 0) {
+          useTf = svgComposeTransformRaw(
+            useTf,
+            `translate(${ox} ${oy}) scale(${w / vw} ${h / vh}) translate(${-vx} ${-vy})`,
+          );
+        } else if (ox || oy) {
+          useTf = svgComposeTransformRaw(useTf, `translate(${ox} ${oy})`);
+        }
+      } else if (ox || oy) {
+        useTf = svgComposeTransformRaw(useTf, `translate(${ox} ${oy})`);
+      }
       walk(target, useTf);
       seen.delete(id);
       return;
@@ -3118,6 +3136,35 @@ function findSvgById(node, id) {
   return null;
 }
 
+// SVG `<symbol>` is a template (IBM Live Collaboration / File Sync / Networking
+// keep it outside <defs>). It must not paint as a child of <svg> — Draw would
+// collectGeometry the untransformed circle at the viewBox origin. <use>
+// maps symbol viewBox into x/y/width/height like a nested <svg>.
+function paintSvgSymbol(canvas, symbol, inherited, root, css, useNode) {
+  const vb = parseSvgNumbers(symbol.attrs.viewBox);
+  const vx = vb.length >= 4 ? vb[0] : 0;
+  const vy = vb.length >= 4 ? vb[1] : 0;
+  const vw = vb.length >= 4 ? vb[2] : 0;
+  const vh = vb.length >= 4 ? vb[3] : 0;
+  const w = Number(useNode.attrs.width) || vw;
+  const h = Number(useNode.attrs.height) || vh;
+  const x = Number(useNode.attrs.x) || 0;
+  const y = Number(useNode.attrs.y) || 0;
+  const mapped = vw > 0 && vh > 0 && w > 0 && h > 0;
+  if (mapped) {
+    canvas.translate(x, y);
+    canvas.scale(w / vw, h / vh);
+    canvas.translate(-vx, -vy);
+  } else {
+    if (x || y) canvas.translate(x, y);
+  }
+  let painted = false;
+  for (const child of symbol.children || []) {
+    if (paintSvgNode(canvas, child, inherited, root, css)) painted = true;
+  }
+  return painted;
+}
+
 function paintSvgNode(canvas, node, inherited, root, css) {
   const name = xmlLocalName(node.name);
   if (name === '#text' || svgSkip.has(name)) return false;
@@ -3140,10 +3187,14 @@ function paintSvgNode(canvas, node, inherited, root, css) {
         const target = findSvgById(root, id);
         if (!target || target === node) return false;
         canvas.save();
-        const ox = Number(node.attrs.x) || 0;
-        const oy = Number(node.attrs.y) || 0;
-        if (ox || oy) canvas.translate(ox, oy);
-        painted = paintSvgNode(canvas, target, style, root, css);
+        if (xmlLocalName(target.name) === 'symbol') {
+          painted = paintSvgSymbol(canvas, target, style, root, css, node);
+        } else {
+          const ox = Number(node.attrs.x) || 0;
+          const oy = Number(node.attrs.y) || 0;
+          if (ox || oy) canvas.translate(ox, oy);
+          painted = paintSvgNode(canvas, target, style, root, css);
+        }
         canvas.restore();
         return painted;
       }
@@ -3156,7 +3207,8 @@ function paintSvgNode(canvas, node, inherited, root, css) {
         if (!(iw > 0 && ih > 0)) return false;
         return paintRaster(canvas, ix, iy, iw, ih, href);
       }
-      if (name === 'g' || name === 'svg' || name === 'a' || name === 'symbol') {
+      if (name === 'symbol') return false;
+      if (name === 'g' || name === 'svg' || name === 'a') {
         for (const child of node.children || []) {
           if (paintSvgNode(canvas, child, style, root, css)) painted = true;
         }

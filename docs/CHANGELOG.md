@@ -945,6 +945,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   emits cubic quarters through `map()` like rotated ellipses. Axis-
   aligned roundrects still use the `<roundrect>` token. A second
   save keeps the CubBezTo corners.
+- draw.io mxImageShape SVG `<symbol>` / `<use>` now stays native in
+  LibreOffice. Official IBM Live Collaboration, File Sync and Networking
+  badges define the orange disk in a `<symbol viewBox>` referenced by
+  `<use width height x y>`, but capture painted the template as an
+  extra child of `<svg>` (circle at 0,0 overflowing the tile) and
+  translated `use` x/y without mapping `viewBox`, so `collectGeometry`
+  saw a second disk in the corner while the referenced disk sat off
+  the glyph. Capture now skips template `<symbol>` nodes and maps
+  `viewBox` into the use viewport. A second save keeps one disk.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
