@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxImageShape SVG far-field `stop-opacity` visors now stay native
+  in LibreOffice. Azure Sphere's white highlight is `#fff`→`#fff` with
+  `stop-opacity` 0.9→0.8 on a `userSpaceOnUse` vector at y≈-3114, so
+  tessellation slabs miss the glyph and capture fell through to
+  `FillGradient`. `collectFillAndShadow` FillPattern 25–40 drop
+  `draw:opacity`, and leftover leftover would bake an opaque SoftEdges
+  PNG over the cyan body. Capture now paints the contour once as
+  `FillPattern` 1 + `FillForegndTrans` (and refuses FillGradient for
+  alpha ramps). A second save keeps the visor.
 - draw.io mxImageShape SVG `fill-rule="nonzero"` compound paths now stay
   native in LibreOffice. Official IBM VPC Bridge arrows, Cloud Services
   gears and VPN Policy document slots paint several filled subpaths

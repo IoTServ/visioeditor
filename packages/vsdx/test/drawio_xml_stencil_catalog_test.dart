@@ -7267,6 +7267,91 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG far-field stop-opacity visors stay native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasWhiteVisor(VsdxFill fill) =>
+          fill.pattern == 1 &&
+          fill.foreground == VsdxColor.white &&
+          fill.gradient == null &&
+          fill.foregroundTransparency > 0.05 &&
+          fill.foregroundTransparency < 0.35;
+
+      final sphere = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Other',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Sphere')
+          .build(179, 3, 3);
+      expect(
+        descendantFills(sphere).any((fill) => fill.gradient != null),
+        isFalse,
+        reason: 'Azure_Sphere.svg visor url(#a71b08ef) is white→white '
+            'stop-opacity 0.9→0.8 on a userSpaceOnUse vector at y≈-3114; '
+            'FillPattern 25–40 drop draw:opacity and leftover FillGradient '
+            'bakes an opaque SoftEdges PNG over the cyan body',
+      );
+      expect(
+        descendantFills(sphere).where(hasWhiteVisor).length,
+        greaterThanOrEqualTo(1),
+        reason: 'the visor must stay FillPattern 1 + FillForegndTrans '
+            'so collectFillAndShadow emits draw:opacity',
+      );
+      expect(
+        descendantFills(sphere).any(
+          (fill) =>
+              fill.pattern == 1 &&
+              fill.foreground == VsdxColor.tryParse('#50E6FF') &&
+              fill.foregroundTransparency < 0.02,
+        ),
+        isTrue,
+        reason: 'the opaque #50e6ff shield stays FillPattern 1',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(sphere.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'far-field stop-opacity visors stay native; leftover must '
+            'not bake an opaque-white SoftEdges PNG over the cyan body',
+      );
+      expect(
+        descendants(leftover).where((shape) => hasWhiteVisor(shape.fill)),
+        isNotEmpty,
+        reason: 'a second save must keep the FillForegndTrans visor',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG opaque url(#gradient) element opacity stays native for LibreOffice',
     () {
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {

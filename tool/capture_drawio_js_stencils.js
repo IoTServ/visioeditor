@@ -2110,6 +2110,19 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
       return true;
     }
   }
+  if (svgStopsHaveAlphaRamp(stops)) {
+    // FillPattern 25–40 drop draw:opacity. Azure Sphere's visor
+    // white→white stop-opacity 0.9→0.8 sits on a userSpaceOnUse vector
+    // thousands of units off the viewBox, so tessellation slabs miss
+    // the glyph; leftover FillGradient bakes an opaque SoftEdges PNG
+    // over the cyan body. Sample the first stop as FillForegndTrans.
+    canvas.setFillColor(first.color, true);
+    const alpha = first.alpha == null ? 1 : Number(first.alpha);
+    if (Number.isFinite(alpha) && alpha < 1 - 1e-9) {
+      canvas.setFillAlpha(alpha);
+    }
+    return true;
+  }
   if (svgLinearNeedsFillGradient(node, stops) ||
       svgRadialNeedsFillGradient(node, stops)) {
     canvas.setFillGradientStops(
@@ -3374,6 +3387,17 @@ function paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css) {
       const sampleT = Math.max(0, Math.min(1, (t0 + t1) / 2));
       if (emitBand(clipToGlyph(slabMapped), sampleT)) painted = true;
     }
+  }
+  if (!painted) {
+    // Azure Sphere visor: userSpaceOnUse x1/y1 sit at y≈-3114, so every
+    // glyph sample shares one t and svgGradientSlabRing misses the path.
+    // Paint the contour once at that t (svgStopsAlphaAt clamps).
+    let sampleT = 0.5;
+    if (xmlLocalName(gradNode.name) !== 'radialgradient') {
+      const {tMin, tMax} = svgRingsGradientTRange(gradNode, rings);
+      sampleT = (tMin + tMax) / 2;
+    }
+    if (emitBand(mapped, sampleT)) painted = true;
   }
   if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
     if (canvas.clipRings && canvas.clipRings.length) {
