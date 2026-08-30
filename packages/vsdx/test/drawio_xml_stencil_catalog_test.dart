@@ -6589,6 +6589,113 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG elliptical radial evenodd holes stay native for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      int moveCount(VsdxShape shape) => shape.geometries
+          .expand((geometry) => geometry.commands.whereType<MoveTo>())
+          .length;
+
+      final azure = VsdxColor.tryParse('#0078D4')!;
+      final tick = VsdxColor.tryParse('#00BBFF')!;
+      final donut = VsdxColor.tryParse('#1147E9')!;
+
+      final openai = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'OpenAI')
+          .build(168, 3, 3);
+      expect(
+        descendants(openai).where((shape) => shape.fill.pattern == 1).length,
+        greaterThanOrEqualTo(6),
+        reason: 'Azure_OpenAI.svg rotate(45) scale(25,-34) must tessellate '
+            'as solid discs; FillPattern 40 is a circle that would fill '
+            'the plus cutout',
+      );
+      expect(
+        descendants(openai).any(
+          (shape) =>
+              shape.fill.pattern == 1 && shape.fill.foreground == azure,
+        ),
+        isTrue,
+        reason: 'the outer band must keep stop-color #0078d4',
+      );
+      expect(
+        descendants(openai).any(
+          (shape) => shape.fill.pattern == 1 && moveCount(shape) >= 2,
+        ),
+        isTrue,
+        reason: 'the plus cutout must stay a second MoveTo so collectGeometry '
+            'evenodd punches the swirl',
+      );
+
+      final ticks = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Task Center')
+          .build(169, 3, 3);
+      expect(
+        descendants(ticks).where(
+          (shape) =>
+              shape.fill.pattern == 40 && shape.fill.foreground == tick,
+        ).length,
+        greaterThanOrEqualTo(4),
+        reason: 'Task Center stroke ticks stay native FillPattern 40',
+      );
+      expect(
+        descendants(ticks).any(
+          (shape) =>
+              shape.fill.pattern == 1 &&
+              shape.fill.foreground == donut &&
+              moveCount(shape) >= 2,
+        ),
+        isTrue,
+        reason: 'Task Center donuts must tessellate with an evenodd hole',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(openai.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'evenodd solid discs stay native; leftover must not bake PNG',
+      );
+      expect(
+        descendants(leftover).any(
+          (shape) => shape.fill.pattern == 1 && moveCount(shape) >= 2,
+        ),
+        isTrue,
+        reason: 'a second save must keep the plus cutout as evenodd MoveTos',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

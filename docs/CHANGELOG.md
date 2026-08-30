@@ -1010,6 +1010,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Circular two-stop discs (SAP Task Center ticks, Build Apps blob D)
   stay native 40; Azure Applied AI's three unique colours still
   leftover PNG. A second save keeps the polygons.
+- draw.io mxImageShape SVG elliptical radial evenodd holes now stay
+  native in LibreOffice. Official Azure OpenAI (`rotate(45) scale(25,-34)`
+  plus-cutout) and SAP Task Center donuts are two-stop ellipses on
+  compound paths, but capture skipped `rings.length !== 1` so Draw's
+  FillPattern 40 circle filled the hole. Capture now keeps outer and
+  hole contours in one Geometry so `collectGeometry` `svg:fill-rule=evenodd`
+  still punches, and tessellates `disc ∩ outer` / `disc ∩ hole` bands.
+  Task Center ticks stay native 40. A second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

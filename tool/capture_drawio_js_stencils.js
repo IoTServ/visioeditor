@@ -394,15 +394,23 @@ class CanvasRecorder {
   }
   close() { this.operations.push('<close/>'); }
   // Clip intersection already ran in map() space; do not map again.
-  emitMappedRing(ring) {
-    if (!ring || ring.length < 3) return false;
+  // Several rings in one <path> become one Geometry so collectGeometry
+  // evenodd punches holes (Azure OpenAI swirl, Task Center donuts).
+  emitMappedRings(rings) {
+    const list = (rings || []).filter((ring) => ring && ring.length >= 3);
+    if (!list.length) return false;
     this.begin();
-    this.command('move', {x: ring[0].x, y: ring[0].y});
-    for (let i = 1; i < ring.length; i++) {
-      this.command('line', {x: ring[i].x, y: ring[i].y});
+    for (const ring of list) {
+      this.command('move', {x: ring[0].x, y: ring[0].y});
+      for (let i = 1; i < ring.length; i++) {
+        this.command('line', {x: ring[i].x, y: ring[i].y});
+      }
+      this.close();
     }
-    this.close();
     return true;
+  }
+  emitMappedRing(ring) {
+    return this.emitMappedRings([ring]);
   }
   poly(points) {
     if (!points || points.length < 2) return;
@@ -1705,7 +1713,8 @@ function svgRadialIsElliptical(node) {
 // leftover FillGradient (canvas radial is still a circle). Tessellate
 // concentric discs in gradient space. Three unique colours stay on
 // FillGradient leftover (Azure Applied AI). Compound evenodd holes
-// skip this (Azure OpenAI swirl / Task Center donuts).
+// (Azure OpenAI swirl / Task Center donuts) stay one Geometry so
+// collectGeometry svg:fill-rule=evenodd still punches.
 function svgRadialNeedsEllipseBands(node, stops) {
   if (!svgRadialIsElliptical(node)) return false;
   if (!stops || stops.length < 2) return false;
@@ -1745,6 +1754,23 @@ function svgRadialDiscRing(gradNode, t, steps) {
   const ring = svgCircleRing(cx, cy, r, steps || 48);
   const tf = gradNode.attrs && gradNode.attrs.gradientTransform;
   return tf ? svgMapRing(ring, tf) : ring;
+}
+
+function svgSplitEvenoddRings(rings) {
+  if (!rings.length) return {outers: [], holes: []};
+  let best = 0;
+  let bestAbs = 0;
+  for (let i = 0; i < rings.length; i++) {
+    const a = Math.abs(svgPolyArea(rings[i]));
+    if (a > bestAbs) {
+      bestAbs = a;
+      best = i;
+    }
+  }
+  return {
+    outers: [rings[best]],
+    holes: rings.filter((_, i) => i !== best),
+  };
 }
 
 // Middle stop far from first→last lerp cannot use FillPattern 25–34
@@ -2876,7 +2902,8 @@ function applySvgFilter(canvas, node, root, css) {
 // FillPattern 40 is a circle. Tessellate an elliptical userSpaceOnUse
 // radial as concentric solid discs clipped to the glyph so
 // collectFillAndShadow sees FillForegnd siblings Draw can paint
-// (SAP Build Apps / Work Zone blobs).
+// (SAP Build Apps / Work Zone blobs). Compound evenodd holes stay
+// one Geometry (Azure OpenAI swirl, Task Center donuts).
 function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css) {
   if (kind !== 'fill' && kind !== 'fillstroke') return false;
   const fill = style.fill == null ? '#000' : style.fill;
@@ -2887,34 +2914,42 @@ function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css
   const stops = svgCollectStops(gradNode, css);
   if (!svgRadialNeedsEllipseBands(gradNode, stops)) return false;
   const rings = svgDrawableRings(name, node);
-  if (rings.length !== 1) return false;
-  const shapeMapped = rings[0].map((p) => canvas.map(p.x, p.y));
-  let clips = [shapeMapped];
-  if (canvas.clipRings && canvas.clipRings.length) {
-    clips = svgClipMappedToRings(shapeMapped, canvas.clipRings);
-  }
-  if (!clips.length) return false;
-  const emitSolid = (pieces, color) => {
-    let n = 0;
-    const fillStyle = {...style, fill: color, stroke: 'none'};
-    for (const piece of pieces) {
-      if (!canvas.emitMappedRing(piece)) continue;
-      applySvgPaint(canvas, fillStyle, 'fill', root, css);
-      n++;
+  if (!rings.length) return false;
+  const mapped = [];
+  for (const ring of rings) {
+    const shapeMapped = ring.map((p) => canvas.map(p.x, p.y));
+    if (canvas.clipRings && canvas.clipRings.length) {
+      for (const piece of svgClipMappedToRings(shapeMapped, canvas.clipRings)) {
+        mapped.push(piece);
+      }
+    } else {
+      mapped.push(shapeMapped);
     }
-    return n;
+  }
+  if (!mapped.length) return false;
+  const {outers, holes} = svgSplitEvenoddRings(mapped);
+  const emitSolid = (fillRings, color) => {
+    if (!canvas.emitMappedRings(fillRings)) return 0;
+    applySvgPaint(
+      canvas, {...style, fill: color, stroke: 'none'}, 'fill', root, css,
+    );
+    return 1;
   };
   let painted = false;
-  if (emitSolid(clips, svgStopsColorAt(stops, 1))) painted = true;
+  if (emitSolid(mapped, svgStopsColorAt(stops, 1))) painted = true;
   const bands = 8;
   for (let i = bands - 1; i >= 1; i--) {
     const t = i / bands;
     const discMapped = svgRadialDiscRing(gradNode, t).map((p) => canvas.map(p.x, p.y));
-    const pieces = [];
-    for (const clip of clips) {
-      for (const hit of svgIntersectPolygons(discMapped, clip)) pieces.push(hit);
+    const band = [];
+    for (const outer of outers) {
+      for (const hit of svgIntersectPolygons(discMapped, outer)) band.push(hit);
     }
-    if (emitSolid(pieces, svgStopsColorAt(stops, t))) painted = true;
+    if (!band.length) continue;
+    for (const hole of holes) {
+      for (const hit of svgIntersectPolygons(discMapped, hole)) band.push(hit);
+    }
+    if (emitSolid(band, svgStopsColorAt(stops, t))) painted = true;
   }
   if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
     if (canvas.clipRings && canvas.clipRings.length) {
