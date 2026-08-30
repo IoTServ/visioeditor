@@ -1547,10 +1547,11 @@ function svgAxialPeakStop(stops) {
 }
 
 function svgAxialDirection(node) {
-  const dir = svgGradientDirection(node);
-  if (dir === 'east' || dir === 'west') return 'axial-east';
-  if (dir === 'north' || dir === 'south') return 'axial-north';
-  return null;
+  // ODF axial (FillPattern 26 / 29) only has east–west and north–south.
+  // Snap by dominant axis so a 10° Cell Phone ramp stays 26, not 31–34.
+  const v = svgGradientVector(node);
+  if (Math.abs(v.dx) >= Math.abs(v.dy)) return 'axial-east';
+  return 'axial-north';
 }
 
 function svgGradientVector(node) {
@@ -1574,9 +1575,33 @@ function svgGradientVector(node) {
 
 function svgGradientDirection(node) {
   if (xmlLocalName(node.name) === 'radialgradient') return 'radial';
+  // libvisio FillPattern 25–34 is eight ODF draw:angle slots, not four.
+  // Axis-only snap painted Globe's 45° matrix and SAP PKI's Y-flipped
+  // diamond as east/south (27 / 28) while Draw can emit 34 / 32.
   const v = svgGradientVector(node);
-  if (Math.abs(v.dx) >= Math.abs(v.dy)) return v.dx >= 0 ? 'east' : 'west';
-  return v.dy >= 0 ? 'south' : 'north';
+  const angleRad = Math.atan2(-v.dy, v.dx);
+  const drawDeg = ((90 - angleRad * 180 / Math.PI) % 360 + 360) % 360;
+  const slots = [
+    [0, 'north'],
+    [45, 'northeast'],
+    [90, 'east'],
+    [135, 'southeast'],
+    [180, 'south'],
+    [225, 'southwest'],
+    [270, 'west'],
+    [315, 'northwest'],
+  ];
+  let best = 'south';
+  let bestDelta = 360;
+  for (const [deg, name] of slots) {
+    let d = Math.abs(drawDeg - deg);
+    if (d > 180) d = 360 - d;
+    if (d < bestDelta) {
+      bestDelta = d;
+      best = name;
+    }
+  }
+  return best;
 }
 
 // Visio FillGradientAngle is CCW from +X (Y-up). SVG +y is down = south.
@@ -1797,11 +1822,12 @@ function parseSvgNumbers(source) {
   return values;
 }
 
-// SVG transform="matrix(sx,0,0,sy,tx,ty)" (SAP Logo polyline) and
-// gradientTransform="translate(0 12.4) scale(1 -1)" (Adobe SAP PKI).
+// SVG transform="matrix(sx,0,0,sy,tx,ty)" (SAP Logo polyline),
+// gradientTransform="translate(0 12.4) scale(1 -1)" (Adobe SAP PKI),
+// and skewX(-19.425) (Azure Cognitive Services Decisions parallelogram).
 function parseSvgTransformList(raw) {
   const ops = [];
-  const re = /(matrix|translate|scale|rotate)\s*\(([^)]*)\)/gi;
+  const re = /(matrix|translate|scale|rotate|skewX|skewY)\s*\(([^)]*)\)/gi;
   let match;
   while ((match = re.exec(String(raw || '')))) {
     ops.push({kind: match[1].toLowerCase(), nums: parseSvgNumbers(match[2])});
@@ -1842,6 +1868,10 @@ function svgTransformPoint(raw, x, y) {
       if (cx || cy) svgTransformMultiply(m, 1, 0, 0, 1, cx, cy);
       svgTransformMultiply(m, cos, sin, -sin, cos, 0, 0);
       if (cx || cy) svgTransformMultiply(m, 1, 0, 0, 1, -cx, -cy);
+    } else if (op.kind === 'skewx') {
+      svgTransformMultiply(m, 1, 0, Math.tan((n[0] || 0) * Math.PI / 180), 1, 0, 0);
+    } else if (op.kind === 'skewy') {
+      svgTransformMultiply(m, 1, Math.tan((n[0] || 0) * Math.PI / 180), 0, 1, 0, 0);
     } else if (op.kind === 'matrix' && n.length >= 6) {
       svgTransformMultiply(m, n[0], n[1], n[2], n[3], n[4], n[5]);
     }
@@ -2787,6 +2817,12 @@ function applySvgTransform(canvas, raw) {
       if (cx || cy) canvas.composeAffine(1, 0, 0, 1, cx, cy);
       canvas.composeAffine(cos, sin, -sin, cos, 0, 0);
       if (cx || cy) canvas.composeAffine(1, 0, 0, 1, -cx, -cy);
+    } else if (op.kind === 'skewx') {
+      const tan = Math.tan((n[0] || 0) * Math.PI / 180);
+      canvas.composeAffine(1, 0, tan, 1, 0, 0);
+    } else if (op.kind === 'skewy') {
+      const tan = Math.tan((n[0] || 0) * Math.PI / 180);
+      canvas.composeAffine(1, tan, 0, 1, 0, 0);
     } else if (op.kind === 'matrix' && n.length >= 6) {
       if (Math.abs(n[1]) < 1e-8 && Math.abs(n[2]) < 1e-8) {
         canvas.translate(n[4], n[5]);

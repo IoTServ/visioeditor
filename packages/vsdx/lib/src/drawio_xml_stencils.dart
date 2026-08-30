@@ -1392,17 +1392,26 @@ List<double>? _parseMxDashPattern(String? raw) {
 
 int _mxFillPatternForDirection(String dir) => switch (dir) {
       'north' => 30,
+      'northeast' => 34,
       'east' => 27,
+      'southeast' => 32,
+      'south' => 28,
+      'southwest' => 31,
       'west' => 25,
+      'northwest' => 33,
       'radial' => 40,
       _ => 28,
     };
 
 double _mxFillGradientAngleRad(String dir) => switch (dir) {
       'east' => 0,
+      'northeast' => math.pi / 4,
       'north' => math.pi / 2,
+      'northwest' => 3 * math.pi / 4,
       'west' => math.pi,
+      'southwest' => -3 * math.pi / 4,
       'south' => -math.pi / 2,
+      'southeast' => -math.pi / 4,
       _ => -math.pi / 2,
     };
 

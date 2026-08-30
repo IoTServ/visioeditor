@@ -4801,11 +4801,12 @@ void main() {
               fill.hasFill &&
               fill.pattern >= 25 &&
               fill.pattern <= 40 &&
-              fill.pattern == 28,
+              fill.pattern == 32,
         ),
         isTrue,
-        reason: 'Adobe Y-flip gradientTransform must map the ramp to south '
-            '(FillPattern 28), not north (30)',
+        reason: 'Adobe Y-flip gradientTransform plus the diamond vector '
+            'must snap to southeast (FillPattern 32 / ODF 135°), not '
+            'axis-only south (28) or north (30)',
       );
 
       const writer = VsdxWriter();
@@ -4832,6 +4833,68 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG diagonal url(#gradient) stays FillPattern 31–34 for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      final globe = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / General',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Globe')
+          .build(160, 3, 3);
+      expect(
+        descendantFills(globe).any((fill) => fill.pattern == 34),
+        isTrue,
+        reason: 'Globe.svg gradientTransform matrix(0.707,0.707,…) is a 45° '
+            'wash; FillPattern 34 is ODF draw:angle 45 that '
+            '_fillAndShadowProperties emits, not axis-only east (27)',
+      );
+
+      final pki = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Foundational',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP PKI Certificate Service')
+          .build(161, 3, 3);
+      expect(
+        descendantFills(pki).any((fill) => fill.pattern == 32),
+        isTrue,
+        reason: 'SAP_PKI_Certificate_Service.svg Y-flipped diamond is '
+            'southeast FillPattern 32 (ODF 135°), not south (28)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(globe.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantFills(leftover).any((fill) => fill.pattern == 34),
+        isTrue,
+        reason: 'a second save must keep the Globe FillPattern 34 wash',
+      );
+    },
+  );
+
+  test(
     'mxImageShape SVG stroke url(#gradient) stays FillPattern for LibreOffice',
     () {
       Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
@@ -4852,7 +4915,7 @@ void main() {
 
       bool isCrescent(VsdxShape shape) {
         return shape.fill.hasFill &&
-            shape.fill.pattern == 27 &&
+            shape.fill.pattern == 32 &&
             shape.fill.foreground == VsdxColor.tryParse('#1147E9') &&
             shape.fill.background == VsdxColor.tryParse('#0195FF') &&
             !shape.line.hasLine &&
@@ -4871,9 +4934,10 @@ void main() {
       expect(
         descendants(cloud).any(isCrescent),
         isTrue,
-        reason: 'stroke=url(#A) #0195ff→#1147e9 must become FillPattern 27 '
-            'because collectLine does not read LineGradient; the 1.875 '
-            'width is the ribbon collectFillAndShadow paints',
+        reason: 'stroke=url(#A) #0195ff→#1147e9 (x1,y1)→(x2,y2) southeast '
+            'must become FillPattern 32 because collectLine does not read '
+            'LineGradient; the 1.875 width is the ribbon '
+            'collectFillAndShadow paints',
       );
 
       final ticks = dynamic
@@ -5470,7 +5534,7 @@ void main() {
           .build(145, 3, 3);
       const teal = VsdxColor(0xFF42E8CA);
       final disk = globe.children.firstWhere(
-        (child) => child.fill.pattern == 27,
+        (child) => child.fill.pattern == 34,
       );
       final ellipse = disk.geometries
           .expand((geometry) => geometry.commands)

@@ -972,6 +972,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   bar. Capture now writes FillGradient rows; leftover bakes SoftEdges
   PNG because 25–40 only store two colours. SAP Logo's on-lerp cyan
   ramp stays native 25–40. A second save keeps the plate.
+- draw.io mxImageShape SVG diagonal `url(#gradient)` now stays native
+  in LibreOffice. Official Azure Globe (`gradientTransform` 45° matrix)
+  and SAP PKI Certificate Service (Y-flipped diamond) plus Analytics
+  Cloud Embedded Edition's crescent stroke are 45° / 135° washes, but
+  capture snapped `|dx|` vs `|dy|` to east / south so
+  `_fillAndShadowProperties` emitted ODF `draw:angle` 90 / 180.
+  Capture now maps the eight libvisio FillPattern 25–34 slots
+  (31–34 are 225 / 135 / 315 / 45). `skewX` on Cognitive Services
+  Decisions' parallelogram `gradientTransform` participates in that
+  vector. Matching-end three-stop axials still use 26 / 29 on the
+  dominant axis. A second save keeps the wash.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
