@@ -1680,6 +1680,23 @@ function svgStopsHaveAlphaRamp(stops) {
   return false;
 }
 
+function svgElementFillAlpha(style) {
+  const op = svgCssAlpha(style && style.opacity);
+  const fillOp = svgCssAlpha(style && style['fill-opacity']);
+  return (op == null ? 1 : op) * (fillOp == null ? 1 : fillOp);
+}
+
+// FillPattern 25–40 drop draw:opacity (`_fillAndShadowProperties`
+// remove). A full-box two-stop with element opacity (Intune Software
+// Updates 0.9 wash) would paint opaque over the plate. Tessellate as
+// FillPattern 1 + FillForegndTrans. stop-opacity ramps already do this
+// (Translator Text).
+function svgFillNeedsAlphaBands(stops, style) {
+  if (!stops || stops.length < 2) return false;
+  if (svgStopsHaveAlphaRamp(stops)) return true;
+  return svgElementFillAlpha(style) < 1 - 1e-9;
+}
+
 function svgLinearNeedsFillGradient(node, stops) {
   if (xmlLocalName(node.name) !== 'lineargradient') return false;
   if (!stops || stops.length < 2) return false;
@@ -3113,12 +3130,12 @@ function applySvgFilter(canvas, node, root, css) {
   return true;
 }
 
-// SVG stop-opacity cannot use FillPattern 25–40 (Draw ignores
-// librevenge:*-opacity) or leftover SoftEdges PNG (Foreign images
-// composite onto opaque white and cover siblings). Tessellate
+// SVG stop-opacity and element opacity cannot use FillPattern 25–40
+// (Draw ignores librevenge:*-opacity / drops draw:opacity) or leftover
+// SoftEdges PNG (Foreign images composite onto opaque white). Tessellate
 // non-overlapping slabs / annuli as FillPattern 1 + FillForegndTrans
 // so collectFillAndShadow emits draw:opacity (Azure Translator Text
-// white→0.3 highlights over #0078d4).
+// white→0.3 highlights; Intune Software Updates 0.9 wash over #0078d4).
 function paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css) {
   if (kind !== 'fill' && kind !== 'fillstroke') return false;
   const fill = style.fill == null ? '#000' : style.fill;
@@ -3127,7 +3144,7 @@ function paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css) {
   const gradNode = resolveSvgGradientNode(root, id);
   if (!gradNode) return false;
   const stops = svgCollectStops(gradNode, css);
-  if (!svgStopsHaveAlphaRamp(stops)) return false;
+  if (!svgFillNeedsAlphaBands(stops, style)) return false;
   const rings = svgDrawableRings(name, node);
   if (!rings.length) return false;
   const mapped = [];

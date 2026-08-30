@@ -7186,6 +7186,102 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG opaque url(#gradient) element opacity stays native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isTranslucentWash(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null ||
+            fill.pattern != 1 ||
+            fill.gradient != null ||
+            fill.foregroundTransparency < 0.05 ||
+            fill.foregroundTransparency > 0.2) {
+          return false;
+        }
+        return color.red > 180 &&
+            color.green > 210 &&
+            color.blue > 240;
+      }
+
+      final updates = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Intune',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Software Updates')
+          .build(178, 3, 3);
+      expect(
+        descendantFills(updates).where(isTranslucentWash).length,
+        greaterThanOrEqualTo(6),
+        reason: 'Software_Updates.svg inner rect opacity=0.9 url(#gradient) '
+            '#d2ebff→#f0fffd must tessellate as FillPattern 1 + '
+            'FillForegndTrans; FillPattern 25–40 drop draw:opacity so the '
+            'wash would hide the #0078d4 plate',
+      );
+      expect(
+        descendantFills(updates).any(
+          (fill) =>
+              fill.pattern == 1 &&
+              fill.foreground == VsdxColor.tryParse('#0078D4') &&
+              fill.foregroundTransparency < 0.02,
+        ),
+        isTrue,
+        reason: 'the opaque #0078d4 screen stays FillPattern 1',
+      );
+      expect(
+        descendantFills(updates).any(
+          (fill) => fill.pattern >= 25 && fill.pattern <= 40,
+        ),
+        isFalse,
+        reason: 'the 0.9 wash must not stay FillPattern 25–40',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(updates.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'translucent wash slabs stay native; leftover must not bake '
+            'an opaque SoftEdges PNG over the azure plate',
+      );
+      expect(
+        descendants(leftover)
+            .where((shape) => isTranslucentWash(shape.fill))
+            .length,
+        greaterThanOrEqualTo(6),
+        reason: 'a second save must keep the FillForegndTrans wash slabs',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

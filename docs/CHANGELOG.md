@@ -1063,6 +1063,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   short fill case. The diamond fill `url(#A)` and Analytics Cloud crescent
   `url(#A)` stay FillPattern 32; Task Center radial ticks stay 40. A
   second save keeps the polygons.
+- draw.io mxImageShape SVG element `opacity` on opaque `url(#gradient)`
+  now stays native in LibreOffice. Official Intune Software Updates paints
+  a `#d2ebff`→`#f0fffd` screen at `opacity="0.9"` over `#0078d4`, but
+  FillPattern 25–40 drop `draw:opacity` (`_fillAndShadowProperties`
+  `styleProps.remove`) so Draw filled the wash solid and hid the plate.
+  Capture now tessellates that overlay as FillPattern 1 + FillForegndTrans
+  slabs like `stop-opacity` ramps. Opaque two-stop compass fills stay
+  25–40. A second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
