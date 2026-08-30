@@ -935,6 +935,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   uses, maps mask content via `maskContentUnits` (default
   `userSpaceOnUse`), and expands clipped strokes into filled ribbons.
   A second save keeps the polygons.
+- draw.io mxImageShape SVG rotated `roundrect` now stays native in
+  LibreOffice. Official Azure Search handle (`rect rx` +
+  `transform="rotate(-45,cx,cy)"`), Keys bits and CDN Profiles rails
+  paint stadiums under `rotate()`, but capture's `roundrect()` flattened
+  those to a 4-point poly when `isRotated()`, and `canvas.rotate` pivoted
+  after `map()` scale so the handle sat under the lens. Capture now
+  composes `rotate(a,cx,cy)` in user space like `svgTransformPoint` and
+  emits cubic quarters through `map()` like rotated ellipses. Axis-
+  aligned roundrects still use the `<roundrect>` token. A second
+  save keeps the CubBezTo corners.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

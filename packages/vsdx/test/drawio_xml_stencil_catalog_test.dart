@@ -5816,6 +5816,129 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG rotated roundrect stays CubBezTo for LibreOffice',
+    () {
+      int cubics(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<CubBezTo>().length;
+          n += geometry.commands.whereType<RelCubBezTo>().length;
+        }
+        return n;
+      }
+
+      int lines(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          n += geometry.commands.whereType<LineTo>().length;
+        }
+        return n;
+      }
+
+      final search = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / General',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Search')
+          .build(153, 3, 3);
+      const handle = VsdxColor(0xFF198AB3);
+      final handleKids = search.children
+          .where(
+            (child) =>
+                child.fill.foreground == handle && child.fill.hasFill,
+          )
+          .toList();
+      expect(handleKids, isNotEmpty);
+      expect(
+        cubics(handleKids.first),
+        greaterThanOrEqualTo(4),
+        reason: 'Search.svg handle is rect rx + rotate(-45); capture must '
+            'tessellate cubic corners so collectGeometry sees a capsule, '
+            'not a four-line diamond',
+      );
+      expect(
+        lines(handleKids.first),
+        greaterThanOrEqualTo(4),
+        reason: 'the stadium still has four side segments between corners',
+      );
+
+      final keys = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Security',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Keys')
+          .build(154, 3, 3);
+      expect(
+        keys.children.any(
+          (child) =>
+              child.fill.foreground == VsdxColor.white &&
+              child.fill.hasFill &&
+              cubics(child) >= 4,
+        ),
+        isTrue,
+        reason: 'Keys.svg white bits are rotated roundrects, not diamonds',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(search.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children.any(
+          (child) =>
+              child.fill.foreground == handle && cubics(child) >= 4,
+        ),
+        isTrue,
+        reason: 'a second save must keep Search handle CubBezTo corners',
+      );
+
+      final lens = search.children.where((child) => child.fill.pattern == 40);
+      expect(lens, isNotEmpty);
+      final ellipse = lens.first.geometries.first.commands.whereType<EllipseCmd>().first;
+      final cx = ellipse.cx;
+      final cy = ellipse.cy;
+      final rx = (ellipse.aX - cx).abs();
+      final ry = (ellipse.bY - cy).abs();
+      var outside = false;
+      for (final geometry in handleKids.first.geometries) {
+        for (final command in geometry.commands) {
+          switch (command) {
+            case MoveTo(:final x, :final y) || LineTo(:final x, :final y):
+              if (rx > 0 &&
+                  ry > 0 &&
+                  ((x - cx) / rx) * ((x - cx) / rx) +
+                          ((y - cy) / ry) * ((y - cy) / ry) >
+                      1.05) {
+                outside = true;
+              }
+            default:
+              break;
+          }
+        }
+      }
+      expect(
+        outside,
+        isTrue,
+        reason: 'Search.svg rotate(-45,cx,cy) must keep the handle outside '
+            'the lens; pivoting after map() scale stacked it under the circle',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

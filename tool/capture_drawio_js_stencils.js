@@ -424,17 +424,73 @@ class CanvasRecorder {
   roundrect(x, y, w, h, rx, ry) {
     this.finishPath();
     if (Math.abs(Number(w) || 0) < 1e-9 && Math.abs(Number(h) || 0) < 1e-9) return;
+    const aw = Math.abs(Number(w) || 0);
+    const ah = Math.abs(Number(h) || 0);
+    let radX = Math.abs(Number(rx) || 0);
+    let radY = Math.abs(Number(ry) || 0);
+    if (radX > 0 && !(radY > 0)) radY = radX;
+    if (radY > 0 && !(radX > 0)) radX = radY;
+    if (radX > aw / 2) radX = aw / 2;
+    if (radY > ah / 2) radY = ah / 2;
+    // rotate() / off-diagonal matrix cannot keep an axis-aligned
+    // <roundrect> token. A sharp 4-point poly dropped Azure Search's
+    // 45° capsule handle (rx≈h/2) that collectGeometry would paint.
+    // Tessellate cubics through map() like ellipse().
     if (this.isRotated()) {
-      this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+      if (!(radX > 1e-9 || radY > 1e-9)) {
+        this.poly([[x, y], [x + w, y], [x + w, y + h], [x, y + h]]);
+        return;
+      }
+      this._roundRectPath(x, y, w, h, radX, radY);
       return;
     }
     const p = this.map(x, y);
     const sw = w * this.sx;
     const sh = h * this.sy;
-    const arc = Math.min(100, 100 * Math.max(Number(rx) || 0, Number(ry) || 0) *
+    const arc = Math.min(100, 100 * Math.max(radX, radY) *
       Math.max(Math.abs(this.sx), Math.abs(this.sy)) /
       Math.max(1e-9, Math.min(Math.abs(sw), Math.abs(sh))));
     this.operations.push(`<roundrect x="${number(p.x)}" y="${number(p.y)}" w="${number(sw)}" h="${number(sh)}" arcsize="${number(arc)}"/>`);
+  }
+  // SVG rounded-rect corners as cubic quarters (k=0.55228), same as
+  // ellipse() under rotate. Lines of zero length are fine when rx=w/2.
+  _roundRectPath(x, y, w, h, rx, ry) {
+    const x0 = Number(x) || 0;
+    const y0 = Number(y) || 0;
+    const x1 = x0 + (Number(w) || 0);
+    const y1 = y0 + (Number(h) || 0);
+    const left = Math.min(x0, x1);
+    const right = Math.max(x0, x1);
+    const top = Math.min(y0, y1);
+    const bottom = Math.max(y0, y1);
+    const k = 0.5522847498307936;
+    this.begin();
+    this.moveTo(left + rx, top);
+    this.lineTo(right - rx, top);
+    this.curveTo(
+      right - rx + k * rx, top,
+      right, top + ry - k * ry,
+      right, top + ry,
+    );
+    this.lineTo(right, bottom - ry);
+    this.curveTo(
+      right, bottom - ry + k * ry,
+      right - rx + k * rx, bottom,
+      right - rx, bottom,
+    );
+    this.lineTo(left + rx, bottom);
+    this.curveTo(
+      left + rx - k * rx, bottom,
+      left, bottom - ry + k * ry,
+      left, bottom - ry,
+    );
+    this.lineTo(left, top + ry);
+    this.curveTo(
+      left, top + ry - k * ry,
+      left + rx - k * rx, top,
+      left + rx, top,
+    );
+    this.close();
   }
   ellipse(x, y, w, h) {
     this.finishPath();
@@ -2521,7 +2577,18 @@ function applySvgTransform(canvas, raw) {
       const sx = n[0] == null ? 1 : n[0];
       canvas.scale(sx, n.length > 1 ? n[1] : sx);
     } else if (op.kind === 'rotate') {
-      canvas.rotate(n[0] || 0, false, false, n[1] || 0, n[2] || 0);
+      // SVG rotate(a,cx,cy) is translate·rotate·translate in user space.
+      // canvas.rotate() pivots after map() scale, so Search's
+      // rotate(-45,4.49,13.71) handle collapsed under the lens. Compose
+      // the same matrix svgTransformPoint uses (clip / gradient).
+      const rad = (n[0] || 0) * Math.PI / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const cx = n[1] || 0;
+      const cy = n[2] || 0;
+      if (cx || cy) canvas.composeAffine(1, 0, 0, 1, cx, cy);
+      canvas.composeAffine(cos, sin, -sin, cos, 0, 0);
+      if (cx || cy) canvas.composeAffine(1, 0, 0, 1, -cx, -cy);
     } else if (op.kind === 'matrix' && n.length >= 6) {
       if (Math.abs(n[1]) < 1e-8 && Math.abs(n[2]) < 1e-8) {
         canvas.translate(n[4], n[5]);
@@ -3125,8 +3192,11 @@ function paintSvgNode(canvas, node, inherited, root, css) {
         const w = Number(node.attrs.width) || 0;
         const h = Number(node.attrs.height) || 0;
         const rx = Number(node.attrs.rx) || 0;
+        const ry = Number(node.attrs.ry) || 0;
         if (!(w > 0 && h > 0)) return false;
-        if (rx > 0) canvas.roundrect(x, y, w, h, rx, rx);
+        const radX = rx > 0 ? rx : ry;
+        const radY = ry > 0 ? ry : radX;
+        if (radX > 0 || radY > 0) canvas.roundrect(x, y, w, h, radX, radY);
         else canvas.rect(x, y, w, h);
       } else if (name === 'polygon' || name === 'polyline') {
         const nums = parseSvgNumbers(node.attrs.points);
