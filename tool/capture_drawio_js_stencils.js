@@ -1075,10 +1075,10 @@ class CanvasRecorder {
     this._fillToken = token;
     this._emitFillGradient();
   }
-  // SVG linearGradient that FillPattern 25–34 cannot paint: a middle
-  // stop off the first→last lerp, inset Positions, or an off-slot
-  // angle. Decoder keeps FillGradient rows; leftover bakes SoftEdges
-  // PNG (`FillGradientAngle` / `Position` are not libvisio tokens).
+  // SVG linear/radial that FillPattern 25–40 cannot paint: a middle
+  // stop off the first→last lerp, inset Positions, an off-slot angle,
+  // or a radial with more than two unique colours. Decoder keeps
+  // FillGradient rows; leftover bakes SoftEdges PNG.
   setFillGradientStops(stops, direction, angleRad) {
     if (!stops || stops.length < 2) return;
     const first = stops[0];
@@ -1648,12 +1648,35 @@ function svgLinearAngleFitsClassic(node) {
   return best <= 5;
 }
 
+function svgOpaqueUniqueColorCount(stops) {
+  const keys = new Set();
+  for (const stop of stops || []) {
+    const a = stop.alpha == null ? 1 : Number(stop.alpha);
+    if (a <= 1e-9) continue;
+    const rgb = svgParseRgb(stop.color);
+    if (!rgb) continue;
+    keys.add((rgb[0] << 16) | (rgb[1] << 8) | rgb[2]);
+  }
+  return keys.size;
+}
+
 function svgLinearNeedsFillGradient(node, stops) {
   if (xmlLocalName(node.name) !== 'lineargradient') return false;
   if (!stops || stops.length < 2) return false;
   if (svgStopsDivergeFromLerp(stops)) return true;
   if (!svgStopsFitClassicSpan(stops)) return true;
   if (!svgLinearAngleFitsClassic(node)) return true;
+  return false;
+}
+
+// FillPattern 40 only stores FillForegnd / FillBkgnd at the disc centre
+// and edge. Azure Applied AI's three unique stops and Cosmos DB's
+// offset=".183" two-stop cannot survive that collapse.
+function svgRadialNeedsFillGradient(node, stops) {
+  if (xmlLocalName(node.name) !== 'radialgradient') return false;
+  if (!stops || stops.length < 2) return false;
+  if (svgOpaqueUniqueColorCount(stops) > 2) return true;
+  if (!svgStopsFitClassicSpan(stops)) return true;
   return false;
 }
 
@@ -1780,7 +1803,8 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
       return true;
     }
   }
-  if (svgLinearNeedsFillGradient(node, stops)) {
+  if (svgLinearNeedsFillGradient(node, stops) ||
+      svgRadialNeedsFillGradient(node, stops)) {
     canvas.setFillGradientStops(
       stops, svgGradientDirection(node), svgGradientAngleRad(node),
     );

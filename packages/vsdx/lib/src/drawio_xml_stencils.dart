@@ -535,15 +535,20 @@ class _DrawioXmlShapeDecoder {
       final angleAttr = node.getAttribute('angle');
       final angleRad = double.tryParse(angleAttr ?? '') ??
           _mxFillGradientAngleRad(dir);
+      final radial = dir == 'radial';
       _fillOverride = VsdxFill(
-        foreground: packedStops.last.color,
-        background: packedStops.first.color,
+        foreground:
+            radial ? packedStops.first.color : packedStops.last.color,
+        background:
+            radial ? packedStops.last.color : packedStops.first.color,
         pattern: pattern,
-        foregroundTransparency: (1 - alpha2).clamp(0.0, 1.0),
-        backgroundTransparency: (1 - alpha1).clamp(0.0, 1.0),
+        foregroundTransparency:
+            (1 - (radial ? alpha1 : alpha2)).clamp(0.0, 1.0),
+        backgroundTransparency:
+            (1 - (radial ? alpha2 : alpha1)).clamp(0.0, 1.0),
         gradient: VsdxGradient(
           stops: packedStops,
-          type: VsdxGradientType.linear,
+          type: radial ? VsdxGradientType.radial : VsdxGradientType.linear,
           angleRad: angleRad,
         ),
       );

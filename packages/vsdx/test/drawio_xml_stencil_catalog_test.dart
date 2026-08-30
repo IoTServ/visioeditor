@@ -6370,6 +6370,129 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG radial url(#gradient) bakes FillGradient for LibreOffice',
+    () {
+      final midCyan = VsdxColor.tryParse('#50E6FF')!;
+
+      bool hasThreeStopRadial(VsdxFill fill) {
+        final gradient = fill.gradient;
+        if (gradient == null ||
+            gradient.type != VsdxGradientType.radial ||
+            gradient.stops.length < 3) {
+          return false;
+        }
+        return gradient.stops.any((stop) => stop.color == midCyan);
+      }
+
+      bool hasInsetRadial(VsdxFill fill) {
+        final gradient = fill.gradient;
+        if (gradient == null ||
+            gradient.type != VsdxGradientType.radial ||
+            gradient.stops.length < 2) {
+          return false;
+        }
+        return gradient.stops.first.position > 0.05;
+      }
+
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final applied = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Applied AI')
+          .build(164, 3, 3);
+      expect(
+        descendantFills(applied).any(hasThreeStopRadial),
+        isTrue,
+        reason: 'Azure_Applied_AI.svg radial #9cebff→#50e6ff→#32bedd must '
+            'keep the middle stop as FillGradient; FillPattern 40 only '
+            'stores FillForegnd / FillBkgnd that collectFillAndShadow maps',
+      );
+
+      final cosmos = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Databases',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Cosmos DB')
+          .build(165, 3, 3);
+      expect(
+        descendantFills(cosmos).any(hasInsetRadial),
+        isTrue,
+        reason: 'Azure_Cosmos_DB.svg radial offset 0.183/#5ea0ef must keep '
+            'Position; FillPattern 40 always interpolates 0→1',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(applied.copyWith(id: id)),
+      );
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'a save must bake the three-stop radial into a SoftEdges '
+            'PNG LibreOffice Draw can paint',
+      );
+
+      final ticks = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / App Dev Automation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'SAP Task Center')
+          .build(166, 3, 3);
+      doc = parser.parse(writer.emptyDocument());
+      final tickId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(ticks.copyWith(id: tickId)),
+      );
+      final tickLeftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(tickId)!;
+      expect(
+        descendants(tickLeftover).where(
+          (shape) =>
+              shape.fill.pattern == 40 &&
+              shape.fill.foreground == VsdxColor.tryParse('#00BBFF'),
+        ).length,
+        greaterThanOrEqualTo(4),
+        reason: 'Task Center two-stop 0→1 radials stay native FillPattern 40',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

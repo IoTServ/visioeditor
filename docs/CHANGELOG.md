@@ -992,6 +992,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   SoftEdges PNG. SAP Logo's on-lerp south 0→1 cyan ramp stays native
   25–40. Globe's 45° fallback is still FillPattern 34; its 0.82 stop
   bakes. A second save keeps the plate.
+- draw.io mxImageShape SVG radial `url(#gradient)` with more than two
+  unique colours or inset Positions now keeps that wash in LibreOffice.
+  Official Azure Applied AI (`#9cebff`→`#50e6ff`→`#32bedd`) and Cosmos
+  DB (`offset=".183"`) are radials, but FillPattern 40 only stores
+  FillForegnd / FillBkgnd across 0→1 (`FillGradient` `Position` is not
+  a token). Capture now writes FillGradient rows; leftover bakes
+  SoftEdges PNG. SAP Task Center's two-stop 0→1 ticks stay native 40.
+  A second save keeps the plate.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
