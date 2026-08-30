@@ -530,7 +530,7 @@ class _DrawioXmlShapeDecoder {
     _fillColor = start;
     _fillIsNone = false;
     final packedStops = _parseMxGradientStops(node.getAttribute('stops'));
-    if (packedStops.length >= 3) {
+    if (packedStops.length >= 2) {
       final pattern = _mxFillPatternForDirection(dir);
       final angleAttr = node.getAttribute('angle');
       final angleRad = double.tryParse(angleAttr ?? '') ??

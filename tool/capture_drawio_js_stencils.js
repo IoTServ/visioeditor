@@ -1075,9 +1075,10 @@ class CanvasRecorder {
     this._fillToken = token;
     this._emitFillGradient();
   }
-  // SVG linearGradient with a middle stop off the first→last lerp.
-  // Decoder keeps FillGradient rows; leftover bakes SoftEdges PNG
-  // because FillPattern 25–40 only store two colours.
+  // SVG linearGradient that FillPattern 25–34 cannot paint: a middle
+  // stop off the first→last lerp, inset Positions, or an off-slot
+  // angle. Decoder keeps FillGradient rows; leftover bakes SoftEdges
+  // PNG (`FillGradientAngle` / `Position` are not libvisio tokens).
   setFillGradientStops(stops, direction, angleRad) {
     if (!stops || stops.length < 2) return;
     const first = stops[0];
@@ -1621,6 +1622,41 @@ function svgStopsUnitScale(stops) {
   return {units, scale: maxOff > 1 + 1e-9 ? maxOff : 1};
 }
 
+// FillPattern 25–34 always run 0→1. Inset two-stops (Jira Logo 0.18→1)
+// snap while SVG keeps Position.
+function svgStopsFitClassicSpan(stops) {
+  if (!stops || stops.length < 2) return true;
+  const {units, scale} = svgStopsUnitScale(stops);
+  return units[0] / scale <= 0.05 &&
+    units[units.length - 1] / scale >= 0.95;
+}
+
+// `_fillAndShadowProperties` only emits eight ODF angles. A 15° two-stop
+// (Power BI Embedded ~22° off 135°) would snap to FillPattern 32.
+function svgLinearAngleFitsClassic(node) {
+  const v = svgGradientVector(node);
+  if (Math.abs(v.dx) < 1e-12 && Math.abs(v.dy) < 1e-12) return true;
+  const angleRad = Math.atan2(-v.dy, v.dx);
+  const drawDeg = ((90 - angleRad * 180 / Math.PI) % 360 + 360) % 360;
+  const slots = [0, 45, 90, 135, 180, 225, 270, 315];
+  let best = 360;
+  for (const s of slots) {
+    let d = Math.abs(drawDeg - s);
+    if (d > 180) d = 360 - d;
+    if (d < best) best = d;
+  }
+  return best <= 5;
+}
+
+function svgLinearNeedsFillGradient(node, stops) {
+  if (xmlLocalName(node.name) !== 'lineargradient') return false;
+  if (!stops || stops.length < 2) return false;
+  if (svgStopsDivergeFromLerp(stops)) return true;
+  if (!svgStopsFitClassicSpan(stops)) return true;
+  if (!svgLinearAngleFitsClassic(node)) return true;
+  return false;
+}
+
 // Middle stop far from first→last lerp cannot use FillPattern 25–34
 // (Windows Server (2) LED #f2580a→#fea15f→#a11a00). SAP Logo's six
 // cyan–navy stops stay on the lerp so they keep native 25–40.
@@ -1744,7 +1780,7 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
       return true;
     }
   }
-  if (name === 'lineargradient' && svgStopsDivergeFromLerp(stops)) {
+  if (svgLinearNeedsFillGradient(node, stops)) {
     canvas.setFillGradientStops(
       stops, svgGradientDirection(node), svgGradientAngleRad(node),
     );

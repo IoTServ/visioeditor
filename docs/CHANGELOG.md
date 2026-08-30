@@ -983,6 +983,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Decisions' parallelogram `gradientTransform` participates in that
   vector. Matching-end three-stop axials still use 26 / 29 on the
   dominant axis. A second save keeps the wash.
+- draw.io mxImageShape SVG inset or off-slot `url(#gradient)` now keeps
+  that wash in LibreOffice. Official Atlassian Jira (`offset=".18"`
+  `#0052cc`→`#2684ff`) and Azure Power BI Embedded (~22° off ODF 135°)
+  are two-stop linears, but FillPattern 25–34 always runs 0→1 on eight
+  compass angles (`FillGradient` `Position` / `FillGradientAngle` are
+  not tokens). Capture now writes FillGradient rows; leftover bakes
+  SoftEdges PNG. SAP Logo's on-lerp south 0→1 cyan ramp stays native
+  25–40. Globe's 45° fallback is still FillPattern 34; its 0.82 stop
+  bakes. A second save keeps the plate.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

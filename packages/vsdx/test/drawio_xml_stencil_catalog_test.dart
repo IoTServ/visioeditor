@@ -4817,17 +4817,23 @@ void main() {
         0,
         doc.pages.first.addShape(pki.copyWith(id: id)),
       );
-      final leftover = parser
-          .parse(
-            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
-          )
-          .pages
-          .first
-          .findShapeById(id)!;
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
       expect(
-        descendantFills(leftover).any((fill) => hasRamp(fill, cyan, navy)),
-        isTrue,
-        reason: 'a second save must keep the SAP PKI FillPattern ramp',
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'the SAP PKI diamond is ~10° off ODF 135°; leftover must '
+            'bake a SoftEdges PNG because FillGradientAngle is not a token',
       );
     },
   );
@@ -4879,17 +4885,23 @@ void main() {
         0,
         doc.pages.first.addShape(globe.copyWith(id: id)),
       );
-      final leftover = parser
-          .parse(
-            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
-          )
-          .pages
-          .first
-          .findShapeById(id)!;
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
       expect(
-        descendantFills(leftover).any((fill) => fill.pattern == 34),
-        isTrue,
-        reason: 'a second save must keep the Globe FillPattern 34 wash',
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'Globe.svg stop offset 0.82 cannot use FillPattern 34\'s '
+            '0→1 span; leftover must bake a SoftEdges PNG',
       );
     },
   );
@@ -6264,6 +6276,95 @@ void main() {
             .where(isLibvisioSoftEdgesPlate),
         isNotEmpty,
         reason: 'a second save must keep the Windows Server LED plate',
+      );
+    },
+  );
+
+  test(
+    'mxImageShape SVG inset url(#gradient) bakes FillGradient for LibreOffice',
+    () {
+      bool hasInsetNavy(VsdxFill fill) {
+        final gradient = fill.gradient;
+        if (gradient == null || gradient.stops.length < 2) return false;
+        final first = gradient.stops.first;
+        if (first.position <= 0.05) return false;
+        return first.color == VsdxColor.tryParse('#0052CC');
+      }
+
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final jira = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Atlassian / Atlassian',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Jira')
+          .build(162, 3, 3);
+      expect(
+        descendantFills(jira).any(hasInsetNavy),
+        isTrue,
+        reason: 'Jira_Logo.svg url(#A) offset 0.18/#0052cc→1/#2684ff must '
+            'keep Position as FillGradient; FillPattern 25–34 always '
+            'interpolates 0→1 so the chevron would start navy',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(jira.copyWith(id: id)),
+      );
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'a save must bake the inset Jira wash into a SoftEdges PNG '
+            'LibreOffice Draw can paint',
+      );
+
+      final powerBi = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Analytics',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Power BI Embedded')
+          .build(163, 3, 3);
+      doc = parser.parse(writer.emptyDocument());
+      final powerId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(powerBi.copyWith(id: powerId)),
+      );
+      final powerLeftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        powerLeftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'Power_BI_Embedded.svg two-stop is ~22° off ODF 135°; '
+            'FillGradientAngle is not a token so leftover must bake the '
+            'authored angle',
       );
     },
   );
