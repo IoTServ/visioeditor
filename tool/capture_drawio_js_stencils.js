@@ -1435,6 +1435,7 @@ function svgPresentation(node, inherited, css) {
   if (node.attrs['stroke-dasharray'] != null) {
     style['stroke-dasharray'] = node.attrs['stroke-dasharray'];
   }
+  if (node.attrs['fill-rule'] != null) style['fill-rule'] = node.attrs['fill-rule'];
   if (node.attrs['font-size'] != null) style['font-size'] = node.attrs['font-size'];
   if (node.attrs['font-family'] != null) {
     style['font-family'] = node.attrs['font-family'];
@@ -3615,7 +3616,7 @@ function applySvgTransform(canvas, raw) {
   return true;
 }
 
-function paintSvgPath(canvas, d) {
+function svgPathTokens(d) {
   const tokens = [];
   const re = /([MmLlHhVvCcSsQqTtAaZz])|([+-]?(?:\d*\.\d+|\d+)(?:[eE][+-]?\d+)?)/g;
   let match;
@@ -3623,8 +3624,13 @@ function paintSvgPath(canvas, d) {
     if (match[1]) tokens.push(match[1]);
     else tokens.push(Number(match[2]));
   }
-  if (!tokens.length) return false;
-  canvas.begin();
+  return tokens;
+}
+
+function svgPathCommandList(d) {
+  const tokens = svgPathTokens(d);
+  if (!tokens.length) return [];
+  const commands = [];
   let x = 0;
   let y = 0;
   let sx = 0;
@@ -3649,7 +3655,7 @@ function paintSvgPath(canvas, d) {
     const rel = cmd === cmd.toLowerCase();
     const up = cmd.toUpperCase();
     if (up === 'Z') {
-      canvas.close();
+      commands.push({kind: 'close'});
       x = sx;
       y = sy;
       continue;
@@ -3657,7 +3663,7 @@ function paintSvgPath(canvas, d) {
     if (up === 'M') {
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
-      canvas.moveTo(x, y);
+      commands.push({kind: 'move', x, y});
       sx = x;
       sy = y;
       lastCmd = rel ? 'l' : 'L';
@@ -3666,13 +3672,13 @@ function paintSvgPath(canvas, d) {
     if (up === 'L') {
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
-      canvas.lineTo(x, y);
+      commands.push({kind: 'line', x, y});
     } else if (up === 'H') {
       x = rel ? x + take() : take();
-      canvas.lineTo(x, y);
+      commands.push({kind: 'line', x, y});
     } else if (up === 'V') {
       y = rel ? y + take() : take();
-      canvas.lineTo(x, y);
+      commands.push({kind: 'line', x, y});
     } else if (up === 'C') {
       const x1 = rel ? x + take() : take();
       const y1 = rel ? y + take() : take();
@@ -3680,7 +3686,7 @@ function paintSvgPath(canvas, d) {
       const y2 = rel ? y + take() : take();
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
-      canvas.curveTo(x1, y1, x2, y2, x, y);
+      commands.push({kind: 'curve', x1, y1, x2, y2, x, y});
       c2x = x2;
       c2y = y2;
     } else if (up === 'S') {
@@ -3691,7 +3697,7 @@ function paintSvgPath(canvas, d) {
       const prevUp = String(prevCmd).toUpperCase();
       const x1 = prevUp === 'C' || prevUp === 'S' ? 2 * x - c2x : x;
       const y1 = prevUp === 'C' || prevUp === 'S' ? 2 * y - c2y : y;
-      canvas.curveTo(x1, y1, x2, y2, nx, ny);
+      commands.push({kind: 'curve', x1, y1, x2, y2, x: nx, y: ny});
       c2x = x2;
       c2y = y2;
       x = nx;
@@ -3701,7 +3707,7 @@ function paintSvgPath(canvas, d) {
       const y1 = rel ? y + take() : take();
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
-      canvas.quadTo(x1, y1, x, y);
+      commands.push({kind: 'quad', x1, y1, x, y});
       q1x = x1;
       q1y = y1;
     } else if (up === 'T') {
@@ -3710,7 +3716,7 @@ function paintSvgPath(canvas, d) {
       const y1 = prevUp === 'Q' || prevUp === 'T' ? 2 * y - q1y : y;
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
-      canvas.quadTo(x1, y1, x, y);
+      commands.push({kind: 'quad', x1, y1, x, y});
       q1x = x1;
       q1y = y1;
     } else if (up === 'A') {
@@ -3721,12 +3727,185 @@ function paintSvgPath(canvas, d) {
       const sweep = take();
       x = rel ? x + take() : take();
       y = rel ? y + take() : take();
-      canvas.arcTo(rx, ry, rot, large, sweep, x, y);
+      commands.push({kind: 'arc', rx, ry, rot, large, sweep, x, y});
     } else {
       break;
     }
   }
+  return commands;
+}
+
+function svgOpsToRing(ops) {
+  const pts = [];
+  let x = 0;
+  let y = 0;
+  let sx = 0;
+  let sy = 0;
+  for (const op of ops) {
+    if (op.kind === 'move') {
+      x = op.x;
+      y = op.y;
+      sx = x;
+      sy = y;
+      svgPathAddPoint(pts, x, y);
+    } else if (op.kind === 'line') {
+      x = op.x;
+      y = op.y;
+      svgPathAddPoint(pts, x, y);
+    } else if (op.kind === 'curve') {
+      svgCubicSample(
+        pts, {x, y}, {x: op.x1, y: op.y1}, {x: op.x2, y: op.y2}, {x: op.x, y: op.y}, 16,
+      );
+      x = op.x;
+      y = op.y;
+    } else if (op.kind === 'quad') {
+      svgQuadSample(pts, {x, y}, {x: op.x1, y: op.y1}, {x: op.x, y: op.y}, 16);
+      x = op.x;
+      y = op.y;
+    } else if (op.kind === 'arc') {
+      svgArcSample(pts, x, y, op.rx, op.ry, op.rot, op.large, op.sweep, op.x, op.y, 24);
+      x = op.x;
+      y = op.y;
+    } else if (op.kind === 'close') {
+      svgPathAddPoint(pts, sx, sy);
+      x = sx;
+      y = sy;
+    }
+  }
+  return svgCloseRing(pts);
+}
+
+function svgPathSubpaths(d) {
+  const commands = svgPathCommandList(d);
+  const subpaths = [];
+  let current = [];
+  const flush = () => {
+    if (!current.length) return;
+    subpaths.push({ops: current, ring: svgOpsToRing(current)});
+    current = [];
+  };
+  for (const op of commands) {
+    if (op.kind === 'move' && current.length) flush();
+    current.push(op);
+  }
+  flush();
+  return subpaths;
+}
+
+function paintSvgPathCommands(canvas, commands) {
+  if (!commands || !commands.length) return false;
+  canvas.begin();
+  for (const op of commands) {
+    if (op.kind === 'move') canvas.moveTo(op.x, op.y);
+    else if (op.kind === 'line') canvas.lineTo(op.x, op.y);
+    else if (op.kind === 'curve') {
+      canvas.curveTo(op.x1, op.y1, op.x2, op.y2, op.x, op.y);
+    } else if (op.kind === 'quad') canvas.quadTo(op.x1, op.y1, op.x, op.y);
+    else if (op.kind === 'arc') {
+      canvas.arcTo(op.rx, op.ry, op.rot, op.large, op.sweep, op.x, op.y);
+    } else if (op.kind === 'close') canvas.close();
+  }
   return true;
+}
+
+function paintSvgPath(canvas, d) {
+  return paintSvgPathCommands(canvas, svgPathCommandList(d));
+}
+
+function svgFillRuleIsEvenodd(style) {
+  return /^evenodd$/i.test(String((style && style['fill-rule']) || ''));
+}
+
+function svgRingCentroid(ring) {
+  let x = 0;
+  let y = 0;
+  for (const p of ring) {
+    x += p.x;
+    y += p.y;
+  }
+  return {x: x / ring.length, y: y / ring.length};
+}
+
+function svgRingContainsPoint(ring, p) {
+  let inside = false;
+  for (let i = 0, n = ring.length, j = n - 1; i < n; j = i++) {
+    const a = ring[i];
+    const b = ring[j];
+    if ((a.y > p.y) !== (b.y > p.y) &&
+        p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+// libvisio collectGeometry always concatenates NoFill=0 contours with
+// svg:fill-rule=evenodd. SVG default (and IBM VPC VPN Policy's explicit
+// fill-rule="nonzero") fills same-winding nested subpaths as a union.
+// Opposite-winding nested rings are holes in both rules, so they stay
+// one Geometry (Load Balancer Listener donut). Root evenodd (SAP HANA,
+// OpenAI swirl) keeps the authored compound path.
+function svgNonzeroHolesTogether(a, b) {
+  if (!a || !b || a.length < 3 || b.length < 3) return false;
+  const areaA = svgPolyArea(a);
+  const areaB = svgPolyArea(b);
+  if (!(areaA * areaB < 0)) return false;
+  const inner = Math.abs(areaA) < Math.abs(areaB) ? a : b;
+  const outer = inner === a ? b : a;
+  return svgRingContainsPoint(outer, svgRingCentroid(inner));
+}
+
+function svgGroupNonzeroSubpaths(subpaths) {
+  const n = subpaths.length;
+  const parent = subpaths.map((_, i) => i);
+  const find = (i) => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const union = (a, b) => {
+    parent[find(a)] = find(b);
+  };
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (svgNonzeroHolesTogether(subpaths[i].ring, subpaths[j].ring)) {
+        union(i, j);
+      }
+    }
+  }
+  const groups = [];
+  const index = new Map();
+  for (let i = 0; i < n; i++) {
+    const p = find(i);
+    if (!index.has(p)) {
+      index.set(p, groups.length);
+      groups.push([]);
+    }
+    groups[index.get(p)].push(subpaths[i]);
+  }
+  return groups;
+}
+
+function paintSvgNonzeroCompoundFill(canvas, d, style, kind, root, css) {
+  if (kind !== 'fill' && kind !== 'fillstroke') return false;
+  if (svgFillRuleIsEvenodd(style)) return false;
+  const subpaths = svgPathSubpaths(d);
+  if (subpaths.length < 2) return false;
+  const groups = svgGroupNonzeroSubpaths(subpaths);
+  if (groups.length < 2) return false;
+  const fillStyle = {...style, stroke: 'none'};
+  let painted = false;
+  for (const group of groups) {
+    const ops = [];
+    for (const sub of group) {
+      for (const op of sub.ops) ops.push(op);
+    }
+    if (!paintSvgPathCommands(canvas, ops)) continue;
+    applySvgPaint(canvas, fillStyle, 'fill', root, css);
+    painted = true;
+  }
+  if (painted && kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
+    if (paintSvgPath(canvas, d)) {
+      applySvgPaint(canvas, {...style, fill: 'none'}, 'stroke', root, css);
+    }
+  }
+  return painted;
 }
 
 function svgPathAddPoint(pts, x, y) {
@@ -4232,6 +4411,11 @@ function paintSvgNode(canvas, node, inherited, root, css) {
         return paintSvgClippedShape(canvas, name, node, style, kind, root, css);
       }
       if (name === 'path') {
+        if (paintSvgNonzeroCompoundFill(
+          canvas, node.attrs.d, style, kind, root, css,
+        )) {
+          return true;
+        }
         if (!paintSvgPath(canvas, node.attrs.d)) return false;
       } else if (name === 'circle') {
         const cx = Number(node.attrs.cx) || 0;

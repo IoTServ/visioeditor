@@ -7834,6 +7834,104 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG fill-rule=nonzero compounds stay unions for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      int moveCount(VsdxShape shape) => shape.geometries
+          .expand((geometry) => geometry.commands.whereType<MoveTo>())
+          .length;
+
+      List<VsdxShape> leftoverOf(VsdxShape Function(int id) build) {
+        final writer = VsdxWriter();
+        final parser = DocumentParser();
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(build(id)),
+        );
+        return descendants(
+          parser
+              .parse(
+                writer.write(
+                  originalBytes: writer.emptyDocument(),
+                  edited: doc,
+                ),
+              )
+              .pages
+              .first
+              .findShapeById(id)!,
+        ).toList();
+      }
+
+      const vpc = 'Draw.io JS / IBM / IBM / VPC';
+      final white = VsdxColor.tryParse('#FFFFFF')!;
+      List<VsdxShape> whiteFills(VsdxShape shape) => descendants(shape)
+          .where(
+            (child) =>
+                child.fill.pattern == 1 && child.fill.foreground == white,
+          )
+          .toList();
+
+      final bridge = stencil(vpc, 'Bridge').build(401, 3, 3);
+      final bridgeWhites = whiteFills(bridge);
+      expect(
+        bridgeWhites.length,
+        2,
+        reason: 'Bridge.svg fill-rule=nonzero arrows must be sibling fills; '
+            'one Geometry would evenodd-punch the overlap',
+      );
+      expect(
+        bridgeWhites.every((shape) => moveCount(shape) == 1),
+        isTrue,
+        reason: 'each arrow is its own contour',
+      );
+
+      final listener =
+          stencil(vpc, 'Load Balancer Listener').build(402, 3, 3);
+      expect(
+        whiteFills(listener).any((shape) => moveCount(shape) >= 2),
+        isTrue,
+        reason: 'opposite-winding hub rings must stay one Geometry so '
+            'collectGeometry evenodd still punches the donut',
+      );
+
+      final cloud = stencil(vpc, 'Cloud Services').build(403, 3, 3);
+      expect(
+        whiteFills(cloud).length,
+        greaterThanOrEqualTo(3),
+        reason: 'CloudServices.svg gears and play glyph are nonzero unions, '
+            'not one evenodd path',
+      );
+
+      for (final leftover in [
+        leftoverOf((id) => stencil(vpc, 'Bridge').build(id, 3, 3)),
+        leftoverOf(
+          (id) => stencil(vpc, 'Load Balancer Listener').build(id, 3, 3),
+        ),
+        leftoverOf((id) => stencil(vpc, 'Cloud Services').build(id, 3, 3)),
+      ]) {
+        expect(
+          leftover.where(isLibvisioSoftEdgesPlate),
+          isEmpty,
+          reason: 'a second save must keep native FillForegnd, not a PNG',
+        );
+      }
+    },
+  );
+
+  test(
     'mxShape sketch=1 fillStyle stays hatch for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

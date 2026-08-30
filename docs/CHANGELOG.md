@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxImageShape SVG `fill-rule="nonzero"` compound paths now stay
+  native in LibreOffice. Official IBM VPC Bridge arrows, Cloud Services
+  gears and VPN Policy document slots paint several filled subpaths
+  under SVG's default nonzero rule (same-winding nested contours are a
+  union), but capture emitted one Geometry so `collectGeometry`
+  `_fillAndShadowProperties` `svg:fill-rule=evenodd` punched overlaps
+  as holes. Capture now splits those subpaths into sibling fills;
+  opposite-winding nested rings (Load Balancer Listener donut, OpenAI
+  swirl, Task Center ticks) stay one Geometry so evenodd still punches.
+  A second save keeps the children.
 - draw.io mxText cell labels now keep Size / Color / TextBkgnd in LibreOffice.
   Official `mxText.configureCanvas` calls `setFontSize` / `setFontColor` /
   `setFontBackgroundColor` from the cell style, but capture painted
