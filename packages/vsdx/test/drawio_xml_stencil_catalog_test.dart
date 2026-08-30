@@ -6126,6 +6126,85 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG three-stop url(#gradient) bakes FillGradient for LibreOffice',
+    () {
+      final peach = VsdxColor.tryParse('#FEA15F')!;
+
+      bool hasPeachLed(VsdxFill fill) {
+        final gradient = fill.gradient;
+        if (gradient == null || gradient.stops.length < 3) return false;
+        return gradient.stops.any((stop) => stop.color == peach);
+      }
+
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      final server = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / ActiveDirectory / Active Directory',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Windows Server (2)')
+          .build(159, 3, 3);
+      expect(
+        descendantFills(server).any(hasPeachLed),
+        isTrue,
+        reason: 'windows_server_2.svg url(#D) #f2580a→#fea15f→#a11a00 must '
+            'keep the middle LED stop as FillGradient; FillPattern 25–40 '
+            'only stores two colours that collectFillAndShadow maps',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(server.copyWith(id: id)),
+      );
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final leftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        leftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'a save must bake the three-stop LED into a SoftEdges PNG '
+            'LibreOffice Draw can paint',
+      );
+      expect(
+        parser
+            .parse(
+              writer.write(
+                originalBytes: writer.emptyDocument(),
+                edited: leftover,
+              ),
+            )
+            .pages
+            .first
+            .shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isNotEmpty,
+        reason: 'a second save must keep the Windows Server LED plate',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

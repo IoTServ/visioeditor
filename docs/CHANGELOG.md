@@ -964,6 +964,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   `_fillAndShadowProperties` emits as ODF `draw:style=axial`
   (`start-color` at the centre). Two-stop compass ramps stay 25–34.
   A second save keeps the wash.
+- draw.io mxImageShape SVG three-stop `url(#gradient)` whose middle is
+  off the first→last lerp now keeps that stop in LibreOffice. Official
+  Active Directory Windows Server (2) / Windows Router paint LED
+  highlights (`#f2580a`→`#fea15f`→`#a11a00`), but capture took only
+  first/last so `collectFillAndShadow` FillPattern 27 was an orange→red
+  bar. Capture now writes FillGradient rows; leftover bakes SoftEdges
+  PNG because 25–40 only store two colours. SAP Logo's on-lerp cyan
+  ramp stays native 25–40. A second save keeps the plate.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

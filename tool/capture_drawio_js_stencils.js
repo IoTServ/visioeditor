@@ -697,6 +697,7 @@ class CanvasRecorder {
   }
 
   _gradientToken() {
+    const packed = this.state.gradientStopsPacked || '';
     return [
       'grad',
       cssColorKey(this.state.fillColor),
@@ -704,6 +705,8 @@ class CanvasRecorder {
       this.state.gradientDir || 'south',
       this.state.gradientAlpha1,
       this.state.gradientAlpha2,
+      packed,
+      this.state.gradientAngle,
     ].join('|');
   }
 
@@ -719,6 +722,12 @@ class CanvasRecorder {
     const a2 = Number(this.state.gradientAlpha2);
     if (Number.isFinite(a1) && a1 !== 1) attrs.push(`alpha1="${number(a1)}"`);
     if (Number.isFinite(a2) && a2 !== 1) attrs.push(`alpha2="${number(a2)}"`);
+    const packed = this.state.gradientStopsPacked;
+    if (packed) attrs.push(`stops="${xmlEscape(packed)}"`);
+    const angle = Number(this.state.gradientAngle);
+    if (Number.isFinite(angle) && packed) {
+      attrs.push(`angle="${number(angle)}"`);
+    }
     this.operations.push(`<fillgradient ${attrs.join(' ')}/>`);
   }
 
@@ -889,6 +898,8 @@ class CanvasRecorder {
     this.state.gradientDir = null;
     this.state.gradientAlpha1 = 1;
     this.state.gradientAlpha2 = 1;
+    this.state.gradientStopsPacked = null;
+    this.state.gradientAngle = null;
     const token = fillPaintToken(
       value,
       this.styleFill,
@@ -1057,6 +1068,31 @@ class CanvasRecorder {
     this.state.gradientDir = direction || 'south';
     this.state.gradientAlpha1 = alpha1 == null ? 1 : Number(alpha1);
     this.state.gradientAlpha2 = alpha2 == null ? 1 : Number(alpha2);
+    this.state.gradientStopsPacked = null;
+    this.state.gradientAngle = null;
+    const token = this._gradientToken();
+    if (token === this._fillToken) return;
+    this._fillToken = token;
+    this._emitFillGradient();
+  }
+  // SVG linearGradient with a middle stop off the first→last lerp.
+  // Decoder keeps FillGradient rows; leftover bakes SoftEdges PNG
+  // because FillPattern 25–40 only store two colours.
+  setFillGradientStops(stops, direction, angleRad) {
+    if (!stops || stops.length < 2) return;
+    const first = stops[0];
+    const last = stops[stops.length - 1];
+    if (isNoneColor(first.color)) {
+      this.setFillColor(null);
+      return;
+    }
+    this.state.fillColor = first.color;
+    this.state.gradientColor = last.color;
+    this.state.gradientDir = direction || 'south';
+    this.state.gradientAlpha1 = first.alpha == null ? 1 : Number(first.alpha);
+    this.state.gradientAlpha2 = last.alpha == null ? 1 : Number(last.alpha);
+    this.state.gradientStopsPacked = svgPackGradientStops(stops);
+    this.state.gradientAngle = Number(angleRad);
     const token = this._gradientToken();
     if (token === this._fillToken) return;
     this._fillToken = token;
@@ -1517,8 +1553,7 @@ function svgAxialDirection(node) {
   return null;
 }
 
-function svgGradientDirection(node) {
-  if (xmlLocalName(node.name) === 'radialgradient') return 'radial';
+function svgGradientVector(node) {
   let x1 = svgLength(node.attrs.x1, 0);
   let y1 = svgLength(node.attrs.y1, 0);
   let x2 = svgLength(node.attrs.x2, 1);
@@ -1526,7 +1561,6 @@ function svgGradientDirection(node) {
   // Adobe SAP PKI: gradientTransform="translate(0 12.4) scale(1 -1)"
   // flips Y so north/south invert before FillPattern 25–40.
   const tf = node.attrs.gradientTransform;
-
   if (tf) {
     const p1 = svgTransformPoint(tf, x1, y1);
     const p2 = svgTransformPoint(tf, x2, y2);
@@ -1535,10 +1569,66 @@ function svgGradientDirection(node) {
     x2 = p2.x;
     y2 = p2.y;
   }
-  const dx = x2 - x1;
-  const dy = y2 - y1;
-  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? 'east' : 'west';
-  return dy >= 0 ? 'south' : 'north';
+  return {x1, y1, x2, y2, dx: x2 - x1, dy: y2 - y1};
+}
+
+function svgGradientDirection(node) {
+  if (xmlLocalName(node.name) === 'radialgradient') return 'radial';
+  const v = svgGradientVector(node);
+  if (Math.abs(v.dx) >= Math.abs(v.dy)) return v.dx >= 0 ? 'east' : 'west';
+  return v.dy >= 0 ? 'south' : 'north';
+}
+
+// Visio FillGradientAngle is CCW from +X (Y-up). SVG +y is down = south.
+function svgGradientAngleRad(node) {
+  const v = svgGradientVector(node);
+  return Math.atan2(-v.dy, v.dx);
+}
+
+function svgStopsUnitScale(stops) {
+  const n = stops.length;
+  let maxOff = 0;
+  const units = stops.map((stop, i) => {
+    const u = svgStopUnitOffset(stop, i, n);
+    if (u > maxOff) maxOff = u;
+    return u;
+  });
+  return {units, scale: maxOff > 1 + 1e-9 ? maxOff : 1};
+}
+
+// Middle stop far from first→last lerp cannot use FillPattern 25–34
+// (Windows Server (2) LED #f2580a→#fea15f→#a11a00). SAP Logo's six
+// cyan–navy stops stay on the lerp so they keep native 25–40.
+function svgStopsDivergeFromLerp(stops) {
+  if (!stops || stops.length < 3) return false;
+  if (svgAxialPeakStop(stops)) return false;
+  const first = svgParseRgb(stops[0].color);
+  const last = svgParseRgb(stops[stops.length - 1].color);
+  if (!first || !last) return false;
+  const {units, scale} = svgStopsUnitScale(stops);
+  for (let i = 1; i < stops.length - 1; i++) {
+    const rgb = svgParseRgb(stops[i].color);
+    if (!rgb) continue;
+    const t = units[i] / scale;
+    const d = Math.max(
+      Math.abs(rgb[0] - Math.round(first[0] + (last[0] - first[0]) * t)),
+      Math.abs(rgb[1] - Math.round(first[1] + (last[1] - first[1]) * t)),
+      Math.abs(rgb[2] - Math.round(first[2] + (last[2] - first[2]) * t)),
+    );
+    if (d > 40) return true;
+  }
+  return false;
+}
+
+function svgPackGradientStops(stops) {
+  const {units, scale} = svgStopsUnitScale(stops);
+  return stops.map((stop, i) => {
+    const pos = units[i] / scale;
+    const alpha = stop.alpha == null || stop.alpha === 1
+      ? ''
+      : `/${number(stop.alpha)}`;
+    return `${stop.color}@${number(pos)}${alpha}`;
+  }).join(',');
 }
 
 function svgStopColor(node, css) {
@@ -1628,6 +1718,12 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
       );
       return true;
     }
+  }
+  if (name === 'lineargradient' && svgStopsDivergeFromLerp(stops)) {
+    canvas.setFillGradientStops(
+      stops, svgGradientDirection(node), svgGradientAngleRad(node),
+    );
+    return true;
   }
   if (cssColorKey(first.color) === cssColorKey(last.color)) {
     canvas.setFillColor(first.color, true);

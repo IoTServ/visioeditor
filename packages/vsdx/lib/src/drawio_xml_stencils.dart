@@ -529,6 +529,26 @@ class _DrawioXmlShapeDecoder {
         : _number(node, 'alpha2', fallback: 1);
     _fillColor = start;
     _fillIsNone = false;
+    final packedStops = _parseMxGradientStops(node.getAttribute('stops'));
+    if (packedStops.length >= 3) {
+      final pattern = _mxFillPatternForDirection(dir);
+      final angleAttr = node.getAttribute('angle');
+      final angleRad = double.tryParse(angleAttr ?? '') ??
+          _mxFillGradientAngleRad(dir);
+      _fillOverride = VsdxFill(
+        foreground: packedStops.last.color,
+        background: packedStops.first.color,
+        pattern: pattern,
+        foregroundTransparency: (1 - alpha2).clamp(0.0, 1.0),
+        backgroundTransparency: (1 - alpha1).clamp(0.0, 1.0),
+        gradient: VsdxGradient(
+          stops: packedStops,
+          type: VsdxGradientType.linear,
+          angleRad: angleRad,
+        ),
+      );
+      return;
+    }
     // ODF axial (FillPattern 26 / 29): start-color=FillForegnd at the
     // centre, end-color=FillBkgnd at the edges. color1 is the peak.
     if (dir.startsWith('axial')) {
@@ -542,13 +562,7 @@ class _DrawioXmlShapeDecoder {
       );
       return;
     }
-    final pattern = switch (dir) {
-      'north' => 30,
-      'east' => 27,
-      'west' => 25,
-      'radial' => 40,
-      _ => 28,
-    };
+    final pattern = _mxFillPatternForDirection(dir);
     final radial = dir == 'radial';
     _fillOverride = VsdxFill(
       foreground: radial ? start : end,
@@ -1374,6 +1388,57 @@ List<double>? _parseMxDashPattern(String? raw) {
     values.add(value);
   }
   return values.length >= 2 ? values : null;
+}
+
+int _mxFillPatternForDirection(String dir) => switch (dir) {
+      'north' => 30,
+      'east' => 27,
+      'west' => 25,
+      'radial' => 40,
+      _ => 28,
+    };
+
+double _mxFillGradientAngleRad(String dir) => switch (dir) {
+      'east' => 0,
+      'north' => math.pi / 2,
+      'west' => math.pi,
+      'south' => -math.pi / 2,
+      _ => -math.pi / 2,
+    };
+
+/// `stops="#f2580a@0,#fea15f@0.413,#a11a00@1"` (optional `/alpha`).
+List<VsdxGradientStop> _parseMxGradientStops(String? raw) {
+  final text = (raw ?? '').trim();
+  if (text.isEmpty) return const <VsdxGradientStop>[];
+  final out = <VsdxGradientStop>[];
+  for (final part in text.split(',')) {
+    final token = part.trim();
+    if (token.isEmpty) continue;
+    final slash = token.lastIndexOf('/');
+    var colorPos = token;
+    var alpha = 1.0;
+    if (slash > 0) {
+      final parsedAlpha = double.tryParse(token.substring(slash + 1));
+      if (parsedAlpha != null && parsedAlpha.isFinite) {
+        alpha = parsedAlpha.clamp(0.0, 1.0);
+        colorPos = token.substring(0, slash);
+      }
+    }
+    final at = colorPos.lastIndexOf('@');
+    if (at <= 0) continue;
+    final color = _mxGraphPaintColor(colorPos.substring(0, at));
+    final pos = double.tryParse(colorPos.substring(at + 1));
+    if (color == null || pos == null || !pos.isFinite) continue;
+    out.add(
+      VsdxGradientStop(
+        position: pos.clamp(0.0, 1.0),
+        color: color,
+        transparency: (1 - alpha).clamp(0.0, 1.0),
+      ),
+    );
+  }
+  out.sort((a, b) => a.position.compareTo(b.position));
+  return out;
 }
 
 /// Visio LineCap: 0 round, 1 extended/butt, 2 square. libvisio
