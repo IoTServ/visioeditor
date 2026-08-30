@@ -516,10 +516,6 @@ class _DrawioXmlShapeDecoder {
       _applyMxFill(node.getAttribute('color1'));
       return;
     }
-    if (end == null || start == end) {
-      _applyMxFill(node.getAttribute('color1'));
-      return;
-    }
     final dir = (node.getAttribute('direction') ?? 'south').toLowerCase();
     final alpha1 = node.getAttribute('alpha1') == null
         ? 1.0
@@ -552,6 +548,13 @@ class _DrawioXmlShapeDecoder {
           angleRad: angleRad,
         ),
       );
+      return;
+    }
+    // Same RGB with different alphas is a fade Draw cannot store in
+    // FillPattern 25–40 (`librevenge:*-opacity` is ignored). Keep the
+    // two Trans cells so leftover bakes SoftEdges PNG.
+    if (end == null || (start == end && (alpha1 - alpha2).abs() <= 1e-9)) {
+      _applyMxFill(node.getAttribute('color1'));
       return;
     }
     // ODF axial (FillPattern 26 / 29): start-color=FillForegnd at the

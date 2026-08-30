@@ -6696,6 +6696,86 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG stop-opacity ramps stay native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasWhiteTranslucent(VsdxFill fill) =>
+          fill.pattern == 1 &&
+          fill.foreground == VsdxColor.white &&
+          fill.gradient == null &&
+          fill.foregroundTransparency > 0.05;
+
+      final translator = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Translator Text')
+          .build(170, 3, 3);
+      expect(
+        descendantFills(translator).where(hasWhiteTranslucent).length,
+        greaterThanOrEqualTo(8),
+        reason: 'Translator_Text.svg white→white stop-opacity 0.3 must '
+            'tessellate as FillPattern 1 + FillForegndTrans; FillPattern '
+            '25–40 drop draw:opacity and leftover PNG is opaque white',
+      );
+      expect(
+        descendantFills(translator).any(
+          (fill) =>
+              fill.pattern == 28 &&
+              fill.foreground == VsdxColor.tryParse('#0078D4') &&
+              fill.gradient == null,
+        ),
+        isTrue,
+        reason: 'the opaque south #5ea0ef→#0078d4 plate stays FillPattern 28',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(translator.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'translucent FillForegnd slabs stay native; leftover must '
+            'not bake an opaque-white SoftEdges PNG over the azure plate',
+      );
+      expect(
+        descendants(leftover)
+            .where((shape) => hasWhiteTranslucent(shape.fill))
+            .length,
+        greaterThanOrEqualTo(8),
+        reason: 'a second save must keep the FillForegndTrans slabs',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

@@ -1067,7 +1067,10 @@ class CanvasRecorder {
       this.setFillColor(null);
       return;
     }
-    if (isNoneColor(color2) || cssColorKey(color1) === cssColorKey(color2)) {
+    const a1 = alpha1 == null ? 1 : Number(alpha1);
+    const a2 = alpha2 == null ? 1 : Number(alpha2);
+    const same = cssColorKey(color1) === cssColorKey(color2);
+    if (isNoneColor(color2) || (same && Math.abs(a1 - a2) < 1e-9)) {
       this.setFillColor(color1);
       return;
     }
@@ -1668,9 +1671,21 @@ function svgOpaqueUniqueColorCount(stops) {
   return keys.size;
 }
 
+function svgStopsHaveAlphaRamp(stops) {
+  if (!stops || stops.length < 2) return false;
+  for (const stop of stops) {
+    const a = stop.alpha == null ? 1 : Number(stop.alpha);
+    if (Math.abs(a - 1) > 1e-9) return true;
+  }
+  return false;
+}
+
 function svgLinearNeedsFillGradient(node, stops) {
   if (xmlLocalName(node.name) !== 'lineargradient') return false;
   if (!stops || stops.length < 2) return false;
+  // stop-opacity ramps tessellate as FillPattern 1 + FillForegndTrans
+  // (paintSvgAlphaRampFill). Leftover SoftEdges PNG composites onto
+  // opaque white and would hide siblings under the fade.
   if (svgStopsDivergeFromLerp(stops)) return true;
   if (!svgStopsFitClassicSpan(stops)) return true;
   if (!svgLinearAngleFitsClassic(node)) return true;
@@ -1718,6 +1733,7 @@ function svgRadialIsElliptical(node) {
 function svgRadialNeedsEllipseBands(node, stops) {
   if (!svgRadialIsElliptical(node)) return false;
   if (!stops || stops.length < 2) return false;
+  if (svgStopsHaveAlphaRamp(stops)) return false;
   if (svgOpaqueUniqueColorCount(stops) > 2) return false;
   return true;
 }
@@ -1745,6 +1761,81 @@ function svgStopsColorAt(stops, t) {
     Math.round(a[1] + (b[1] - a[1]) * tt),
     Math.round(a[2] + (b[2] - a[2]) * tt),
   ]);
+}
+
+function svgStopAlpha(stop) {
+  const a = stop && stop.alpha == null ? 1 : Number(stop && stop.alpha);
+  return Number.isFinite(a) ? a : 1;
+}
+
+function svgStopsAlphaAt(stops, t) {
+  const {units, scale} = svgStopsUnitScale(stops);
+  const u = Math.max(0, Math.min(1, Number(t) || 0));
+  if (!stops || !stops.length) return 1;
+  let i = 0;
+  while (i + 1 < stops.length && units[i + 1] / scale < u - 1e-12) i++;
+  if (i + 1 >= stops.length) return svgStopAlpha(stops[stops.length - 1]);
+  const u0 = units[i] / scale;
+  const u1 = units[i + 1] / scale;
+  const tt = Math.abs(u1 - u0) < 1e-12 ? 0 : (u - u0) / (u1 - u0);
+  return svgStopAlpha(stops[i]) +
+      (svgStopAlpha(stops[i + 1]) - svgStopAlpha(stops[i])) * tt;
+}
+
+function svgRingsSpan(rings) {
+  let minx = Infinity;
+  let miny = Infinity;
+  let maxx = -Infinity;
+  let maxy = -Infinity;
+  for (const ring of rings || []) {
+    for (const p of ring || []) {
+      if (p.x < minx) minx = p.x;
+      if (p.y < miny) miny = p.y;
+      if (p.x > maxx) maxx = p.x;
+      if (p.y > maxy) maxy = p.y;
+    }
+  }
+  if (!(maxx > minx) && !(maxy > miny)) return 1;
+  return Math.max(maxx - minx, maxy - miny, 1) * 8;
+}
+
+function svgGradientT(node, x, y) {
+  const v = svgGradientVector(node);
+  const len2 = v.dx * v.dx + v.dy * v.dy;
+  if (len2 < 1e-18) return 0;
+  return ((x - v.x1) * v.dx + (y - v.y1) * v.dy) / len2;
+}
+
+function svgRingsGradientTRange(node, rings) {
+  let tMin = Infinity;
+  let tMax = -Infinity;
+  for (const ring of rings || []) {
+    for (const p of ring || []) {
+      const t = svgGradientT(node, p.x, p.y);
+      if (t < tMin) tMin = t;
+      if (t > tMax) tMax = t;
+    }
+  }
+  if (!(tMax > tMin)) return {tMin: 0, tMax: 1};
+  return {tMin, tMax};
+}
+
+function svgGradientSlabRing(node, t0, t1, span) {
+  const v = svgGradientVector(node);
+  const len = Math.hypot(v.dx, v.dy);
+  if (!(len > 1e-12)) return null;
+  const ux = v.dx / len;
+  const uy = v.dy / len;
+  const px = -uy * span;
+  const py = ux * span;
+  const a0 = t0 * len;
+  const a1 = t1 * len;
+  return [
+    {x: v.x1 + ux * a0 + px, y: v.y1 + uy * a0 + py},
+    {x: v.x1 + ux * a1 + px, y: v.y1 + uy * a1 + py},
+    {x: v.x1 + ux * a1 - px, y: v.y1 + uy * a1 - py},
+    {x: v.x1 + ux * a0 - px, y: v.y1 + uy * a0 - py},
+  ];
 }
 
 function svgRadialDiscRing(gradNode, t, steps) {
@@ -1903,7 +1994,8 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
     );
     return true;
   }
-  if (cssColorKey(first.color) === cssColorKey(last.color)) {
+  if (cssColorKey(first.color) === cssColorKey(last.color) &&
+      !svgStopsHaveAlphaRamp(stops)) {
     canvas.setFillColor(first.color, true);
     return true;
   }
@@ -2899,6 +2991,106 @@ function applySvgFilter(canvas, node, root, css) {
   return true;
 }
 
+// SVG stop-opacity cannot use FillPattern 25–40 (Draw ignores
+// librevenge:*-opacity) or leftover SoftEdges PNG (Foreign images
+// composite onto opaque white and cover siblings). Tessellate
+// non-overlapping slabs / annuli as FillPattern 1 + FillForegndTrans
+// so collectFillAndShadow emits draw:opacity (Azure Translator Text
+// white→0.3 highlights over #0078d4).
+function paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css) {
+  if (kind !== 'fill' && kind !== 'fillstroke') return false;
+  const fill = style.fill == null ? '#000' : style.fill;
+  const id = svgPaintUrlId(fill);
+  if (!id || !root) return false;
+  const gradNode = resolveSvgGradientNode(root, id);
+  if (!gradNode) return false;
+  const stops = svgCollectStops(gradNode, css);
+  if (!svgStopsHaveAlphaRamp(stops)) return false;
+  const rings = svgDrawableRings(name, node);
+  if (!rings.length) return false;
+  const mapped = [];
+  for (const ring of rings) {
+    const shapeMapped = ring.map((p) => canvas.map(p.x, p.y));
+    if (canvas.clipRings && canvas.clipRings.length) {
+      for (const piece of svgClipMappedToRings(shapeMapped, canvas.clipRings)) {
+        mapped.push(piece);
+      }
+    } else {
+      mapped.push(shapeMapped);
+    }
+  }
+  if (!mapped.length) return false;
+  const {outers, holes} = svgSplitEvenoddRings(mapped);
+  const baseOp = svgCssAlpha(style['fill-opacity']);
+  const inheritOp = baseOp == null ? 1 : baseOp;
+  const emitBand = (fillRings, t) => {
+    if (!canvas.emitMappedRings(fillRings)) return 0;
+    const alpha = Math.max(0, Math.min(1, inheritOp * svgStopsAlphaAt(stops, t)));
+    applySvgPaint(
+      canvas,
+      {
+        ...style,
+        fill: svgStopsColorAt(stops, t),
+        stroke: 'none',
+        'fill-opacity': String(alpha),
+      },
+      'fill',
+      root,
+      css,
+    );
+    return 1;
+  };
+  const clipToGlyph = (clipRing) => {
+    const band = [];
+    for (const outer of outers) {
+      for (const hit of svgIntersectPolygons(clipRing, outer)) band.push(hit);
+    }
+    if (!band.length) return band;
+    for (const hole of holes) {
+      for (const hit of svgIntersectPolygons(clipRing, hole)) band.push(hit);
+    }
+    return band;
+  };
+  let painted = false;
+  const bands = 8;
+  if (xmlLocalName(gradNode.name) === 'radialgradient') {
+    const disc1 = svgRadialDiscRing(gradNode, 1).map((p) => canvas.map(p.x, p.y));
+    const outside = mapped.slice();
+    for (const hit of clipToGlyph(disc1)) outside.push(hit);
+    if (emitBand(outside, 1)) painted = true;
+    for (let i = bands - 1; i >= 0; i--) {
+      const tLo = i / bands;
+      const tHi = (i + 1) / bands;
+      const discHi = svgRadialDiscRing(gradNode, tHi).map((p) => canvas.map(p.x, p.y));
+      const band = clipToGlyph(discHi);
+      if (tLo > 1e-6) {
+        const discLo = svgRadialDiscRing(gradNode, tLo).map((p) => canvas.map(p.x, p.y));
+        for (const hit of clipToGlyph(discLo)) band.push(hit);
+      }
+      if (emitBand(band, (tLo + tHi) / 2)) painted = true;
+    }
+  } else {
+    const span = svgRingsSpan(rings);
+    const {tMin, tMax} = svgRingsGradientTRange(gradNode, rings);
+    const spanT = Math.max(tMax - tMin, 1e-6);
+    for (let i = 0; i < bands; i++) {
+      const t0 = tMin + spanT * i / bands;
+      const t1 = tMin + spanT * (i + 1) / bands;
+      const slab = svgGradientSlabRing(gradNode, t0, t1, span);
+      if (!slab) continue;
+      const slabMapped = slab.map((p) => canvas.map(p.x, p.y));
+      const sampleT = Math.max(0, Math.min(1, (t0 + t1) / 2));
+      if (emitBand(clipToGlyph(slabMapped), sampleT)) painted = true;
+    }
+  }
+  if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
+    if (canvas.clipRings && canvas.clipRings.length) {
+      paintSvgClippedStrokeRibbons(canvas, name, node, style, root, css);
+    }
+  }
+  return painted;
+}
+
 // FillPattern 40 is a circle. Tessellate an elliptical userSpaceOnUse
 // radial as concentric solid discs clipped to the glyph so
 // collectFillAndShadow sees FillForegnd siblings Draw can paint
@@ -3651,6 +3843,9 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       const kind = svgDrawKind(style, name === 'path' || name === 'circle' ||
         name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
       if (!kind) return false;
+      if (paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css)) {
+        return true;
+      }
       if (paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css)) {
         return true;
       }

@@ -1018,6 +1018,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   hole contours in one Geometry so `collectGeometry` `svg:fill-rule=evenodd`
   still punches, and tessellates `disc ∩ outer` / `disc ∩ hole` bands.
   Task Center ticks stay native 40. A second save keeps the polygons.
+- draw.io mxImageShape SVG `stop-opacity` ramps now stay native in
+  LibreOffice. Official Azure Translator Text paints white→white
+  `stop-opacity="0.3"` highlights on the speech chevrons, but capture
+  collapsed same-RGB `url(#gradient)` to solid FillForegnd, and leftover
+  SoftEdges PNG composites onto opaque white that hides the `#0078d4`
+  plate (`_fillAndShadowProperties` also drops `draw:opacity` on
+  FillPattern 25–40). Capture now tessellates the fade as FillPattern 1
+  + FillForegndTrans slabs `collectFillAndShadow` maps to
+  `draw:opacity`. Opaque two-stop compass ramps stay native 25–40. A
+  second save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
