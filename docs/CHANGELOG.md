@@ -1071,6 +1071,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Capture now tessellates that overlay as FillPattern 1 + FillForegndTrans
   slabs like `stop-opacity` ramps. Opaque two-stop compass fills stay
   25–40. A second save keeps the polygons.
+- draw.io mxImageShape SVG off-slot / inset-stop `url(#gradient)` now stays
+  native in LibreOffice. Official Azure Power BI Embedded bars
+  (`#e6ad10`→`#c87e0e` ~22° off ODF 135°), SAP PKI Certificate Service's
+  Y-flipped diamond (~10° off 135°), and Cosmos DB's radial
+  `offset=".183"` / `#5ea0ef` would leftover a SoftEdges PNG:
+  `FillGradientAngle` / stop `Position` are not tokens, leftover still
+  interpolates 0→1 across the child XForm, and Foreign images composite
+  onto opaque white so the plate hid sibling bars / the lock / the cyan
+  decorations. Capture now tessellates those washes as FillForegnd slabs
+  / concentric discs like the short-vector and offset-radial cases. SAP
+  Logo's on-slot south 0→1 cyan ramp stays 28; Analytics Cloud's crescent
+  `url(#A)` stays FillPattern 32; Task Center two-stop ticks stay 40;
+  Azure Applied AI's three unique colours still leftover PNG. A second
+  save keeps the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

@@ -4747,17 +4747,6 @@ void main() {
   test(
     'mxgraph.sap.icon SVG stays FillPattern 25–40 for LibreOffice',
     () {
-      final cyan = VsdxColor.tryParse('#0195FF')!;
-      final navy = VsdxColor.tryParse('#1147E9')!;
-
-      bool hasRamp(VsdxFill fill, VsdxColor a, VsdxColor b) {
-        if (!fill.hasFill || fill.pattern < 25 || fill.pattern > 40) {
-          return false;
-        }
-        final colors = <VsdxColor?>{fill.foreground, fill.background};
-        return colors.contains(a) && colors.contains(b);
-      }
-
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
         yield shape.fill;
         for (final child in shape.children) {
@@ -4775,18 +4764,29 @@ void main() {
       expect(
         descendantGeometries(pki)
             .expand((geometry) => geometry.commands)
-            .whereType<CubBezTo>()
+            .whereType<LineTo>()
             .length,
         greaterThanOrEqualTo(8),
         reason: 'mxgraph.sap.icon SAPIcon=SAP_PKI_Certificate_Service '
             'must vectorise img/lib/sap/*.svg, not only the grey ellipse',
       );
       expect(
-        descendantFills(pki).any((fill) => hasRamp(fill, cyan, navy)),
-        isTrue,
-        reason: 'linear-gradient #0195ff→#1147e9 plus gradientTransform '
-            'must become FillPattern 25–40 that libvisio maps to '
-            'draw:style=linear',
+        descendantFills(pki).where((fill) {
+          final color = fill.foreground;
+          if (color == null ||
+              fill.pattern != 1 ||
+              fill.gradient != null) {
+            return false;
+          }
+          return color.red < 40 &&
+              color.green > 100 &&
+              color.blue > 240;
+        }).length,
+        greaterThanOrEqualTo(4),
+        reason: 'diamond url(#linear-gradient) is ~10° off ODF 135°; '
+            'FillPattern 32 and leftover FillGradient would 0→1 the '
+            'XForm / bake a white PNG. Tessellate #0195ff→#1147e9 as '
+            'FillForegnd slabs',
       );
       expect(
         descendantFills(pki).where((fill) {
@@ -4804,17 +4804,9 @@ void main() {
             '#1348ff→#06238d as FillForegnd slabs',
       );
       expect(
-        descendantFills(pki).any(
-          (fill) =>
-              fill.hasFill &&
-              fill.pattern >= 25 &&
-              fill.pattern <= 40 &&
-              fill.pattern == 32,
-        ),
-        isTrue,
-        reason: 'Adobe Y-flip gradientTransform plus the diamond vector '
-            'must snap to southeast (FillPattern 32 / ODF 135°), not '
-            'axis-only south (28) or north (30)',
+        descendantFills(pki).any((fill) => fill.pattern == 32),
+        isFalse,
+        reason: 'the ~10° diamond must not snap to FillPattern 32',
       );
 
       const writer = VsdxWriter();
@@ -4839,9 +4831,9 @@ void main() {
         leftover.pages.first.shapes
             .expand(descendants)
             .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
-        reason: 'the SAP PKI diamond is ~10° off ODF 135°; leftover must '
-            'bake a SoftEdges PNG because FillGradientAngle is not a token',
+        isEmpty,
+        reason: 'PKI diamond slabs stay native; leftover must not bake a '
+            'white SoftEdges PNG over the lock',
       );
     },
   );
@@ -4891,9 +4883,10 @@ void main() {
           .build(161, 3, 3);
       expect(
         descendantFills(pki).any((fill) => fill.pattern == 32),
-        isTrue,
+        isFalse,
         reason: 'SAP_PKI_Certificate_Service.svg Y-flipped diamond is '
-            'southeast FillPattern 32 (ODF 135°), not south (28)',
+            '~10° off ODF 135° so leftover FillGradient would hide the '
+            'lock; tessellate as FillForegnd slabs',
       );
 
       const writer = VsdxWriter();
@@ -5787,23 +5780,33 @@ void main() {
           .singleWhere((entry) => entry.name == 'Globe')
           .build(145, 3, 3);
       const teal = VsdxColor(0xFF42E8CA);
-      final disk = globe.children.firstWhere(
-        (child) => child.fill.pattern == 34,
+      final diskPts = globe.children
+          .where((child) {
+            final color = child.fill.foreground;
+            if (color == null || child.fill.pattern != 1) return false;
+            return color.red < 110 &&
+                color.green > 110 &&
+                color.green < 180 &&
+                color.blue > 200;
+          })
+          .expand(geometryPoints)
+          .toList();
+      expect(
+        diskPts,
+        isNotEmpty,
+        reason: 'Globe.svg ocean url(#gradient) tessellates as azure slabs',
       );
-      final ellipse = disk.geometries
-          .expand((geometry) => geometry.commands)
-          .whereType<EllipseCmd>()
-          .first;
-      final radius = math.max(
-        math.sqrt(
-          math.pow(ellipse.aX - ellipse.cx, 2) +
-              math.pow(ellipse.aY - ellipse.cy, 2),
-        ),
-        math.sqrt(
-          math.pow(ellipse.bX - ellipse.cx, 2) +
-              math.pow(ellipse.bY - ellipse.cy, 2),
-        ),
-      );
+      final cx =
+          diskPts.map((p) => p.x).reduce((a, b) => a + b) / diskPts.length;
+      final cy =
+          diskPts.map((p) => p.y).reduce((a, b) => a + b) / diskPts.length;
+      var radius = 0.0;
+      for (final point in diskPts) {
+        final dist = math.sqrt(
+          math.pow(point.x - cx, 2) + math.pow(point.y - cy, 2),
+        );
+        if (dist > radius) radius = dist;
+      }
       final meridians = globe.children
           .where((child) => child.fill.foreground == teal)
           .toList();
@@ -5815,8 +5818,8 @@ void main() {
       for (final child in meridians) {
         for (final point in geometryPoints(child)) {
           final dist = math.sqrt(
-            math.pow(point.x - ellipse.cx, 2) +
-                math.pow(point.y - ellipse.cy, 2),
+            math.pow(point.x - cx, 2) +
+                math.pow(point.y - cy, 2),
           );
           expect(
             dist,
@@ -5857,12 +5860,18 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == 'Power BI Embedded')
           .build(147, 3, 3);
-      expect(embedded.children, hasLength(3));
+      expect(embedded.children.length, greaterThanOrEqualTo(18));
       expect(
-        embedded.children.every((child) => lineCommands(child) > 20),
+        embedded.children.every((child) => lineCommands(child) >= 3),
         isTrue,
-        reason: 'Power BI Embedded clip-path stairs must round the three '
-            'bar rectangles instead of leaving sharp overflowing rects',
+        reason: 'Power BI Embedded bars tessellate as clipped polygons, '
+            'not unfilled leftover plates',
+      );
+      expect(
+        embedded.children.any((child) => lineCommands(child) > 8),
+        isTrue,
+        reason: 'clip-path stairs must round at least one bar slab instead '
+            'of leaving sharp overflowing rects',
       );
 
       final vuln = dynamic
@@ -5876,10 +5885,11 @@ void main() {
           )
           .build(148, 3, 3);
       expect(
-        vuln.children,
-        hasLength(3),
-        reason: 'viewBox-sized rect clip-path is identity and must not '
-            'tessellate ellipses/paths into extra children',
+        vuln.children.length,
+        greaterThanOrEqualTo(8),
+        reason: 'viewBox-sized rect clip-path is identity so it must not '
+            'drop the shield; off-slot url(#linear-gradient) tessellates '
+            'as FillForegnd slabs',
       );
 
       final writer = VsdxWriter();
@@ -5964,21 +5974,23 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == 'SAP Build')
           .build(149, 3, 3);
-      const navy = VsdxColor(0xFF103CD8);
-      const azure = VsdxColor(0xFF0874F6);
-      const cyan = VsdxColor(0xFF01ABFF);
       final blobs = sapBuild.children
-          .where(
-            (child) =>
-                child.fill.foreground == navy ||
-                child.fill.foreground == azure ||
-                child.fill.foreground == cyan,
-          )
+          .where((child) {
+            final color = child.fill.foreground;
+            if (color == null ||
+                child.fill.pattern != 1 ||
+                lineCommands(child) <= 8) {
+              return false;
+            }
+            return color.blue > 200 && color.red < 40;
+          })
           .toList();
       expect(
-        blobs,
-        hasLength(3),
-        reason: 'SAP_Build.svg paints three fills under maskUnits=userSpaceOnUse',
+        blobs.length,
+        greaterThanOrEqualTo(3),
+        reason: 'SAP_Build.svg paints navy/azure/cyan fills under '
+            'maskUnits=userSpaceOnUse; off-slot ramps tessellate as '
+            'FillForegnd slabs',
       );
       for (final child in blobs) {
         expect(
@@ -6027,12 +6039,11 @@ void main() {
           .findShapeById(id)!;
       expect(
         leftover.children
-            .where(
-              (child) =>
-                  child.fill.foreground == navy ||
-                  child.fill.foreground == azure ||
-                  child.fill.foreground == cyan,
-            )
+            .where((child) {
+              final color = child.fill.foreground;
+              if (color == null || child.fill.pattern != 1) return false;
+              return color.blue > 200 && color.red < 40;
+            })
             .every((child) => lineCommands(child) > 8),
         isTrue,
         reason: 'a second save must keep SAP Build mask polygons',
@@ -6089,19 +6100,25 @@ void main() {
           .singleWhere((entry) => entry.name == 'Secure Building')
           .build(152, 3, 3);
       final bushes = building.children
-          .where(
-            (child) =>
-                child.fill.pattern >= 25 &&
-                child.fill.pattern <= 40 &&
-                lineCommands(child) > 20,
-          )
+          .where((child) {
+            final color = child.fill.foreground;
+            if (color == null ||
+                child.fill.pattern != 1 ||
+                lineCommands(child) <= 20) {
+              return false;
+            }
+            final delta = (color.red - color.green).abs() +
+                (color.green - color.blue).abs();
+            return delta < 20 && color.red > 150 && color.red < 240;
+          })
           .toList();
       expect(
         bushes,
         isNotEmpty,
-        reason: 'Secure_Building.svg paints FillPattern 25–40 bushes under '
-            'mask+<use>; skipping use left unclipped CubBez fills that Draw '
-            'would paint outside the mask letter',
+        reason: 'Secure_Building.svg paints grey bushes under mask+<use>; '
+            'skipping use left unclipped CubBez fills that Draw would '
+            'paint outside the mask letter. Off-slot leftover ramps '
+            'tessellate as FillForegnd slabs',
       );
 
       final writer = VsdxWriter();
@@ -6618,10 +6635,27 @@ void main() {
         powerLeftover.pages.first.shapes
             .expand(descendants)
             .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
+        isEmpty,
         reason: 'Power_BI_Embedded.svg two-stop is ~22° off ODF 135°; '
-            'FillGradientAngle is not a token so leftover must bake the '
-            'authored angle',
+            'leftover FillGradient still 0→1s the XForm and the SoftEdges '
+            'PNG composites onto opaque white over the sibling bars. '
+            'Tessellate as FillForegnd slabs',
+      );
+      expect(
+        powerLeftover.pages.first.shapes.expand(descendants).where((shape) {
+          final color = shape.fill.foreground;
+          if (color == null ||
+              shape.fill.pattern != 1 ||
+              shape.fill.gradient != null) {
+            return false;
+          }
+          return color.red > 180 &&
+              color.green > 100 &&
+              color.green < 200 &&
+              color.blue < 40;
+        }).length,
+        greaterThanOrEqualTo(8),
+        reason: 'a second save must keep the gold bar slabs',
       );
     },
   );
@@ -6641,14 +6675,15 @@ void main() {
         return gradient.stops.any((stop) => stop.color == midCyan);
       }
 
-      bool hasInsetRadial(VsdxFill fill) {
-        final gradient = fill.gradient;
-        if (gradient == null ||
-            gradient.type != VsdxGradientType.radial ||
-            gradient.stops.length < 2) {
+      bool isInsetRadialBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
           return false;
         }
-        return gradient.stops.first.position > 0.05;
+        return color.red < 110 &&
+            color.green > 110 &&
+            color.green < 180 &&
+            color.blue > 200;
       }
 
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
@@ -6690,10 +6725,12 @@ void main() {
           .singleWhere((entry) => entry.name == 'Cosmos DB')
           .build(165, 3, 3);
       expect(
-        descendantFills(cosmos).any(hasInsetRadial),
-        isTrue,
-        reason: 'Azure_Cosmos_DB.svg radial offset 0.183/#5ea0ef must keep '
-            'Position; FillPattern 40 always interpolates 0→1',
+        descendantFills(cosmos).where(isInsetRadialBand).length,
+        greaterThanOrEqualTo(6),
+        reason: 'Azure_Cosmos_DB.svg radial offset 0.183/#5ea0ef must '
+            'tessellate as FillForegnd discs; FillPattern 40 always '
+            'interpolates 0→1 and leftover SoftEdges PNG would cover '
+            'the cyan decorations',
       );
 
       const writer = VsdxWriter();
@@ -6714,6 +6751,32 @@ void main() {
         isNotEmpty,
         reason: 'a save must bake the three-stop radial into a SoftEdges '
             'PNG LibreOffice Draw can paint',
+      );
+
+      doc = parser.parse(writer.emptyDocument());
+      final cosmosId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cosmos.copyWith(id: cosmosId)),
+      );
+      final cosmosLeftover = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        cosmosLeftover.pages.first.shapes
+            .expand(descendants)
+            .where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'Cosmos inset discs stay native; leftover must not bake a '
+            'white SoftEdges PNG over the cyan decorations',
+      );
+      expect(
+        cosmosLeftover.pages.first.shapes
+            .expand(descendants)
+            .where((shape) => isInsetRadialBand(shape.fill))
+            .length,
+        greaterThanOrEqualTo(6),
+        reason: 'a second save must keep the Cosmos FillForegnd discs',
       );
 
       final ticks = dynamic

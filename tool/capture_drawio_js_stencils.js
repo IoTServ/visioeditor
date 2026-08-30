@@ -1712,9 +1712,14 @@ function svgLinearNeedsFillGradient(node, stops) {
 // FillPattern 25–34 and leftover FillGradient both interpolate 0→1
 // across the XForm (the SVG viewBox). A short / inset userSpaceOnUse
 // vector (SAP Analytics Cloud wedge B) only covers part of that box,
-// so Draw would wash the glyph with the wrong slice.
-function svgLinearNeedsLocalBands(node, viewBox) {
+// so Draw would wash the glyph with the wrong slice. Off-slot angles
+// (Power BI Embedded ~22°) and leftover mid-stops still bake a
+// SoftEdges PNG that composites onto opaque white and hides sibling
+// bars; tessellate those as FillForegnd slabs too. On-slot full-box
+// two-stops (SAP Logo south) stay native 25–40.
+function svgLinearNeedsLocalBands(node, viewBox, stops) {
   if (xmlLocalName(node.name) !== 'lineargradient') return false;
+  if (stops && svgLinearNeedsFillGradient(node, stops)) return true;
   if (!viewBox || !(viewBox.w > 0) || !(viewBox.h > 0)) return false;
   const v = svgGradientVector(node);
   const len = Math.hypot(v.dx, v.dy);
@@ -1805,8 +1810,10 @@ function svgRadialNeedsLocalBands(node, viewBox) {
 // Two-stop 0→1 ellipses cannot use FillPattern 40 (a circle) or
 // leftover FillGradient (canvas radial is still a circle). Offset /
 // undersized circular userSpaceOnUse discs have the same problem
-// because the child XForm is the viewBox. Tessellate concentric
-// discs in gradient space. Three unique colours stay on FillGradient
+// because the child XForm is the viewBox. Inset Positions (Cosmos DB
+// 0.183) leftover a SoftEdges PNG on that full-box XForm whose
+// opaque white covers sibling glyphs. Tessellate concentric discs
+// in gradient space. Three unique colours stay on FillGradient
 // leftover (Azure Applied AI). Compound evenodd holes (Azure OpenAI
 // swirl / Task Center donuts) stay one Geometry so collectGeometry
 // svg:fill-rule=evenodd still punches.
@@ -1815,7 +1822,8 @@ function svgRadialNeedsEllipseBands(node, stops, viewBox) {
   if (svgStopsHaveAlphaRamp(stops)) return false;
   if (svgOpaqueUniqueColorCount(stops) > 2) return false;
   if (svgRadialIsElliptical(node)) return true;
-  return svgRadialNeedsLocalBands(node, viewBox);
+  if (svgRadialNeedsLocalBands(node, viewBox)) return true;
+  return !svgStopsFitClassicSpan(stops);
 }
 
 function svgHexFromRgb(rgb) {
@@ -2847,14 +2855,15 @@ function paintSvgGradientStroke(canvas, name, node, style, kind, root, css) {
   const stops = gradNode ? svgCollectStops(gradNode, css) : null;
   // collectLine has no LineGradient. FillPattern 25–34 on the ribbon
   // still 0→1s the child XForm (the icon box). A short check stroke
-  // (SAP Secure Login #B) must tessellate like fill slabs. Full-box
-  // crescent url(#A) and Task Center radial ticks stay 25–40.
+  // (SAP Secure Login #B) or an off-slot ribbon must tessellate like
+  // fill slabs. Full-box on-slot crescent url(#A) and Task Center
+  // radial ticks stay 25–40.
   if (gradNode &&
       stops &&
       stops.length >= 2 &&
       !svgStopsHaveAlphaRamp(stops) &&
       xmlLocalName(gradNode.name) === 'lineargradient' &&
-      svgLinearNeedsLocalBands(gradNode, canvas.viewBox)) {
+      svgLinearNeedsLocalBands(gradNode, canvas.viewBox, stops)) {
     const mapped = [];
     for (const ring of ribbons) {
       const shapeMapped = ring.map((p) => canvas.map(p.x, p.y));
@@ -3231,10 +3240,11 @@ function paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css) {
 }
 
 // FillPattern 25–34 / leftover FillGradient interpolate 0→1 on the
-// XForm. Short userSpaceOnUse vectors (SAP Analytics Cloud #B) need
-// solid FillForegnd slabs along the authored axis so Draw keeps the
-// wedge colours. Full-box ramps (SAP Logo, crescent stroke A) stay
-// native 25–40.
+// XForm. Short userSpaceOnUse vectors (SAP Analytics Cloud #B) and
+// off-slot long bars (Power BI Embedded ~22°) need solid FillForegnd
+// slabs along the authored axis so Draw keeps the wedge colours
+// without a white SoftEdges PNG over siblings. Full-box on-slot
+// ramps (SAP Logo, crescent stroke A) stay native 25–40.
 function paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css) {
   if (kind !== 'fill' && kind !== 'fillstroke') return false;
   const fill = style.fill == null ? '#000' : style.fill;
@@ -3245,7 +3255,7 @@ function paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css) {
   const stops = svgCollectStops(gradNode, css);
   if (!stops || stops.length < 2) return false;
   if (svgStopsHaveAlphaRamp(stops)) return false;
-  if (!svgLinearNeedsLocalBands(gradNode, canvas.viewBox)) return false;
+  if (!svgLinearNeedsLocalBands(gradNode, canvas.viewBox, stops)) return false;
   const rings = svgDrawableRings(name, node);
   if (!rings.length) return false;
   const mapped = [];
@@ -3306,11 +3316,12 @@ function paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css) {
 }
 
 // FillPattern 40 is a circle at the XForm centre. Tessellate an
-// elliptical or offset/undersized userSpaceOnUse radial as concentric
-// solid discs clipped to the glyph so collectFillAndShadow sees
-// FillForegnd siblings Draw can paint (SAP Build Apps / Work Zone
-// blobs; Open Supply Chain corner discs). Compound evenodd holes stay
-// one Geometry (Azure OpenAI swirl, Task Center donuts).
+// elliptical, offset/undersized, or inset-stop userSpaceOnUse radial
+// as concentric solid discs clipped to the glyph so
+// collectFillAndShadow sees FillForegnd siblings Draw can paint
+// (SAP Build Apps / Work Zone blobs; Open Supply Chain corner discs;
+// Cosmos DB offset=".183"). Compound evenodd holes stay one Geometry
+// (Azure OpenAI swirl, Task Center donuts).
 function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css) {
   if (kind !== 'fill' && kind !== 'fillstroke') return false;
   const fill = style.fill == null ? '#000' : style.fill;
