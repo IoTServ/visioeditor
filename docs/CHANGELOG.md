@@ -1103,6 +1103,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   already maps FillPattern 2–24 to `draw:fill=hatch`. Capture now
   records the Sketch style and leftover maps it onto those hatches
   (plus jiggle stroke plates). A second save keeps the hatch.
+- draw.io mxImageShape SVG blur-only `feGaussianBlur` now stays native
+  in LibreOffice. Dynamics365 Talent Attract and Azure Copilot Studio
+  paint black `g opacity` / `fill-opacity` discs through a filter that
+  has `stdDeviation` but no `feOffset`. libvisio has no gaussian token,
+  leftover SoftEdges PNG composites onto opaque white over the yellow
+  plate, and `svgFilterDropShadow` skipped those filters so Draw saw a
+  hard edge. Capture now outsets the contour as FillPattern 1 +
+  FillForegndTrans rings (`collectFillAndShadow` `draw:opacity`). Tiny
+  σ (`<0.5`) still stays a single fill. A second save keeps the rings.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the

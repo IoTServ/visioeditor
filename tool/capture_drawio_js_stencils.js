@@ -201,6 +201,7 @@ class CanvasRecorder {
     // capture intersects fill contours (Globe meridians, Cosmos clouds).
     this.clipRings = null;
     this.viewBox = null;
+    this.blurSigma = 0;
     this.stack = [];
     this.operations = [];
     this.pathOpen = false;
@@ -273,6 +274,7 @@ class CanvasRecorder {
       rotCx: this.rotCx, rotCy: this.rotCy,
       clipRings: this.clipRings,
       viewBox: this.viewBox,
+      blurSigma: this.blurSigma,
     });
   }
 
@@ -292,6 +294,7 @@ class CanvasRecorder {
       this.rotCy = saved.rotCy;
       this.clipRings = saved.clipRings;
       this.viewBox = saved.viewBox;
+      this.blurSigma = saved.blurSigma;
       this._reemitPaint();
       this._reemitShadow();
     }
@@ -3114,7 +3117,8 @@ function applySvgMask(canvas, node, root, css) {
 // SVG feOffset + SourceGraphic blend is a drop shadow. libvisio has no
 // filter token; `_fillAndShadowProperties` maps ShdwPattern to ODF
 // draw:shadow (SAP Build Work Zone / Product Insights). Blur-only
-// filters stay unmapped — Draw cannot gaussian-blur a native cell.
+// feGaussianBlur is tessellated separately — Draw cannot gaussian-blur
+// a native cell.
 function svgFilterDropShadow(filterNode) {
   let dx = 0;
   let dy = 0;
@@ -3147,6 +3151,45 @@ function svgFilterDropShadow(filterNode) {
   return {dx, dy, alpha, color: '#000000'};
 }
 
+// Blur-only feGaussianBlur (Dynamics365 Talent Attract / Copilot Studio
+// inner glows) has no feOffset, so svgFilterDropShadow returns null.
+// SoftEdgesSize is not a token and leftover SoftEdges PNG composites
+// onto opaque white over the sibling plate. Expand the contour by
+// stdDeviation and paint FillPattern 1 + FillForegndTrans rings
+// collectFillAndShadow maps to draw:opacity. Tiny σ (<0.5 user units)
+// stays a single hard fill.
+function svgFilterForegroundBlur(filterNode) {
+  let sigma = 0;
+  let hasOffset = false;
+  const walk = (n) => {
+    const name = xmlLocalName(n && n.name);
+    if (name === 'feoffset') {
+      const dx = Number(n.attrs.dx) || 0;
+      const dy = Number(n.attrs.dy) || 0;
+      if (dx * dx + dy * dy > 1e-8) hasOffset = true;
+    } else if (name === 'fegaussianblur') {
+      const parts = String(n.attrs.stdDeviation || '0').trim().split(/[\s,]+/);
+      const sx = Math.abs(Number(parts[0]) || 0);
+      const sy = parts.length > 1 ? Math.abs(Number(parts[1]) || sx) : sx;
+      sigma = Math.max(sigma, (sx + sy) / 2);
+    }
+    for (const child of (n && n.children) || []) walk(child);
+  };
+  walk(filterNode);
+  if (hasOffset || !(sigma > 0.5)) return 0;
+  return sigma;
+}
+
+function svgOutsetRing(ring, dist) {
+  const ccw = svgEnsureCcw(svgCloseRing(ring));
+  if (ccw.length < 3) return [];
+  if (!(dist > 1e-6)) return ccw;
+  // svgOffsetPoly(+dist) follows the left-of-tangent convention used by
+  // stroke ribbons. Positive-area (math CCW) rings therefore inset;
+  // negate so a blur halo grows the filled contour.
+  return svgCloseRing(svgOffsetPoly(ccw, -dist, true));
+}
+
 function applySvgFilter(canvas, node, root, css) {
   const raw = svgOwnCssUrl(node, css, 'filter');
   if (!raw || /^none$/i.test(raw)) return false;
@@ -3155,13 +3198,82 @@ function applySvgFilter(canvas, node, root, css) {
   const filterNode = findSvgById(root, id);
   if (!filterNode || xmlLocalName(filterNode.name) !== 'filter') return false;
   const shadow = svgFilterDropShadow(filterNode);
-  if (!shadow) return false;
-  const origin = canvas.map(0, 0);
-  const tip = canvas.map(shadow.dx, shadow.dy);
-  canvas.setShadowColor(shadow.color);
-  canvas.setShadowAlpha(shadow.alpha);
-  canvas.setShadowOffset(tip.x - origin.x, tip.y - origin.y);
-  canvas.setShadow(true);
+  if (shadow) {
+    const origin = canvas.map(0, 0);
+    const tip = canvas.map(shadow.dx, shadow.dy);
+    canvas.setShadowColor(shadow.color);
+    canvas.setShadowAlpha(shadow.alpha);
+    canvas.setShadowOffset(tip.x - origin.x, tip.y - origin.y);
+    canvas.setShadow(true);
+    return 'shadow';
+  }
+  const sigma = svgFilterForegroundBlur(filterNode);
+  if (sigma > 0) {
+    canvas.blurSigma = sigma;
+    return 'blur';
+  }
+  return false;
+}
+
+function paintSvgBlurHaloFill(canvas, name, node, style, kind, root, css) {
+  const sigma = canvas.blurSigma;
+  if (!(sigma > 0.5)) return false;
+  if (kind !== 'fill' && kind !== 'fillstroke') return false;
+  const fill = style.fill == null ? '#000' : style.fill;
+  if (svgPaintUrlId(fill) || svgPaintIsNone(fill)) return false;
+  const rings = svgDrawableRings(name, node);
+  if (!rings.length) return false;
+  const baseOp = svgCssAlpha(style['fill-opacity']);
+  const inheritOp = (baseOp == null ? 1 : baseOp) *
+      (svgCssAlpha(style.opacity) == null ? 1 : svgCssAlpha(style.opacity));
+  const bands = [
+    {t: 1.6, a: inheritOp * 0.1},
+    {t: 1.0, a: inheritOp * 0.22},
+    {t: 0.45, a: inheritOp * 0.45},
+    {t: 0, a: inheritOp},
+  ];
+  let painted = false;
+  for (const band of bands) {
+    const mapped = [];
+    for (const ring of rings) {
+      const expanded = svgOutsetRing(ring, band.t * sigma);
+      if (expanded.length < 3) continue;
+      const shapeMapped = expanded.map((p) => canvas.map(p.x, p.y));
+      if (canvas.clipRings && canvas.clipRings.length) {
+        for (const piece of svgClipMappedToRings(shapeMapped, canvas.clipRings)) {
+          mapped.push(piece);
+        }
+      } else {
+        mapped.push(shapeMapped);
+      }
+    }
+    if (!canvas.emitMappedRings(mapped)) continue;
+    applySvgPaint(
+      canvas,
+      {
+        ...style,
+        fill,
+        stroke: 'none',
+        opacity: '1',
+        'fill-opacity': String(Math.max(0, Math.min(1, band.a))),
+      },
+      'fill',
+      root,
+      css,
+    );
+    painted = true;
+  }
+  if (!painted) return false;
+  if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
+    if (name === 'path') paintSvgPath(canvas, node.attrs.d);
+    else if (name === 'circle') {
+      const cx = Number(node.attrs.cx) || 0;
+      const cy = Number(node.attrs.cy) || 0;
+      const r = Number(node.attrs.r) || 0;
+      if (r > 0) canvas.ellipse(cx - r, cy - r, r * 2, r * 2);
+    }
+    applySvgPaint(canvas, {...style, fill: 'none'}, 'stroke', root, css);
+  }
   return true;
 }
 
@@ -4108,6 +4220,9 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       if (paintSvgGradientStroke(canvas, name, node, style, kind, root, css)) {
         return true;
       }
+      if (paintSvgBlurHaloFill(canvas, name, node, style, kind, root, css)) {
+        return true;
+      }
       if (canvas.clipRings && canvas.clipRings.length) {
         return paintSvgClippedShape(canvas, name, node, style, kind, root, css);
       }
@@ -4159,7 +4274,8 @@ function paintSvgNode(canvas, node, inherited, root, css) {
       );
       return true;
     } finally {
-      if (filterApplied) canvas.setShadow(false);
+      if (filterApplied === 'shadow') canvas.setShadow(false);
+      else if (filterApplied === 'blur') canvas.blurSigma = 0;
       if (maskApplied) canvas.restore();
       if (clipApplied) canvas.restore();
     }

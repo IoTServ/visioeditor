@@ -7902,6 +7902,89 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG blur-only feGaussianBlur stays FillForegndTrans for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isBlurHalo(VsdxShape shape) =>
+          shape.fill.pattern == 1 &&
+          shape.fill.foreground == VsdxColor.black &&
+          shape.fill.gradient == null &&
+          shape.fill.foregroundTransparency > 0.05;
+
+      final attract = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Dynamics365 / Dynamics365 / App',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Talent Attract')
+          .build(413, 3, 3);
+      expect(
+        descendants(attract).where(isBlurHalo).length,
+        greaterThanOrEqualTo(5),
+        reason: 'TalentAttract.svg feGaussianBlur σ=4 (no feOffset) must '
+            'outset as FillPattern 1 + FillForegndTrans rings; '
+            'collectFillAndShadow maps those to draw:opacity',
+      );
+      expect(
+        descendants(attract).any(
+          (shape) => isBlurHalo(shape) && shape.fill.foregroundTransparency > 0.92,
+        ),
+        isTrue,
+        reason: 'outer blur bands are more transparent than the g opacity=.16 core',
+      );
+
+      final copilot = dynamic
+          .singleWhere(
+            (group) => group.name ==
+                'Draw.io JS / Azure2 / Azure / Power Platform',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Copilot Studio')
+          .build(414, 3, 3);
+      expect(
+        descendants(copilot).where(isBlurHalo).length,
+        greaterThanOrEqualTo(8),
+        reason: 'CopilotStudio.svg two σ=4 black glows must each expand into '
+            'FillForegndTrans bands; σ=0.4 stays a single hard fill',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(attract.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'blur halos stay native FillForegndTrans; leftover must not '
+            'bake an opaque-white SoftEdges PNG over the yellow disc',
+      );
+      expect(
+        descendants(leftover).where(isBlurHalo).length,
+        greaterThanOrEqualTo(5),
+        reason: 'a second save must keep the FillForegndTrans blur rings',
+      );
+    },
+  );
+
+  test(
     'diagramly clipart PNGs stay ForeignData for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic
