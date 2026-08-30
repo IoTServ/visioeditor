@@ -1692,6 +1692,38 @@ function svgLinearNeedsFillGradient(node, stops) {
   return false;
 }
 
+// FillPattern 25–34 and leftover FillGradient both interpolate 0→1
+// across the XForm (the SVG viewBox). A short / inset userSpaceOnUse
+// vector (SAP Analytics Cloud wedge B) only covers part of that box,
+// so Draw would wash the glyph with the wrong slice.
+function svgLinearNeedsLocalBands(node, viewBox) {
+  if (xmlLocalName(node.name) !== 'lineargradient') return false;
+  if (!viewBox || !(viewBox.w > 0) || !(viewBox.h > 0)) return false;
+  const v = svgGradientVector(node);
+  const len = Math.hypot(v.dx, v.dy);
+  if (!(len > 1e-12)) return false;
+  const corners = [
+    {x: viewBox.x, y: viewBox.y},
+    {x: viewBox.x + viewBox.w, y: viewBox.y},
+    {x: viewBox.x, y: viewBox.y + viewBox.h},
+    {x: viewBox.x + viewBox.w, y: viewBox.y + viewBox.h},
+  ];
+  const ux = v.dx / len;
+  const uy = v.dy / len;
+  let sMin = Infinity;
+  let sMax = -Infinity;
+  for (const p of corners) {
+    const s = (p.x - v.x1) * ux + (p.y - v.y1) * uy;
+    if (s < sMin) sMin = s;
+    if (s > sMax) sMax = s;
+  }
+  const boxSpan = sMax - sMin;
+  if (!(boxSpan > 1e-12)) return false;
+  if (len / boxSpan < 0.55) return true;
+  if (sMin < -1e-9 && (-sMin) / boxSpan > 0.25) return true;
+  return false;
+}
+
 // FillPattern 40 only stores FillForegnd / FillBkgnd at the disc centre
 // and edge. Azure Applied AI's three unique stops and Cosmos DB's
 // offset=".183" two-stop cannot survive that collapse.
@@ -3091,6 +3123,81 @@ function paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css) {
   return painted;
 }
 
+// FillPattern 25–34 / leftover FillGradient interpolate 0→1 on the
+// XForm. Short userSpaceOnUse vectors (SAP Analytics Cloud #B) need
+// solid FillForegnd slabs along the authored axis so Draw keeps the
+// wedge colours. Full-box ramps (SAP Logo, crescent stroke A) stay
+// native 25–40.
+function paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css) {
+  if (kind !== 'fill' && kind !== 'fillstroke') return false;
+  const fill = style.fill == null ? '#000' : style.fill;
+  const id = svgPaintUrlId(fill);
+  if (!id || !root) return false;
+  const gradNode = resolveSvgGradientNode(root, id);
+  if (!gradNode) return false;
+  const stops = svgCollectStops(gradNode, css);
+  if (!stops || stops.length < 2) return false;
+  if (svgStopsHaveAlphaRamp(stops)) return false;
+  if (!svgLinearNeedsLocalBands(gradNode, canvas.viewBox)) return false;
+  const rings = svgDrawableRings(name, node);
+  if (!rings.length) return false;
+  const mapped = [];
+  for (const ring of rings) {
+    const shapeMapped = ring.map((p) => canvas.map(p.x, p.y));
+    if (canvas.clipRings && canvas.clipRings.length) {
+      for (const piece of svgClipMappedToRings(shapeMapped, canvas.clipRings)) {
+        mapped.push(piece);
+      }
+    } else {
+      mapped.push(shapeMapped);
+    }
+  }
+  if (!mapped.length) return false;
+  const {outers, holes} = svgSplitEvenoddRings(mapped);
+  const emitBand = (fillRings, t) => {
+    if (!canvas.emitMappedRings(fillRings)) return 0;
+    applySvgPaint(
+      canvas,
+      {...style, fill: svgStopsColorAt(stops, t), stroke: 'none'},
+      'fill',
+      root,
+      css,
+    );
+    return 1;
+  };
+  const clipToGlyph = (clipRing) => {
+    const band = [];
+    for (const outer of outers) {
+      for (const hit of svgIntersectPolygons(clipRing, outer)) band.push(hit);
+    }
+    if (!band.length) return band;
+    for (const hole of holes) {
+      for (const hit of svgIntersectPolygons(clipRing, hole)) band.push(hit);
+    }
+    return band;
+  };
+  let painted = false;
+  const bands = 8;
+  const span = svgRingsSpan(rings);
+  const {tMin, tMax} = svgRingsGradientTRange(gradNode, rings);
+  const spanT = Math.max(tMax - tMin, 1e-6);
+  for (let i = 0; i < bands; i++) {
+    const t0 = tMin + spanT * i / bands;
+    const t1 = tMin + spanT * (i + 1) / bands;
+    const slab = svgGradientSlabRing(gradNode, t0, t1, span);
+    if (!slab) continue;
+    const slabMapped = slab.map((p) => canvas.map(p.x, p.y));
+    const sampleT = Math.max(0, Math.min(1, (t0 + t1) / 2));
+    if (emitBand(clipToGlyph(slabMapped), sampleT)) painted = true;
+  }
+  if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
+    if (canvas.clipRings && canvas.clipRings.length) {
+      paintSvgClippedStrokeRibbons(canvas, name, node, style, root, css);
+    }
+  }
+  return painted;
+}
+
 // FillPattern 40 is a circle. Tessellate an elliptical userSpaceOnUse
 // radial as concentric solid discs clipped to the glyph so
 // collectFillAndShadow sees FillForegnd siblings Draw can paint
@@ -3844,6 +3951,9 @@ function paintSvgNode(canvas, node, inherited, root, css) {
         name === 'ellipse' || name === 'rect' || name === 'polygon' ? '#000' : 'none');
       if (!kind) return false;
       if (paintSvgAlphaRampFill(canvas, name, node, style, kind, root, css)) {
+        return true;
+      }
+      if (paintSvgLocalLinearFill(canvas, name, node, style, kind, root, css)) {
         return true;
       }
       if (paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css)) {

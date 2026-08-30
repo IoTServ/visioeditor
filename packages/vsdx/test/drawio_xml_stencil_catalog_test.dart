@@ -4749,8 +4749,6 @@ void main() {
     () {
       final cyan = VsdxColor.tryParse('#0195FF')!;
       final navy = VsdxColor.tryParse('#1147E9')!;
-      final lockCyan = VsdxColor.tryParse('#1348FF')!;
-      final lockNavy = VsdxColor.tryParse('#06238D')!;
 
       bool hasRamp(VsdxFill fill, VsdxColor a, VsdxColor b) {
         if (!fill.hasFill || fill.pattern < 25 || fill.pattern > 40) {
@@ -4791,9 +4789,19 @@ void main() {
             'draw:style=linear',
       );
       expect(
-        descendantFills(pki).any((fill) => hasRamp(fill, lockCyan, lockNavy)),
-        isTrue,
-        reason: 'the evenodd lock glyph uses the second linearGradient',
+        descendantFills(pki).where((fill) {
+          final color = fill.foreground;
+          if (color == null ||
+              fill.pattern != 1 ||
+              fill.gradient != null) {
+            return false;
+          }
+          return color.red < 40 && color.green < 90 && color.blue > 120;
+        }).length,
+        greaterThanOrEqualTo(6),
+        reason: 'lock url(#linear-gradient1) is a short userSpaceOnUse '
+            'vector; FillPattern 32 would 0→1 the viewBox. Tessellate '
+            '#1348ff→#06238d as FillForegnd slabs',
       );
       expect(
         descendantFills(pki).any(
@@ -4856,11 +4864,22 @@ void main() {
           .singleWhere((entry) => entry.name == 'Globe')
           .build(160, 3, 3);
       expect(
-        descendantFills(globe).any((fill) => fill.pattern == 34),
-        isTrue,
-        reason: 'Globe.svg gradientTransform matrix(0.707,0.707,…) is a 45° '
-            'wash; FillPattern 34 is ODF draw:angle 45 that '
-            '_fillAndShadowProperties emits, not axis-only east (27)',
+        descendantFills(globe).where((fill) {
+          final color = fill.foreground;
+          if (color == null ||
+              fill.pattern != 1 ||
+              fill.gradient != null) {
+            return false;
+          }
+          return color.red < 110 &&
+              color.green > 110 &&
+              color.green < 180 &&
+              color.blue > 200;
+        }).length,
+        greaterThanOrEqualTo(6),
+        reason: 'Globe.svg matrix(0.707,0.707,…) 45° vector is short vs the '
+            'viewBox; FillPattern 34 would 0→1 the XForm and drop the '
+            '0.82 stop. Tessellate #0078d4→#5ea0ef as FillForegnd slabs',
       );
 
       final pki = dynamic
@@ -4899,9 +4918,9 @@ void main() {
         leftover.pages.first.shapes
             .expand(descendants)
             .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
-        reason: 'Globe.svg stop offset 0.82 cannot use FillPattern 34\'s '
-            '0→1 span; leftover must bake a SoftEdges PNG',
+        isEmpty,
+        reason: 'Globe 45° / 0.82 wash stays native slabs; leftover must '
+            'not bake a full-box FillGradient PNG',
       );
     },
   );
@@ -4993,6 +5012,92 @@ void main() {
         descendants(leftover).any(isCrescent),
         isTrue,
         reason: 'a second save must keep the SVG gradient-stroke ribbon',
+      );
+    },
+  );
+
+  test(
+    'mxImageShape SVG short userSpaceOnUse linear stays native for LibreOffice',
+    () {
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isCyanWedgeBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
+          return false;
+        }
+        return color.red < 40 &&
+            color.green > 120 &&
+            color.green < 200 &&
+            color.blue > 240;
+      }
+
+      final cloud = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Data Analytics',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'SAP Analytics Cloud Embedded Edition',
+          )
+          .build(171, 3, 3);
+      expect(
+        descendantFills(cloud).where(isCyanWedgeBand).length,
+        greaterThanOrEqualTo(6),
+        reason: 'Embedded Edition url(#B) (12.2,2)→(18.5,6.8) must tessellate '
+            'as FillForegnd slabs; FillPattern 32 interpolates 0→1 on the '
+            'viewBox XForm so the corner wedge would miss #00bbff',
+      );
+      expect(
+        descendantFills(cloud).any(
+          (fill) =>
+              fill.pattern == 32 &&
+              fill.foreground == VsdxColor.tryParse('#1147E9') &&
+              fill.background == VsdxColor.tryParse('#0195FF'),
+        ),
+        isTrue,
+        reason: 'stroke url(#A) across the pie stays FillPattern 32',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cloud.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where(isLibvisioSoftEdgesPlate),
+        isEmpty,
+        reason: 'local slabs stay native; leftover must not bake a full-box '
+            'FillGradient PNG',
+      );
+      expect(
+        descendants(leftover)
+            .where((shape) => isCyanWedgeBand(shape.fill))
+            .length,
+        greaterThanOrEqualTo(6),
+        reason: 'a second save must keep the cyan wedge slabs',
       );
     },
   );
@@ -6129,8 +6234,6 @@ void main() {
   test(
     'mxImageShape SVG axial url(#gradient) stays FillPattern 26–29 for LibreOffice',
     () {
-      final phonePeak = VsdxColor.tryParse('#BDE1FD')!;
-      final phoneEdge = VsdxColor.tryParse('#3940B4')!;
       final tunnelPeak = VsdxColor.tryParse('#BEE4FF')!;
       final tunnelEdge = VsdxColor.tryParse('#1574FF')!;
 
@@ -6156,13 +6259,22 @@ void main() {
 
       final phone = ad('Cell Phone').build(157, 3, 3);
       expect(
-        descendantFills(phone).any(
-          (fill) => isAxialWash(fill, phonePeak, phoneEdge, 26),
-        ),
-        isTrue,
-        reason: 'cell_phone.svg url(#E) 0/#3940b4 .5/#bde1fd 1/#2d31af must '
-            'become FillPattern 26 (ODF axial east) so Draw paints the light '
-            'peak, not a first/last two-stop #3940b4→#2d31af bar',
+        descendantFills(phone).where((fill) {
+          final color = fill.foreground;
+          if (color == null ||
+              fill.pattern != 1 ||
+              fill.gradient != null) {
+            return false;
+          }
+          return color.red > 160 &&
+              color.red < 200 &&
+              color.green > 200 &&
+              color.blue > 240;
+        }).length,
+        greaterThanOrEqualTo(2),
+        reason: 'cell_phone.svg url(#E) 0/#3940b4 .5/#bde1fd 1/#2d31af sits '
+            'on a short userSpaceOnUse vector; FillPattern 26 would 0→1 '
+            'the XForm. Tessellate the light peak as FillForegnd slabs',
       );
 
       final tunnel = ad('Tunnel').build(158, 3, 3);
@@ -6192,11 +6304,20 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        descendantFills(leftover).any(
-          (fill) => isAxialWash(fill, phonePeak, phoneEdge, 26),
-        ),
-        isTrue,
-        reason: 'a second save must keep the Cell Phone FillPattern 26 wash',
+        descendantFills(leftover).where((fill) {
+          final color = fill.foreground;
+          if (color == null ||
+              fill.pattern != 1 ||
+              fill.gradient != null) {
+            return false;
+          }
+          return color.red > 160 &&
+              color.red < 200 &&
+              color.green > 200 &&
+              color.blue > 240;
+        }).length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep the Cell Phone light-peak slabs',
       );
     },
   );
@@ -6204,12 +6325,16 @@ void main() {
   test(
     'mxImageShape SVG three-stop url(#gradient) bakes FillGradient for LibreOffice',
     () {
-      final peach = VsdxColor.tryParse('#FEA15F')!;
-
-      bool hasPeachLed(VsdxFill fill) {
-        final gradient = fill.gradient;
-        if (gradient == null || gradient.stops.length < 3) return false;
-        return gradient.stops.any((stop) => stop.color == peach);
+      bool isPeachLedBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
+          return false;
+        }
+        return color.red > 240 &&
+            color.green > 120 &&
+            color.green < 180 &&
+            color.blue > 50 &&
+            color.blue < 120;
       }
 
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
@@ -6228,11 +6353,11 @@ void main() {
           .singleWhere((entry) => entry.name == 'Windows Server (2)')
           .build(159, 3, 3);
       expect(
-        descendantFills(server).any(hasPeachLed),
-        isTrue,
-        reason: 'windows_server_2.svg url(#D) #f2580a→#fea15f→#a11a00 must '
-            'keep the middle LED stop as FillGradient; FillPattern 25–40 '
-            'only stores two colours that collectFillAndShadow maps',
+        descendantFills(server).where(isPeachLedBand).length,
+        greaterThanOrEqualTo(2),
+        reason: 'windows_server_2.svg url(#D) #f2580a→#fea15f→#a11a00 is a '
+            'short LED vector; leftover FillGradient still 0→1s the XForm. '
+            'Tessellate the peach mid-stop as FillForegnd slabs',
       );
 
       const writer = VsdxWriter();
@@ -6257,25 +6382,17 @@ void main() {
         leftover.pages.first.shapes
             .expand(descendants)
             .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
-        reason: 'a save must bake the three-stop LED into a SoftEdges PNG '
-            'LibreOffice Draw can paint',
+        isEmpty,
+        reason: 'LED slabs stay native; leftover must not bake a full-box '
+            'three-stop PNG',
       );
       expect(
-        parser
-            .parse(
-              writer.write(
-                originalBytes: writer.emptyDocument(),
-                edited: leftover,
-              ),
-            )
-            .pages
-            .first
-            .shapes
+        leftover.pages.first.shapes
             .expand(descendants)
-            .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
-        reason: 'a second save must keep the Windows Server LED plate',
+            .where((shape) => isPeachLedBand(shape.fill))
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep the Windows Server LED slabs',
       );
     },
   );
@@ -6283,12 +6400,15 @@ void main() {
   test(
     'mxImageShape SVG inset url(#gradient) bakes FillGradient for LibreOffice',
     () {
-      bool hasInsetNavy(VsdxFill fill) {
-        final gradient = fill.gradient;
-        if (gradient == null || gradient.stops.length < 2) return false;
-        final first = gradient.stops.first;
-        if (first.position <= 0.05) return false;
-        return first.color == VsdxColor.tryParse('#0052CC');
+      bool isJiraChevronBand(VsdxFill fill) {
+        final color = fill.foreground;
+        if (color == null || fill.pattern != 1 || fill.gradient != null) {
+          return false;
+        }
+        return color.red < 50 &&
+            color.green > 70 &&
+            color.green < 150 &&
+            color.blue > 190;
       }
 
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
@@ -6313,11 +6433,11 @@ void main() {
           .singleWhere((entry) => entry.name == 'Jira')
           .build(162, 3, 3);
       expect(
-        descendantFills(jira).any(hasInsetNavy),
-        isTrue,
-        reason: 'Jira_Logo.svg url(#A) offset 0.18/#0052cc→1/#2684ff must '
-            'keep Position as FillGradient; FillPattern 25–34 always '
-            'interpolates 0→1 so the chevron would start navy',
+        descendantFills(jira).where(isJiraChevronBand).length,
+        greaterThanOrEqualTo(6),
+        reason: 'Jira_Logo.svg url(#A) offset 0.18/#0052cc→1/#2684ff sits '
+            'on a short userSpaceOnUse vector; leftover FillGradient '
+            'still 0→1s the XForm. Tessellate as FillForegnd slabs',
       );
 
       const writer = VsdxWriter();
@@ -6335,9 +6455,9 @@ void main() {
         leftover.pages.first.shapes
             .expand(descendants)
             .where(isLibvisioSoftEdgesPlate),
-        isNotEmpty,
-        reason: 'a save must bake the inset Jira wash into a SoftEdges PNG '
-            'LibreOffice Draw can paint',
+        isEmpty,
+        reason: 'Jira chevron slabs stay native; leftover must not bake a '
+            'full-box FillGradient PNG',
       );
 
       final powerBi = dynamic

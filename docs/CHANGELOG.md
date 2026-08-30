@@ -1028,6 +1028,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   + FillForegndTrans slabs `collectFillAndShadow` maps to
   `draw:opacity`. Opaque two-stop compass ramps stay native 25–40. A
   second save keeps the polygons.
+- draw.io mxImageShape SVG short `userSpaceOnUse` linear washes now stay
+  native in LibreOffice. Official SAP Analytics Cloud Embedded Edition
+  `url(#B)` (`#00bbff`→`#008bff` from `(12.2,2)` to `(18.5,6.8)`) only
+  covers ~30% of the viewBox, but FillPattern 25–34 and leftover
+  FillGradient both interpolate 0→1 across the XForm
+  (`_fillAndShadowProperties` `draw:style=linear`). Capture now
+  tessellates that wedge as FillForegnd slabs. The full-box crescent
+  stroke `url(#A)` stays FillPattern 32; SAP Logo's tall south ramp
+  stays 28. Globe's 45° / 0.82 wash, Jira's inset chevron, the Windows
+  Server LED mid-stop, and Cell Phone's axial peak use the same slabs
+  (leftover FillGradient still 0→1s the XForm). A second save keeps
+  the polygons.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
