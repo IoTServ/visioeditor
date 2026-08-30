@@ -1449,6 +1449,74 @@ function svgLength(raw, fallback) {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function svgParseRgb(value) {
+  const hex = htmlCssColorToHex(value);
+  if (!hex || hex.length < 7) return null;
+  return [
+    parseInt(hex.slice(1, 3), 16),
+    parseInt(hex.slice(3, 5), 16),
+    parseInt(hex.slice(5, 7), 16),
+  ];
+}
+
+function svgColorChannelDelta(a, b) {
+  const ca = svgParseRgb(a);
+  const cb = svgParseRgb(b);
+  if (!ca || !cb) return 255;
+  return Math.max(
+    Math.abs(ca[0] - cb[0]),
+    Math.abs(ca[1] - cb[1]),
+    Math.abs(ca[2] - cb[2]),
+  );
+}
+
+function svgStopUnitOffset(stop, index, count) {
+  const off = Number(stop.offset);
+  if (!Number.isFinite(off)) return count <= 1 ? 0 : index / (count - 1);
+  return off;
+}
+
+// Three-stop linear whose ends match is ODF axial (FillPattern 26 / 29):
+// centre = FillForegnd, edges = FillBkgnd. First/last two-stop linear
+// dropped Active Directory Cell Phone / Tunnel's light #bde1fd / #bee4ff
+// peak (ends #3940b4≈#2d31af). Peak must sit near 0.5 so Draw's axial
+// layout matches; off-centre ramps stay first/last.
+function svgAxialPeakStop(stops) {
+  if (!stops || stops.length < 3) return null;
+  const first = stops[0];
+  const last = stops[stops.length - 1];
+  if (svgColorChannelDelta(first.color, last.color) > 40) return null;
+  const n = stops.length;
+  let maxOff = 0;
+  const units = stops.map((stop, i) => {
+    const u = svgStopUnitOffset(stop, i, n);
+    if (u > maxOff) maxOff = u;
+    return u;
+  });
+  const scale = maxOff > 1 + 1e-9 ? maxOff : 1;
+  let peak = null;
+  let bestDelta = 0;
+  let peakPos = 0.5;
+  for (let i = 1; i < n - 1; i++) {
+    const d = svgColorChannelDelta(stops[i].color, first.color);
+    if (d > bestDelta) {
+      bestDelta = d;
+      peak = stops[i];
+      peakPos = units[i] / scale;
+    }
+  }
+  if (!peak || bestDelta < 48) return null;
+  if (Math.abs(peakPos - 0.5) > 0.12) return null;
+  return peak;
+}
+
+function svgAxialDirection(node) {
+  const dir = svgGradientDirection(node);
+  if (dir === 'east' || dir === 'west') return 'axial-east';
+  if (dir === 'north' || dir === 'south') return 'axial-north';
+  return null;
+}
+
 function svgGradientDirection(node) {
   if (xmlLocalName(node.name) === 'radialgradient') return 'radial';
   let x1 = svgLength(node.attrs.x1, 0);
@@ -1530,6 +1598,7 @@ function resolveSvgGradientNode(root, id) {
 
 // SVG fill="url(#id)" / stop-color class (SAP Logo #b, data-URI .st0).
 // libvisio has no gradient token beyond FillPattern 25–40 two-stops.
+// Matching-end three-stops become FillPattern 26 / 29 (ODF axial).
 function applySvgPaintServer(canvas, value, root, css, channel) {
   const id = svgPaintUrlId(value);
   if (!id || !root) return false;
@@ -1545,7 +1614,22 @@ function applySvgPaintServer(canvas, value, root, css, channel) {
     canvas.setStrokeColor(first.color, true);
     return true;
   }
-  if (stops.length === 1 || cssColorKey(first.color) === cssColorKey(last.color)) {
+  if (stops.length === 1) {
+    canvas.setFillColor(first.color, true);
+    return true;
+  }
+  const peak = svgAxialPeakStop(stops);
+  if (peak) {
+    const axialDir = svgAxialDirection(node);
+    if (axialDir) {
+      canvas.setGradient(
+        peak.color, first.color, 0, 0, 1, 1,
+        axialDir, peak.alpha, first.alpha,
+      );
+      return true;
+    }
+  }
+  if (cssColorKey(first.color) === cssColorKey(last.color)) {
     canvas.setFillColor(first.color, true);
     return true;
   }

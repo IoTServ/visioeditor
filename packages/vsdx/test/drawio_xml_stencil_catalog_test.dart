@@ -6051,6 +6051,81 @@ void main() {
   );
 
   test(
+    'mxImageShape SVG axial url(#gradient) stays FillPattern 26–29 for LibreOffice',
+    () {
+      final phonePeak = VsdxColor.tryParse('#BDE1FD')!;
+      final phoneEdge = VsdxColor.tryParse('#3940B4')!;
+      final tunnelPeak = VsdxColor.tryParse('#BEE4FF')!;
+      final tunnelEdge = VsdxColor.tryParse('#1574FF')!;
+
+      bool isAxialWash(VsdxFill fill, VsdxColor peak, VsdxColor edge, int pattern) {
+        if (!fill.hasFill || fill.pattern != pattern) return false;
+        return fill.foreground == peak && fill.background == edge;
+      }
+
+      Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
+        yield shape.fill;
+        for (final child in shape.children) {
+          yield* descendantFills(child);
+        }
+      }
+
+      Stencil ad(String name) => dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / ActiveDirectory / Active Directory',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      final phone = ad('Cell Phone').build(157, 3, 3);
+      expect(
+        descendantFills(phone).any(
+          (fill) => isAxialWash(fill, phonePeak, phoneEdge, 26),
+        ),
+        isTrue,
+        reason: 'cell_phone.svg url(#E) 0/#3940b4 .5/#bde1fd 1/#2d31af must '
+            'become FillPattern 26 (ODF axial east) so Draw paints the light '
+            'peak, not a first/last two-stop #3940b4→#2d31af bar',
+      );
+
+      final tunnel = ad('Tunnel').build(158, 3, 3);
+      expect(
+        descendantFills(tunnel).any(
+          (fill) => isAxialWash(fill, tunnelPeak, tunnelEdge, 29),
+        ),
+        isTrue,
+        reason: 'tunnel.svg url(#B) 0/#1574ff .5/#bee4ff 1/#1473ff must '
+            'become FillPattern 29 (ODF axial north) so Draw paints the '
+            'highlight, not a first/last two-stop #1574ff→#1473ff bar',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(phone.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantFills(leftover).any(
+          (fill) => isAxialWash(fill, phonePeak, phoneEdge, 26),
+        ),
+        isTrue,
+        reason: 'a second save must keep the Cell Phone FillPattern 26 wash',
+      );
+    },
+  );
+
+  test(
     'grapheditor General Note Cube and Callout stay native for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

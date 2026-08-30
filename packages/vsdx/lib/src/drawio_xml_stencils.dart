@@ -527,6 +527,21 @@ class _DrawioXmlShapeDecoder {
     final alpha2 = node.getAttribute('alpha2') == null
         ? 1.0
         : _number(node, 'alpha2', fallback: 1);
+    _fillColor = start;
+    _fillIsNone = false;
+    // ODF axial (FillPattern 26 / 29): start-color=FillForegnd at the
+    // centre, end-color=FillBkgnd at the edges. color1 is the peak.
+    if (dir.startsWith('axial')) {
+      final horiz = dir.contains('east') || dir.contains('west');
+      _fillOverride = VsdxFill(
+        foreground: start,
+        background: end,
+        pattern: horiz ? 26 : 29,
+        foregroundTransparency: (1 - alpha1).clamp(0.0, 1.0),
+        backgroundTransparency: (1 - alpha2).clamp(0.0, 1.0),
+      );
+      return;
+    }
     final pattern = switch (dir) {
       'north' => 30,
       'east' => 27,
@@ -534,8 +549,6 @@ class _DrawioXmlShapeDecoder {
       'radial' => 40,
       _ => 28,
     };
-    _fillColor = start;
-    _fillIsNone = false;
     final radial = dir == 'radial';
     _fillOverride = VsdxFill(
       foreground: radial ? start : end,

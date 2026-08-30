@@ -954,6 +954,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   saw a second disk in the corner while the referenced disk sat off
   the glyph. Capture now skips template `<symbol>` nodes and maps
   `viewBox` into the use viewport. A second save keeps one disk.
+- draw.io mxImageShape SVG three-stop axial `url(#gradient)` now stays
+  native in LibreOffice. Official Active Directory Cell Phone (`url(#E)`
+  `#3940b4`→`#bde1fd`→`#2d31af`) and Tunnel (`url(#B)`
+  `#1574ff`→`#bee4ff`→`#1473ff`) paint a light peak between matching
+  ends, but capture took only first/last so `collectFillAndShadow`
+  FillPattern 27 / 30 was an almost-solid dark bar. Capture now maps
+  those centred matching-end ramps to FillPattern 26 / 29 that
+  `_fillAndShadowProperties` emits as ODF `draw:style=axial`
+  (`start-color` at the centre). Two-stop compass ramps stay 25–34.
+  A second save keeps the wash.
 - draw.io mxText `overflow=fill` now stays native in LibreOffice.
   Official `mxCellRenderer.rotateLabelBounds` (`legacySpacing`) skips
   mxText spacing on `overflow=fill`/`width` so a 100% HTML table is the
