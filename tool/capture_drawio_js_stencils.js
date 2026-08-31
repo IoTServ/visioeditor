@@ -4996,6 +4996,32 @@ class NestedStencil {
     this.strokewidth = desc.attrs.strokewidth || 'inherit';
     this.bgNode = desc.children.find((child) => child.name === 'background');
     this.fgNode = desc.children.find((child) => child.name === 'foreground');
+    // mxStencil labelBounds / Shapes.js getLabelMargins. flowchart.xml
+    // Multi-Document has <labelBounds if="boundedLbl">. Capture used to
+    // return a style ghost without getLabelBounds, so JS catalog TxtWidth
+    // filled the stacked sheets. tokens.txt has no labelBounds; leftover
+    // collectTextBlock is TxtWidth / TxtPinY.
+    this.labelBounds = [];
+    for (const child of desc.children || []) {
+      if (child.name !== 'labelBounds') continue;
+      this.labelBounds.push({
+        condition: child.attrs.if || null,
+        x: Number(child.attrs.x) || 0,
+        y: Number(child.attrs.y) || 0,
+        w: Number(child.attrs.w) || this.w0,
+        h: Number(child.attrs.h) || this.h0,
+      });
+    }
+  }
+
+  pickLabelBounds(style) {
+    for (const lb of this.labelBounds) {
+      if (lb.condition == null || lb.condition === '' ||
+          mxUtils.getValue(style, lb.condition, '0') == '1') {
+        return lb;
+      }
+    }
+    return null;
   }
 
   computeAspect(style, x, y, w, h, direction) {
@@ -5186,6 +5212,36 @@ class NestedStencil {
       canvas.setShadow(false);
     }
   }
+}
+
+// Shapes.js mxShape.getLabelMargins wrapper: first matching labelBounds
+// becomes left/top/right/bottom for getDirectedBounds. Capture must emit
+// the same box as a shape-root <labelBounds> so decoder TxtWidth matches
+// the XML flowchart catalog (collectTextBlock / fo:min-height).
+function stencilGetLabelMargins(stencil, style, rect) {
+  const lb = stencil && stencil.pickLabelBounds && stencil.pickLabelBounds(style);
+  if (!lb || !rect) return null;
+  const aspect = stencil.computeAspect(
+    style, rect.x, rect.y, rect.width, rect.height,
+    style && style.direction,
+  );
+  const x0 = aspect.x - rect.x + lb.x * aspect.width;
+  const y0 = aspect.y - rect.y + lb.y * aspect.height;
+  return new mxRectangle(
+    x0, y0,
+    rect.width - x0 - lb.w * aspect.width,
+    rect.height - y0 - lb.h * aspect.height,
+  );
+}
+
+function stencilLabelBoundsXml(shape, style, width, height) {
+  const stencil = shape && shape.stencil;
+  const lb = stencil && stencil.pickLabelBounds && stencil.pickLabelBounds(style);
+  if (!lb || !(stencil.w0 > 0) || !(stencil.h0 > 0)) return '';
+  const sx = width / stencil.w0;
+  const sy = height / stencil.h0;
+  const ifAttr = lb.condition ? ` if="${xmlEscape(String(lb.condition))}"` : '';
+  return `<labelBounds${ifAttr} x="${number(lb.x * sx)}" y="${number(lb.y * sy)}" w="${number(lb.w * sx)}" h="${number(lb.h * sy)}"/>`;
 }
 
 function registerShapes(shapesNode) {
@@ -6590,7 +6646,11 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   if (!ctor && opts.allowStencil && name) {
     const stencil = stencilMap[String(name).toLowerCase()];
     if (stencil) {
-      const ghost = {style, fill, stroke, direction: style.direction || null};
+      const ghost = {style, fill, stroke, direction: style.direction || null, stencil};
+      ghost.getLabelMargins = function(rect) {
+        return stencilGetLabelMargins(this.stencil, this.style, rect);
+      };
+      ghost.getLabelBounds = mxShape.prototype.getLabelBounds;
       // mxShape.configureCanvas always setFillColor / setDashed from the
       // cell. NestedStencil used to skip those when the style omitted
       // dashed=1 / none fill, so the previous vertex-cells sibling leaked
@@ -8959,7 +9019,8 @@ function renderEntry(entry) {
   return {
     width,
     height,
-    body: connections + `<foreground>${canvas.operations.join('')}</foreground>`,
+    body: connections + stencilLabelBoundsXml(shape, style, width, height) +
+      `<foreground>${canvas.operations.join('')}</foreground>`,
     ...entryPaintColors(entry, style),
   };
 }

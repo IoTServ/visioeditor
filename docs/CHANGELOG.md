@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `labelBounds` now stays native in LibreOffice for
+  JavaScript-captured flowchart stencils. Official `Shapes.js` reads
+  `<labelBounds if="boundedLbl">` from `mxStencil` (flowchart.xml
+  Multi-Document) via `getLabelMargins` / `getDirectedBounds`. Catalog
+  capture returned a style ghost without that hook, so JS Multi-Document
+  had no TxtWidth (`tokens.txt` has no labelBounds; `collectTextBlock`
+  is `svg:width` / `fo:min-height`). Capture now leftover-bakes the
+  inset. A second save keeps TxtHeight.
 - draw.io mxText html table caption padding now stays native in
   LibreOffice. Official `mxText` html=1 paints UML Entity's leading
   `<div style="padding:2px">Tablename</div>` with CSS padding only;

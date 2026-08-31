@@ -11835,4 +11835,59 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxStencil labelBounds leftover-bakes JS Multi-Document Text for LibreOffice',
+    () {
+      final multi = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Flowchart / flowchart',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Multi-Document')
+          .build(541, 3, 3);
+      final block = multi.richText.textBlock;
+      expect(block.widthInches, isNotNull);
+      expect(block.heightInches, isNotNull);
+      expect(
+        block.widthInches! / multi.width,
+        closeTo(78 / 88, 0.02),
+        reason: 'flowchart.xml labelBounds w=78 on NestedStencil; JS capture '
+            'must leftover-bake TxtWidth collectTextBlock maps below the '
+            'stacked sheets',
+      );
+      expect(
+        block.heightInches! / multi.height,
+        closeTo(47 / 60.28, 0.02),
+        reason: 'labelBounds h=47 keeps TxtHeight off the top document; '
+            'full Height would paint over the stacked sheet in Draw',
+      );
+      expect(
+        block.pinYInches! / multi.height,
+        closeTo(1 - (10 + 47 / 2) / 60.28, 0.03),
+        reason: 'labelBounds y=10 is stencil-top; TxtPinY is Visio Y-up',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(multi.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.richText.textBlock.heightInches! / leftover.height,
+        closeTo(47 / 60.28, 0.02),
+        reason: 'a second save must keep the inset TxtHeight',
+      );
+    },
+  );
 }
