@@ -11506,4 +11506,97 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxGraph getTableLines leftover-bakes table grid for LibreOffice',
+    () {
+      bool isAxisLine(VsdxShape shape, {required bool vertical}) {
+        if ((shape.text ?? '').trim().isNotEmpty) return false;
+        if (!shape.line.hasLine || shape.fill.hasFill) return false;
+        for (final geometry in shape.geometries) {
+          if (!geometry.noFill || geometry.noLine) continue;
+          double? minA, maxA, minB, maxB;
+          void acc(double along, double across) {
+            minA = minA == null ? along : (along < minA! ? along : minA);
+            maxA = maxA == null ? along : (along > maxA! ? along : maxA);
+            minB = minB == null ? across : (across < minB! ? across : minB);
+            maxB = maxB == null ? across : (across > maxB! ? across : maxB);
+          }
+
+          for (final cmd in geometry.commands) {
+            final x = switch (cmd) {
+              MoveTo(:final x) => x,
+              LineTo(:final x) => x,
+              _ => null,
+            };
+            final y = switch (cmd) {
+              MoveTo(:final y) => y,
+              LineTo(:final y) => y,
+              _ => null,
+            };
+            if (x == null || y == null) continue;
+            if (vertical) {
+              acc(y, x);
+            } else {
+              acc(x, y);
+            }
+          }
+          if (minA != null &&
+              (maxA! - minA!) > shape.width * 0.5 &&
+              (maxB! - minB!) < 0.05) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      final table = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Table 1')
+          .build(537, 3, 3);
+      final rows = table.children.where((c) => isAxisLine(c, vertical: false));
+      final cols = table.children.where((c) => isAxisLine(c, vertical: true));
+      expect(
+        rows.length,
+        greaterThanOrEqualTo(2),
+        reason: 'Graph.getTableLines rowLines are collectLine siblings '
+            'Draw paints as svg:stroke',
+      );
+      expect(
+        cols.length,
+        greaterThanOrEqualTo(2),
+        reason: 'columnLines must split the 3×3 Table 1, not only the '
+            'outer PartialRectangle',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(table.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children.where((c) => isAxisLine(c, vertical: false)).length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep the row collectLine siblings',
+      );
+      expect(
+        leftover.children.where((c) => isAxisLine(c, vertical: true)).length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep the column collectLine siblings',
+      );
+    },
+  );
 }

@@ -6520,6 +6520,55 @@ function recordingCanvas() {
   });
 }
 
+// Official Graph.getTableLines / visitTableCells. TableShape.paintForeground
+// strokes those polylines as the interior grid. Capture stubs returned []
+// so General Table 1 (shape=table;childLayout=tableLayout;startSize=0)
+// leftover-baked only the outer PartialRectangle. tokens.txt has no table
+// grid token; collectLine is svg:stroke.
+function captureVertexChildren(cell) {
+  return (cell && cell.children || []).filter((child) =>
+    child && child.vertex && child.geometry && !child.edge);
+}
+
+function captureGetTableLines(cell, horizontal, vertical) {
+  const hl = [];
+  const vl = [];
+  if (!cell || !(horizontal || vertical)) return [];
+  const rows = captureVertexChildren(cell);
+  if (!rows.length) return [];
+  let lastRow = null;
+  for (let i = 0; i < rows.length; i++) {
+    const cols = captureVertexChildren(rows[i]);
+    let lastCol = null;
+    const row = [];
+    for (let j = 0; j < cols.length; j++) {
+      const geo = cols[j].geometry;
+      if (!geo) {
+        row.push(null);
+        continue;
+      }
+      const point = {
+        x: (Number(geo.width) || 0) + (lastCol != null ? lastCol.point.x : 0),
+        y: (Number(geo.height) || 0) +
+          (lastRow != null && lastRow[0] != null ? lastRow[0].point.y : 0),
+      };
+      const iter = {point, row: i, col: j};
+      if (horizontal && i < rows.length - 1) {
+        if (hl[i] == null) hl[i] = [{x: 0, y: point.y}];
+        hl[i].push(point);
+      }
+      if (vertical && j < cols.length - 1) {
+        if (vl[j] == null) vl[j] = [{x: point.x, y: 0}];
+        vl[j].push(point);
+      }
+      row.push(iter);
+      lastCol = iter;
+    }
+    lastRow = row;
+  }
+  return hl.concat(vl);
+}
+
 function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) {
   const name = style && style.shape;
   const fill = stylePaintColor(style.fillColor, '#ffffff');
@@ -6589,6 +6638,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     shape.flipV = tmp;
   }
   shape.state = {
+    cell: opts.cell || null,
     style,
     view: {
       graph: {
@@ -6596,7 +6646,9 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
         isCellCollapsed() { return false; },
         isCellConnected() { return false; },
         isSwimlane() { return false; },
-        getTableLines() { return []; },
+        getTableLines(tableCell, horizontal, vertical) {
+          return captureGetTableLines(tableCell, horizontal, vertical);
+        },
         paintTableCellLines() {},
         isTableRow() { return false; },
         isTable() { return false; },
@@ -8620,7 +8672,7 @@ function paintCellTree(cells, canvas, width, height) {
       } else {
         result = paintRegistered(
           cellStyle, cellWidth, cellHeight, canvas, x, y,
-          {fallbackRect: true, allowStencil: true},
+          {fallbackRect: true, allowStencil: true, cell},
         );
         if (result) painted = true;
       }

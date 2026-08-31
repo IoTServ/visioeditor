@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io `shape=table` grids now stay native in LibreOffice. Official
+  `TableShape.paintForeground` strokes `Graph.getTableLines` (from
+  `visitTableCells`) as the interior row/column rules. Catalog capture
+  stubbed `getTableLines` to `[]` and never passed the cell tree, so
+  General Table 1 leftover-baked only the outer PartialRectangle
+  (`tokens.txt` has no table-grid token; `collectLine` is `svg:stroke`).
+  Capture now leftover-bakes those polylines. A second save keeps the
+  3×3 collectLine siblings.
 - draw.io mxSwimlane `horizontal=0` titles now stay native in
   LibreOffice. Official `mxText.isPaintBoundsInverted` plus
   `mxCellRenderer.rotateLabelBounds` (-90°) maps
