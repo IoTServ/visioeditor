@@ -583,6 +583,22 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io vertex-cells sibling `fillColor` now stays native in
+  LibreOffice. Official Infographic Angled Entry paints two
+  `mxgraph.infographic.parallelogram` cells (`#10739E` then `#B1DDF0`).
+  Catalog capture overwrote the `<shape>` inherit fill on every
+  `bindStyle`, so `fillPaintToken` always emitted `fill` and Draw
+  painted both parallelograms the first cell's colour (`tokens.txt`
+  FillForegnd is `svg:fill`). Capture now leftover-bakes the distinct
+  hex FillForegnd. A second save keeps both siblings.
+- draw.io `fillOpacity` inherit fills now stay native in LibreOffice.
+  Official `mxShape.configureCanvas` sets fillAlpha from the 0–100
+  style (Infographic Circular Dial (2) donut `fillOpacity=20`) before
+  the opaque `partConcEllipse` value. Catalog capture forceHexed that
+  alpha into a sibling, so the 65% arc occupied the parent and Draw
+  painted the track on top (`tokens.txt` FillForegndTrans is
+  `draw:opacity`). Capture now leftover-bakes FillForegndTrans on the
+  inherit donut under the value. A second save keeps the order.
 - draw.io `shape=table` grids now stay native in LibreOffice. Official
   `TableShape.paintForeground` strokes `Graph.getTableLines` (from
   `visitTableCells`) as the interior row/column rules. Catalog capture

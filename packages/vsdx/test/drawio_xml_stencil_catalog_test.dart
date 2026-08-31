@@ -931,11 +931,11 @@ void main() {
         .singleWhere((entry) => entry.name == 'Raised Button (Pressed) (2)')
         .build(86, 3, 3);
     expect(
-      disabled.children.any(
-        (child) =>
-            child.fill.hasFill &&
-            child.fill.foreground == VsdxColor.black &&
-            (child.fill.foregroundTransparency - 0.88).abs() < 0.02,
+      [disabled, ...disabled.children].any(
+        (shape) =>
+            shape.fill.hasFill &&
+            shape.fill.foreground == VsdxColor.black &&
+            (shape.fill.foregroundTransparency - 0.88).abs() < 0.02,
       ),
       isTrue,
       reason: 'GMDL opacity=12 must become FillForegndTrans 0.88',
@@ -11596,6 +11596,132 @@ void main() {
         leftover.children.where((c) => isAxisLine(c, vertical: true)).length,
         greaterThanOrEqualTo(2),
         reason: 'a second save must keep the column collectLine siblings',
+      );
+    },
+  );
+
+  test(
+    'vertex-cells fillColor leftover-bakes sibling FillForegnd for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasFill(VsdxShape shape, String hex) {
+        final want = VsdxColor.tryParse(hex);
+        return want != null &&
+            shape.fill.pattern == 1 &&
+            shape.fill.foreground == want;
+      }
+
+      final entry = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((s) => s.name == 'Angled Entry')
+          .build(1, 3, 3);
+      expect(
+        descendants(entry).where((s) => hasFill(s, '#10739E')),
+        isNotEmpty,
+        reason: 'Sidebar Angled Entry part1 fillColor leftover-bakes '
+            'FillForegnd Draw maps to svg:fill',
+      );
+      expect(
+        descendants(entry).where((s) => hasFill(s, '#B1DDF0')),
+        isNotEmpty,
+        reason: 'part2 fillColor=#B1DDF0 must not collapse to the first '
+            'cell inherit fill token',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(entry.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where((s) => hasFill(s, '#10739E')),
+        isNotEmpty,
+        reason: 'a second save must keep the navy parallelogram FillForegnd',
+      );
+      expect(
+        descendants(leftover).where((s) => hasFill(s, '#B1DDF0')),
+        isNotEmpty,
+        reason: 'a second save must keep the light-blue parallelogram',
+      );
+    },
+  );
+
+  test(
+    'mxShape fillOpacity leftover-bakes FillForegndTrans under the value for LibreOffice',
+    () {
+      final dial = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((s) => s.name == 'Circular Dial (2)')
+          .build(1, 3, 3);
+      expect(
+        dial.fill.foregroundTransparency,
+        closeTo(0.8, 0.02),
+        reason: 'part1 donut fillOpacity=20 leftover-bakes FillForegndTrans '
+            'Draw maps to draw:opacity, as the bottom track',
+      );
+      expect(
+        dial.children.where(
+          (child) =>
+              child.fill.hasFill && child.fill.foregroundTransparency < 0.02,
+        ),
+        isNotEmpty,
+        reason: 'part2 65% arc stays opaque on top of the track',
+      );
+      expect(
+        (dial.text ?? '') +
+            dial.children.map((c) => c.text ?? '').join(),
+        contains('65%'),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(dial.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.fill.foregroundTransparency,
+        closeTo(0.8, 0.02),
+        reason: 'a second save must keep the donut FillForegndTrans',
+      );
+      expect(
+        leftover.children.where(
+          (child) =>
+              child.fill.hasFill && child.fill.foregroundTransparency < 0.02,
+        ),
+        isNotEmpty,
+        reason: 'a second save must keep the opaque 65% arc sibling',
       );
     },
   );

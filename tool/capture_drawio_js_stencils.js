@@ -866,8 +866,12 @@ class CanvasRecorder {
   }
 
   bindStyle(fill, stroke) {
-    this.styleFill = fill;
-    this.styleStroke = stroke;
+    // styleFill / styleStroke are the <shape fill/stroke> inherit colours
+    // pinned from entryPaintColors. Vertex-cells siblings with a different
+    // fillColor (Infographic Angled Entry #B1DDF0 vs first-cell #10739E)
+    // must leftover-bake hex FillForegnd; overwriting styleFill here made
+    // fillPaintToken always emit `fill`, so Draw painted every parallelogram
+    // the first cell's colour. tokens.txt FillForegnd is svg:fill.
     this.state.shadow = false;
     this._shadowToken = '0';
     // One recording canvas paints every cell of a vertex-cells template.
@@ -1242,10 +1246,18 @@ class CanvasRecorder {
     this.state.gradientAlpha2 = 1;
     this.state.gradientStopsPacked = null;
     this.state.gradientAngle = null;
+    // Semi-transparent inherit fill must stay FillForegnd + FillForegndTrans
+    // on one shape. forceHex on fillAlpha<1 split Circular Dial (2)'s
+    // fillOpacity=20 donut into a sibling, so the 65% arc occupied the
+    // parent and Draw painted the track on top of the value.
+    const matchesInherit = !isNoneColor(value) &&
+      this.styleFill != null &&
+      cssColorKey(value) === cssColorKey(this.styleFill);
     const token = fillPaintToken(
       value,
       this.styleFill,
-      forceHex === true || this._effectiveFillOpacity() < 1 - 1e-9,
+      forceHex === true ||
+        (!matchesInherit && this._effectiveFillOpacity() < 1 - 1e-9),
     );
     if (token === this._fillToken) return;
     this._fillToken = token;
@@ -6583,8 +6595,19 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
       // cell. NestedStencil used to skip those when the style omitted
       // dashed=1 / none fill, so the previous vertex-cells sibling leaked
       // collectLine dashes and FillForegnd onto this stencil.
+      // Set fill/stroke first while fillAlpha is still 1 so inherit `fill`
+      // stays one FillForegnd. setFillColor after fillOpacity<100 forceHexes
+      // a sibling, and the next cell's fill() (Circular Dial 65% arc) then
+      // occupied the parent — Draw painted the fillOpacity=20 donut on top.
+      // tokens.txt FillForegndTrans is draw:opacity.
       canvas.setFillColor(isNoneColor(fill) ? null : fill);
       canvas.setStrokeColor(isNoneColor(stroke) ? null : stroke);
+      const opacity = Number(style.opacity);
+      const fillOpacity = Number(style.fillOpacity);
+      const strokeOpacity = Number(style.strokeOpacity);
+      if (Number.isFinite(opacity)) canvas.setAlpha(opacity / 100);
+      if (Number.isFinite(fillOpacity)) canvas.setFillAlpha(fillOpacity / 100);
+      if (Number.isFinite(strokeOpacity)) canvas.setStrokeAlpha(strokeOpacity / 100);
       canvas.setDashed(style.dashed === '1');
       if (style.dashPattern) canvas.setDashPattern(style.dashPattern);
       if (style.linecap) canvas.setLineCap(style.linecap);
@@ -8747,6 +8770,13 @@ function cssHexAttr(value) {
   return '';
 }
 
+function pinCanvasInheritColors(canvas, entry, style) {
+  const colors = entryPaintColors(entry, style);
+  if (colors.fill) canvas.styleFill = colors.fill;
+  if (colors.stroke) canvas.styleStroke = colors.stroke;
+  return colors;
+}
+
 function entryPaintColors(entry, style) {
   let fill = style && style.fillColor;
   let stroke = style && style.strokeColor;
@@ -8787,6 +8817,7 @@ function renderEntry(entry) {
   if (entry.kind === 'vertex') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
     style = parseStyle(entry.style, namedStyles.defaultVertex);
+    pinCanvasInheritColors(canvas, entry, style);
     if (isGenericStyle(style)) {
       renderStats.unregistered++;
       const key = String(style.shape || '(none)');
@@ -8829,6 +8860,7 @@ function renderEntry(entry) {
     paintTemplateLabel(entry, style, width, height, canvas, shape);
   } else if (entry.kind === 'data' && entry.data) {
     ({width, height} = entrySize(entry));
+    pinCanvasInheritColors(canvas, entry, style);
     const xml = decompressDrawio(entry.data);
     if (!xml || !paintCellTree(cellsFromMxGraphXml(xml), canvas, width, height)) {
       missVertex('data', entry);
@@ -8836,6 +8868,7 @@ function renderEntry(entry) {
     }
   } else if (entry.kind === 'vertex-cells' && Array.isArray(entry.cells)) {
     ({width, height} = entrySize(entry));
+    pinCanvasInheritColors(canvas, entry, style);
     if (!paintCellTree(entry.cells, canvas, width, height)) {
       missVertex('vertex-cells', entry);
       return null;
@@ -8843,6 +8876,7 @@ function renderEntry(entry) {
   } else if (entry.kind === 'edge') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
     style = parseStyle(entry.style, namedStyles.defaultEdge);
+    pinCanvasInheritColors(canvas, entry, style);
     ({width, height} = entrySize(entry));
     const geometry = new Geometry(0, 0, width, height);
     geometry.setTerminalPoint({x: 0, y: height}, true);
@@ -8852,6 +8886,7 @@ function renderEntry(entry) {
     paintTemplateLabel(entry, style, width, height, canvas);
   } else if (entry.kind === 'edge-cells' && Array.isArray(entry.cells)) {
     ({width, height} = entrySize(entry));
+    pinCanvasInheritColors(canvas, entry, style);
     if (!paintCellTree(entry.cells, canvas, width, height)) {
       missVertex('edge-cells', entry);
       return null;
