@@ -12168,6 +12168,77 @@ void main() {
   );
 
   test(
+    'Cisco Safe compositeIcon restores opaque fill after dotted halo for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasFill(VsdxShape shape, String hex, {required bool opaque}) {
+        final want = VsdxColor.tryParse(hex);
+        if (want == null ||
+            shape.fill.pattern != 1 ||
+            shape.fill.foreground != want) {
+          return false;
+        }
+        final trans = shape.fill.foregroundTransparency;
+        return opaque ? trans < 0.02 : trans > 0.4 && trans < 0.6;
+      }
+
+      final sw = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / CiscoSafe / Cisco Safe / Architecture',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Access Switch')
+          .build(448, 3, 3);
+      expect(
+        descendants(sw).where((s) => hasFill(s, '#6ABD46', opaque: true)),
+        isNotEmpty,
+        reason: 'mxCiscoSafe setAlpha(NaN) after 50% dots must restore '
+            'createState alpha 1 so the resIcon FillForegnd stays opaque '
+            '(tokens.txt FillForegndTrans is draw:opacity)',
+      );
+      expect(
+        descendants(sw).where((s) => hasFill(s, '#C2E0AE', opaque: true)),
+        isNotEmpty,
+        reason: 'bgIcon generic_appliance leftover-bakes bgColor',
+      );
+      expect(
+        descendants(sw).where((s) => hasFill(s, '#FFFFFF', opaque: false)),
+        isNotEmpty,
+        reason: 'bgDotColor ellipses stay setAlpha(0.5)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(sw.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where((s) => hasFill(s, '#6ABD46', opaque: true)),
+        isNotEmpty,
+        reason: 'a second save must keep the opaque Access Switch glyph',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

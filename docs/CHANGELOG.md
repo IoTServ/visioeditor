@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Cisco Safe `compositeIcon` now stays opaque in LibreOffice.
+  Official `mxCiscoSafe.js` paints 50% `bgDotColor` dots then
+  `setAlpha(parseFloat(omitted opacity))` (`NaN`). Catalog capture
+  skipped NaN, so leftover FillForegndTrans stayed 50% on the
+  `resIcon` (`tokens.txt` FillForegndTrans is `draw:opacity`). Capture
+  now treats non-finite alpha as createState 1. A second save keeps
+  the opaque glyph.
 - draw.io mxText html `&nbsp;` now stays native in LibreOffice. Official
   C4 Data Container (and Microservice / Message Bus siblings) use
   `[%c4Type%:&nbsp;%c4Technology%]`. Catalog capture collapsed NBSP

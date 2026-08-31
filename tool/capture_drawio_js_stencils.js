@@ -1229,8 +1229,12 @@ class CanvasRecorder {
   }
 
   _setAlphaChannel(which, value) {
-    const n = Number(value);
-    if (!Number.isFinite(n)) return;
+    const parsed = Number(value);
+    // mxAbstractCanvas2D.setAlpha writes the raw value; SVG/CSS invalid
+    // opacity is opaque 1. Skipping NaN left Cisco Safe compositeIcon's
+    // setAlpha(0.5) dots stuck on the resIcon (parseFloat of omitted
+    // opacity is NaN). tokens.txt FillForegndTrans is draw:opacity.
+    const n = Number.isFinite(parsed) ? parsed : 1;
     const clamped = Math.max(0, Math.min(1, n));
     if (which === 'alpha') this.state.alpha = clamped;
     else if (which === 'fillalpha') this.state.fillAlpha = clamped;
