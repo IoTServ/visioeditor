@@ -6959,12 +6959,12 @@ function cellLabel(value, keepHtml = false, cell = null) {
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ')
+    .replace(/&nbsp;/g, '\u00A0')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"')
-    .replace(/[^\S\n]+/g, ' ')
+    .replace(/[\t\f\v\r ]+/g, ' ')
     .replace(/ *\n[ \n]*/g, '\n')
     .trim();
   return stripped;
@@ -6973,8 +6973,11 @@ function cellLabel(value, keepHtml = false, cell = null) {
 // HTML named character references the foreignObject UA decodes.
 // UML Interface is `&laquo;interface&raquo;` — leftover Character has
 // no entity token, so collectText must see U+00AB / U+00BB.
+// C4 Data Container is `[%c4Type%:&nbsp;%c4Technology%]` — U+00A0, not
+// U+0020, so Draw cannot wrap after the colon (tokens.txt has no
+// keep-together; leftover Character U+00A0 is the native glue).
 const kHtmlNamedEntities = {
-  nbsp: ' ', iexcl: '¡', cent: '¢', pound: '£', curren: '¤', yen: '¥',
+  nbsp: '\u00A0', iexcl: '¡', cent: '¢', pound: '£', curren: '¤', yen: '¥',
   brvbar: '¦', sect: '§', uml: '¨', copy: '©', ordf: 'ª', laquo: '«',
   not: '¬', shy: '\u00AD', reg: '®', macr: '¯', deg: '°', plusmn: '±',
   sup2: '²', sup3: '³', acute: '´', micro: 'µ', para: '¶', middot: '·',
@@ -7004,6 +7007,13 @@ function decodeHtmlEntities(value) {
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
     .replace(/&quot;/g, '"');
+}
+
+// HTML spec white-space:normal collapses TAB/LF/FF/CR/SPACE. NBSP is a
+// glyph. JS \s / [^\S\n] include U+00A0, so leftover Character would
+// become U+0020 and Draw wraps `[Container: e.g. …]`.
+function collapseHtmlCollapsibleWhitespace(text) {
+  return String(text).replace(/[\t\f\v\r ]+/g, ' ');
 }
 
 function htmlAttr(attrs, name) {
@@ -7596,7 +7606,7 @@ function parseHtmlLabel(html, base) {
   while ((match = tokenRe.exec(html))) {
     if (match[0].startsWith('<!--')) continue;
     if (match[4]) {
-      pushRun(decodeHtmlEntities(match[4]).replace(/[^\S\n]+/g, ' '));
+      pushRun(collapseHtmlCollapsibleWhitespace(decodeHtmlEntities(match[4])));
       continue;
     }
     const tag = match[2].toLowerCase();

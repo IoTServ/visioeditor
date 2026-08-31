@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html `&nbsp;` now stays native in LibreOffice. Official
+  C4 Data Container (and Microservice / Message Bus siblings) use
+  `[%c4Type%:&nbsp;%c4Technology%]`. Catalog capture collapsed NBSP
+  with JS `\s` into U+0020, so leftover Character wrapped after the
+  colon (`tokens.txt` has no keep-together; U+00A0 is the native glue).
+  Capture now leftover-bakes U+00A0. A second save keeps it.
 - draw.io mxText html CSS `background-color` now stays native in
   LibreOffice. Official Atlassian Nested discussion chips (`AUTHOR`,
   `@Matthew Wu`) use `background-color: rgb(244, 245, 247)`. Catalog

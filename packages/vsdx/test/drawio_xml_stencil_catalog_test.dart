@@ -4926,6 +4926,69 @@ void main() {
   );
 
   test(
+    'mxText html nbsp stays U+00A0 Character for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      final data = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / C4 / C4',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Data Container')
+          .build(447, 3, 3);
+      final dataText = allText(data);
+      expect(
+        dataText,
+        isNot(contains('&nbsp;')),
+        reason: 'html &nbsp; must decode before collectText',
+      );
+      expect(
+        dataText,
+        contains('Container:\u00A0e.g. Oracle Database 12'),
+        reason: 'foreignObject UA turns &nbsp; into U+00A0 so Draw cannot '
+            'wrap after the colon (tokens.txt has no keep-together; leftover '
+            'Character U+00A0 is the native glue)',
+      );
+      expect(
+        dataText,
+        isNot(contains('Container: e.g. Oracle Database 12')),
+        reason: 'JS \\s collapse must not turn NBSP into U+0020',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(data.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        allText(leftover),
+        contains('Container:\u00A0e.g. Oracle Database 12'),
+        reason: 'a second save must keep the C4 type/technology NBSP',
+      );
+    },
+  );
+
+  test(
     'mxText html multi-column tables stay cell Text boxes for LibreOffice',
     () {
       String allText(VsdxShape shape) {
