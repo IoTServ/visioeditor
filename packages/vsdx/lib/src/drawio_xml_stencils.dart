@@ -150,9 +150,10 @@ class _DrawioXmlShapeDecoder {
     this.element, {
     Map<String, VsdxColor> libraryStyleKeyDefaults = const {},
   })  : _libraryStyleKeyDefaults = libraryStyleKeyDefaults,
-        // mxStencil.drawShape: numeric shape @strokewidth * minScale.
-        // inherit / omitted stay null so applyStencilStyle can still
-        // pin the palette LineWeight (collectLine).
+        // mxStencil.drawShape: numeric / omitted (default "1") shape
+        // @strokewidth * minScale. inherit stays null so
+        // applyStencilStyle can still pin the palette LineWeight
+        // (collectLine).
         _strokeWidth = _mxShapeAttrStrokeWidth(element);
 
   final XmlElement element;
@@ -2048,12 +2049,16 @@ List<VsdxGradientStop> _parseMxGradientStops(String? raw) {
 }
 
 /// mxStencil.parseDescription: `strokewidth` is inherit or a number
-/// (default `"1"`). drawShape uses `Number(strokewidth) * minScale`
-/// when it is not inherit. Catalog decode has no cell style, so inherit
-/// / omitted stay unset and applyStencilStyle can still pin LineWeight.
+/// (default `"1"` when the attribute is omitted). drawShape uses
+/// `Number(strokewidth) * minScale` when it is not inherit. Catalog
+/// decode has no cell style, so inherit stays unset and
+/// applyStencilStyle can still pin LineWeight (Cisco Detector).
+/// Omitted (Cisco Keys, mockup Radio Button Off) must freeze 1×minScale so
+/// collectLine does not keep the Visio 0.01 in hairline.
 double? _mxShapeAttrStrokeWidth(XmlElement element) {
   final raw = (element.getAttribute('strokewidth') ?? '').trim();
-  if (raw.isEmpty || raw.toLowerCase() == 'inherit') return null;
+  if (raw.toLowerCase() == 'inherit') return null;
+  if (raw.isEmpty) return 1;
   final value = double.tryParse(raw);
   if (value == null || !value.isFinite || value <= 0) return null;
   return value;

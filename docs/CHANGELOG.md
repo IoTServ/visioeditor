@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil omitted `strokewidth` now stays native in
+  LibreOffice. Official `mxStencil.parseDescription` defaults a
+  missing attribute to `"1"` and `drawShape` does `1 * minScale`
+  (Cisco Keys, mockup Radio Button Off). Catalog decode treated omit like
+  `inherit`, so Visio 0.01 in was pinned to the palette 0.012 that
+  `collectLine` mapped to a hairline. Authored omit now freezes
+  LineWeight. `inherit` still takes the palette. A second save keeps
+  `1.5/12` in.
 - draw.io mxStencil default `miterLimit: 10` now stays native in
   LibreOffice. Official `mxAbstractCanvas2D.createState` uses
   `miterLimit: 10`. Catalog decode left `_miterLimit` unset, so

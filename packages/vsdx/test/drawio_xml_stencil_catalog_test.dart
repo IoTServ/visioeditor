@@ -722,6 +722,62 @@ void main() {
     );
   });
 
+  test('mxStencil omitted strokewidth defaults to 1 for LibreOffice', () {
+    double maxStrokedWeight(VsdxShape shape) {
+      var weight = shape.line.hasLine ? shape.line.weightInches : 0.0;
+      for (final child in shape.children) {
+        final childWeight = maxStrokedWeight(child);
+        if (childWeight > weight) weight = childWeight;
+      }
+      return weight;
+    }
+
+    // Radio Button Off omits shape @strokewidth (w=h=12) and has no
+    // child <strokewidth>. Official parseDescription defaults to "1";
+    // drawShape does 1 * minScale. Catalog scale is 1.5 / 12.
+    const expected = 1.5 / 12;
+    final radio = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Mockup / Form Elements',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Radio Button Off')
+        .build(84, 3, 3);
+    expect(
+      maxStrokedWeight(radio),
+      closeTo(expected, 1e-6),
+      reason: 'omitted strokewidth must freeze 1×minScale; leaving it '
+          'unset used Visio 0.01 and applyStencilStyle pinned 0.012',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere(
+              (group) => group.name == 'Draw.io / Mockup / Form Elements',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Radio Button Off')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      maxStrokedWeight(leftover),
+      closeTo(expected, 1e-6),
+      reason: 'a second save must keep LineWeight; it is a token',
+    );
+  });
+
   test('mxGraph setGradient stays FillPattern 25–34 for LibreOffice', () {
     const magenta = VsdxColor(0xFFBC1356);
     const pink = VsdxColor(0xFFF34482);
