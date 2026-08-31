@@ -4019,6 +4019,97 @@ void main() {
   );
 
   test(
+    'mxText html defaultVertex fontColor stays black after a colored font for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      // Capture used to leftover-bake fontcolor="default" from
+      // default.xml defaultVertex. _mxGraphPaintColor("default") is
+      // null, so Char.Color rode the previous <font color="#10739E">
+      // run. createState / DEFAULT_FONTCOLOR is #000000 that
+      // collectCharIX maps to fo:color.
+      final decoded = decodeDrawioMxStencilXml(
+        '<shape name="R" w="200" h="70" strokewidth="inherit">'
+        '<foreground>'
+        '<text x="0" y="0" str="Label&#10;Lorem" align="center" '
+        'valign="top" w="200" h="70">'
+        '<run str="Label" fontstyle="1" fontsize="12" '
+        'fontcolor="#10739E"/>'
+        '<run str="Lorem" fontstyle="0" fontsize="10" '
+        'fontcolor="default"/>'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+        id: 453,
+      );
+      expect(
+        runContaining(decoded, 'Label')!.charStyle.color?.value,
+        VsdxColor(0xFF10739E).value,
+      );
+      expect(
+        runContaining(decoded, 'Lorem')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'html run fontcolor=default is DEFAULT_FONTCOLOR, not the '
+            'previous sibling\'s #10739E',
+      );
+
+      final roadmap = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Roadmap (vertical)')
+          .build(454, 3, 3);
+      expect(
+        runContaining(roadmap, 'Label')!.charStyle.color?.value,
+        VsdxColor(0xFF10739E).value,
+        reason: 'Roadmap <font color="#10739E"> Label stays teal',
+      );
+      expect(
+        runContaining(roadmap, 'Lorem ipsum')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'body <font size="1"> has no color; mxText uses '
+            'defaultVertex #000000 after the teal title closes',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(roadmap.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Lorem ipsum')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'a second save must keep Char Color black on the body',
+      );
+      expect(
+        runContaining(leftover, 'Label')!.charStyle.color?.value,
+        VsdxColor(0xFF10739E).value,
+        reason: 'a second save must keep Label teal',
+      );
+    },
+  );
+
+  test(
     'mxText html hr stays a Line sibling for LibreOffice',
     () {
       VsdxShape? glyphContaining(VsdxShape shape, String text) {

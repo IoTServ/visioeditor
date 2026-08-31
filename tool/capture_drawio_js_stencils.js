@@ -106,7 +106,14 @@ function resolveStyleColorKeys(style) {
   }
   for (const key of kStyleColorKeys) {
     const token = style[key] == null ? '' : String(style[key]).trim();
-    if (kStyleColorKeys.indexOf(token) >= 0) {
+    // fillColor=default / strokeColor=default must stay the keyword so
+    // fillPaintToken can emit inherit (`fill`) rather than baking
+    // #ffffff (AWS Cloud puff siblings). fontColor=default is
+    // DEFAULT_FONTCOLOR #000000; leaving the keyword made html <run
+    // fontcolor="default"> decode as null and Char.Color rode the
+    // previous <font color> sibling (Roadmap Lorem after Label).
+    if (kStyleColorKeys.indexOf(token) >= 0 ||
+        (key === 'fontColor' && token.toLowerCase() === 'default')) {
       style[key] = lookup(key, new Set());
     }
   }
@@ -7415,12 +7422,25 @@ function htmlLabelRunsDiffer(runs, state) {
   });
 }
 
+// defaultVertex fontColor=default is mxConstants.DEFAULT_FONTCOLOR
+// #000000. Emitting the keyword made decoder _mxGraphPaintColor null
+// and Char.Color inherited the previous html <font color> run.
+function htmlRunFontColorHex(raw) {
+  if (raw == null || raw === '') return null;
+  const token = String(raw).trim();
+  const lower = token.toLowerCase();
+  if (lower === 'none') return null;
+  if (lower === 'default' || lower === 'font') return '#000000';
+  return htmlCssColorToHex(token) || token;
+}
+
 function htmlRunAttrs(run) {
   const attrs = [`str="${xmlEscape(run.str)}"`];
   attrs.push(`fontstyle="${Number(run.fontStyle) || 0}"`);
   const size = Number(run.fontSize);
   if (Number.isFinite(size) && size > 0) attrs.push(`fontsize="${number(size)}"`);
-  if (run.fontColor) attrs.push(`fontcolor="${xmlEscape(String(run.fontColor))}"`);
+  const fontColor = htmlRunFontColorHex(run.fontColor);
+  if (fontColor) attrs.push(`fontcolor="${xmlEscape(fontColor)}"`);
   if (run.fontFamily) attrs.push(`fontfamily="${xmlEscape(String(run.fontFamily))}"`);
   const opacity = Number(run.textOpacity);
   if (Number.isFinite(opacity) && Math.abs(opacity - 100) > 1e-6) {

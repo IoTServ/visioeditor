@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html `fontColor=default` now stays black in
+  LibreOffice after a colored `<font>`. Official `default.xml`
+  `defaultVertex` uses the keyword `default` (`mxConstants.DEFAULT_FONTCOLOR`
+  `#000000`). Catalog capture leftover-baked `fontcolor="default"` on the
+  next html run, so Infographic Roadmap body Char.Color rode Label's
+  `#10739E` (`tokens.txt` Color is `fo:color`). Capture now resolves
+  `default` to hex and leftover-bakes `#000000`. A second save keeps
+  both colours.
 - draw.io `mxDoubleEllipse.getLabelBounds` now stays native in
   LibreOffice. Official `mxDoubleEllipse.js` insets the label by
   `STYLE_MARGIN` (ER Multivalue Attribute `margin=3` on a 100×40 cell).

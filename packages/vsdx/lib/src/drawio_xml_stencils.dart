@@ -1073,6 +1073,20 @@ class _DrawioXmlShapeDecoder {
     return (fallback ?? '').trim().toLowerCase() == 'none';
   }
 
+  /// mxText html `<run fontcolor>`. `default` is defaultVertex /
+  /// mxConstants.DEFAULT_FONTCOLOR #000000, not an unknown token that
+  /// `_mxGraphPaintColor` leaves null so `run.color ?? label.color`
+  /// rides the previous sibling's hex (Roadmap Lorem after Label).
+  /// Omitted attr still inherits the canvas `<fontcolor>` token.
+  VsdxColor? _mxRunFontColor(String? raw) {
+    if (raw == null) return _fontColor;
+    final token = raw.trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'none') return _fontColor;
+    if (lower == 'default' || lower == 'font') return _kMxDefaultFontColor;
+    return _mxGraphPaintColor(token) ?? _fontColor;
+  }
+
   /// mxText html=1: `<run>` children are extra Character rows. A bare
   /// `str=` label stays a single collectCharIX run.
   List<_DrawioStencilLabelRun> _decodeTextRuns(XmlElement node) {
@@ -1090,9 +1104,7 @@ class _DrawioXmlShapeDecoder {
             ).round(),
             fontFamily:
                 _mxFontFamily(el.getAttribute('fontfamily')) ?? _fontFamily,
-            color: el.getAttribute('fontcolor') != null
-                ? _mxGraphPaintColor(el.getAttribute('fontcolor'))
-                : _fontColor,
+            color: _mxRunFontColor(el.getAttribute('fontcolor')),
             textOpacity: _number(
               el,
               'textopacity',
