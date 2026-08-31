@@ -77,6 +77,21 @@ class _DrawioXmlLibrary {
   }
 }
 
+/// Decode one mxStencil `<shape>` the catalog decoder uses.
+VsdxShape decodeDrawioMxStencilXml(
+  String xml, {
+  int id = 1,
+  double cx = 3,
+  double cy = 3,
+}) {
+  final document = XmlDocument.parse(xml);
+  final root = document.rootElement;
+  final shape = root.name.local == 'shape'
+      ? root
+      : root.findElements('shape').first;
+  return _DrawioXmlShapeDecoder(shape).build(id, cx, cy);
+}
+
 /// Visio Char.Size UI floor is 0.5pt. The old 0.04in (~2.88pt) clamp
 /// flattened mxText `font-size:14px` / `9px` on wide composites
 /// (Salesforce Header 930px) after catalog scale `1.5 / max(w,h)`, so
@@ -1418,7 +1433,12 @@ class _DrawioXmlShapeDecoder {
     }
     final right = left + width;
     final bottom = top + height;
-    final arcSize = _number(rect, 'arcsize', fallback: 15).clamp(0.0, 100.0);
+    // mxStencil.drawNode: Number(arcsize)==0 uses
+    // RECTANGLE_ROUNDING_FACTOR * 100 (15). Omitted also defaults to 15.
+    // Canvas roundrect(r=0) is captured as <rect>, not arcsize="0".
+    var arcSize = _number(rect, 'arcsize', fallback: 15);
+    if (arcSize <= 0) arcSize = 15;
+    arcSize = arcSize.clamp(0.0, 100.0);
     final radius = math.min(width, height) * arcSize / 100;
     final k = radius * 0.5522847498307936;
     return <VsdxPathCommand>[

@@ -265,7 +265,10 @@ class CanvasRecorder {
     this._dashToken = null;
     this._lineCapToken = null;
     this._lineJoinToken = null;
-    this._miterToken = null;
+    // mxAbstractCanvas2D.createState miterLimit is 10. CSS / ODF default 4.
+    // Leaving this null made restore() emit <miterlimit limit="4"/> onto
+    // later canvas fills (Atlassian buttons after a text save).
+    this._miterToken = 10;
     this._alphaToken = 1;
     this._fillAlphaToken = 1;
     this._strokeAlphaToken = 1;
@@ -293,7 +296,7 @@ class CanvasRecorder {
       dashPattern: '',
       lineCap: null,
       lineJoin: null,
-      miterLimit: 4,
+      miterLimit: 10,
       // mxConstants SHADOW_* — mxSvgCanvas2D.createShadow clones + translate.
       shadow: false,
       shadowColor: '#808080',
@@ -580,6 +583,13 @@ class CanvasRecorder {
     let radY = Math.abs(Number(ry) || 0);
     if (radX > 0 && !(radY > 0)) radY = radX;
     if (radY > 0 && !(radX > 0)) radX = radY;
+    // Canvas roundrect(r=0) is a sharp rect (Android rrect rSize=0).
+    // mxStencil.drawNode treats XML arcsize="0" as RECTANGLE_ROUNDING_FACTOR
+    // * 100 (15), so do not emit <roundrect arcsize="0"/> here.
+    if (!(radX > 1e-9) && !(radY > 1e-9)) {
+      this.rect(x, y, w, h);
+      return;
+    }
     if (radX > aw / 2) radX = aw / 2;
     if (radY > ah / 2) radY = ah / 2;
     // rotate() / off-diagonal matrix cannot keep an axis-aligned
@@ -1725,7 +1735,11 @@ function applySvgStrokeStyle(canvas, style) {
   if (cap) canvas.setLineCap(String(cap).trim().toLowerCase());
   const join = style['stroke-linejoin'];
   if (join) canvas.setLineJoin(String(join).trim().toLowerCase());
-  const miter = svgLength(style['stroke-miterlimit'], NaN);
+  // SVG CSS initial stroke-miterlimit is 4. Canvas createState is 10.
+  const rawMiter = style['stroke-miterlimit'];
+  const miter = rawMiter == null || String(rawMiter).trim() === ''
+      ? 4
+      : svgLength(rawMiter, NaN);
   if (Number.isFinite(miter) && miter >= 1) canvas.setMiterLimit(miter);
   applySvgDash(canvas, style);
 }
@@ -3838,21 +3852,32 @@ function paintSvgEllipticalRadialFill(canvas, name, node, style, kind, root, css
     );
     return 1;
   };
-  let painted = false;
-  if (emitSolid(mapped, svgStopsColorAt(stops, 1))) painted = true;
-  const bands = 8;
-  for (let i = bands - 1; i >= 1; i--) {
-    const t = i / bands;
+  const emitDisc = (t, color) => {
     const discMapped = svgRadialDiscRing(gradNode, t).map((p) => canvas.map(p.x, p.y));
     const band = [];
     for (const outer of outers) {
       for (const hit of svgIntersectPolygons(discMapped, outer)) band.push(hit);
     }
-    if (!band.length) continue;
+    if (!band.length) return 0;
     for (const hole of holes) {
       for (const hit of svgIntersectPolygons(discMapped, hole)) band.push(hit);
     }
-    if (emitSolid(band, svgStopsColorAt(stops, t))) painted = true;
+    return emitSolid(band, color);
+  };
+  let painted = false;
+  if (emitSolid(mapped, svgStopsColorAt(stops, 1))) painted = true;
+  const bands = 8;
+  for (let i = bands - 1; i >= 1; i--) {
+    const t = i / bands;
+    if (emitDisc(t, svgStopsColorAt(stops, t))) painted = true;
+  }
+  // i/8 interpolation never lands on CSS named stops (Azure Application
+  // Gateway Containers `silver` at offset 0.402). Emit those discs so
+  // FillForegnd stays #C0C0C0 / #808080 that collectFillAndShadow paints.
+  for (let s = stops.length - 1; s >= 0; s--) {
+    const t = Number(stops[s].offset);
+    if (!Number.isFinite(t) || t <= 1e-6 || t >= 1 - 1e-6) continue;
+    if (emitDisc(t, stops[s].color)) painted = true;
   }
   if (kind === 'fillstroke' && !svgPaintIsNone(style.stroke)) {
     if (canvas.clipRings && canvas.clipRings.length) {
@@ -5005,7 +5030,9 @@ class NestedStencil {
       const width = attrNum(node, 'w') * sx;
       const height = attrNum(node, 'h') * sy;
       let arcsize = attrNum(node, 'arcsize');
-      if (arcsize === 0) arcsize = 10;
+      // mxStencil.drawNode: Number(arcsize)==0 uses
+      // RECTANGLE_ROUNDING_FACTOR * 100 (15), not 10.
+      if (arcsize === 0) arcsize = 15;
       const radius = Math.min(width, height) * arcsize / 100;
       canvas.roundrect(X('x'), Y('y'), width, height, radius, radius);
     } else if (name === 'ellipse') {
@@ -5063,7 +5090,8 @@ class NestedStencil {
     else if (name === 'dashpattern') {
       // mxStencil.js ~897: split on spaces, scale by minScale, setDashPattern.
       // "none" is not a numeric array; do not force dashed=true.
-      const value = node.attrs.pattern;
+      // mxStencil.drawNode reads `pattern`; Cisco still writes `dash=`.
+      const value = node.attrs.pattern ?? node.attrs.dash;
       if (value == null) return;
       if (String(value).trim().toLowerCase() === 'none') {
         canvas.setDashPattern('none');

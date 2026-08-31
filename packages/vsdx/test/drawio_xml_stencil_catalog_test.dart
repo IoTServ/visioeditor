@@ -10346,4 +10346,146 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxStencil roundrect arcsize 0 uses 15 percent rounding for LibreOffice',
+    () {
+      final rounded = decodeDrawioMxStencilXml(
+        '<shape name="Arc0" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="100" h="60" arcsize="0"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 440,
+      );
+      final cmds = descendantGeometries(rounded)
+          .expand((geometry) => geometry.commands)
+          .toList(growable: false);
+      expect(
+        cmds.any((command) => command is CubBezTo),
+        isTrue,
+        reason: 'mxStencil.drawNode Number(arcsize)==0 uses '
+            'RECTANGLE_ROUNDING_FACTOR * 100 (15), not a sharp rect. '
+            'libvisio collectGeometry keeps those cubics',
+      );
+
+      final sharp = decodeDrawioMxStencilXml(
+        '<shape name="Sharp" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="60"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 441,
+      );
+      expect(
+        descendantGeometries(sharp)
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo),
+        isFalse,
+        reason: 'canvas roundrect(r=0) is captured as <rect>',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(rounded.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantGeometries(leftover)
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isTrue,
+        reason: 'a second save keeps the 15 percent cubics (RelCubBezTo; '
+            'tokens.txt has no CubBezTo)',
+      );
+    },
+  );
+
+  test(
+    'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
+    () {
+      bool leakedMiter4(VsdxShape shape) {
+        if (shape.line.hasLine &&
+            (shape.line.miterLimit - 4).abs() < 1e-6) {
+          return true;
+        }
+        return shape.children.any(leakedMiter4);
+      }
+
+      final button = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Atlassian / Atlassian',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Button (Link)')
+          .build(442, 3, 3);
+      expect(
+        leakedMiter4(button),
+        isFalse,
+        reason: 'createState miterLimit is 10. restore() must not leak CSS '
+            'default 4 onto later fills. leftover would skip the spike '
+            'ribbon because ODF default miterlimit is already 4',
+      );
+
+      final menu = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Android / android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Menu bar')
+          .build(443, 3, 3);
+      expect(
+        descendantGeometries(menu)
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isFalse,
+        reason: 'Android rrect rSize=0 is canvas roundrect(r=0) → <rect>. '
+            'drawNode arcsize=0 rounding must not fillet that chrome',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final buttonId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(button.copyWith(id: buttonId)),
+      );
+      final menuId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(menu.copyWith(id: menuId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverButton =
+          leftoverDoc.pages.first.findShapeById(buttonId)!;
+      final leftoverMenu = leftoverDoc.pages.first.findShapeById(menuId)!;
+      expect(
+        leakedMiter4(leftoverButton),
+        isFalse,
+        reason: 'a second save must not reintroduce CSS miter 4',
+      );
+      expect(
+        descendantGeometries(leftoverMenu)
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is CubBezTo || command is RelCubBezTo),
+        isFalse,
+        reason: 'a second save must keep Android rSize=0 chrome sharp',
+      );
+    },
+  );
 }

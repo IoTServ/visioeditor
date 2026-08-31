@@ -583,6 +583,23 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `roundrect` `arcsize="0"` now stays 15% rounded in
+  LibreOffice, matching official `drawNode`
+  (`RECTANGLE_ROUNDING_FACTOR * 100`). Canvas `roundrect(r=0)` (Android
+  `rrect;rSize=0`) is captured as `<rect>` so that chrome stays sharp.
+  Nested XML stencils use 15 rather than 10. A second save keeps the cubics
+  (`RelCubBezTo`; `tokens.txt` has no CubBezTo).
+- draw.io JS Canvas `createState` `miterLimit` 10 now stays native in
+  LibreOffice. Capture used CSS / ODF default 4, so `restore()` leaked
+  `<miterlimit limit="4"/>` onto later fills (Atlassian Button checkmarks).
+  SVG still applies CSS initial 4 when `stroke-miterlimit` is omitted.
+  leftover would skip the spike at 4 because ODF default miterlimit is
+  already 4; `_lineProperties` never emits `svg:stroke-miterlimit`, so
+  miter 10 leftover-bakes the spike. A second save keeps 10.
+- draw.io SVG multi-stop radial tessellation now keeps CSS named stop
+  colours as sibling FillForegnd. i/8 interpolation skipped Azure
+  Application Gateway Containers `silver` (`#C0C0C0`); discs at each
+  stop offset keep `collectFillAndShadow` `draw:fill-color`.
 - draw.io mxStencil `linejoin` `flat` / `square` now stay miter in
   LibreOffice. Official `drawNode` still `setLineJoin` those linecap
   tokens; `mxSvgCanvas2D` writes `stroke-linejoin="flat"` which SVG
