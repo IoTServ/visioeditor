@@ -8201,6 +8201,20 @@ function mxVertexInnerLabelBox(shape, style, x, y, w, h) {
       const inner = shape.getLabelBounds(new mxRectangle(x, y, w, h));
       if (inner && Number.isFinite(inner.width) && inner.width > 0 &&
           Number.isFinite(inner.height) && inner.height > 0) {
+        // mxText.isPaintBoundsInverted when STYLE_HORIZONTAL=0.
+        // Official mxCellRenderer swaps w/h, mxSwimlane.getLabelBounds
+        // shrinks that height to startSize, and rotateLabelBounds -90
+        // maps the top strip onto the left title bar paintVertexShape
+        // fills. Capture skipped the invert, so leftover Text sat on
+        // the top of Horizontal Container. tokens.txt has no
+        // horizontal token; collectXFormData pins the Text child.
+        const inverted = style &&
+          (style.horizontal == 0 || style.horizontal === '0' ||
+           style.horizontal === false);
+        if (inverted && inner.height + 1e-6 < h &&
+            inner.width + 1e-6 >= w) {
+          return {x: inner.x, y: y, w: inner.height, h: h};
+        }
         return {x: inner.x, y: inner.y, w: inner.width, h: inner.height};
       }
     } catch (_) {}

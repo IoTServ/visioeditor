@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxSwimlane `horizontal=0` titles now stay native in
+  LibreOffice. Official `mxText.isPaintBoundsInverted` plus
+  `mxCellRenderer.rotateLabelBounds` (-90°) maps
+  `mxSwimlane.getLabelBounds`' startSize-tall strip onto the left
+  title bar `paintVertexShape` fills. Catalog capture skipped that
+  invert, so General Horizontal Container and BPMN Horizontal Swimlane
+  leftover-baked the caption across the top (`tokens.txt` has no
+  horizontal token; `collectXFormData` is `svg:x` / `svg:width`).
+  Capture now leftover-bakes the left startSize Text child.
+  A second save keeps TextDirection=1.
 - draw.io mxText html `<hr>` empty compartments now stay native in
   LibreOffice. Official `mxText` overflow=fill html=1 is a foreignObject
   with CSS block flow, so UML Class 3/4's title `<p>` is content-sized,

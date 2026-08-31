@@ -11396,4 +11396,114 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxSwimlane horizontal=0 title leftover-bakes left Text for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if ((child.text ?? '').contains(text)) return child;
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final container = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / general',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Horizontal Container')
+          .build(534, 3, 3);
+      final title = glyphContaining(container, 'Horizontal Container')!;
+      expect(
+        title.width,
+        lessThan(container.width * 0.2),
+        reason: 'STYLE_HORIZONTAL=0 maps the startSize-tall getLabelBounds '
+            'strip onto the left title bar mxSwimlane paints',
+      );
+      expect(
+        title.height,
+        closeTo(container.height, 0.02),
+        reason: 'the leftover Text child fills the left startSize strip',
+      );
+      expect(
+        title.pinX,
+        lessThan(container.width * 0.2),
+        reason: 'collectXFormData pins the title in the left bar, not the top',
+      );
+      expect(
+        title.richText.textBlock.textDirection,
+        1,
+        reason: 'STYLE_HORIZONTAL=0 is TextDirection=1 that a save bakes to '
+            'TxtAngle librevenge:rotate paints',
+      );
+
+      final vertical = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / general',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Container (2)')
+          .build(535, 3, 3);
+      final verticalTitle = glyphContaining(vertical, 'Vertical Container')!;
+      expect(
+        verticalTitle.height,
+        lessThan(vertical.height * 0.2),
+        reason: 'default horizontal swimlane keeps the top startSize band',
+      );
+      expect(
+        verticalTitle.richText.textBlock.textDirection,
+        0,
+      );
+
+      final lane = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / BPMN / BPMN 2.0  General',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Horizontal Swimlane')
+          .build(536, 3, 3);
+      final laneTitle = glyphContaining(lane, 'Lane')!;
+      expect(
+        laneTitle.width,
+        lessThan(lane.width * 0.2),
+        reason: 'BPMN horizontal=0 lanes share the left title leftover',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(container.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverTitle = glyphContaining(leftover, 'Horizontal Container')!;
+      expect(
+        leftoverTitle.width,
+        lessThan(leftover.width * 0.2),
+        reason: 'a second save must keep the left title Text box',
+      );
+      expect(
+        leftoverTitle.richText.textBlock.textDirection,
+        0,
+        reason: 'a save bakes TextDirection so canvas reopen does not '
+            'rotate twice',
+      );
+      expect(
+        leftoverTitle.richText.textBlock.angleRad,
+        closeTo(-3.141592653589793 / 2, 0.05),
+        reason: 'libvisio _flushText paints librevenge:rotate from TxtAngle',
+      );
+    },
+  );
 }
