@@ -11114,4 +11114,76 @@ void main() {
       expect(allText(leftoverOf(component)), contains('«Annotation»'));
     },
   );
+
+  test(
+    'mxText html entity stereotypes leftover-bake for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      int countExact(VsdxShape shape, String text) {
+        var n = (shape.text ?? '') == text ? 1 : 0;
+        for (final child in shape.children) {
+          n += countExact(child, text);
+        }
+        return n;
+      }
+
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final pkg = stencil(
+        'Draw.io JS / Sysml / SysML / Model Elements',
+        'Package Diagram',
+      ).build(529, 3, 3);
+      final pkgText = allText(pkg);
+      expect(
+        pkgText,
+        contains('<<import>>'),
+        reason: 'html=1 `&lt;&lt;import&gt;&gt;` is foreignObject text, not '
+            'an <import> tag leftover as a lone >',
+      );
+      expect(
+        countExact(pkg, '>'),
+        0,
+        reason: 'insertEdge plus insert() must not paint the same edge '
+            'three times (one > per visit)',
+      );
+      expect(
+        countExact(pkg, '<<import>>'),
+        1,
+        reason: 'Graph model parents the edge once; leftover Character '
+            'must keep a single <<import>>',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(pkg.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(allText(leftover), contains('<<import>>'));
+      expect(countExact(leftover, '>'), 0);
+      expect(countExact(leftover, '<<import>>'), 1);
+    },
+  );
 }

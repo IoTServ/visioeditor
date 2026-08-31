@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html entity stereotypes now stay native in LibreOffice.
+  Official `mxText` html=1 paints SysML Package Diagram's
+  `&lt;&lt;import&gt;&gt;` through the foreignObject UA as `<<import>>`.
+  Catalog `cellLabel` decoded those entities before `parseHtmlLabel`, so
+  the leftover Character was a lone `>` (`<import>` eaten as a tag), and
+  walking `insertEdge` plus `insert()` painted the same connector three
+  times (`tokens.txt` has no entity token; `collectText` only sees Char
+  runs). Capture now keeps html=1 source for the HTML parser and parents
+  each edge once. A second save keeps a single `<<import>>`.
 - draw.io mxText html named entities now stay native in LibreOffice.
   Official `mxText` html=1 paints `&laquo;interface&raquo;` through the
   foreignObject UA as U+00AB / U+00BB. Catalog capture only decoded

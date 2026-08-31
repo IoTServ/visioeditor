@@ -6746,7 +6746,11 @@ function cellLabel(value, keepHtml = false, cell = null) {
   let source = cellDisplaySource(value);
   if (cell) source = replaceCellPlaceholders(cell, source);
   if (!source) return '';
-  if (keepHtml && /<[a-zA-Z][\s\S]*>/.test(source)) return source;
+  // mxText html=1 feeds the foreignObject innerHTML. SysML Package Diagram
+  // is `&lt;&lt;import&gt;&gt;` with no raw tags; decoding here turned
+  // that into `<<import>>` which parseHtmlLabel ate as an <import> element
+  // (tokens.txt has no entity token; leftover Character must be <<import>>).
+  if (keepHtml) return source;
   const stripped = source
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
@@ -8407,8 +8411,10 @@ function applyStackLayout(cell, style) {
 
 function paintCellTree(cells, canvas, width, height) {
   let painted = false;
+  const seen = new Set();
   const visit = (cell, parentX, parentY, parentW, parentH, inherited = {}) => {
-    if (!cell) return;
+    if (!cell || seen.has(cell)) return;
+    seen.add(cell);
     if (cell.geometry) {
       const isEdge = !!(cell.edge || (typeof cell.style === 'string' && /(?:^|;)edge=1(?:;|$)/.test(cell.style)));
       const parsed = parseStyle(
@@ -8465,7 +8471,11 @@ function paintCellTree(cells, canvas, width, height) {
       }
       const next = [...(cell.children || [])];
       for (const edge of cell.edges || []) {
-        if (!next.includes(edge)) next.push(edge);
+        // insert() already parents the edge (SysML Package Diagram). Walking
+        // .edges again leftover-baked <<import>> three times at each end.
+        if (!next.includes(edge) && !edge.parent && !seen.has(edge)) {
+          next.push(edge);
+        }
       }
       for (const child of next) visit(child, x, y, cellWidth, cellHeight, resolved.inherited);
     } else {
