@@ -1222,6 +1222,79 @@ void main() {
   });
 
   test(
+    'mxStencil dashpattern none stays solid for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final pack = migrated
+          .singleWhere((group) => group.name == 'Draw.io / AWS 4')
+          .stencils
+          .singleWhere((entry) => entry.name == 'work package')
+          .build(89, 3, 3);
+      final dashed = descendants(pack).where(
+        (shape) =>
+            shape.line.hasLine &&
+            ((shape.line.customDashPattern != null &&
+                    shape.line.customDashPattern!.length >= 2) ||
+                shape.line.pattern == 2),
+      );
+      expect(
+        dashed,
+        isEmpty,
+        reason: 'dashpattern none is Number(none)=NaN in mxStencil.drawNode; '
+            'createDashPattern would set stroke-dasharray NaN (SVG solid), '
+            'not createState 3 3',
+      );
+      expect(
+        descendants(pack).any((shape) => shape.line.hasLine),
+        isTrue,
+        reason: 'the work-package outline and arrow still stroke',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          migrated
+              .singleWhere((group) => group.name == 'Draw.io / AWS 4')
+              .stencils
+              .singleWhere((entry) => entry.name == 'work package')
+              .build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where((shape) {
+          final custom = shape.line.customDashPattern;
+          if (custom != null && custom.length >= 2) return true;
+          if (!shape.line.hasLine) return false;
+          return shape.geometries
+                  .expand((geometry) => geometry.commands)
+                  .whereType<MoveTo>()
+                  .length >=
+              2;
+        }),
+        isEmpty,
+        reason: 'a second save must not bake 3 3 MoveTo gaps on a solid none',
+      );
+    },
+  );
+
+  test(
     'mxStencil save/restore keeps post-restore strokes solid for LibreOffice',
     () {
       bool isDashedStroke(VsdxShape shape) {

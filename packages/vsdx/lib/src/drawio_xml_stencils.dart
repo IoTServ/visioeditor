@@ -470,6 +470,10 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'dashpattern':
         _dashPattern = _parseMxDashPattern(node.getAttribute('pattern'));
+        // `pattern="none"` is an empty list: mxStencil.js still
+        // setDashPattern(Number('none')*minScale → NaN). createDashPattern
+        // then writes stroke-dasharray="NaN", which SVG paints solid.
+        // Do not fall through to createState `3 3` (AWS 4 work package).
         break;
       case 'linecap':
         _lineCap = _mxLineCap(node.getAttribute('cap'));
@@ -626,6 +630,9 @@ class _DrawioXmlShapeDecoder {
       // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
       // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
+      // `dashpattern pattern="none"` is NaN in official drawNode, so SVG
+      // stroke-dasharray is invalid and Draw must stay solid (AWS 4
+      // work package), not createState `3 3`.
       // `shadow` follows mxShape.configureCanvas setShadow onto ShdwPattern
       // that `_fillAndShadowProperties` maps to ODF draw:shadow (hard
       // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
@@ -1157,6 +1164,15 @@ class _DrawioXmlShapeDecoder {
   }
 
   VsdxLine _lineWithDash(VsdxLine line, List<double>? pattern) {
+    // Explicit `<dashpattern pattern="none"/>` (empty list) is solid.
+    // Missing pattern stays mx createState `3 3`.
+    if (pattern != null && pattern.isEmpty) {
+      return line.copyWith(
+        pattern: line.pattern == 0 ? 0 : 1,
+        customDashPattern: null,
+        fixedDash: false,
+      );
+    }
     final custom = _fixedDashPatternValues(pattern);
     if (custom != null) {
       return line.copyWith(
@@ -2056,10 +2072,16 @@ String? _mxFontFamily(String? raw) {
   };
 }
 
-/// mxStencil.drawNode dashpattern: skip `none` and non-positive lengths.
+/// mxStencil.drawNode dashpattern.
+///
+/// Official splits on spaces and `Number(part)*minScale`. `none` becomes
+/// `NaN`; [mxSvgCanvas2D.createDashPattern] then sets `stroke-dasharray`
+/// to that, which SVG paints solid. Return an empty list so [_lineWithDash]
+/// does not substitute createState `3 3`. A missing tag leaves `null`.
 List<double>? _parseMxDashPattern(String? raw) {
   final text = (raw ?? '').trim();
-  if (text.isEmpty || text.toLowerCase() == 'none') return null;
+  if (text.isEmpty) return null;
+  if (text.toLowerCase() == 'none') return const <double>[];
   final values = <double>[];
   for (final part in text.split(RegExp(r'[\s,]+'))) {
     if (part.isEmpty) continue;

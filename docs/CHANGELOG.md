@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `dashpattern="none"` now stays solid in LibreOffice.
+  Official `drawNode` still `setDashPattern(Number("none")*minScale)` so
+  the array is NaN; `createDashPattern` writes `stroke-dasharray="NaN"`
+  and SVG paints a solid. Catalog decode treated `none` like a missing
+  tag and used createState `3 3` (AWS 4 work package outline). A second
+  save keeps the solid LinePattern; leftover no longer bakes MoveTo gaps.
 - draw.io mxStencil `<image>` x/y/w/h now stays native in LibreOffice.
   IBM Floating IP is a mid-band PNG (`x≈0.61 y≈20.18 w≈58.78 h≈19.65`
   on a 60×60 cell). Catalog decode used to stretch that bitmap over the
