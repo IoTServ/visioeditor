@@ -833,6 +833,66 @@ void main() {
     );
   });
 
+  test('mxStencil inherit-fill alpha stays FillForegndTrans for LibreOffice',
+      () {
+    bool hasSoftEdges(VsdxShape shape) {
+      if (isLibvisioSoftEdgesPlate(shape)) return true;
+      return shape.children.any(hasSoftEdges);
+    }
+
+    final hubShadow = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Networks2')
+        .stencils
+        .singleWhere((entry) => entry.name == 'hub shadow')
+        .build(88, 3, 3);
+    expect(
+      hubShadow.fill.hasFill &&
+          (hubShadow.fill.foregroundTransparency - 0.75).abs() < 0.02,
+      isTrue,
+      reason: 'mxStencil <alpha alpha="0.25"/> then inherit fill; '
+          'restore pops overallAlpha, so parent FillForegndTrans must '
+          'be captured at _finish. collectFillAndShadow maps it to '
+          'draw:opacity 25%',
+    );
+
+    final antenna = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Networks2')
+        .stencils
+        .singleWhere((entry) => entry.name == 'antenna shadow')
+        .build(89, 3, 3);
+    expect(
+      antenna.fill.hasFill &&
+          (antenna.fill.foregroundTransparency - 0.75).abs() < 0.02,
+      isTrue,
+      reason: 'every Networks2 * shadow uses the same 0.25 silhouette',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(hubShadow.copyWith(id: id)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.fill.hasFill && leftover.fill.foregroundTransparency > 0.7,
+      isTrue,
+      reason: 'a second save must keep FillForegndTrans; it is a token',
+    );
+    expect(
+      hasSoftEdges(leftover),
+      isFalse,
+      reason: 'solid inherit fill + FillForegndTrans must not bake a '
+          'SoftEdges PNG',
+    );
+  });
+
   test('mxStencil dashpattern stays customDashPattern for LibreOffice', () {
     bool hasFixedDash(VsdxShape shape) {
       final custom = shape.line.customDashPattern;

@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil inherit-fill `<alpha>` now stays native in LibreOffice.
+  Official `mxStencil.drawNode` calls `canvas.setAlpha` before an inherit
+  `fill` (Networks2 hub / antenna shadows `alpha="0.25"`). Catalog decode
+  restored the paint stack before building the parent, so `FillForegndTrans`
+  stayed 0 and `collectFillAndShadow` / `_fillAndShadowProperties`
+  (`pattern==1`) painted an opaque palette silhouette instead of
+  `draw:opacity` 25%. The inherit fill now captures Trans at `_finish`
+  like LineWeight. A second save keeps it without a SoftEdges PNG.
 - draw.io Networks2 XML `neutralFill` now stays native in LibreOffice.
   Official `mxStencil.getColorValue` reads the cell style then the node's
   `default`; Sidebar-Network2.js sets `neutralFill=#9DA6A8` and global

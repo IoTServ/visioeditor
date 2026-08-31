@@ -183,6 +183,7 @@ class _DrawioXmlShapeDecoder {
   double _strokeAlpha = 1;
   double? _strokeWidth;
   double? _parentStrokeWidth;
+  double? _parentFillTransparency;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
   bool _parentDashed = false;
@@ -296,12 +297,21 @@ class _DrawioXmlShapeDecoder {
     // collectGeometry concatenates every NoFill=0 section of one shape
     // into one evenodd path, so a black radio dot on a grey disk would
     // otherwise punch a hole.
+    // mxStencil <alpha> is canvas.setAlpha. restore() pops it, so capture
+    // FillForegndTrans at the inherit fill like _parentStrokeWidth.
+    // collectFillAndShadow → _fillAndShadowProperties pattern==1 emits
+    // draw:opacity = 1 − FillForegndTrans (Networks2 hub shadow 0.25).
+    final parentFillTrans = _parentFillTransparency ?? 0.0;
     final parentFill =
         _rasterPart != null || (!inheritFill && children.isNotEmpty)
             ? const VsdxFill(pattern: 0)
             : (_styleFill != null
-                ? VsdxFill(pattern: 1, foreground: _styleFill)
-                : VsdxFill.defaultFill);
+                ? VsdxFill(
+                    pattern: 1,
+                    foreground: _styleFill,
+                    foregroundTransparency: parentFillTrans,
+                  )
+                : VsdxFill(foregroundTransparency: parentFillTrans));
     var parentLine =
         _rasterPart != null || (!inheritLine && children.isNotEmpty)
             ? const VsdxLine(pattern: 0)
@@ -543,6 +553,8 @@ class _DrawioXmlShapeDecoder {
       // `applyStencilStyle.withSolidForeground` would otherwise beige them.
       // `alpha` / `fillalpha` / `strokealpha` become FillForegndTrans /
       // LineColorTrans that `_fillAndShadowProperties` maps to draw:opacity.
+      // Inherit fill (Networks2 hub shadow) captures that Trans on the
+      // parent at _finish; hex fillcolor already bakes a sibling.
       // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
       // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
@@ -1092,6 +1104,11 @@ class _DrawioXmlShapeDecoder {
       noLine: !doStroke,
       ix: _geometries.length,
     ));
+    if (doFill) {
+      // restore() pops <alpha> after this fill. Parent FillForegndTrans
+      // must be the value collectFillAndShadow saw, not 0.
+      _parentFillTransparency ??= _fillTransparency;
+    }
     if (doStroke && _dashed) {
       _parentDashed = true;
       _parentDashPattern ??= _dashPattern;
