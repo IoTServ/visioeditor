@@ -5960,8 +5960,11 @@ Geometry.prototype.setTerminalPoint = function(point, isSource) {
   else this.targetPoint = pt;
 };
 Geometry.prototype.clone = function() { return Object.assign(new Geometry(), this); };
-function xmlUserObject(name) {
+function xmlUserObject(name, initialAttrs) {
   const attrs = Object.create(null);
+  if (initialAttrs) {
+    for (const key of Object.keys(initialAttrs)) attrs[key] = initialAttrs[key];
+  }
   return {
     name,
     nodeName: name,
@@ -5975,7 +5978,35 @@ function xmlUserObject(name) {
     hasAttribute(key) {
       return Object.prototype.hasOwnProperty.call(attrs, key);
     },
+    removeAttribute(key) {
+      delete attrs[key];
+    },
+    // Graph.setAttributeForCell clones the UserObject before mutating.
+    cloneNode() {
+      return xmlUserObject(name, {...attrs});
+    },
   };
+}
+
+// Graph.setAttributeForCell: wrap a string label in <UserObject label=…>
+// then set placeholders / name / link. Sidebar Variable / Timestamp / Link
+// call this; a stub left %name% and %date{…}% as Character text.
+function graphSetAttributeForCell(cell, attributeName, attributeValue) {
+  let value;
+  if (cell.value != null && typeof cell.value === 'object' &&
+      typeof cell.value.setAttribute === 'function') {
+    value = typeof cell.value.cloneNode === 'function'
+      ? cell.value.cloneNode(true)
+      : cell.value;
+  } else {
+    value = xmlUserObject('UserObject');
+    value.setAttribute('label', cell.value == null ? '' : String(cell.value));
+  }
+  if (attributeValue != null) value.setAttribute(attributeName, attributeValue);
+  else if (typeof value.removeAttribute === 'function') {
+    value.removeAttribute(attributeName);
+  }
+  cell.value = value;
 }
 
 function Cell(value, geometry, style) {
@@ -6042,7 +6073,16 @@ function Sidebar() {
   // geometry from VisioDocument::parse. Use the same SVG gear Azure2
   // already vectorises via mxImageShape / mxLabel.paintImage.
   this.gearImage = 'img/lib/mscae/Gear.svg';
-  this.graph = {setLinkForCell() {}, setAttributeForCell() {}};
+  this.graph = {
+    setAttributeForCell: graphSetAttributeForCell,
+    // Graph.setLinkForCell → UserObject @link. libvisio has the Hyperlink
+    // token but no collectHyperlink, so leftover freezes the visible
+    // fontColor=#0000EE / fontStyle=4 label; the URL stays on the cell
+    // for Graph.replacePlaceholders / convertValueToString.
+    setLinkForCell(cell, link) {
+      graphSetAttributeForCell(cell, 'link', link);
+    },
+  };
   this.editorUi = {
     editor: {
       graph: {
@@ -6609,8 +6649,84 @@ function cellHasPlaceholders(cell) {
     user.getAttribute('placeholders') == '1');
 }
 
-// Graph.replacePlaceholders: %c4Name% → cell.getAttribute('c4Name').
-// LibreOffice collectText only sees the frozen Char runs.
+// Graph.formatDate (stevenlevithan mask). Timestamp is
+// %date{ddd mmm dd yyyy HH:MM:ss}% via getGlobalVariable.
+function formatDateMask(date, mask) {
+  const dayNames = [
+    'Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat',
+    'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+  ];
+  const monthNames = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August',
+    'September', 'October', 'November', 'December',
+  ];
+  const pad = (val, len) => {
+    let out = String(val);
+    const n = len || 2;
+    while (out.length < n) out = `0${out}`;
+    return out;
+  };
+  const d = date.getDate();
+  const D = date.getDay();
+  const m = date.getMonth();
+  const y = date.getFullYear();
+  const H = date.getHours();
+  const M = date.getMinutes();
+  const s = date.getSeconds();
+  const flags = {
+    d,
+    dd: pad(d),
+    ddd: dayNames[D],
+    dddd: dayNames[D + 7],
+    m: m + 1,
+    mm: pad(m + 1),
+    mmm: monthNames[m],
+    mmmm: monthNames[m + 12],
+    yy: String(y).slice(2),
+    yyyy: y,
+    h: H % 12 || 12,
+    hh: pad(H % 12 || 12),
+    H,
+    HH: pad(H),
+    M,
+    MM: pad(M),
+    s,
+    ss: pad(s),
+  };
+  return String(mask).replace(
+    /d{1,4}|m{1,4}|yy(?:yy)?|([HhMsTt])\1?|"[^"]*"|'[^']*'/g,
+    (token) => (token in flags ? flags[token] : token.slice(1, token.length - 1)),
+  );
+}
+
+function cellGlobalVariable(name) {
+  const now = new Date();
+  if (name === 'date') return now.toLocaleDateString();
+  if (name === 'time') return now.toLocaleTimeString();
+  if (name === 'timestamp') return now.toLocaleString();
+  if (name.substring(0, 5) === 'date{') {
+    return formatDateMask(now, name.substring(5, name.length - 1));
+  }
+  return null;
+}
+
+function cellAttributeWalk(cell, name) {
+  let current = cell;
+  while (current) {
+    if (current.value != null && typeof current.value === 'object' &&
+        typeof current.hasAttribute === 'function' && current.hasAttribute(name)) {
+      const val = current.getAttribute(name);
+      return val != null ? val : '';
+    }
+    current = current.parent;
+  }
+  return null;
+}
+
+// Graph.replacePlaceholders: %c4Name% → cell.getAttribute('c4Name');
+// %date{mask}% → Graph.formatDate. LibreOffice collectText only sees
+// the frozen Char runs (tokens.txt has no placeholder token).
 function replaceCellPlaceholders(cell, str) {
   if (!cellHasPlaceholders(cell) || cell.getAttribute('placeholder') != null) {
     return str;
@@ -6619,7 +6735,8 @@ function replaceCellPlaceholders(cell, str) {
     /%(date\{.*\}|[^%\{\}"'=;]+)%/g,
     (token, name) => {
       if (name === 'label' || name === 'tooltip') return token;
-      const val = cell.getAttribute(name);
+      let val = cellAttributeWalk(cell, name);
+      if (val == null) val = cellGlobalVariable(name);
       return val != null ? val : token;
     },
   );

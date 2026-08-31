@@ -10877,4 +10877,90 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxCell Graph.replacePlaceholders leftover-bake for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      VsdxShape leftoverOf(VsdxShape shape) {
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(shape.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      final variable = stencil(
+        'Draw.io JS / General / misc',
+        'Variable',
+      ).build(524, 3, 3);
+      final variableText = allText(variable);
+      expect(
+        variableText,
+        isNot(contains('%name%')),
+        reason: 'Graph.setAttributeForCell name=Variable must freeze '
+            '%name% before collectText',
+      );
+      expect(
+        variableText,
+        contains('Variable Text'),
+        reason: 'Sidebar Variable is Graph.replacePlaceholders leftover',
+      );
+
+      final timestamp = stencil(
+        'Draw.io JS / General / misc',
+        'Timestamp',
+      ).build(525, 3, 3);
+      final timestampText = allText(timestamp);
+      expect(
+        timestampText,
+        isNot(contains('%date{')),
+        reason: 'Graph.getGlobalVariable date{mask} leftover-bakes '
+            'formatDate into Character',
+      );
+      expect(
+        timestampText,
+        matches(
+          RegExp(
+            r'(Sun|Mon|Tue|Wed|Thu|Fri|Sat) '
+            r'(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) '
+            r'\d{2} \d{4} \d{2}:\d{2}:\d{2}',
+          ),
+        ),
+        reason: 'ddd mmm dd yyyy HH:MM:ss is Graph.formatDate',
+      );
+
+      expect(allText(leftoverOf(variable)), contains('Variable Text'));
+      expect(
+        allText(leftoverOf(timestamp)),
+        isNot(contains('%date{')),
+        reason: 'a second save must keep the frozen timestamp',
+      );
+    },
+  );
 }

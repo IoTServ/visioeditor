@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Graph placeholders now stay native in LibreOffice. Official
+  `Graph.setAttributeForCell` wraps Sidebar Variable / Timestamp labels
+  in a `UserObject` (`placeholders=1`, `name=Variable`) and
+  `Graph.replacePlaceholders` / `getGlobalVariable` freeze `%name%` and
+  `%date{ddd mmm dd yyyy HH:MM:ss}%` into Character text (`tokens.txt`
+  has no placeholder token; `collectText` only sees Char runs). Catalog
+  capture stubbed those Graph methods, so Draw showed the raw tokens.
+  Capture now matches Graph.js and leftover keeps `Variable Text` plus
+  the formatted timestamp. A second save keeps the frozen runs.
 - draw.io mxText html table captions and `border="1"` now stay native in
   LibreOffice. Official `mxText` html=1 paints a leading `<div>` plus
   `<table>` (UML Entity `Tablename` / PK columns) and the HTML
