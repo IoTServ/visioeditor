@@ -420,7 +420,10 @@ class _DrawioXmlShapeDecoder {
         _fontFamily = _mxFontFamily(node.getAttribute('family'));
         break;
       case 'fillcolor':
-        _applyMxFill(node.getAttribute('color'));
+        _applyMxFill(
+          node.getAttribute('color'),
+          fallback: node.getAttribute('default'),
+        );
         break;
       case 'fillgradient':
         _applyMxFillGradient(node);
@@ -448,13 +451,22 @@ class _DrawioXmlShapeDecoder {
         if (jiggle != null && jiggle.isFinite) _sketchJiggle = jiggle;
         break;
       case 'strokecolor':
-        _applyMxStroke(node.getAttribute('color'));
+        _applyMxStroke(
+          node.getAttribute('color'),
+          fallback: node.getAttribute('default'),
+        );
         break;
       case 'fontcolor':
-        _applyMxFont(node.getAttribute('color'));
+        _applyMxFont(
+          node.getAttribute('color'),
+          fallback: node.getAttribute('default'),
+        );
         break;
       case 'fontbackgroundcolor':
-        _applyMxFontBackground(node.getAttribute('color'));
+        _applyMxFontBackground(
+          node.getAttribute('color'),
+          fallback: node.getAttribute('default'),
+        );
         break;
       case 'strokewidth':
         final width = _number(node, 'width');
@@ -532,8 +544,10 @@ class _DrawioXmlShapeDecoder {
       // `text` `run` children follow mxText html=1 <b>/<font> onto extra
       // Character rows collectCharIX maps to fo:font-weight / fo:color /
       // fo:font-size.
-      // `fill` / `stroke` keywords and style keys (fillColor2, …) stay on
-      // the parent so applyStencilStyle can still recolor the body.
+      // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
+      // stay on the parent so applyStencilStyle can still recolor the body.
+      // Other style keys (fillColor2, …) bake `default` like
+      // mxStencil.getColorValue when the catalog has no cell style.
       default:
         break;
     }
@@ -632,7 +646,7 @@ class _DrawioXmlShapeDecoder {
     _pending = commands;
   }
 
-  void _applyMxFill(String? raw) {
+  void _applyMxFill(String? raw, {String? fallback}) {
     _fillOverride = null;
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
@@ -652,7 +666,19 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     final parsed = _mxGraphPaintColor(token);
-    _fillColor = parsed;
+    if (parsed != null) {
+      _fillColor = parsed;
+      _fillIsNone = false;
+      return;
+    }
+    // mxStencil.getColorValue: missing style key uses `default`.
+    // Android Keyboard fillColor3=none must not inherit the palette fill.
+    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+      _fillColor = null;
+      _fillIsNone = true;
+      return;
+    }
+    _fillColor = _mxStencilStyleKeyColor(token, fallback);
     _fillIsNone = false;
   }
 
@@ -664,7 +690,10 @@ class _DrawioXmlShapeDecoder {
     final start = _mxGraphPaintColor(node.getAttribute('color1'));
     final end = _mxGraphPaintColor(node.getAttribute('color2'));
     if (start == null) {
-      _applyMxFill(node.getAttribute('color1'));
+      _applyMxFill(
+        node.getAttribute('color1'),
+        fallback: node.getAttribute('default'),
+      );
       return;
     }
     final dir = (node.getAttribute('direction') ?? 'south').toLowerCase();
@@ -703,7 +732,10 @@ class _DrawioXmlShapeDecoder {
     // FillPattern 25–40 (`librevenge:*-opacity` is ignored). Keep the
     // two Trans cells so leftover bakes SoftEdges PNG.
     if (end == null || (start == end && (alpha1 - alpha2).abs() <= 1e-9)) {
-      _applyMxFill(node.getAttribute('color1'));
+      _applyMxFill(
+        node.getAttribute('color1'),
+        fallback: node.getAttribute('default'),
+      );
       return;
     }
     // ODF axial (FillPattern 26 / 29): start-color=FillForegnd at the
@@ -763,7 +795,7 @@ class _DrawioXmlShapeDecoder {
   double _alphaValue(XmlElement node) =>
       _number(node, 'alpha', fallback: 1).clamp(0.0, 1.0).toDouble();
 
-  void _applyMxStroke(String? raw) {
+  void _applyMxStroke(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'stroke' || lower == 'default') {
@@ -782,11 +814,21 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     final parsed = _mxGraphPaintColor(token);
-    _strokeColor = parsed;
+    if (parsed != null) {
+      _strokeColor = parsed;
+      _strokeIsNone = false;
+      return;
+    }
+    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+      _strokeColor = null;
+      _strokeIsNone = true;
+      return;
+    }
+    _strokeColor = _mxStencilStyleKeyColor(token, fallback);
     _strokeIsNone = false;
   }
 
-  void _applyMxFont(String? raw) {
+  void _applyMxFont(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'default' || lower == 'none') {
@@ -801,17 +843,35 @@ class _DrawioXmlShapeDecoder {
       _fontColor = _strokeColor;
       return;
     }
-    _fontColor = _mxGraphPaintColor(token);
+    final parsed = _mxGraphPaintColor(token);
+    if (parsed != null) {
+      _fontColor = parsed;
+      return;
+    }
+    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+      _fontColor = null;
+      return;
+    }
+    _fontColor = _mxStencilStyleKeyColor(token, fallback);
   }
 
-  void _applyMxFontBackground(String? raw) {
+  void _applyMxFontBackground(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'default' || lower == 'none') {
       _fontBackground = null;
       return;
     }
-    _fontBackground = _mxGraphPaintColor(token);
+    final parsed = _mxGraphPaintColor(token);
+    if (parsed != null) {
+      _fontBackground = parsed;
+      return;
+    }
+    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+      _fontBackground = null;
+      return;
+    }
+    _fontBackground = _mxStencilStyleKeyColor(token, fallback);
   }
 
   /// mxText html=1: `<run>` children are extra Character rows. A bare
@@ -1513,7 +1573,7 @@ class _DrawioColoredPart {
 }
 
 /// mxStencil.parseColor hex / rgb, including CSS `#RGB`. Style keys such as
-/// `fillColor2` return null so the parent keeps an editable FillForegnd.
+/// `fillColor2` return null so callers can apply the node's `default`.
 VsdxColor? _mxGraphPaintColor(String? raw) {
   if (raw == null) return null;
   final token = raw.trim();
@@ -1530,6 +1590,28 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
     return VsdxColor.tryParse('#$token');
   }
   return VsdxColor.tryParse(token);
+}
+
+/// Vertex style keys that exist on every cell. Catalog decode has no
+/// style, so these stay inherit and `applyStencilStyle` recolors them.
+bool _mxIsCellStyleColorKey(String token) =>
+    token == 'fillColor' ||
+    token == 'strokeColor' ||
+    token == 'fontColor' ||
+    token == 'gradientColor' ||
+    token == 'labelBackgroundColor' ||
+    token == 'labelBorderColor';
+
+/// mxStencil.getColorValue: when `color` is a style key the cell does
+/// not define, use the node's `default` (Keyboard fillColor2 `#000000`).
+VsdxColor? _mxStencilStyleKeyColor(String token, String? fallback) {
+  if (token.isEmpty || _mxIsCellStyleColorKey(token)) return null;
+  return _mxGraphPaintColor(fallback);
+}
+
+bool _mxStencilStyleKeyIsNone(String token, String? fallback) {
+  if (token.isEmpty || _mxIsCellStyleColorKey(token)) return false;
+  return (fallback ?? '').trim().toLowerCase() == 'none';
 }
 
 /// mxText CSS `text-align` / STYLE_ALIGN → collectParaIX HorzAlign

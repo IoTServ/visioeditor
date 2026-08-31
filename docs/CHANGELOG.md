@@ -583,6 +583,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil style-key `default` colours now stay native in
+  LibreOffice. Official `mxStencil.getColorValue` uses the node's
+  `default` when the cell style has no `fillColor2` / `fillColor3`
+  (Android Keyboard chassis `#000` / keys `#333` / `#999`, QWERTY
+  `fontcolor` `#fff`; Contextual Action Bar 6×6 squares and speaker
+  strokes `#fff`). The decoder treated those keys as inherit fill, so
+  `applyStencilStyle` washed them `#DAE8FC` and `collectFillAndShadow`
+  painted a palette-blue keyboard. Authored hex becomes sibling
+  `FillForegnd` / `LineColor` / `Char.Color`; cell keys (`fillColor`)
+  stay inherit. A second save keeps the colours without a SoftEdges PNG.
 - draw.io mxStencil save/restore now keeps post-restore strokes solid in
   LibreOffice. Official `mxStencil.drawNode` calls `canvas.save` /
   `canvas.restore` (Android Contextual Action Bar dashes a check then

@@ -921,21 +921,14 @@ void main() {
             '18×18 box; collectLine LinePattern 0xfe needs those siblings',
       );
       expect(
-        bar.line.hasLine &&
-            bar.line.pattern == 1 &&
-            (bar.line.customDashPattern == null ||
-                bar.line.customDashPattern!.isEmpty),
-        isTrue,
-        reason: 'mxStencil restore() pops dashed=1 so fillColor2 strokes '
-            'after restore stay the parent collectLine (solid inherit)',
-      );
-      expect(
-        bar.geometries
-            .where((geometry) => geometry.noFill && !geometry.noLine)
-            .length,
+        bar.children.where((child) {
+          if (child.fill.hasFill || !child.line.hasLine) return false;
+          if (isDashedStroke(child)) return false;
+          return child.line.color == VsdxColor.white;
+        }).length,
         greaterThanOrEqualTo(3),
-        reason: 'speaker, 15×10 rect and hamburger are inherit strokes on '
-            'the parent after restore, not dashed siblings',
+        reason: 'restore pops dashed=1; fillColor2 default #ffffff then '
+            'bakes speaker / 15×10 / hamburger as solid LineColor siblings',
       );
 
       const writer = VsdxWriter();
@@ -967,12 +960,15 @@ void main() {
             'gaps because libvisio treats custom LinePattern 0xfe as solid',
       );
       expect(
-        leftover.line.hasLine &&
-            leftover.line.pattern == 1 &&
-            (leftover.line.customDashPattern == null ||
-                leftover.line.customDashPattern!.isEmpty),
+        leftover.children.any((child) {
+          if (child.fill.hasFill || !child.line.hasLine) return false;
+          return child.line.pattern == 1 &&
+              (child.line.customDashPattern == null ||
+                  child.line.customDashPattern!.isEmpty) &&
+              child.line.color == VsdxColor.white;
+        }),
         isTrue,
-        reason: 'post-restore icons stay native solid LinePattern 1',
+        reason: 'post-restore fillColor2 icons stay native solid LinePattern 1',
       );
 
       final keyboard = migrated
@@ -986,6 +982,119 @@ void main() {
         keyboard.children.map((child) => child.text).contains('Q'),
         isTrue,
         reason: 'restore must not drop the QWERTY collectCharIX labels',
+      );
+    },
+  );
+
+  test(
+    'mxStencil style-key default colors stay FillForegnd for LibreOffice',
+    () {
+      const paletteBlue = VsdxColor(0xFFDAE8FC);
+      const keyGrey = VsdxColor(0xFF333333);
+      const keySilver = VsdxColor(0xFF999999);
+
+      bool hasFill(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.hasFill && shape.fill.foreground == color) {
+          return true;
+        }
+        return shape.children.any((child) => hasFill(child, color));
+      }
+
+      VsdxColor? glyphColor(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first.charStyle.color;
+          }
+          final nested = glyphColor(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final keyboard = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Android / Android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Keyboard')
+          .build(43, 3, 3);
+      expect(
+        hasFill(keyboard, VsdxColor.black),
+        isTrue,
+        reason: 'fillColor2 default #000000 is the chassis; mxStencil.'
+            'getColorValue uses default when the cell has no fillColor2',
+      );
+      expect(
+        hasFill(keyboard, keyGrey),
+        isTrue,
+        reason: 'fillColor3 default #333333 is the modifier keys',
+      );
+      expect(
+        hasFill(keyboard, keySilver),
+        isTrue,
+        reason: 'fillColor5 default #999999 is the letter keys',
+      );
+      expect(
+        hasFill(keyboard, paletteBlue),
+        isFalse,
+        reason: 'applyStencilStyle must not wash authored fillColor2 hex '
+            'to the Android palette #DAE8FC',
+      );
+      expect(
+        glyphColor(keyboard, 'Q'),
+        VsdxColor.white,
+        reason: 'fontcolor fillColor4 default #ffffff is collectCharIX Color',
+      );
+
+      final bar = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Android / Android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Contextual Action Bar')
+          .build(44, 3, 3);
+      expect(
+        hasFill(bar, VsdxColor.white),
+        isTrue,
+        reason: 'fillColor2 default #ffffff is the 6×6 icon squares',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(keyboard.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasFill(leftover, VsdxColor.black) &&
+            hasFill(leftover, keyGrey) &&
+            hasFill(leftover, keySilver),
+        isTrue,
+        reason: 'a second save must keep fillColor2/3/5 as FillForegnd',
+      );
+      bool hasSoftEdges(VsdxShape shape) {
+        if (isLibvisioSoftEdgesPlate(shape)) return true;
+        return shape.children.any(hasSoftEdges);
+      }
+
+      expect(
+        hasSoftEdges(leftover),
+        isFalse,
+        reason: 'solid fillColor2 hex must not bake a SoftEdges PNG',
+      );
+      expect(
+        glyphColor(leftover, 'Q'),
+        VsdxColor.white,
+        reason: 'a second save must keep QWERTY fo:color white',
       );
     },
   );
