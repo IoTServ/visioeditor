@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html CSS `font-size` keywords now stay native in
+  LibreOffice. Official SAP Text Elements use
+  `font-size: x-small` (Chromium 10px at medium 16px). Catalog capture
+  dropped the keyword, so leftover Char.Size stayed defaultVertex 12
+  (`tokens.txt` Size is `fo:font-size`). Capture now leftover-bakes
+  the keyword table. A second save keeps it.
 - draw.io mxText html CSS `line-height` now stays native in
   LibreOffice. Official SAP Authenticate (and Authorize / Protocol
   siblings) use `<p style="line-height: 114%">`. Catalog capture

@@ -7214,10 +7214,34 @@ function htmlCssLength(raw, percentOf) {
 // CSS font-size em/% is of the parent size (createState 11; cell labels
 // get defaultVertex 12 from applyTextStyle first). rem is
 // the HTML medium (16px). parseFloat("2em") must not freeze 2px.
+// Chromium strict FontSize table at default medium 16px (WebKit
+// StyleFontSizeFunctions). CSS `x-small` is 10px, not HTML size=2's 13px
+// and not parseFloat NaN that left SAP Text Elements on defaultVertex 12.
+const kCssAbsoluteFontSizePx = {
+  'xx-small': 9,
+  'x-small': 10,
+  small: 13,
+  medium: 16,
+  large: 18,
+  'x-large': 24,
+  'xx-large': 32,
+  'xxx-large': 48,
+};
+
 function htmlCssFontSizePx(raw, currentPx) {
   const token = String(raw || '').trim();
   if (!token || token === 'auto' || token === 'inherit' || token === 'none') {
     return null;
+  }
+  const keyword = kCssAbsoluteFontSizePx[token.toLowerCase()];
+  if (keyword != null) return keyword;
+  if (/^smaller$/i.test(token)) {
+    const base = Number(currentPx);
+    return Number.isFinite(base) && base > 0 ? base / 1.2 : null;
+  }
+  if (/^larger$/i.test(token)) {
+    const base = Number(currentPx);
+    return Number.isFinite(base) && base > 0 ? base * 1.2 : null;
   }
   if (/rem$/i.test(token)) {
     const n = parseFloat(token);

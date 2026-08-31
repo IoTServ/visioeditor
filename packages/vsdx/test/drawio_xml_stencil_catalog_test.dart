@@ -4052,6 +4052,69 @@ void main() {
   );
 
   test(
+    'mxText html CSS font-size keyword stays Char Size for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final texts = dynamic.singleWhere(
+        (group) => group.name == 'Draw.io JS / SAP / SAP / Text Elements',
+      );
+      VsdxShape? small;
+      for (final entry in texts.stencils) {
+        final shape = entry.build(455, 3, 3);
+        if (runContaining(shape, 'Small descriptive Text') != null) {
+          small = shape;
+          break;
+        }
+      }
+      expect(small, isNotNull);
+      // 120×30 cell, catalog scale 1.5 / 120.
+      const smallScale = 1.5 / 120;
+      expect(
+        runContaining(small!, 'Small descriptive Text')!
+            .charStyle
+            .fontSizeInches,
+        closeTo(10 * smallScale, 0.01),
+        reason: 'CSS font-size:x-small is Chromium 10px at medium 16px, '
+            'collectCharIX Size that libvisio maps to fo:font-size, not '
+            'defaultVertex 12',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(small.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, 'Small descriptive Text')!
+            .charStyle
+            .fontSizeInches,
+        closeTo(10 * smallScale, 0.01),
+        reason: 'a second save must keep CSS x-small Char Size',
+      );
+    },
+  );
+
+  test(
     'mxText html defaultVertex fontColor stays black after a colored font for LibreOffice',
     () {
       VsdxTextRun? runContaining(VsdxShape shape, String text) {
