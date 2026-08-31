@@ -10824,6 +10824,18 @@ void main() {
         const VsdxColor(0xFFE4E4E4),
         reason: 'CSS background #e4e4e4 is collectTextBlock TextBkgnd',
       );
+      expect(
+        header.richText.textBlock.verticalAlign,
+        VsdxVertAlign.top,
+        reason: 'caption <div> keeps mxText verticalAlign=top',
+      );
+      expect(
+        glyphContaining(entity, 'uniqueId')!.richText.textBlock.verticalAlign,
+        VsdxVertAlign.middle,
+        reason: 'html.spec td vertical-align:middle is collectTextBlock '
+            'VerticalAlign 1 (draw:textarea-vertical-align), not the '
+            'outer top',
+      );
 
       final htmlTable = stencil(
         'Draw.io JS / General / misc',
@@ -10832,6 +10844,19 @@ void main() {
       expect(
         glyphContaining(htmlTable, 'Title')!.id,
         isNot(glyphContaining(htmlTable, 'Section 1.1')!.id),
+      );
+      expect(
+        glyphContaining(htmlTable, 'Title')!.richText.textBlock.verticalAlign,
+        VsdxVertAlign.middle,
+        reason: 'html.spec th vertical-align:middle; named style text=top '
+            'must not leftover-bake VerticalAlign 0',
+      );
+      expect(
+        glyphContaining(htmlTable, 'Section 1.1')!
+            .richText
+            .textBlock
+            .verticalAlign,
+        VsdxVertAlign.middle,
       );
       expect(
         linedGeometries(htmlTable),
@@ -10871,9 +10896,34 @@ void main() {
         isNot(glyphContaining(leftoverEntity, 'Tablename')!.id),
       );
       expect(
-        linedGeometries(leftoverOf(htmlTable)),
+        glyphContaining(leftoverEntity, 'Tablename')!
+            .richText
+            .textBlock
+            .verticalAlign,
+        VsdxVertAlign.top,
+        reason: 'a second save must keep caption VerticalAlign 0',
+      );
+      expect(
+        glyphContaining(leftoverEntity, 'uniqueId')!
+            .richText
+            .textBlock
+            .verticalAlign,
+        VsdxVertAlign.middle,
+        reason: 'a second save must keep td VerticalAlign 1',
+      );
+      final leftoverTable = leftoverOf(htmlTable);
+      expect(
+        linedGeometries(leftoverTable),
         greaterThanOrEqualTo(4),
         reason: 'a second save must keep the collectLine grid',
+      );
+      expect(
+        glyphContaining(leftoverTable, 'Title')!
+            .richText
+            .textBlock
+            .verticalAlign,
+        VsdxVertAlign.middle,
+        reason: 'a second save must keep th VerticalAlign 1',
       );
     },
   );

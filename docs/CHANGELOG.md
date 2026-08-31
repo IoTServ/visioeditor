@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html table cell `vertical-align` now stays native in
+  LibreOffice. Official `mxText` html=1 paints General HTML Table 4 as
+  a foreignObject whose `<th>`/`<td>` use the html.spec UA
+  `vertical-align: middle`; named style `text` only sets the outer box
+  to top. Catalog capture copied that outer top onto every leftover
+  cell, so Title sat at VerticalAlign 0 (`tokens.txt` VerticalAlign is
+  `draw:textarea-vertical-align`). Capture now leftover-bakes middle
+  on table cells and keeps caption `<div>` rows on the mxText valign.
+  A second save keeps both.
 - draw.io mxStencil `labelBounds` now stays native in LibreOffice for
   JavaScript-captured flowchart stencils. Official `Shapes.js` reads
   `<labelBounds if="boundedLbl">` from `mxStencil` (flowchart.xml

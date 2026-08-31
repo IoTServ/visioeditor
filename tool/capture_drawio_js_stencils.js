@@ -7843,10 +7843,17 @@ function paintHtmlTableLabel(
           const bg = htmlCssBackgroundHex(cell.attrs);
           const prevBg = canvas.state.fontBackgroundColor;
           if (bg) canvas.setFontBackgroundColor(bg);
+          // html.spec td/th { vertical-align: middle }. Outer mxText
+          // verticalAlign (named style `text` = top on General HTML
+          // Table 4, or Entity's explicit top) applies to the
+          // foreignObject, not each cell. A 100%×100% table fills that
+          // box; leftover collectTextBlock VerticalAlign is
+          // draw:textarea-vertical-align. Caption <div> rows are not
+          // cells and keep the mxText valign.
           canvas.text(
             left, top, cw, rh, cellLabel(cell.html, true),
             cell.align || defaultAlign,
-            cell.valign || defaultValign || 'middle',
+            cell.valign || (row.caption ? defaultValign : 'middle') || 'middle',
             undefined, 'html', undefined, undefined, rotation,
           );
           if (bg) canvas.setFontBackgroundColor(prevBg);
