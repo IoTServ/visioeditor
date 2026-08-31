@@ -171,7 +171,9 @@ void main() {
       originalBytes: blank,
       edited: document,
     ));
-    final shapes = reopened.pages.first.shapes;
+    final shapes = reopened.pages.first.shapes
+        .where((shape) => !isLibvisioBakePlate(shape))
+        .toList(growable: false);
     expect(shapes, hasLength(samples.length));
     expect(shapes.every((shape) => shape.geometries.isNotEmpty), isTrue);
     expect(
@@ -217,9 +219,12 @@ void main() {
       originalBytes: blank,
       edited: document,
     ));
-    expect(reopened.pages.first.shapes, hasLength(samples.length));
+    final shapes = reopened.pages.first.shapes
+        .where((shape) => !isLibvisioBakePlate(shape))
+        .toList(growable: false);
+    expect(shapes, hasLength(samples.length));
     expect(
-      reopened.pages.first.shapes.every((shape) => shape.geometries.isNotEmpty),
+      shapes.every((shape) => shape.geometries.isNotEmpty),
       isTrue,
     );
   });
@@ -1918,6 +1923,90 @@ void main() {
       isTrue,
       reason: 'a second save must keep veLineJoin miter (Draw reads join '
           'from flattened LineCap 1)',
+    );
+  });
+
+  test('mxStencil default miterlimit is 10 for LibreOffice', () {
+    bool hasMiter10(VsdxShape shape) {
+      if (shape.line.hasLine &&
+          (shape.line.miterLimit - 10.0).abs() < 1e-6) {
+        return true;
+      }
+      return shape.children.any(hasMiter10);
+    }
+
+    bool needsFilledSpikeRibbon(VsdxShape shape) {
+      if (shapeNeedsLibvisioFilledStrokeRibbonBake(shape)) return true;
+      return shape.children.any(needsFilledSpikeRibbon);
+    }
+
+    bool hasStrokeRibbon(VsdxShape shape) {
+      if (isLibvisioStrokeRibbonPlate(shape)) return true;
+      return shape.children.any(hasStrokeRibbon);
+    }
+
+    final emr = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / AWS 2 / Analytics',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'EMR')
+        .build(93, 3, 3);
+    expect(
+      hasMiter10(emr),
+      isTrue,
+      reason: 'AWS 2 EMR has no <miterlimit>. '
+          'mxAbstractCanvas2D.createState miterLimit is 10; Visio / ODF '
+          'default 4. leftover bakes a filled stroke ribbon because '
+          '_lineProperties never emits svg:stroke-miterlimit',
+    );
+    expect(
+      needsFilledSpikeRibbon(emr),
+      isTrue,
+      reason: 'EMR has a fillstroke elbow whose miter ratio exceeds 4',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere(
+              (group) => group.name == 'Draw.io / AWS 2 / Analytics',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'EMR')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftoverDoc = parser.parse(
+      writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+    );
+    final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+    expect(
+      hasStrokeRibbon(leftover) ||
+          leftoverDoc.pages.first.shapes.any(hasStrokeRibbon),
+      isTrue,
+      reason: 'User.veMiterLimit is not a token; leftover must bake the '
+          'spike as a LibvisioStrokeRibbon sibling so Draw does not bevel',
+    );
+    expect(
+      hasMiter10(leftover),
+      isTrue,
+      reason: 'siblings without a spike keep veMiterLimit 10',
+    );
+
+    final second = parser.parse(
+      writer.write(originalBytes: writer.emptyDocument(), edited: leftoverDoc),
+    );
+    expect(
+      hasStrokeRibbon(second.pages.first.findShapeById(id)!) ||
+          second.pages.first.shapes.any(hasStrokeRibbon),
+      isTrue,
+      reason: 'a second save must keep the baked miter spike ribbon',
     );
   });
 

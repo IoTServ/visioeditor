@@ -206,7 +206,10 @@ class _DrawioXmlShapeDecoder {
   // flap). Join stays null-as-round only when XML sets linejoin=round.
   LineCap? _lineCap = LineCap.extended;
   VsdxLineJoin? _lineJoin = VsdxLineJoin.miter;
-  double? _miterLimit;
+  // mxAbstractCanvas2D.createState miterLimit: 10. Visio / ODF default
+  // 4; `_lineProperties` never emits svg:stroke-miterlimit, so leftover
+  // bakes a spike ribbon when the elbow ratio exceeds 4 (AWS 2 EMR).
+  double? _miterLimit = 10;
   bool _capturedParentLineStyle = false;
   LineCap? _parentStrokeCap;
   VsdxLineJoin? _parentStrokeJoin;
@@ -460,7 +463,7 @@ class _DrawioXmlShapeDecoder {
         _lineJoin = VsdxLineJoin.parse(node.getAttribute('join'));
         break;
       case 'miterlimit':
-        final limit = _number(node, 'limit', fallback: 4);
+        final limit = _number(node, 'limit', fallback: 10);
         if (limit >= 1) _miterLimit = limit;
         break;
       case 'shadow':

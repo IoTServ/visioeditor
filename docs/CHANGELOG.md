@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil default `miterLimit: 10` now stays native in
+  LibreOffice. Official `mxAbstractCanvas2D.createState` uses
+  `miterLimit: 10`. Catalog decode left `_miterLimit` unset, so
+  inherit / hex strokes without `<miterlimit>` (AWS 2 EMR) used Visio
+  factory 4. `_lineProperties` never emits `svg:stroke-miterlimit`, so
+  Draw bevelled ratio>4 elbows. The decoder now starts at 10; leftover
+  bakes a filled stroke ribbon for those spikes. Explicit
+  `<miterlimit>` is unchanged. A second save keeps the ribbon.
 - draw.io mxStencil default `lineJoin: miter` now stays native in
   LibreOffice. Official `mxAbstractCanvas2D.createState` uses
   `lineJoin: 'miter'` independently of `lineCap`. Catalog decode left
