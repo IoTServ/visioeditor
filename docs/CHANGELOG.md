@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html CSS `line-height` now stays native in
+  LibreOffice. Official SAP Authenticate (and Authorize / Protocol
+  siblings) use `<p style="line-height: 114%">`. Catalog capture
+  dropped that, so leftover Paragraph `SpLine` stayed the default
+  single (`tokens.txt` SpLine is `fo:line-height`). Capture now
+  leftover-bakes the 1.14× multiplier (`SpLine` −1.14). A second
+  save keeps it.
 - draw.io mxText html `fontColor=default` now stays black in
   LibreOffice after a colored `<font>`. Official `default.xml`
   `defaultVertex` uses the keyword `default` (`mxConstants.DEFAULT_FONTCOLOR`

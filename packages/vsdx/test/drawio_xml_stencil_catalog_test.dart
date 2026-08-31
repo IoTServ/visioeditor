@@ -3980,6 +3980,17 @@ void main() {
             'that libvisio maps to fo:font-size, not parseFloat 1px',
       );
 
+      final authenticate = sap.stencils
+          .singleWhere((entry) => entry.name == 'Authenticate')
+          .build(453, 3, 3);
+      expect(
+        runContaining(authenticate, 'TEXT')!.paraStyle.lineSpacing,
+        closeTo(1.14, 0.001),
+        reason: 'SAP Authenticate <p style="line-height: 114%"> is '
+            'collectParaIX SpLine −1.14 that libvisio maps to '
+            'fo:line-height PERCENT',
+      );
+
       final roadmap = dynamic
           .singleWhere(
             (group) => group.name == 'Draw.io JS / Infographic / Infographic',
@@ -4014,6 +4025,28 @@ void main() {
         runContaining(leftover, 'Interface')!.charStyle.fontSizeInches,
         closeTo(10 * ifaceScale, 0.01),
         reason: 'a second save must keep Char Size from html size="1"',
+      );
+
+      var authDoc = parser.parse(writer.emptyDocument());
+      final authId = authDoc.pages.first.nextFreeShapeId();
+      authDoc = authDoc.replacePage(
+        0,
+        authDoc.pages.first.addShape(authenticate.copyWith(id: authId)),
+      );
+      final authLeftover = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: authDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(authId)!;
+      expect(
+        runContaining(authLeftover, 'TEXT')!.paraStyle.lineSpacing,
+        closeTo(1.14, 0.001),
+        reason: 'a second save must keep SAP Authenticate SpLine 114%',
       );
     },
   );

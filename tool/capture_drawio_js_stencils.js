@@ -7150,6 +7150,13 @@ function applyHtmlCss(next, attrs, tag) {
     htmlApplyMargins(next, attrs);
     next.paraStart = true;
   }
+  // CSS line-height on <p> (SAP Authenticate 114%). collectParaIX
+  // SpLine < 0 is a multiplier libvisio maps to fo:line-height PERCENT.
+  const lh = htmlStyleProp(attrs, 'line-height');
+  if (lh) {
+    const parsed = htmlCssLineHeight(lh, next.fontSize);
+    if (parsed != null) next.lineHeight = parsed;
+  }
 }
 
 function htmlCssPx(raw) {
@@ -7159,6 +7166,35 @@ function htmlCssPx(raw) {
   }
   const n = parseFloat(token);
   return Number.isFinite(n) ? n : null;
+}
+
+// CSS line-height: 114% / 1.14 / 1.14em → Visio SpLine multiplier
+// (libvisio fo:line-height PERCENT). px becomes a multiplier of the
+// element's computed font-size so leftover stays on the percent path.
+function htmlCssLineHeight(raw, fontPx) {
+  const token = String(raw || '').trim().toLowerCase();
+  if (!token || token === 'normal' || token === 'inherit' ||
+      token === 'initial' || token === 'unset') {
+    return null;
+  }
+  if (/%$/.test(token)) {
+    const n = parseFloat(token);
+    return Number.isFinite(n) && n > 0 ? n / 100 : null;
+  }
+  if (/em$/i.test(token) && !/rem$/i.test(token)) {
+    const n = parseFloat(token);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }
+  if (/px$/i.test(token)) {
+    const n = parseFloat(token);
+    const base = Number(fontPx);
+    return Number.isFinite(n) && n > 0 && Number.isFinite(base) && base > 0
+      ? n / base
+      : null;
+  }
+  if (/[a-z%]/i.test(token)) return null;
+  const n = parseFloat(token);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
 // CSS padding percentages are of the containing-block WIDTH on every
@@ -7389,6 +7425,7 @@ function cloneHtmlStyle(style) {
     olIndex: Number(style.olIndex) || 0,
     olNeedPrefix: !!style.olNeedPrefix,
     textPosAfterBullet: Number(style.textPosAfterBullet) || 0,
+    lineHeight: Number(style.lineHeight) || 1,
   };
 }
 
@@ -7406,7 +7443,8 @@ function sameHtmlStyle(a, b) {
     && (Number(a.marginBottom) || 0) === (Number(b.marginBottom) || 0)
     && (Number(a.marginLeft) || 0) === (Number(b.marginLeft) || 0)
     && (Number(a.bullet) || 0) === (Number(b.bullet) || 0)
-    && (Number(a.textPosAfterBullet) || 0) === (Number(b.textPosAfterBullet) || 0);
+    && (Number(a.textPosAfterBullet) || 0) === (Number(b.textPosAfterBullet) || 0)
+    && (Number(a.lineHeight) || 1) === (Number(b.lineHeight) || 1);
 }
 
 function htmlLabelRunsDiffer(runs, state) {
@@ -7463,6 +7501,10 @@ function htmlRunAttrs(run) {
   if (bullet > 0) attrs.push(`bullet="${bullet}"`);
   const tab = Number(run.textPosAfterBullet) || 0;
   if (Math.abs(tab) > 1e-9) attrs.push(`text-pos-after-bullet="${number(tab)}"`);
+  const lineHeight = Number(run.lineHeight) || 1;
+  if (Math.abs(lineHeight - 1) > 1e-9) {
+    attrs.push(`line-height="${number(lineHeight)}"`);
+  }
   return attrs.join(' ');
 }
 

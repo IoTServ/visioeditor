@@ -1119,6 +1119,7 @@ class _DrawioXmlShapeDecoder {
             marginBottom: _number(el, 'margin-bottom'),
             bullet: _number(el, 'bullet').round(),
             textPosAfterBullet: _number(el, 'text-pos-after-bullet'),
+            lineHeight: _number(el, 'line-height', fallback: 1),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
@@ -1725,6 +1726,7 @@ class _DrawioXmlShapeDecoder {
                 indentRightInches: run.marginRight * scale,
                 spaceBeforeInches: run.marginTop * scale,
                 spaceAfterInches: run.marginBottom * scale,
+                lineSpacing: run.lineHeight > 0 ? run.lineHeight : 1.0,
                 bullet: run.bullet,
                 textPosAfterBulletInches: run.textPosAfterBullet * scale,
               ),
@@ -1833,6 +1835,7 @@ class _DrawioStencilLabelRun {
     this.marginBottom = 0,
     this.bullet = 0,
     this.textPosAfterBullet = 0,
+    this.lineHeight = 1,
   });
 
   final String text;
@@ -1865,6 +1868,10 @@ class _DrawioStencilLabelRun {
   /// pixels. collectParaIX TextPosAfterBullet is the leftover hanging
   /// indent Draw collects as fo:margin-left / fo:text-indent.
   final double textPosAfterBullet;
+
+  /// CSS `line-height` on a block tag as a multiplier. collectParaIX
+  /// SpLine < 0 (e.g. 114% → −1.14) maps to fo:line-height PERCENT.
+  final double lineHeight;
 }
 
 class _DrawioColoredPart {
