@@ -1304,6 +1304,63 @@ void main() {
     },
   );
 
+  test(
+    'mxGraph glued fontColor hex stays Char.Color for LibreOffice',
+    () {
+      const labelGrey = VsdxColor(0xFF4D4D4D);
+
+      VsdxColor? glyphColor(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first.charStyle.color;
+          }
+          final nested = glyphColor(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final stepper = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Gmdl / GMDL / Steppers',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Stepper with alternative label placing',
+          )
+          .build(48, 3, 3);
+      expect(
+        glyphColor(stepper, 'Ad unit details'),
+        labelGrey,
+        reason: 'GMDL addDataEntry writes fontColor=#4d4d4dlfontSize=13 '
+            '(missing ;). mxUtils.isValidColor rejects it; the decoder '
+            'must keep the #4d4d4d prefix so collectCharIX maps fo:color',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(stepper.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphColor(leftover, 'Ad unit details'),
+        labelGrey,
+        reason: 'a second save must keep Char.Color #4d4d4d',
+      );
+    },
+  );
+
   test('mxStencil linecap stays LineCap for LibreOffice', () {
     bool hasCap(VsdxShape shape, LineCap cap) {
       if (shape.line.hasLine && shape.line.cap == cap) return true;

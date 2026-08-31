@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io glued `fontColor=#4d4d4dlfontSize=13` now stays native in
+  LibreOffice. GMDL stepper `addDataEntry` XML omits the `;` between
+  `fontColor` and `fontSize`, so official `mxUtils.isValidColor` rejects
+  the token and `collectCharIX` inherited black. The decoder keeps the
+  `#RRGGBB` prefix as Char.Color (`fo:color`); capture `parseStyle`
+  splits the glued `fontSize` for the next regen. A second save keeps
+  “Ad unit details” / “Create an ad”.
 - draw.io CSS named colours now stay native in LibreOffice. Official
   `mxUtils.isValidColor` / `color2hex` resolve canvas `fillStyle` names
   (`gray` `#808080`, `silver` `#C0C0C0`, `white`), but the decoder only

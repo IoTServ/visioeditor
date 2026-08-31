@@ -24,6 +24,19 @@ function parseStyle(source, base) {
     if (split >= 0) {
       const key = token.slice(0, split);
       let value = token.slice(split + 1);
+      // GMDL stepper addDataEntry omits ';' : `fontColor=#4d4d4dlfontSize=13`.
+      // Split the glued key so collectCharIX Color is #4d4d4d and Size is 13.
+      const glued = /^(#[0-9a-fA-F]{3,8})([A-Za-z][\w]*)=(.*)$/.exec(value);
+      if (glued) {
+        value = glued[1];
+        let extraKey = glued[2];
+        const stripped = extraKey.slice(1);
+        if (!/^(fontSize|fontStyle|fontFamily|html|align|verticalAlign|spacingTop|spacingLeft|spacingRight|spacingBottom)$/.test(extraKey) &&
+            /^(fontSize|fontStyle|fontFamily|html|align|verticalAlign|spacingTop|spacingLeft|spacingRight|spacingBottom)$/.test(stripped)) {
+          extraKey = stripped;
+        }
+        style[extraKey] = glued[3];
+      }
       // ArchiMate Work Package concatenates `shape=mxgraph.archimate.` +
       // `rounded=1` without a semicolon, so mxGraph sees shape value
       // `mxgraph.archimate.rounded=1`. Split the extra key so the vertex
@@ -7375,7 +7388,7 @@ const cssNamedColors = {
 
 function htmlCssColorToHex(raw) {
   const token = String(raw || '').trim();
-  const hex = /#([0-9a-f]{3,8})\b/i.exec(token);
+  const hex = /#([0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3})/i.exec(token);
   if (hex) {
     let h = hex[1];
     if (h.length === 3) h = `${h[0]}${h[0]}${h[1]}${h[1]}${h[2]}${h[2]}`;

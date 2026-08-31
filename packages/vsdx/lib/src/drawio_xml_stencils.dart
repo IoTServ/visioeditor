@@ -1581,12 +1581,20 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
   if (raw == null) return null;
   final token = raw.trim();
   if (token.isEmpty) return null;
-  if (token.startsWith('#') && token.length == 4) {
-    final hex = token.substring(1);
-    if (RegExp(r'^[0-9a-fA-F]{3}$').hasMatch(hex)) {
-      return VsdxColor.tryParse(
-        '#${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}',
-      );
+  // CSS / mxGraph `#RGB` / `#RRGGBB` / `#RRGGBBAA`, including a hex
+  // prefix glued to the next style key. GMDL stepper addDataEntry
+  // writes `fontColor=#4d4d4dlfontSize=13` (missing `;`); canvas
+  // fillStyle rejects it and collectCharIX would inherit black.
+  if (token.startsWith('#')) {
+    final match = RegExp(
+      r'^#([0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3})',
+    ).matchAsPrefix(token);
+    if (match != null) {
+      var hex = match.group(1)!;
+      if (hex.length == 3) {
+        hex = '${hex[0]}${hex[0]}${hex[1]}${hex[1]}${hex[2]}${hex[2]}';
+      }
+      return VsdxColor.tryParse('#$hex');
     }
   }
   if (!token.startsWith('#') && RegExp(r'^[0-9a-fA-F]{6}$').hasMatch(token)) {
