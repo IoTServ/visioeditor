@@ -419,6 +419,7 @@ class _DrawioXmlShapeDecoder {
               mimeType: _rasterMime ?? '',
               partName: _rasterPart!,
             ),
+      richText: _stencilLabelRichText(),
     ));
   }
 
@@ -595,6 +596,10 @@ class _DrawioXmlShapeDecoder {
         // like mxAbstractCanvas2D.
         if (_saveStack.isNotEmpty) _restorePaint(_saveStack.removeLast());
         break;
+      case 'labelBounds':
+        // Parsed on the shape root into TxtPin / TxtWidth for
+        // collectTextBlock. Not a paint node.
+        break;
       // Hex fillcolor / strokecolor / fontcolor are consumed above so
       // Draw can paint them as sibling shapes (one FillForegnd each).
       // `fillgradient` bakes FillPattern 25–34 so libvisio's two-stop
@@ -621,6 +626,9 @@ class _DrawioXmlShapeDecoder {
       // `text` `run` children follow mxText html=1 <b>/<font> onto extra
       // Character rows collectCharIX maps to fo:font-weight / fo:color /
       // fo:font-size.
+      // `labelBounds` follows draw.io mxStencil.getLabelBounds (boundedLbl)
+      // onto TxtPin / TxtWidth / TxtHeight that collectTextBlock maps
+      // below the stacked Multi-Document sheet.
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
       // stay on the parent so applyStencilStyle can still recolor the body.
       // Other style keys (fillColor2, …) bake `default` like
@@ -1398,6 +1406,33 @@ class _DrawioXmlShapeDecoder {
         bY: _y(top),
       ),
     ];
+  }
+
+  /// draw.io `feat(shapes): conditional labelBounds for stencils via
+  /// boundedLbl`. Sidebar Multi-Document sets `boundedLbl=1`. Catalog
+  /// decode has no cell style, so apply the inset: libvisio
+  /// collectTextBlock maps TxtWidth / TxtPinY below the stacked sheet.
+  VsdxRichText _stencilLabelRichText() {
+    final node = element.getElement('labelBounds');
+    if (node == null) return VsdxRichText.empty;
+    final boxW = _number(node, 'w');
+    final boxH = _number(node, 'h');
+    if (boxW <= 1e-9 || boxH <= 1e-9) return VsdxRichText.empty;
+    final width = boxW * scaleX.abs();
+    final height = boxH * scaleY.abs();
+    if (width <= 1e-9 || height <= 1e-9) return VsdxRichText.empty;
+    return VsdxRichText(
+      runs: const <VsdxTextRun>[],
+      textBlock: VsdxTextBlock(
+        pinXInches: _x(_number(node, 'x') + boxW / 2),
+        pinYInches: _y(_number(node, 'y') + boxH / 2),
+        locPinXInches: width / 2,
+        locPinYInches: height / 2,
+        widthInches: width,
+        heightInches: height,
+        verticalAlign: VsdxVertAlign.middle,
+      ),
+    );
   }
 
   List<VsdxConnectionPoint> _connectionPoints() {

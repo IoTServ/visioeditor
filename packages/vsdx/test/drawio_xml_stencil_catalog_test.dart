@@ -10005,4 +10005,61 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxStencil labelBounds insets Multi-Document Text for LibreOffice',
+    () {
+      final multi = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Flowchart')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Multi-Document')
+          .build(432, 3, 3);
+      final block = multi.richText.textBlock;
+      expect(block.widthInches, isNotNull);
+      expect(block.heightInches, isNotNull);
+      expect(
+        block.widthInches! / multi.width,
+        closeTo(78 / 88, 0.02),
+        reason: 'flowchart.xml labelBounds w=78 on an 88-wide stencil',
+      );
+      expect(
+        block.heightInches! / multi.height,
+        closeTo(47 / 60.28, 0.02),
+        reason: 'labelBounds h=47 keeps collectTextBlock below the stacked '
+            'sheet; full Height would paint over the top document',
+      );
+      expect(
+        block.pinYInches! / multi.height,
+        closeTo(1 - (10 + 47 / 2) / 60.28, 0.03),
+        reason: 'labelBounds y=10 is stencil-top; TxtPinY is Visio Y-up',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          migrated
+              .singleWhere((group) => group.name == 'Draw.io / Flowchart')
+              .stencils
+              .singleWhere((entry) => entry.name == 'Multi-Document')
+              .build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.richText.textBlock.heightInches! / leftover.height,
+        closeTo(47 / 60.28, 0.02),
+        reason: 'a second save must keep the inset TxtHeight',
+      );
+    },
+  );
 }

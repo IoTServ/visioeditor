@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `<labelBounds>` now stays native in LibreOffice.
+  Flowchart Multi-Document (`boundedLbl=1`) insets the cell with
+  `x=0 y=10 w=78 h=47` on an 88×60.28 stencil. Catalog decode dropped
+  that tag, so `collectTextBlock` used full Height and painted over the
+  stacked top sheet. The decoder maps it to TxtPin / TxtWidth /
+  TxtHeight. A second save keeps the inset.
 - draw.io mxShape `dashed=1` without `dashpattern` leftover now stays
   native in LibreOffice. Official `mxAbstractCanvas2D.createState` uses
   `dashPattern: '3 3'`. Catalog decode already writes that as
@@ -596,7 +602,6 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Services `axial-east` stays FillPattern 26 leftover. Azure Search lens
   is a white `EllipseCmd`, not FillPattern 40. Catalog tests follow that
   tessellation. A second save keeps the slabs and axial.
-
 - draw.io Chen Weak Entity / Identifying Relationship extra inherit
   fills now stay native in LibreOffice. `collectGeometry` concatenates
   every NoFill=0 section into one evenodd path. A second concentric
