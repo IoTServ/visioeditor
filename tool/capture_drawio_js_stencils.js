@@ -8022,10 +8022,131 @@ function mxVertexLabelRotation(style) {
   return Number.isFinite(rot) ? rot : 0;
 }
 
+function isNoLabelStyle(style) {
+  return !!(style && (style.noLabel == 1 || style.noLabel === '1' ||
+    style.noLabel === true));
+}
+
+function isCurvedTextStyle(style) {
+  return !!(style && String(style.shape) === 'curvedText');
+}
+
+// CurvedTextShape.paintForeground: SVG textPath + textLength=pathLen.
+// RecordingCanvas has no root/getBaseUrl, so official falls back to a
+// centred c.text blob. tokens.txt has no text-on-path; leftover each
+// glyph as a TxtAngle Char like SVG <textPath> (IBM KEY MGMT).
+function curvedTextControlPoints(x, y, w, h, style, fontSize) {
+  const startY = Number(style && style.arcStartY);
+  const midYOffset = Number(style && style.arcMidY);
+  const endY = Number(style && style.arcEndY);
+  const sy0 = Number.isFinite(startY) ? startY : 25;
+  const midOff = Number.isFinite(midYOffset) ? midYOffset : -25;
+  const ey = Number.isFinite(endY) ? endY : 25;
+  const inset = (Number(fontSize) || 11) / 2;
+  const chordMidY = (sy0 + ey) / 2;
+  const defaultMid = 25;
+  const maxMid = Math.max(defaultMid, Math.min(chordMidY, h - chordMidY));
+  const midClamped = Math.max(-maxMid, Math.min(maxMid, midOff));
+  const naturalMidY = chordMidY + midClamped;
+  const curveTopY = Math.min(sy0, ey, naturalMidY);
+  const curveBottomY = Math.max(sy0, ey, naturalMidY);
+  const curveNaturalHeight = curveBottomY - curveTopY;
+  const valign = String((style && style.verticalAlign) || 'middle');
+  const padding = inset;
+  let yOffset;
+  if (valign === 'top') yOffset = padding - curveTopY;
+  else if (valign === 'bottom') yOffset = (h - padding) - curveBottomY;
+  else yOffset = (h - curveNaturalHeight) / 2 - curveTopY;
+  return {
+    x0: x + inset,
+    y0: y + sy0 + yOffset,
+    x1: x + w / 2,
+    y1: y + naturalMidY + yOffset,
+    x2: x + (w - inset),
+    y2: y + ey + yOffset,
+    curveType: String((style && style.curveType) || 'round'),
+  };
+}
+
+function curvedTextPathD(pts) {
+  const {x0, y0, x1, y1, x2, y2, curveType} = pts;
+  if (curveType === 'round') {
+    const chord = Math.hypot(x2 - x0, y2 - y0);
+    const chordMidX = (x0 + x2) / 2;
+    const chordMidY = (y0 + y2) / 2;
+    const sag = Math.hypot(x1 - chordMidX, y1 - chordMidY);
+    if (sag < 0.5) {
+      return `M ${number(x0)} ${number(y0)} L ${number(x2)} ${number(y2)}`;
+    }
+    const halfChord = chord / 2;
+    const radius = (halfChord * halfChord) / (2 * sag) + sag / 2;
+    const cdx = x2 - x0;
+    const cdy = y2 - y0;
+    const pdx = x1 - x0;
+    const pdy = y1 - y0;
+    const cross = cdx * pdy - cdy * pdx;
+    const sweep = cross > 0 ? 0 : 1;
+    const largeArc = sag > halfChord ? 1 : 0;
+    return `M ${number(x0)} ${number(y0)} A ${number(radius)} ${number(radius)} 0 ${largeArc} ${sweep} ${number(x2)} ${number(y2)}`;
+  }
+  return `M ${number(x0)} ${number(y0)} Q ${number(x1)} ${number(y1)} ${number(x2)} ${number(y2)}`;
+}
+
+function paintCurvedTextGlyph(canvas, ch, x, y, rotation) {
+  const fs = Number(canvas.state.fontSize) || 11;
+  const scale = canvasMinScale(canvas);
+  const userFs = scale > 0 ? fs / scale : fs;
+  const bw = Math.max(userFs * 0.9, userFs * 0.62);
+  const bh = userFs * 1.2;
+  const rot = Number(rotation) || 0;
+  const rad = rot * Math.PI / 180;
+  const cx = x + Math.sin(rad) * (bh / 2);
+  const cy = y - Math.cos(rad) * (bh / 2);
+  canvas.text(
+    cx - bw / 2, cy - bh / 2, bw, bh, ch, 'center', 'middle',
+    false, null, null, null, rot,
+  );
+  return true;
+}
+
+function paintCurvedTextLeftover(canvas, x, y, w, h, label, style) {
+  const text = String(label || '');
+  if (!text) return false;
+  applyTextStyle(canvas, style);
+  const fontSize = Number(canvas.state.fontSize) || 11;
+  const d = curvedTextPathD(
+    curvedTextControlPoints(x, y, w, h, style, fontSize),
+  );
+  const poly = svgPathPolyline(d);
+  if (!(poly.total > 0)) return false;
+  const chars = Array.from(text);
+  const advs = chars.map((ch) => svgGlyphAdvance(ch, fontSize));
+  const measured = advs.reduce((sum, adv) => sum + adv, 0);
+  // textPath textLength=pathLen lengthAdjust=spacing.
+  const extra = chars.length > 1 ? (poly.total - measured) / (chars.length - 1) : 0;
+  let cursor = 0;
+  let painted = false;
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    const adv = advs[i];
+    if (ch.trim()) {
+      const at = svgPathAt(poly, cursor + adv / 2);
+      if (at) painted = paintCurvedTextGlyph(canvas, ch, at.x, at.y, at.angle) || painted;
+    }
+    cursor += adv + extra;
+  }
+  return painted;
+}
+
 function paintTemplateLabel(entry, style, width, height, canvas, shape) {
   const htmlOn = isHtmlCellStyle(style);
   const label = cellLabel(entry && entry.value, htmlOn);
   if (!label) return;
+  if (isCurvedTextStyle(style) &&
+      paintCurvedTextLeftover(canvas, 0, 0, width, height, label, style)) {
+    return;
+  }
+  if (isNoLabelStyle(style)) return;
   applyTextStyle(canvas, style);
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
@@ -8294,7 +8415,12 @@ function paintCellTree(cells, canvas, width, height) {
       }
       const htmlOn = isHtmlCellStyle(cellStyle);
       const label = cellLabel(cell.value, htmlOn, cell);
-      if (label) {
+      if (label && isCurvedTextStyle(cellStyle) &&
+          paintCurvedTextLeftover(
+            canvas, x, y, cellWidth, cellHeight, label, cellStyle,
+          )) {
+        painted = true;
+      } else if (label && !isNoLabelStyle(cellStyle)) {
         applyTextStyle(canvas, cellStyle);
         const align = String(cellStyle.align || 'center');
         const valign = String(cellStyle.verticalAlign || 'middle');

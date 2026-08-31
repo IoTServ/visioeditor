@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Curved Text now stays native in LibreOffice. Official
+  `CurvedTextShape.paintForeground` paints an SVG `textPath` along
+  `arcStartY` / `arcMidY` / `arcEndY` (`curveType=round`,
+  `textLength=pathLen`). RecordingCanvas has no `root` / `getBaseUrl`,
+  so capture fell back to one centred Character blob and ignored
+  `noLabel=1`. `tokens.txt` has no text-on-path; capture now leftover-
+  bakes each glyph as a `TxtAngle` Char sibling (`collectTextBlock`
+  `librevenge:rotate`), matching SVG `<textPath>`. A second save keeps
+  the arc.
 - draw.io Graph placeholders now stay native in LibreOffice. Official
   `Graph.setAttributeForCell` wraps Sidebar Variable / Timestamp labels
   in a `UserObject` (`placeholders=1`, `name=Variable`) and

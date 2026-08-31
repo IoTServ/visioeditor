@@ -10963,4 +10963,78 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxGraph CurvedTextShape leftover-bakes TxtAngle glyphs for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final curved = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Curved Text')
+          .build(526, 3, 3);
+      final letters = descendants(curved)
+          .where((shape) => (shape.text ?? '').trim().isNotEmpty)
+          .toList(growable: false);
+      expect(
+        letters.map((shape) => shape.text).join(),
+        'CurvedText',
+        reason: 'CurvedTextShape SVG textPath leftover-bakes Char siblings; '
+            'RecordingCanvas has no root so official c.text was one blob',
+      );
+      expect(letters, hasLength(10));
+      expect(
+        letters.every(
+          (shape) => shape.richText.textBlock.angleRad.abs() > 0.05,
+        ),
+        isTrue,
+        reason: 'path tangent is collectTextBlock TxtAngle → librevenge:rotate',
+      );
+      expect(
+        letters.first.richText.textBlock.angleRad,
+        greaterThan(0.5),
+      );
+      expect(
+        letters.last.richText.textBlock.angleRad,
+        lessThan(-0.5),
+      );
+      expect(
+        letters[4].pinY,
+        greaterThan(letters.first.pinY),
+        reason: 'the round arc (arcMidY=-25) arches up in Visio Y',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(curved.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover)
+            .where((shape) => (shape.text ?? '').trim().isNotEmpty)
+            .map((shape) => shape.text)
+            .join(),
+        'CurvedText',
+        reason: 'a second save must keep the TxtAngle glyphs',
+      );
+    },
+  );
 }
