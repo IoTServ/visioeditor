@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil save/restore now keeps post-restore strokes solid in
+  LibreOffice. Official `mxStencil.drawNode` calls `canvas.save` /
+  `canvas.restore` (Android Contextual Action Bar dashes a check then
+  restores before the speaker / hamburger; Keyboard isolates key fills
+  before QWERTY `collectCharIX`). The decoder skipped those tags, so
+  `dashpattern` leaked onto later `collectLine` siblings and leftover
+  baked them as MoveTo gaps (`LinePattern` 0xfe is solid). Restore pops
+  the paint stack like `mxAbstractCanvas2D`. A second save keeps the
+  solid icons native.
 - draw.io mxShape inherit-fill siblings now stay unions in LibreOffice.
   Official AWS Cloud, VPC NAT Gateway and Citrix server painters call
   `fill()` more than once with the cell fill colour, but the decoder

@@ -478,16 +478,16 @@ void main() {
     final scaleY = truck.height / 33;
     final x = 80.33 * scaleX;
     final y = (33 - 2) * scaleY;
-    final hasCrease = truck.geometries.expand((g) => g.commands).any((cmd) {
-      return cmd is LineTo &&
-          (cmd.x - x).abs() < 0.03 &&
-          (cmd.y - y).abs() < 0.03;
-    });
+    bool isCrease(VsdxPathCommand cmd) =>
+        cmd is LineTo &&
+        (cmd.x - x).abs() < 0.03 &&
+        (cmd.y - y).abs() < 0.03;
     expect(
-      hasCrease,
+      descendantGeometries(truck).expand((g) => g.commands).any(isCrease),
       isTrue,
       reason: 'LibreOffice only sees Geometry; the cab crease is a '
-          'foreground move/line outside <path>',
+          'foreground move/line outside <path>. Extra inherit fillstroke '
+          'is a sibling so collectGeometry evenodd does not punch the cab',
     );
 
     const writer = VsdxWriter();
@@ -504,11 +504,7 @@ void main() {
         .first
         .findShapeById(id)!;
     expect(
-      leftover.geometries.expand((g) => g.commands).any((cmd) {
-        return cmd is LineTo &&
-            (cmd.x - x).abs() < 0.03 &&
-            (cmd.y - y).abs() < 0.03;
-      }),
+      descendantGeometries(leftover).expand((g) => g.commands).any(isCrease),
       isTrue,
       reason: 'a second save must keep the Truck cab crease',
     );
@@ -900,6 +896,99 @@ void main() {
           'because libvisio treats custom LinePattern 0xfe as solid',
     );
   });
+
+  test(
+    'mxStencil save/restore keeps post-restore strokes solid for LibreOffice',
+    () {
+      bool isDashedStroke(VsdxShape shape) {
+        if (shape.fill.hasFill || !shape.line.hasLine) return false;
+        final custom = shape.line.customDashPattern;
+        return (custom != null && custom.length >= 2) ||
+            shape.line.pattern == 2;
+      }
+
+      final bar = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Android / Android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Contextual Action Bar')
+          .build(41, 3, 3);
+      expect(
+        bar.children.where(isDashedStroke).length,
+        3,
+        reason: 'dashpattern 1 1 before restore is the check, divider and '
+            '18×18 box; collectLine LinePattern 0xfe needs those siblings',
+      );
+      expect(
+        bar.line.hasLine &&
+            bar.line.pattern == 1 &&
+            (bar.line.customDashPattern == null ||
+                bar.line.customDashPattern!.isEmpty),
+        isTrue,
+        reason: 'mxStencil restore() pops dashed=1 so fillColor2 strokes '
+            'after restore stay the parent collectLine (solid inherit)',
+      );
+      expect(
+        bar.geometries
+            .where((geometry) => geometry.noFill && !geometry.noLine)
+            .length,
+        greaterThanOrEqualTo(3),
+        reason: 'speaker, 15×10 rect and hamburger are inherit strokes on '
+            'the parent after restore, not dashed siblings',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(bar.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.children.any((child) {
+          if (child.fill.hasFill || !child.line.hasLine) return false;
+          final moves = child.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          return moves >= 2;
+        }),
+        isTrue,
+        reason: 'a second save still bakes the pre-restore dash into MoveTo '
+            'gaps because libvisio treats custom LinePattern 0xfe as solid',
+      );
+      expect(
+        leftover.line.hasLine &&
+            leftover.line.pattern == 1 &&
+            (leftover.line.customDashPattern == null ||
+                leftover.line.customDashPattern!.isEmpty),
+        isTrue,
+        reason: 'post-restore icons stay native solid LinePattern 1',
+      );
+
+      final keyboard = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Android / Android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Keyboard')
+          .build(42, 3, 3);
+      expect(
+        keyboard.children.map((child) => child.text).contains('Q'),
+        isTrue,
+        reason: 'restore must not drop the QWERTY collectCharIX labels',
+      );
+    },
+  );
 
   test('mxStencil linecap stays LineCap for LibreOffice', () {
     bool hasCap(VsdxShape shape, LineCap cap) {

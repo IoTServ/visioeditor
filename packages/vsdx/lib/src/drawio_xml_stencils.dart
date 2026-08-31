@@ -74,6 +74,65 @@ class _DrawioXmlLibrary {
 /// collectCharIX `fo:font-size` matched. 0.5pt still rejects empty Size.
 const double _kMxMinCharSizeInches = 0.5 / 72.0;
 
+/// mxAbstractCanvas2D.save/restore paint. Path geometry stays live.
+class _MxPaintState {
+  const _MxPaintState({
+    required this.fontSize,
+    required this.fontStyle,
+    required this.fontFamily,
+    required this.fontColor,
+    required this.fontBackground,
+    required this.fillColor,
+    required this.fillOverride,
+    required this.fillIsNone,
+    required this.strokeColor,
+    required this.strokeIsNone,
+    required this.overallAlpha,
+    required this.fillAlpha,
+    required this.strokeAlpha,
+    required this.strokeWidth,
+    required this.dashed,
+    required this.dashPattern,
+    required this.lineCap,
+    required this.lineJoin,
+    required this.miterLimit,
+    required this.shadow,
+    required this.sketchEnabled,
+    required this.sketchFill,
+    required this.sketchGap,
+    required this.sketchAngle,
+    required this.sketchWeight,
+    required this.sketchJiggle,
+  });
+
+  final double fontSize;
+  final int fontStyle;
+  final String? fontFamily;
+  final VsdxColor? fontColor;
+  final VsdxColor? fontBackground;
+  final VsdxColor? fillColor;
+  final VsdxFill? fillOverride;
+  final bool fillIsNone;
+  final VsdxColor? strokeColor;
+  final bool strokeIsNone;
+  final double overallAlpha;
+  final double fillAlpha;
+  final double strokeAlpha;
+  final double? strokeWidth;
+  final bool dashed;
+  final List<double>? dashPattern;
+  final LineCap? lineCap;
+  final VsdxLineJoin? lineJoin;
+  final double? miterLimit;
+  final VsdxShadow? shadow;
+  final bool sketchEnabled;
+  final String? sketchFill;
+  final double? sketchGap;
+  final double? sketchAngle;
+  final double? sketchWeight;
+  final double? sketchJiggle;
+}
+
 class _DrawioXmlShapeDecoder {
   _DrawioXmlShapeDecoder(this.element);
 
@@ -119,6 +178,7 @@ class _DrawioXmlShapeDecoder {
   double? _miterLimit;
   VsdxShadow? _shadow;
   VsdxShadow? _parentShadow;
+  final List<_MxPaintState> _saveStack = <_MxPaintState>[];
   String? _rasterPart;
   String? _rasterMime;
   bool _sketchEnabled = false;
@@ -438,8 +498,18 @@ class _DrawioXmlShapeDecoder {
       case 'image':
         _consumeRaster(node);
         break;
-      // save/restore and remaining paint attributes affect alpha or line
-      // join. Hex fillcolor / strokecolor / fontcolor are consumed above so
+      case 'save':
+        // mxStencil.drawNode canvas.save(). Android Contextual Action Bar
+        // dashes a check, restores, then strokes solid icons. Skipping
+        // this leaked dashpattern onto collectLine LinePattern 0xfe.
+        _saveStack.add(_snapshotPaint());
+        break;
+      case 'restore':
+        // mxStencil.drawNode canvas.restore(). Empty stack is a no-op
+        // like mxAbstractCanvas2D.
+        if (_saveStack.isNotEmpty) _restorePaint(_saveStack.removeLast());
+        break;
+      // Hex fillcolor / strokecolor / fontcolor are consumed above so
       // Draw can paint them as sibling shapes (one FillForegnd each).
       // `fillgradient` bakes FillPattern 25–34 so libvisio's two-stop
       // linear (`_fillAndShadowProperties`) keeps AWS brand ramps;
@@ -478,6 +548,68 @@ class _DrawioXmlShapeDecoder {
       parsed.bytes,
       mimeType: parsed.mime,
     );
+  }
+
+  _MxPaintState _snapshotPaint() => _MxPaintState(
+        fontSize: _fontSize,
+        fontStyle: _fontStyle,
+        fontFamily: _fontFamily,
+        fontColor: _fontColor,
+        fontBackground: _fontBackground,
+        fillColor: _fillColor,
+        fillOverride: _fillOverride,
+        fillIsNone: _fillIsNone,
+        strokeColor: _strokeColor,
+        strokeIsNone: _strokeIsNone,
+        overallAlpha: _overallAlpha,
+        fillAlpha: _fillAlpha,
+        strokeAlpha: _strokeAlpha,
+        strokeWidth: _strokeWidth,
+        dashed: _dashed,
+        dashPattern: _dashPattern == null
+            ? null
+            : List<double>.unmodifiable(_dashPattern!),
+        lineCap: _lineCap,
+        lineJoin: _lineJoin,
+        miterLimit: _miterLimit,
+        shadow: _shadow,
+        sketchEnabled: _sketchEnabled,
+        sketchFill: _sketchFill,
+        sketchGap: _sketchGap,
+        sketchAngle: _sketchAngle,
+        sketchWeight: _sketchWeight,
+        sketchJiggle: _sketchJiggle,
+      );
+
+  void _restorePaint(_MxPaintState saved) {
+    _fontSize = saved.fontSize;
+    _fontStyle = saved.fontStyle;
+    _fontFamily = saved.fontFamily;
+    _fontColor = saved.fontColor;
+    _fontBackground = saved.fontBackground;
+    _fillColor = saved.fillColor;
+    _fillOverride = saved.fillOverride;
+    _fillIsNone = saved.fillIsNone;
+    _strokeColor = saved.strokeColor;
+    _strokeIsNone = saved.strokeIsNone;
+    _overallAlpha = saved.overallAlpha;
+    _fillAlpha = saved.fillAlpha;
+    _strokeAlpha = saved.strokeAlpha;
+    _strokeWidth = saved.strokeWidth;
+    _dashed = saved.dashed;
+    _dashPattern = saved.dashPattern == null
+        ? null
+        : List<double>.from(saved.dashPattern!);
+    _lineCap = saved.lineCap;
+    _lineJoin = saved.lineJoin;
+    _miterLimit = saved.miterLimit;
+    _shadow = saved.shadow;
+    _sketchEnabled = saved.sketchEnabled;
+    _sketchFill = saved.sketchFill;
+    _sketchGap = saved.sketchGap;
+    _sketchAngle = saved.sketchAngle;
+    _sketchWeight = saved.sketchWeight;
+    _sketchJiggle = saved.sketchJiggle;
   }
 
   void _resetPen() {
@@ -840,9 +972,8 @@ class _DrawioXmlShapeDecoder {
     // A second inherit-fill (AWS Cloud puffs, Citrix server blobs)
     // would punch overlaps. One compound path + one fill stays on the
     // parent so OpenAI swirl holes still punch.
-    final extraInheritFill = doFill &&
-        !bakeFill &&
-        _geometries.any((geometry) => !geometry.noFill);
+    final extraInheritFill =
+        doFill && !bakeFill && _geometries.any((geometry) => !geometry.noFill);
     if (bakeFill || bakeStroke || bakeDash || extraInheritFill) {
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
