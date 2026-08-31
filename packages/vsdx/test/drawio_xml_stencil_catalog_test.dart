@@ -2158,6 +2158,93 @@ void main() {
     );
   });
 
+  test('mxStencil linejoin flat and square stay miter for LibreOffice', () {
+    Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+      yield shape;
+      for (final child in shape.children) {
+        yield* descendants(child);
+      }
+    }
+
+    bool hasStrokedJoin(VsdxShape shape, VsdxLineJoin? join) =>
+        descendants(shape).any(
+          (child) => child.line.hasLine && child.line.join == join,
+        );
+
+    final decider = dynamic
+        .singleWhere((group) => group.name == 'Draw.io JS / AWS3D / AWS 3D')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Decider')
+        .build(94, 3, 3);
+    expect(
+      hasStrokedJoin(decider, null),
+      isFalse,
+      reason: 'join="square" is an invalid SVG stroke-linejoin. '
+          'mxSvgCanvas2D still writes it; browsers drop it for miter. '
+          'VsdxLineJoin.parse null would leave collectLine join unset',
+    );
+    expect(
+      hasStrokedJoin(decider, VsdxLineJoin.miter),
+      isTrue,
+      reason: 'Decider strokes the inner tiles after linejoin=square',
+    );
+    expect(
+      hasStrokedJoin(decider, VsdxLineJoin.round),
+      isTrue,
+      reason: 'the first fillstroke stays linejoin=round',
+    );
+
+    final arrow = dynamic
+        .singleWhere((group) => group.name == 'Draw.io JS / General / general')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Arrow')
+        .build(95, 3, 3);
+    expect(
+      descendants(arrow)
+          .where((shape) => shape.line.hasLine)
+          .every((shape) => shape.line.join == VsdxLineJoin.round),
+      isTrue,
+      reason: 'Arrow join="flat" is after the only fillstroke; parent '
+          'collectLine keeps the round join that was painted',
+    );
+
+    final works = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Cisco Works')
+        .build(96, 3, 3);
+    expect(
+      hasStrokedJoin(works, VsdxLineJoin.bevel),
+      isTrue,
+      reason: 'Cisco Works linejoin=bevel is an XSD join leftover chamfers',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(decider.copyWith(id: id)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      hasStrokedJoin(leftover, null),
+      isFalse,
+      reason: 'a second save must keep veLineJoin miter on the square tiles',
+    );
+    expect(
+      hasStrokedJoin(leftover, VsdxLineJoin.miter),
+      isTrue,
+      reason: '_lineProperties maps join from LineCap; leftover keeps '
+          'explicit miter so a later round cap does not round the elbow',
+    );
+  });
+
   test('mxStencil default miterlimit is 10 for LibreOffice', () {
     bool hasMiter10(VsdxShape shape) {
       if (shape.line.hasLine &&

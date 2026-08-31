@@ -485,7 +485,15 @@ class _DrawioXmlShapeDecoder {
         _lineCap = _mxLineCap(node.getAttribute('cap'));
         break;
       case 'linejoin':
-        _lineJoin = VsdxLineJoin.parse(node.getAttribute('join'));
+        // mxStencil.drawNode always setLineJoin(join). XSD is miter /
+        // round / bevel; Arrow / Decider still write linecap tokens
+        // `flat` / `square`. mxSvgCanvas2D then sets stroke-linejoin
+        // to that string; SVG drops the invalid value and uses the
+        // CSS initial `miter`. VsdxLineJoin.parse maps those to null
+        // and would wipe createState miter (or a prior round) so a
+        // later round cap leftover-joins from LineCap.
+        final join = _mxLineJoin(node.getAttribute('join'));
+        if (join != null) _lineJoin = join;
         break;
       case 'miterlimit':
         final limit = _number(node, 'limit', fallback: 10);
@@ -2183,6 +2191,19 @@ LineCap? _mxLineCap(String? raw) => switch ((raw ?? '').trim().toLowerCase()) {
       'square' => LineCap.square,
       'butt' || 'flat' => LineCap.extended,
       _ => null,
+    };
+
+/// mxStencil.drawNode setLineJoin. Empty is a no-op like
+/// mxAbstractCanvas2D (`if (value != null)`). Invalid SVG joins
+/// (`flat` / `square` / `butt`) snap to the CSS initial `miter`.
+VsdxLineJoin? _mxLineJoin(String? raw) =>
+    switch ((raw ?? '').trim().toLowerCase()) {
+      '' => null,
+      'round' => VsdxLineJoin.round,
+      'bevel' => VsdxLineJoin.bevel,
+      'arcs' => VsdxLineJoin.arcs,
+      'miter-clip' || 'miterclip' => VsdxLineJoin.miterClip,
+      _ => VsdxLineJoin.miter,
     };
 
 class _DrawioArcCurve {

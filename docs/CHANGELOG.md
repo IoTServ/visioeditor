@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `linejoin` `flat` / `square` now stay miter in
+  LibreOffice. Official `drawNode` still `setLineJoin` those linecap
+  tokens; `mxSvgCanvas2D` writes `stroke-linejoin="flat"` which SVG
+  drops for the CSS initial `miter`. Catalog decode used
+  `VsdxLineJoin.parse` null and wiped createState miter (AWS 3D
+  Decider after `join="square"`). leftover `_lineProperties` maps
+  join from LineCap, so a null join on a round cap would round the
+  elbow. XSD miter / round / bevel are unchanged. A second save
+  keeps veLineJoin miter.
 - draw.io mxStencil `dashpattern dash=` now stays native in LibreOffice.
   Cisco Guard / ISDN Switch write `dash="8 8"` / `dash="12 4"` instead of
   the XSD `pattern` attribute official `drawNode` reads, so catalog decode
