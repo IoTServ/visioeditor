@@ -11725,4 +11725,57 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
+    () {
+      final list = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / general',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'List')
+          .build(1, 3, 3);
+      final items = list.children
+          .where((child) => (child.text ?? '').startsWith('Item'))
+          .toList();
+      expect(items, hasLength(3));
+      for (final item in items) {
+        expect(
+          item.width,
+          closeTo(list.width, 0.05),
+          reason: 'Graph.getLayout stackLayout.fill stretches vertical '
+              'stack children to the swimlane width; leftover is '
+              'collectXFormData svg:width',
+        );
+      }
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(list.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverItems = leftover.children
+          .where((child) => (child.text ?? '').startsWith('Item'))
+          .toList();
+      expect(leftoverItems, hasLength(3));
+      for (final item in leftoverItems) {
+        expect(
+          item.width,
+          closeTo(leftover.width, 0.05),
+          reason: 'a second save must keep the filled stack XForm width',
+        );
+      }
+    },
+  );
 }

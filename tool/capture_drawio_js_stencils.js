@@ -8648,20 +8648,61 @@ function applyStackLayout(cell, style) {
   if (!cell || style.childLayout !== 'stackLayout') return;
   const kids = (cell.children || []).filter((child) =>
     child && child.geometry && !child.edge && !child.geometry.relative);
-  if (kids.length < 2) return;
-  if (kids.some((child) =>
-    (Number(child.geometry.x) || 0) !== 0 || (Number(child.geometry.y) || 0) !== 0)) {
-    return;
-  }
+  if (!kids.length) return;
+  const alreadyPlaced = kids.some((child) =>
+    (Number(child.geometry.x) || 0) !== 0 || (Number(child.geometry.y) || 0) !== 0);
   const horizontal = style.horizontalStack === '1';
   const startSize = Math.max(0, Number(style.startSize) || 0);
-  let x = horizontal ? startSize : 0;
-  let y = horizontal ? 0 : startSize;
-  for (const child of kids) {
-    child.geometry.x = x;
-    child.geometry.y = y;
-    if (horizontal) x += Math.max(0, Number(child.geometry.width) || 0);
-    else y += Math.max(0, Number(child.geometry.height) || 0);
+  const parentW = Math.max(0, Number(cell.geometry && cell.geometry.width) || 0);
+  const parentH = Math.max(0, Number(cell.geometry && cell.geometry.height) || 0);
+  const marginLeft = Number(style.marginLeft) || 0;
+  const marginRight = Number(style.marginRight) || 0;
+  const marginTop = Number(style.marginTop) || 0;
+  const marginBottom = Number(style.marginBottom) || 0;
+  const border = Number(style.stackBorder) || 0;
+  const spacing = Number(style.stackSpacing) || 0;
+  const footer = Math.max(0, Number(style.footerSize) || 0);
+  // Official Graph.getLayout: stackLayout.fill = !transparentParent.
+  // Vertical stacks set geo.width = fillValue (List items 80→140).
+  // tokens.txt has no stackLayout; leftover is collectXFormData svg:width.
+  const swimlane = String(style.shape || '') === 'swimlane';
+  const swimlaneHorz = style.horizontal != '0';
+  let fillValue = horizontal
+    ? parentH - marginTop - marginBottom
+    : parentW - marginLeft - marginRight;
+  fillValue -= 2 * border;
+  let x0 = border + marginLeft;
+  let y0 = border + marginTop;
+  if (swimlane && startSize > 0) {
+    const start = swimlaneHorz
+      ? Math.min(startSize, parentH)
+      : Math.min(startSize, parentW);
+    if (horizontal === swimlaneHorz) fillValue -= start;
+    if (swimlaneHorz) y0 += start;
+    else x0 += start;
+  }
+  const footerHorz = !swimlane || swimlaneHorz;
+  if (footer > 0 && horizontal === footerHorz) fillValue -= footer;
+  fillValue = Math.max(0, fillValue);
+  let x = x0;
+  let y = y0;
+  for (let i = 0; i < kids.length; i++) {
+    const geo = kids[i].geometry;
+    if (!alreadyPlaced) {
+      geo.x = x;
+      geo.y = y;
+    }
+    if (horizontal) {
+      geo.height = fillValue;
+      if (!alreadyPlaced) {
+        x += Math.max(0, Number(geo.width) || 0) + spacing;
+      }
+    } else {
+      geo.width = fillValue;
+      if (!alreadyPlaced) {
+        y += Math.max(0, Number(geo.height) || 0) + spacing;
+      }
+    }
   }
 }
 

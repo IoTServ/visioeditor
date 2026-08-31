@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io `childLayout=stackLayout` fill now stays native in LibreOffice.
+  Official `Graph.getLayout` sets `mxStackLayout.fill` so a vertical
+  stack (General List `horizontalStack=0`) stretches each item to the
+  swimlane width. Catalog capture only stacked x/y, so Item 1–3
+  leftover-baked the Sidebar field's 80px in a 140px List
+  (`tokens.txt` has no stackLayout; `collectXFormData` is `svg:width`).
+  Capture now leftover-bakes the filled XForm. A second save keeps the
+  full-width items.
 - draw.io vertex-cells sibling `fillColor` now stays native in
   LibreOffice. Official Infographic Angled Entry paints two
   `mxgraph.infographic.parallelogram` cells (`#10739E` then `#B1DDF0`).
