@@ -11778,4 +11778,61 @@ void main() {
       }
     },
   );
+
+  test(
+    'mxText html caption padding leftover-bakes LeftMargin for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final entity = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / UML / uml')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Entity')
+          .build(540, 3, 3);
+      final header = glyphContaining(entity, 'Tablename')!;
+      final pk = glyphContaining(entity, 'PK')!;
+      // 180px Entity → 1.5". html.spec 2px is 0.0167in.
+      expect(
+        header.richText.textBlock.marginLeftInches,
+        closeTo(pk.richText.textBlock.marginLeftInches, 0.005),
+        reason: 'caption <div> padding:2px is not table cellpadding; '
+            'stacking both doubled collectTextBlock LeftMargin that '
+            'LibreOffice maps to fo:padding-left',
+      );
+      expect(
+        header.richText.textBlock.marginLeftInches,
+        closeTo(1.5 / 180 * 2, 0.003),
+        reason: 'CSS padding:2px leftover-bakes LeftMargin only',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(entity.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverHeader = glyphContaining(leftover, 'Tablename')!;
+      expect(
+        leftoverHeader.richText.textBlock.marginLeftInches,
+        closeTo(1.5 / 180 * 2, 0.003),
+        reason: 'a second save must keep caption LeftMargin at 2px',
+      );
+    },
+  );
 }

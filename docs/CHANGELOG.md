@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html table caption padding now stays native in
+  LibreOffice. Official `mxText` html=1 paints UML Entity's leading
+  `<div style="padding:2px">Tablename</div>` with CSS padding only;
+  `cellpadding="2"` applies to `<td>`/`<th>`. Catalog capture stacked
+  both onto the caption, so leftover LeftMargin was 4px (`tokens.txt`
+  has no HTML-padding token; `collectTextBlock` is `fo:padding-left`).
+  Capture now leftover-bakes the caption's 2px. A second save keeps
+  TextBlock margins.
 - draw.io `childLayout=stackLayout` fill now stays native in LibreOffice.
   Official `Graph.getLayout` sets `mxStackLayout.fill` so a vertical
   stack (General List `horizontalStack=0`) stretches each item to the

@@ -7543,6 +7543,9 @@ function htmlTableCellSpec(cell, tag) {
 function htmlBlockRowSpec(html) {
   const lead = htmlLeadingBlock(html);
   return {
+    // Caption <div> before/after <table> (UML Entity Tablename) is not a
+    // td. table cellpadding must not stack on its CSS padding.
+    caption: true,
     heightToken: null,
     cells: [{
       widthToken: '100%',
@@ -7750,12 +7753,6 @@ function paintHtmlTableLabel(
   const prevB = canvas.state.spacingBottom;
   const prevSize = canvas.state.fontSize;
   if (tableSize != null) canvas.state.fontSize = tableSize;
-  if (pad > 0) {
-    canvas.state.spacingLeft = (Number(prevL) || 0) + pad;
-    canvas.state.spacingRight = (Number(prevR) || 0) + pad;
-    canvas.state.spacingTop = (Number(prevT) || 0) + pad;
-    canvas.state.spacingBottom = (Number(prevB) || 0) + pad;
-  }
   const resolvedHeights = rows.map((row, i) => (
     heights[i] == null ? auto : heights[i]
   ));
@@ -7771,17 +7768,16 @@ function paintHtmlTableLabel(
         const cell = row.cells[j];
         const cw = widths[j];
         if (cw > 0 && htmlHasVisibleText(cell.html)) {
+          // html.spec cellpadding is td/th padding. A caption <div>
+          // before the table (Entity Tablename padding:2px) is not a
+          // cell; stacking cellpadding on CSS padding doubled
+          // collectTextBlock LeftMargin (4px vs the UA 2px).
           const extra = htmlBoxPadding(cell.attrs, cw);
-          const prevCellL = canvas.state.spacingLeft;
-          const prevCellR = canvas.state.spacingRight;
-          const prevCellT = canvas.state.spacingTop;
-          const prevCellB = canvas.state.spacingBottom;
-          if (extra.left || extra.right || extra.top || extra.bottom) {
-            canvas.state.spacingLeft = (Number(prevCellL) || 0) + extra.left;
-            canvas.state.spacingRight = (Number(prevCellR) || 0) + extra.right;
-            canvas.state.spacingTop = (Number(prevCellT) || 0) + extra.top;
-            canvas.state.spacingBottom = (Number(prevCellB) || 0) + extra.bottom;
-          }
+          const rowPad = row.caption ? 0 : pad;
+          canvas.state.spacingLeft = (Number(prevL) || 0) + rowPad + extra.left;
+          canvas.state.spacingRight = (Number(prevR) || 0) + rowPad + extra.right;
+          canvas.state.spacingTop = (Number(prevT) || 0) + rowPad + extra.top;
+          canvas.state.spacingBottom = (Number(prevB) || 0) + rowPad + extra.bottom;
           // CSS background on the header div (UML Entity Tablename
           // #e4e4e4) is collectTextBlock TextBkgnd → fo:background-color.
           const bg = htmlCssBackgroundHex(cell.attrs);
@@ -7794,12 +7790,6 @@ function paintHtmlTableLabel(
             undefined, 'html', undefined, undefined, rotation,
           );
           if (bg) canvas.setFontBackgroundColor(prevBg);
-          if (extra.left || extra.right || extra.top || extra.bottom) {
-            canvas.state.spacingLeft = prevCellL;
-            canvas.state.spacingRight = prevCellR;
-            canvas.state.spacingTop = prevCellT;
-            canvas.state.spacingBottom = prevCellB;
-          }
           painted = true;
         }
         left += cw;
@@ -7807,12 +7797,10 @@ function paintHtmlTableLabel(
     }
     top += rh;
   }
-  if (pad > 0) {
-    canvas.state.spacingLeft = prevL;
-    canvas.state.spacingRight = prevR;
-    canvas.state.spacingTop = prevT;
-    canvas.state.spacingBottom = prevB;
-  }
+  canvas.state.spacingLeft = prevL;
+  canvas.state.spacingRight = prevR;
+  canvas.state.spacingTop = prevT;
+  canvas.state.spacingBottom = prevB;
   if (tableSize != null) canvas.state.fontSize = prevSize;
   paintHtmlTableBorders(canvas, x, y, w, h, html, rows, resolvedHeights);
   return painted || rows.every((row) => !htmlRowHasText(row));
