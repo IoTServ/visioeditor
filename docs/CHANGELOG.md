@@ -583,6 +583,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html table captions and `border="1"` now stay native in
+  LibreOffice. Official `mxText` html=1 paints a leading `<div>` plus
+  `<table>` (UML Entity `Tablename` / PK columns) and the HTML
+  presentational `border` grid (General HTML Table 4) through the
+  foreignObject UA. Catalog capture aborted table layout when any text
+  sat outside `<table>`, mashed `PKuniqueId` into one Character blob,
+  skipped `<th>`, and dropped the grid. Capture now pins the caption as
+  a header row whose CSS `background` is `TextBkgnd` (`collectTextBlock`
+  `fo:background-color`), parses `th` like `td`, and leftover-bakes the
+  1px grid as `collectLine` siblings (`tokens.txt` has no table token).
+  A second save keeps the bands and rules.
 - draw.io mxText html `<ul>` / `<ol>` now stay native in LibreOffice.
   Official `mxText` html=1 paints list markers through the foreignObject
   UA stylesheet (`ul` disc, `ol` decimal, `padding-inline-start: 40px`).

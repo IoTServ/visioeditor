@@ -10781,4 +10781,100 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxText html table caption and border leftover-bake for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      int linedGeometries(VsdxShape shape) => descendantGeometries(shape)
+          .where((geometry) => !geometry.noLine && geometry.commands.isNotEmpty)
+          .length;
+
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      final entity = stencil('Draw.io JS / UML / uml', 'Entity').build(
+        522,
+        3,
+        3,
+      );
+      final header = glyphContaining(entity, 'Tablename')!;
+      expect(
+        glyphContaining(entity, 'uniqueId')!.id,
+        isNot(header.id),
+        reason: 'div+table is a header row plus cells, not one Character blob',
+      );
+      expect(
+        glyphContaining(entity, 'PK')!.id,
+        isNot(glyphContaining(entity, 'uniqueId')!.id),
+        reason: 'td columns stay separate collectXFormData boxes',
+      );
+      expect(
+        header.richText.textBlock.backgroundColor,
+        const VsdxColor(0xFFE4E4E4),
+        reason: 'CSS background #e4e4e4 is collectTextBlock TextBkgnd',
+      );
+
+      final htmlTable = stencil(
+        'Draw.io JS / General / misc',
+        'HTML Table 4',
+      ).build(523, 3, 3);
+      expect(
+        glyphContaining(htmlTable, 'Title')!.id,
+        isNot(glyphContaining(htmlTable, 'Section 1.1')!.id),
+      );
+      expect(
+        linedGeometries(htmlTable),
+        greaterThanOrEqualTo(4),
+        reason: 'table border="1" leftover-bakes collectLine grid',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      VsdxShape leftoverOf(VsdxShape shape) {
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(shape.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      final leftoverEntity = leftoverOf(entity);
+      expect(
+        glyphContaining(leftoverEntity, 'Tablename')!
+            .richText
+            .textBlock
+            .backgroundColor,
+        const VsdxColor(0xFFE4E4E4),
+        reason: 'a second save must keep TextBkgnd #e4e4e4',
+      );
+      expect(
+        glyphContaining(leftoverEntity, 'uniqueId')!.id,
+        isNot(glyphContaining(leftoverEntity, 'Tablename')!.id),
+      );
+      expect(
+        linedGeometries(leftoverOf(htmlTable)),
+        greaterThanOrEqualTo(4),
+        reason: 'a second save must keep the collectLine grid',
+      );
+    },
+  );
 }

@@ -7235,10 +7235,12 @@ function parseHtmlLabel(html, base) {
 }
 
 // mxText html=1 tables (P&ID TI/##, Electrical thermistor \temp\, Mockup
-// Step Bar) are 100%×100% grids. Flattening them to one collectTextBlock
-// box centred the caption on the glyph; LibreOffice must pin each cell
-// like the HTML table. `height=0%` with text is a content band (browser
-// min-content), not a zero-height skip.
+// Step Bar, UML Entity header+table, General HTML Table 4) are 100%×100%
+// grids. Flattening them to one collectTextBlock box centred the caption
+// on the glyph; LibreOffice must pin each cell like the HTML table.
+// A caption `<div>` before `<table>` (Entity Tablename) is a header
+// row, not a reason to abort. `height=0%` with text is a content band
+// (browser min-content), not a zero-height skip.
 function htmlHasVisibleText(html) {
   return !!cellLabel(html, false).trim();
 }
@@ -7250,13 +7252,52 @@ function htmlTdFragment(attrs, inner) {
   return body;
 }
 
+function htmlLeadingBlock(html) {
+  const source = String(html || '').trim();
+  const open = /^<([a-z][\w:-]*)\b([^>]*)>/i.exec(source);
+  if (!open) return {attrs: '', html: source};
+  return {attrs: open[2] || '', html: source};
+}
+
+function htmlTableCellSpec(cell, tag) {
+  const attrs = cell.attrs || '';
+  const kind = String(tag || 'td').toLowerCase();
+  return {
+    widthToken: htmlAttr(attrs, 'width') || htmlStyleProp(attrs, 'width'),
+    align: htmlAlignToken(
+      htmlAttr(attrs, 'align') || htmlStyleProp(attrs, 'text-align'),
+    ) || (kind === 'th' ? 'center' : null),
+    valign: htmlAttr(attrs, 'valign') || htmlStyleProp(attrs, 'vertical-align'),
+    attrs,
+    html: htmlTdFragment(attrs, cell.inner),
+  };
+}
+
+function htmlBlockRowSpec(html) {
+  const lead = htmlLeadingBlock(html);
+  return {
+    heightToken: null,
+    cells: [{
+      widthToken: '100%',
+      align: htmlAlignToken(
+        htmlStyleProp(lead.attrs, 'text-align') || htmlAttr(lead.attrs, 'align'),
+      ),
+      valign: htmlAttr(lead.attrs, 'valign')
+        || htmlStyleProp(lead.attrs, 'vertical-align'),
+      attrs: lead.attrs,
+      html: lead.html,
+    }],
+  };
+}
+
 function htmlTableRowSpecs(html) {
   const source = String(html || '');
   const tableMatch = /<table\b([^>]*)>([\s\S]*)<\/table>/i.exec(source);
   if (!tableMatch) return null;
-  const outside = source.replace(tableMatch[0], '');
-  if (cellLabel(outside, false).trim()) return null;
+  const before = source.slice(0, tableMatch.index);
+  const after = source.slice(tableMatch.index + tableMatch[0].length);
   const rows = [];
+  if (cellLabel(before, false).trim()) rows.push(htmlBlockRowSpec(before));
   // Browsers still parse a last <tr> without </tr> (P&ID discInst
   // `<tr><td>##</td></table>`). Requiring </tr> folded TI/## into one box.
   const trRe = /<tr\b([^>]*)>([\s\S]*?)(?:<\/tr\s*>|(?=<tr\b)|(?=<\/table)|$)/gi;
@@ -7264,19 +7305,16 @@ function htmlTableRowSpecs(html) {
   while ((match = trRe.exec(tableMatch[2]))) {
     const inner = match[2] || '';
     const tds = [];
-    const tdRe = /<td\b([^>/]*)(?:\/>|>([\s\S]*?)<\/td>)/gi;
+    // html.spec: th is a cell. Title in General HTML Table 4 is <th>.
+    const tdRe = /<(td|th)\b([^>/]*)(?:\/>|>([\s\S]*?)<\/(?:td|th)>)/gi;
     let td;
     while ((td = tdRe.exec(inner))) {
-      tds.push({attrs: td[1] || '', inner: td[2] || ''});
+      tds.push({tag: td[1], attrs: td[2] || '', inner: td[3] || ''});
     }
     const trAttrs = match[1] || '';
-    const cells = (tds.length ? tds : [{attrs: '', inner}]).map((cell) => ({
-      widthToken: htmlAttr(cell.attrs, 'width') || htmlStyleProp(cell.attrs, 'width'),
-      align: htmlAttr(cell.attrs, 'align') || htmlStyleProp(cell.attrs, 'text-align'),
-      valign: htmlAttr(cell.attrs, 'valign') || htmlStyleProp(cell.attrs, 'vertical-align'),
-      attrs: cell.attrs,
-      html: htmlTdFragment(cell.attrs, cell.inner),
-    }));
+    const cells = (tds.length ? tds : [{tag: 'td', attrs: '', inner}]).map(
+      (cell) => htmlTableCellSpec(cell, cell.tag),
+    );
     const firstAttrs = tds.length ? tds[0].attrs : '';
     const heightToken = htmlAttr(trAttrs, 'height')
       || htmlStyleProp(trAttrs, 'height')
@@ -7284,6 +7322,7 @@ function htmlTableRowSpecs(html) {
       || htmlStyleProp(firstAttrs, 'height');
     rows.push({heightToken, cells});
   }
+  if (cellLabel(after, false).trim()) rows.push(htmlBlockRowSpec(after));
   if (rows.length < 1) return null;
   const multiCol = rows.some((row) => row.cells.length > 1);
   if (!multiCol && rows.length < 2) return null;
@@ -7305,6 +7344,39 @@ function htmlTablePaddingPx(html) {
   const attr = htmlAttr(open[1], 'cellpadding');
   const n = htmlCssPx(attr);
   return n != null && n > 0 ? n : 0;
+}
+
+function htmlCssBackgroundHex(attrs) {
+  const from = htmlStyleProp(attrs, 'background-color')
+    || htmlStyleProp(attrs, 'background');
+  if (!from || /^(none|transparent)$/i.test(String(from).trim())) return null;
+  return htmlCssColorToHex(from);
+}
+
+// HTML table border presentational hint (html.spec tables). border="1"
+// plus border-collapse:collapse is a 1px grid. libvisio has no table
+// token; collectLine paints sibling Lines `_lineProperties` maps to
+// svg:stroke (same leftover as mxText <hr>).
+function htmlTableBorderPx(html) {
+  const open = /<table\b([^>]*)>/i.exec(String(html || ''));
+  if (!open) return 0;
+  const attrs = open[1] || '';
+  const attr = htmlCssPx(htmlAttr(attrs, 'border'));
+  if (attr != null && attr > 0) return attr;
+  const css = htmlStyleProp(attrs, 'border-width')
+    || htmlStyleProp(attrs, 'border');
+  if (!css || /none/i.test(css)) return 0;
+  const n = htmlCssPx(css);
+  return n != null && n > 0 ? n : 0;
+}
+
+function htmlTableBorderColor(html) {
+  const open = /<table\b([^>]*)>/i.exec(String(html || ''));
+  const attrs = open ? (open[1] || '') : '';
+  const from = htmlStyleProp(attrs, 'border-color')
+    || htmlStyleProp(attrs, 'border')
+    || htmlStyleProp(attrs, 'color');
+  return htmlCssColorToHex(from) || '#000000';
 }
 
 // HTML td CSS padding (P&ID compressor `padding-left:11%`). Table
@@ -7417,10 +7489,13 @@ function paintHtmlTableLabel(
     canvas.state.spacingTop = (Number(prevT) || 0) + pad;
     canvas.state.spacingBottom = (Number(prevB) || 0) + pad;
   }
+  const resolvedHeights = rows.map((row, i) => (
+    heights[i] == null ? auto : heights[i]
+  ));
   let top = y;
   let painted = false;
   for (let i = 0; i < rows.length; i++) {
-    const rh = heights[i] == null ? auto : heights[i];
+    const rh = resolvedHeights[i];
     const row = rows[i];
     if (rh > 0 && htmlRowHasText(row)) {
       const widths = htmlColWidths(row.cells, w);
@@ -7440,12 +7515,18 @@ function paintHtmlTableLabel(
             canvas.state.spacingTop = (Number(prevCellT) || 0) + extra.top;
             canvas.state.spacingBottom = (Number(prevCellB) || 0) + extra.bottom;
           }
+          // CSS background on the header div (UML Entity Tablename
+          // #e4e4e4) is collectTextBlock TextBkgnd → fo:background-color.
+          const bg = htmlCssBackgroundHex(cell.attrs);
+          const prevBg = canvas.state.fontBackgroundColor;
+          if (bg) canvas.setFontBackgroundColor(bg);
           canvas.text(
             left, top, cw, rh, cellLabel(cell.html, true),
             cell.align || defaultAlign,
             cell.valign || defaultValign || 'middle',
             undefined, 'html', undefined, undefined, rotation,
           );
+          if (bg) canvas.setFontBackgroundColor(prevBg);
           if (extra.left || extra.right || extra.top || extra.bottom) {
             canvas.state.spacingLeft = prevCellL;
             canvas.state.spacingRight = prevCellR;
@@ -7466,6 +7547,7 @@ function paintHtmlTableLabel(
     canvas.state.spacingBottom = prevB;
   }
   if (tableSize != null) canvas.state.fontSize = prevSize;
+  paintHtmlTableBorders(canvas, x, y, w, h, html, rows, resolvedHeights);
   return painted || rows.every((row) => !htmlRowHasText(row));
 }
 
@@ -7603,6 +7685,59 @@ function paintHtmlHrRule(canvas, x, y, w, bandH, attrs) {
   canvas.moveTo(left, cy);
   canvas.lineTo(right, cy);
   canvas.stroke();
+  canvas.styleStroke = savedStyleStroke;
+  canvas.setStrokeColor(prevColor);
+  if (Number.isFinite(prevWidth) && prevWidth > 0) {
+    canvas.setStrokeWidth(prevWidth);
+  }
+  canvas.setDashed(!!prevDashed);
+}
+
+function paintHtmlTableLine(canvas, x1, y1, x2, y2) {
+  if (Math.abs(x2 - x1) < 1e-9 && Math.abs(y2 - y1) < 1e-9) return;
+  canvas.begin();
+  canvas.moveTo(x1, y1);
+  canvas.lineTo(x2, y2);
+  canvas.stroke();
+}
+
+function paintHtmlTableBorders(canvas, x, y, w, h, html, rows, heights) {
+  const width = htmlTableBorderPx(html);
+  if (!(width > 0) || !(w > 1) || !(h > 1) || !rows.length) return;
+  const prevColor = canvas.state.strokeColor;
+  const prevWidth = canvas.state.strokeWidth;
+  const prevDashed = canvas.state.dashed;
+  const color = htmlTableBorderColor(html);
+  // paintToken collapses #000000 onto inherit `stroke`. HTML Table 4 is
+  // strokeColor=none; force a hex so bakeStroke is a collectLine sibling
+  // like <hr>.
+  const savedStyleStroke = canvas.styleStroke;
+  canvas.styleStroke = null;
+  canvas.setStrokeColor(color);
+  canvas.setStrokeWidth(width);
+  canvas.setDashed(false);
+  const right = x + w;
+  const bottom = y + h;
+  paintHtmlTableLine(canvas, x, y, right, y);
+  paintHtmlTableLine(canvas, right, y, right, bottom);
+  paintHtmlTableLine(canvas, right, bottom, x, bottom);
+  paintHtmlTableLine(canvas, x, bottom, x, y);
+  let top = y;
+  for (let i = 0; i < rows.length; i++) {
+    const rh = Number(heights[i]) || 0;
+    if (i > 0 && rh >= 0) {
+      paintHtmlTableLine(canvas, x, top, right, top);
+    }
+    if (rh > 0) {
+      const cols = htmlColWidths(rows[i].cells, w);
+      let left = x;
+      for (let j = 0; j < cols.length - 1; j++) {
+        left += cols[j];
+        paintHtmlTableLine(canvas, left, top, left, top + rh);
+      }
+    }
+    top += rh;
+  }
   canvas.styleStroke = savedStyleStroke;
   canvas.setStrokeColor(prevColor);
   if (Number.isFinite(prevWidth) && prevWidth > 0) {
