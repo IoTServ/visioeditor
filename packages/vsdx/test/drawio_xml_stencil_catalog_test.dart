@@ -4922,9 +4922,11 @@ void main() {
       'Choreography Task',
     ).build(73, 3, 3);
     expect(
-      choreography.geometries.length,
+      descendantGeometries(choreography).length,
       greaterThan(1),
-      reason: 'zero-arg palette roots must keep working sb factories',
+      reason: 'zero-arg palette roots must keep working sb factories. '
+          'Choreography bands are extra-inherit fill siblings so '
+          'collectGeometry evenodd does not punch the header',
     );
 
     const writer = VsdxWriter();
@@ -9046,12 +9048,16 @@ void main() {
 
       final weak = stencil(group, 'Weak Entity').build(300, 3, 3);
       expect(
-        weak.geometries,
-        hasLength(2),
-        reason: 'Chen weak entity is a double rectangle, not a single box',
+        descendantGeometries(weak)
+            .where((geometry) => !geometry.noFill && !geometry.noLine)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'Chen weak entity is a double rectangle. A second inherit '
+            'fillstroke stays a sibling so collectGeometry evenodd does '
+            'not punch the inner box as a hole',
       );
       expect(
-        weak.geometries
+        descendantGeometries(weak)
             .expand((geometry) => geometry.commands)
             .whereType<LineTo>()
             .length,
@@ -9061,9 +9067,12 @@ void main() {
       final identifying =
           stencil(group, 'Identifying Relationship').build(301, 3, 3);
       expect(
-        identifying.geometries,
-        hasLength(2),
-        reason: 'Identifying relationship is a double diamond',
+        descendantGeometries(identifying)
+            .where((geometry) => !geometry.noFill && !geometry.noLine)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'Identifying relationship is a double diamond; extra '
+            'inherit fill stays a sibling for the same evenodd reason',
       );
 
       final multivalue =
@@ -9140,12 +9149,18 @@ void main() {
           .first;
 
       expect(
-        leftover.findShapeById(weakId)!.geometries,
-        hasLength(2),
+        descendantGeometries(leftover.findShapeById(weakId)!)
+            .where((geometry) => !geometry.noFill && !geometry.noLine)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep both Weak Entity contours',
       );
       expect(
-        leftover.findShapeById(identifyingId)!.geometries,
-        hasLength(2),
+        descendantGeometries(leftover.findShapeById(identifyingId)!)
+            .where((geometry) => !geometry.noFill && !geometry.noLine)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep both Identifying diamonds',
       );
       expect(
         leftover
@@ -9161,9 +9176,12 @@ void main() {
             .findShapeById(oneToManyId)!
             .geometries
             .expand((geometry) => geometry.commands)
-            .whereType<MoveTo>()
+            .whereType<LineTo>()
             .length,
         greaterThanOrEqualTo(3),
+        reason: 'mx default miterLimit 10 leftover bakes the crow\'s foot '
+            'as a filled ribbon because _lineProperties never emits '
+            'svg:stroke-miterlimit; Draw would otherwise bevel the toes',
       );
       expect(
         leftover

@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Chen Weak Entity / Identifying Relationship extra inherit
+  fills now stay native in LibreOffice. `collectGeometry` concatenates
+  every NoFill=0 section into one evenodd path. A second concentric
+  fillstroke on the parent would punch a hole; leftover already splits
+  that inner contour to a sibling. Catalog tests now walk descendants.
+  A second save keeps both contours. BPMN Choreography Task bands use
+  the same sibling split. Crow's-foot leftover bakes a filled ribbon
+  because default `miterLimit` 10 is not an ODF token.
 - draw.io mockup Table cell rects now stay native in LibreOffice. JS
   capture emits those `rect()` corners as consecutive `<move>` without
   `<line>` (C4 Legend, ER Table 2). `collectGeometry` skips a
