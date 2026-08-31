@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `dashpattern dash=` now stays native in LibreOffice.
+  Cisco Guard / ISDN Switch write `dash="8 8"` / `dash="12 4"` instead of
+  the XSD `pattern` attribute official `drawNode` reads, so catalog decode
+  used createState `3 3`. The decoder now takes `dash` as that alias.
+  leftover still bakes custom `0xfe` into MoveTo gaps `_lineProperties`
+  can stroke. A second save keeps the gaps.
 - draw.io mxStencil `dashpattern="none"` now stays solid in LibreOffice.
   Official `drawNode` still `setDashPattern(Number("none")*minScale)` so
   the array is NaN; `createDashPattern` writes `stroke-dasharray="NaN"`

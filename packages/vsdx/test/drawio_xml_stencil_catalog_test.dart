@@ -1295,6 +1295,109 @@ void main() {
   );
 
   test(
+    'mxStencil dashpattern dash alias stays veDashPattern for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      List<double>? firstCustomDash(VsdxShape shape) {
+        for (final node in descendants(shape)) {
+          final custom = node.line.customDashPattern;
+          if (node.line.hasLine &&
+              node.line.fixedDash &&
+              custom != null &&
+              custom.length >= 2) {
+            return custom;
+          }
+        }
+        return null;
+      }
+
+      bool hasBakedDashGaps(VsdxShape shape) {
+        for (final node in descendants(shape)) {
+          if (!node.line.hasLine) continue;
+          final moves = node.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          if (moves >= 2) return true;
+        }
+        return false;
+      }
+
+      final guard = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Cisco / Security')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Guard')
+          .build(90, 3, 3);
+      final guardDash = firstCustomDash(guard);
+      expect(guardDash, isNotNull);
+      final guardScale = 1.5 / 55.33;
+      final expected8 = 8 * guardScale / drawioDashUnitInches;
+      expect(
+        guardDash!.first,
+        closeTo(expected8, 0.05),
+        reason: 'Cisco Guard dashpattern dash="8 8" (no pattern=) must not '
+            'fall through to createState 3 3; leftover MoveTo gaps follow '
+            'the authored 8 8 that collectLine cannot emit as 0xfe',
+      );
+      expect(guardDash[1], closeTo(expected8, 0.05));
+
+      final isdn = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Cisco / Switches')
+          .stencils
+          .singleWhere((entry) => entry.name == 'ISDN Switch')
+          .build(91, 3, 3);
+      final isdnDash = firstCustomDash(isdn);
+      expect(isdnDash, isNotNull);
+      final isdnScale = 1.5 / 37;
+      expect(
+        isdnDash!.first,
+        closeTo(12 * isdnScale / drawioDashUnitInches, 0.05),
+        reason: 'ISDN Switch dash="12 4" is the authored on/off pair',
+      );
+      expect(
+        isdnDash[1],
+        closeTo(4 * isdnScale / drawioDashUnitInches, 0.05),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          migrated
+              .singleWhere(
+                (group) => group.name == 'Draw.io / Cisco / Security',
+              )
+              .stencils
+              .singleWhere((entry) => entry.name == 'Guard')
+              .build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasBakedDashGaps(leftover),
+        isTrue,
+        reason: 'a second save bakes dash="8 8" into MoveTo gaps because '
+            'libvisio treats custom LinePattern 0xfe as solid',
+      );
+    },
+  );
+
+  test(
     'mxStencil save/restore keeps post-restore strokes solid for LibreOffice',
     () {
       bool isDashedStroke(VsdxShape shape) {

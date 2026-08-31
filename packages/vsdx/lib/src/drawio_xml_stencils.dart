@@ -469,7 +469,13 @@ class _DrawioXmlShapeDecoder {
         _dashed = node.getAttribute('dashed') != '0';
         break;
       case 'dashpattern':
-        _dashPattern = _parseMxDashPattern(node.getAttribute('pattern'));
+        // mxStencil.drawNode / stencils.xsd use `pattern`. Cisco Guard /
+        // ISDN Switch write `dash="8 8"` / `dash="12 4"` instead; official
+        // getAttribute('pattern') is null and createState `3 3` would
+        // paint. Honour `dash` so leftover MoveTo gaps match the XML.
+        _dashPattern = _parseMxDashPattern(
+          node.getAttribute('pattern') ?? node.getAttribute('dash'),
+        );
         // `pattern="none"` is an empty list: mxStencil.js still
         // setDashPattern(Number('none')*minScale → NaN). createDashPattern
         // then writes stroke-dasharray="NaN", which SVG paints solid.
@@ -632,7 +638,8 @@ class _DrawioXmlShapeDecoder {
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
       // `dashpattern pattern="none"` is NaN in official drawNode, so SVG
       // stroke-dasharray is invalid and Draw must stay solid (AWS 4
-      // work package), not createState `3 3`.
+      // work package), not createState `3 3`. Cisco `dash="8 8"` (no
+      // `pattern`) is the authored array leftover bakes to MoveTo gaps.
       // `shadow` follows mxShape.configureCanvas setShadow onto ShdwPattern
       // that `_fillAndShadowProperties` maps to ODF draw:shadow (hard
       // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
@@ -2078,6 +2085,7 @@ String? _mxFontFamily(String? raw) {
 /// `NaN`; [mxSvgCanvas2D.createDashPattern] then sets `stroke-dasharray`
 /// to that, which SVG paints solid. Return an empty list so [_lineWithDash]
 /// does not substitute createState `3 3`. A missing tag leaves `null`.
+/// Cisco Security Guard / ISDN Switch emit `dash=` instead of `pattern=`.
 List<double>? _parseMxDashPattern(String? raw) {
   final text = (raw ?? '').trim();
   if (text.isEmpty) return null;
