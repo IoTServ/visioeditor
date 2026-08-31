@@ -1627,6 +1627,122 @@ void main() {
     );
   });
 
+  test('mxStencil default linecap is flat for LibreOffice', () {
+    bool strokedCap(VsdxShape shape, LineCap cap) {
+      if (shape.line.hasLine && shape.line.cap == cap) return true;
+      return shape.children.any((child) => strokedCap(child, cap));
+    }
+
+    final bar = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Android / Android',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'Progress Bar')
+        .build(90, 3, 3);
+    expect(
+      strokedCap(bar, LineCap.extended),
+      isTrue,
+      reason: 'Android Progress Bar has no <linecap>. '
+          'mxAbstractCanvas2D.createState lineCap is flat; libvisio '
+          '_lineProperties LineCap 1 maps to svg:stroke-linecap=butt',
+    );
+    expect(
+      strokedCap(bar, LineCap.round),
+      isFalse,
+      reason: 'Visio factory LineCap 0 would make Draw round the open '
+          'rail ends',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere(
+              (group) => group.name == 'Draw.io / Android / Android',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Progress Bar')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      strokedCap(leftover, LineCap.extended),
+      isTrue,
+      reason: 'a second save must keep LineCap 1',
+    );
+    expect(
+      strokedCap(leftover, LineCap.round),
+      isFalse,
+      reason: 'leftover must not fall back to Visio round caps',
+    );
+  });
+
+  test('mxStencil inherit linecap does not leak later siblings', () {
+    final detector = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Detector')
+        .build(91, 3, 3);
+    expect(
+      detector.line.hasLine,
+      isTrue,
+      reason: 'first fillstroke is inherit and stays on the parent',
+    );
+    expect(
+      detector.line.cap,
+      LineCap.extended,
+      reason: 'mx default flat must stay on collectLine; later '
+          'linecap=butt/round belongs on hex siblings',
+    );
+    expect(
+      detector.line.join,
+      VsdxLineJoin.round,
+      reason: 'linejoin=round is set before the inherit fillstroke',
+    );
+    expect(
+      detector.children.any(
+        (child) => child.line.hasLine && child.line.cap == LineCap.extended,
+      ),
+      isTrue,
+      reason: 'later linecap=butt hex fillstroke is a sibling',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+            .stencils
+            .singleWhere((entry) => entry.name == 'Detector')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.line.cap,
+      LineCap.extended,
+      reason: 'a second save must keep parent LineCap 1',
+    );
+  });
+
   test('mxGraph shadow=1 stays ShdwPattern for LibreOffice', () {
     bool hasHardShadow(VsdxShape shape) {
       final shadow = shape.shadow;

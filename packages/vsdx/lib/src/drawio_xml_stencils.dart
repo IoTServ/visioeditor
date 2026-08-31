@@ -190,9 +190,17 @@ class _DrawioXmlShapeDecoder {
   bool _parentDashed = false;
   List<double>? _parentDashPattern;
   List<double>? _dashPattern;
-  LineCap? _lineCap;
+  // mxAbstractCanvas2D.createState: lineCap 'flat' (SVG butt). Do not
+  // change VsdxLine.defaultLine — that is the Visio factory round cap.
+  // libvisio `_lineProperties` case 0 emits round cap+join; LineCap 1
+  // is svg:stroke-linecap=butt / stroke-linejoin=miter.
+  LineCap? _lineCap = LineCap.extended;
   VsdxLineJoin? _lineJoin;
   double? _miterLimit;
+  bool _capturedParentLineStyle = false;
+  LineCap? _parentStrokeCap;
+  VsdxLineJoin? _parentStrokeJoin;
+  double? _parentMiterLimit;
   VsdxShadow? _shadow;
   VsdxShadow? _parentShadow;
   final List<_MxPaintState> _saveStack = <_MxPaintState>[];
@@ -313,10 +321,25 @@ class _DrawioXmlShapeDecoder {
                     foregroundTransparency: parentFillTrans,
                   )
                 : VsdxFill(foregroundTransparency: parentFillTrans));
+    // restore() / later sibling linecap leak onto collectLine otherwise.
+    // Capture at the inherit `_finish` like LineWeight / LineColorTrans.
+    final savedCap = _lineCap;
+    final savedJoin = _lineJoin;
+    final savedMiter = _miterLimit;
+    if (inheritLine && _capturedParentLineStyle) {
+      _lineCap = _parentStrokeCap;
+      _lineJoin = _parentStrokeJoin;
+      _miterLimit = _parentMiterLimit;
+    }
     var parentLine =
         _rasterPart != null || (!inheritLine && children.isNotEmpty)
             ? const VsdxLine(pattern: 0)
             : _paintLine(stroke: true);
+    if (inheritLine && _capturedParentLineStyle) {
+      _lineCap = savedCap;
+      _lineJoin = savedJoin;
+      _miterLimit = savedMiter;
+    }
     if (inheritLine && _styleStroke != null && parentLine.hasLine) {
       parentLine = parentLine.withSolidColor(_styleStroke!);
     }
@@ -1093,10 +1116,25 @@ class _DrawioXmlShapeDecoder {
     // parent so OpenAI swirl holes still punch.
     final extraInheritFill =
         doFill && !bakeFill && _geometries.any((geometry) => !geometry.noFill);
-    if (bakeFill || bakeStroke || bakeDash || extraInheritFill) {
+    // collectLine is shape-level. A later inherit stroke whose cap /
+    // join / miter differs from the first (Electronic Info Flow: save
+    // linecap=round stroke, restore, linecap=butt fillstroke) must be a
+    // sibling so `_lineProperties` can emit both butt and round.
+    final bakeLineStyle = doStroke &&
+        _capturedParentLineStyle &&
+        (_lineCap != _parentStrokeCap ||
+            _lineJoin != _parentStrokeJoin ||
+            _miterLimit != _parentMiterLimit);
+    final inheritFillSibling =
+        extraInheritFill || (bakeLineStyle && doFill && !bakeFill);
+    if (bakeFill ||
+        bakeStroke ||
+        bakeDash ||
+        extraInheritFill ||
+        bakeLineStyle) {
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
-        fill: extraInheritFill
+        fill: inheritFillSibling
             ? VsdxFill(
                 pattern: 1,
                 foreground: _styleFill,
@@ -1124,6 +1162,15 @@ class _DrawioXmlShapeDecoder {
     }
     if (doStroke) {
       _parentStrokeTransparency ??= _strokeTransparency;
+    }
+    if (doStroke && !_capturedParentLineStyle) {
+      // First inherit stroke owns collectLine. Later `<linecap>` /
+      // `<linejoin>` / `<miterlimit>` belong on hex / extra-inherit
+      // siblings (Cisco Detector: inherit fillstroke then cap=butt).
+      _capturedParentLineStyle = true;
+      _parentStrokeCap = _lineCap;
+      _parentStrokeJoin = _lineJoin;
+      _parentMiterLimit = _miterLimit;
     }
     if (doStroke && _dashed) {
       _parentDashed = true;
@@ -1380,7 +1427,7 @@ class _DrawioXmlShapeDecoder {
     var next = shape;
     final join = shape.line.join;
     if (join != null) next = next.withDrawioLineJoin(join);
-    if (_miterLimit != null && (shape.line.miterLimit - 4.0).abs() > 1e-9) {
+    if ((shape.line.miterLimit - 4.0).abs() > 1e-9) {
       next = next.withDrawioMiterLimit(shape.line.miterLimit);
     }
     final custom = shape.line.customDashPattern;

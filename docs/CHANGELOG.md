@@ -583,6 +583,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil default `<linecap>` now stays native in LibreOffice.
+  Official `mxAbstractCanvas2D.createState` uses `lineCap: 'flat'` (SVG
+  butt). Catalog decode left `_lineCap` unset, so inherit / hex strokes
+  without a tag used Visio factory `LineCap` 0 and `_lineProperties`
+  painted `svg:stroke-linecap=round` plus round joins (Android Progress
+  Bar rails). The decoder now starts at `LineCap` 1 (`butt` / miter),
+  captures cap / join / miter at the first inherit `_finish` so a later
+  sibling `linecap` cannot leak onto `collectLine` (Cisco Detector), and
+  splits a later inherit stroke whose cap differs (Electronic Info Flow
+  `save` / round / `restore` / butt) into a sibling. A second save keeps
+  LineCap 1.
 - draw.io mxStencil inherit-stroke `<alpha>` now stays native in LibreOffice.
   Official `mxStencil.drawNode` `setAlpha` before inherit `fillstroke`
   (Cortana / vNIC `save` / `alpha="0.4"` / restore). Catalog decode
