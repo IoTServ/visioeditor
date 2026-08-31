@@ -11037,4 +11037,81 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxText html named entities leftover-bake for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      Stencil stencil(String name) => dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / UML / uml')
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      final iface = stencil('Interface').build(527, 3, 3);
+      final ifaceText = allText(iface);
+      expect(
+        ifaceText,
+        isNot(contains('&laquo;')),
+        reason: 'html &laquo; must decode before collectText',
+      );
+      expect(
+        ifaceText,
+        contains('«interface»'),
+        reason: 'foreignObject UA turns &laquo;/&raquo; into U+00AB/U+00BB',
+      );
+      expect(
+        runContaining(iface, 'Name')!.charStyle.style.bold,
+        isTrue,
+      );
+
+      final component = stencil('Component').build(528, 3, 3);
+      expect(allText(component), contains('«Annotation»'));
+      expect(
+        runContaining(component, 'Component')!.charStyle.style.bold,
+        isTrue,
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      VsdxShape leftoverOf(VsdxShape shape) {
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(shape.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      expect(allText(leftoverOf(iface)), contains('«interface»'));
+      expect(allText(leftoverOf(component)), contains('«Annotation»'));
+    },
+  );
 }

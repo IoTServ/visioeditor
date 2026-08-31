@@ -6762,12 +6762,36 @@ function cellLabel(value, keepHtml = false, cell = null) {
   return stripped;
 }
 
+// HTML named character references the foreignObject UA decodes.
+// UML Interface is `&laquo;interface&raquo;` — leftover Character has
+// no entity token, so collectText must see U+00AB / U+00BB.
+const kHtmlNamedEntities = {
+  nbsp: ' ', iexcl: '¡', cent: '¢', pound: '£', curren: '¤', yen: '¥',
+  brvbar: '¦', sect: '§', uml: '¨', copy: '©', ordf: 'ª', laquo: '«',
+  not: '¬', shy: '\u00AD', reg: '®', macr: '¯', deg: '°', plusmn: '±',
+  sup2: '²', sup3: '³', acute: '´', micro: 'µ', para: '¶', middot: '·',
+  cedil: '¸', sup1: '¹', ordm: 'º', raquo: '»', frac14: '¼', frac12: '½',
+  frac34: '¾', iquest: '¿', times: '×', divide: '÷',
+  ndash: '–', mdash: '—', hellip: '…', bull: '•', trade: '™',
+  lsquo: '‘', rsquo: '’', ldquo: '“', rdquo: '”', apos: "'",
+};
+
 function decodeHtmlEntities(value) {
-  return String(value ?? '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&#10;/g, '\n')
-    .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+  let s = String(value ?? '');
+  s = s.replace(/&#10;/g, '\n');
+  s = s.replace(/&#x([0-9a-f]+);/gi, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16)));
+  s = s.replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+  s = s.replace(/&([a-zA-Z][a-zA-Z0-9]+);/g, (token, name) => {
+    const key = String(name).toLowerCase();
+    if (key === 'amp' || key === 'lt' || key === 'gt' || key === 'quot') {
+      return token;
+    }
+    return Object.prototype.hasOwnProperty.call(kHtmlNamedEntities, key)
+      ? kHtmlNamedEntities[key]
+      : token;
+  });
+  return s
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')

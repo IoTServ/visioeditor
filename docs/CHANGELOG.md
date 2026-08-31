@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html named entities now stay native in LibreOffice.
+  Official `mxText` html=1 paints `&laquo;interface&raquo;` through the
+  foreignObject UA as U+00AB / U+00BB. Catalog capture only decoded
+  `nbsp` / numeric / `amp`/`lt`/`gt`/`quot`, so UML Interface and
+  Component leftover Character still had the raw tokens (`tokens.txt`
+  has no entity token; `collectText` shows them literally). Capture now
+  freezes HTML Latin-1 named references (and `ndash` / `mdash` /
+  `hellip` / `bull`) into Char runs. A second save keeps the
+  guillemets.
 - draw.io Curved Text now stays native in LibreOffice. Official
   `CurvedTextShape.paintForeground` paints an SVG `textPath` along
   `arcStartY` / `arcMidY` / `arcEndY` (`curveType=round`,
