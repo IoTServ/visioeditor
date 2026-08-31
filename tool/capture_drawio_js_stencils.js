@@ -6036,6 +6036,21 @@ loadJs('mxgraph/src/shape/mxMarker.js', path.join(webapp, 'mxgraph/src/shape/mxM
 // never reached VisioDocument::parse.
 loadOfficialCtor('mxPolyline.js', 'mxPolyline');
 loadOfficialCtor('mxConnector.js', 'mxConnector');
+// Official mxDoubleEllipse.getLabelBounds insets STYLE_MARGIN (ER
+// Multivalue Attribute margin=3). The capture stub only painted the
+// inner ellipse, so leftover TxtWidth stayed the outer 100×40 cell
+// and Draw's collectTextBlock overlapped the ring
+// (tokens.txt VerticalAlign / TxtWidth → draw:textarea-vertical-align
+// / svg:width).
+loadOfficialCtor('mxDoubleEllipse.js', 'mxDoubleEllipse');
+registerShape(
+  mxConstants.SHAPE_DOUBLE_ELLIPSE,
+  shapeContext.mxDoubleEllipse || shapeContext.mxEllipse,
+);
+registerShape(
+  'doubleEllipse',
+  shapeContext.mxDoubleEllipse || shapeContext.mxEllipse,
+);
 registerShape(mxConstants.SHAPE_ARROW, shapeContext.mxArrow);
 registerShape(mxConstants.SHAPE_ARROW_CONNECTOR, shapeContext.mxArrowConnector);
 registerShape(mxConstants.SHAPE_SWIMLANE, shapeContext.mxSwimlane);

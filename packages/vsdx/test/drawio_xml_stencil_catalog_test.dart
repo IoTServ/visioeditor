@@ -10291,6 +10291,77 @@ void main() {
   );
 
   test(
+    'mxDoubleEllipse getLabelBounds insets Multivalue Attribute for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      VsdxShape? labelOf(VsdxShape shape, String text) {
+        if ((shape.text ?? '') == text) return shape;
+        for (final child in shape.children) {
+          final nested = labelOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      const group = 'Draw.io JS / ER / entityRelation';
+      final single = stencil(group, 'Attribute').build(433, 3, 3);
+      final singleLabel = labelOf(single, 'Attribute')!;
+      expect(
+        singleLabel.width / single.width,
+        closeTo(1.0, 0.02),
+        reason: 'mxEllipse has no getLabelBounds; Char stays the cell',
+      );
+
+      final multi = stencil(group, 'Multivalue Attribute').build(434, 3, 3);
+      final multiLabel = labelOf(multi, 'Attribute')!;
+      expect(
+        multiLabel.width / multi.width,
+        closeTo(94 / 100, 0.02),
+        reason: 'mxDoubleEllipse.getLabelBounds STYLE_MARGIN=3 on a 100px '
+            'cell is TxtWidth collectTextBlock maps inside the inner ring',
+      );
+      expect(
+        multiLabel.height / multi.height,
+        closeTo(34 / 40, 0.02),
+        reason: 'the same 3px inset on the 40px height',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(
+          stencil(group, 'Multivalue Attribute').build(id, 3, 3),
+        ),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverLabel = labelOf(leftover, 'Attribute')!;
+      expect(
+        leftoverLabel.width / leftover.width,
+        closeTo(94 / 100, 0.02),
+        reason: 'a second save must keep the inset TxtWidth',
+      );
+      expect(
+        leftoverLabel.height / leftover.height,
+        closeTo(34 / 40, 0.02),
+        reason: 'a second save must keep the inset TxtHeight',
+      );
+    },
+  );
+
+  test(
     'mxStencil labelBounds insets Multi-Document Text for LibreOffice',
     () {
       final multi = migrated

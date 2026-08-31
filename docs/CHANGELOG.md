@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io `mxDoubleEllipse.getLabelBounds` now stays native in
+  LibreOffice. Official `mxDoubleEllipse.js` insets the label by
+  `STYLE_MARGIN` (ER Multivalue Attribute `margin=3` on a 100×40 cell).
+  Catalog capture only painted the inner ellipse, so leftover TxtWidth
+  stayed the outer box and Draw's `collectTextBlock` overlapped the
+  ring (`tokens.txt` TxtWidth is `svg:width`). Capture now leftover-bakes
+  the 94×34 inset. A second save keeps TxtHeight.
 - draw.io mxText html table cell `vertical-align` now stays native in
   LibreOffice. Official `mxText` html=1 paints General HTML Table 4 as
   a foreignObject whose `<th>`/`<td>` use the html.spec UA
