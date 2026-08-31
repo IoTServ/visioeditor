@@ -184,6 +184,7 @@ class _DrawioXmlShapeDecoder {
   double? _strokeWidth;
   double? _parentStrokeWidth;
   double? _parentFillTransparency;
+  double? _parentStrokeTransparency;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
   bool _parentDashed = false;
@@ -339,6 +340,17 @@ class _DrawioXmlShapeDecoder {
         pattern: parentLine.pattern == 0 ? 0 : 1,
         customDashPattern: null,
         fixedDash: false,
+      );
+    }
+    if (inheritLine &&
+        parentLine.hasLine &&
+        (_parentStrokeTransparency ?? 0) > 1e-9) {
+      // restore() pops <alpha> after inherit fillstroke. LineColorTrans
+      // is not a token (`xmlStringToColour` zeros Colour.a); leftover
+      // bakes a FillForegndTrans ribbon. Capture Trans at _finish so
+      // that bake can run (Cortana / vNIC 0.4–0.5 silhouettes).
+      parentLine = parentLine.copyWith(
+        transparency: _parentStrokeTransparency,
       );
     }
     return _withLineUserCells(VsdxShape(
@@ -553,8 +565,9 @@ class _DrawioXmlShapeDecoder {
       // `applyStencilStyle.withSolidForeground` would otherwise beige them.
       // `alpha` / `fillalpha` / `strokealpha` become FillForegndTrans /
       // LineColorTrans that `_fillAndShadowProperties` maps to draw:opacity.
-      // Inherit fill (Networks2 hub shadow) captures that Trans on the
-      // parent at _finish; hex fillcolor already bakes a sibling.
+      // Inherit fill (Networks2 hub shadow) and inherit stroke
+      // (Cortana fillstroke) capture that Trans on the parent at
+      // _finish; hex fillcolor already bakes a sibling.
       // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
       // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
@@ -1108,6 +1121,9 @@ class _DrawioXmlShapeDecoder {
       // restore() pops <alpha> after this fill. Parent FillForegndTrans
       // must be the value collectFillAndShadow saw, not 0.
       _parentFillTransparency ??= _fillTransparency;
+    }
+    if (doStroke) {
+      _parentStrokeTransparency ??= _strokeTransparency;
     }
     if (doStroke && _dashed) {
       _parentDashed = true;

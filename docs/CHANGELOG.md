@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil inherit-stroke `<alpha>` now stays native in LibreOffice.
+  Official `mxStencil.drawNode` `setAlpha` before inherit `fillstroke`
+  (Cortana / vNIC `save` / `alpha="0.4"` / restore). Catalog decode
+  captured FillForegndTrans on the parent but rebuilt Line after restore,
+  so LineColorTrans stayed 0. `_lineProperties` reads `Colour.a` and
+  `xmlStringToColour` zeros it, so leftover must bake a
+  `FillForegndTrans` stroke ribbon. Capture Trans at `_finish` like
+  LineWeight. A second save keeps the wash without a SoftEdges PNG.
 - draw.io mxStencil inherit-fill `<alpha>` now stays native in LibreOffice.
   Official `mxStencil.drawNode` calls `canvas.setAlpha` before an inherit
   `fill` (Networks2 hub / antenna shadows `alpha="0.25"`). Catalog decode

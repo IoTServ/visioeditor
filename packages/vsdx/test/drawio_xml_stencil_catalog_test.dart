@@ -893,6 +893,88 @@ void main() {
     );
   });
 
+  test(
+    'mxStencil inherit-stroke alpha stays LineColorTrans for LibreOffice',
+    () {
+      bool hasSoftEdges(VsdxShape shape) {
+        if (isLibvisioSoftEdgesPlate(shape)) return true;
+        return shape.children.any(hasSoftEdges);
+      }
+
+      bool hasStrokeRibbon(VsdxShape shape) {
+        if (isLibvisioStrokeRibbonPlate(shape)) return true;
+        return shape.children.any(hasStrokeRibbon);
+      }
+
+      final cortana = migrated
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io / Microsoft Cloud and Enterprise / Other',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Cortana')
+          .build(90, 3, 3);
+      expect(
+        cortana.fill.hasFill &&
+            (cortana.fill.foregroundTransparency - 0.6).abs() < 0.02,
+        isTrue,
+        reason: 'save / alpha 0.4 / inherit fillstroke / restore; fill '
+            'Trans is already captured on the parent',
+      );
+      expect(
+        cortana.line.hasLine &&
+            (cortana.line.transparency - 0.6).abs() < 0.02,
+        isTrue,
+        reason: 'the same fillstroke must capture LineColorTrans at '
+            '_finish; restore pops overallAlpha before parent Line is '
+            'built. leftover bakes a FillForegndTrans ribbon because '
+            'xmlStringToColour zeros Colour.a',
+      );
+
+      final vnic = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Veeam / 2d')
+          .stencils
+          .singleWhere((entry) => entry.name == 'vNIC')
+          .build(91, 3, 3);
+      expect(
+        vnic.line.hasLine && (vnic.line.transparency - 0.5).abs() < 0.02,
+        isTrue,
+        reason: 'vNIC inherit fillstroke under alpha 0.5',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cortana.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        leftover.fill.hasFill && leftover.fill.foregroundTransparency > 0.5,
+        isTrue,
+        reason: 'a second save must keep FillForegndTrans on the body',
+      );
+      expect(
+        leftover.line.transparency > 0.5 ||
+            leftoverDoc.pages.first.shapes.any(hasStrokeRibbon),
+        isTrue,
+        reason: 'LineColorTrans is not a token; leftover bakes a page-'
+            'level FillForegndTrans stroke ribbon',
+      );
+      expect(
+        hasSoftEdges(leftover),
+        isFalse,
+        reason: 'solid fillstroke + Trans must not bake a SoftEdges PNG',
+      );
+    },
+  );
+
   test('mxStencil dashpattern stays customDashPattern for LibreOffice', () {
     bool hasFixedDash(VsdxShape shape) {
       final custom = shape.line.customDashPattern;
