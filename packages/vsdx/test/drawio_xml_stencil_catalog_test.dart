@@ -4640,7 +4640,7 @@ void main() {
     },
   );
 
-  test('IBM dashed connectors keep LinePattern 2 for LibreOffice', () {
+  test('IBM dashed connectors leftover-bake mx 3 3 for LibreOffice', () {
     final dashed = dynamic
         .singleWhere(
           (group) => group.name == 'Draw.io JS / IBM / IBM / Connectors',
@@ -4648,12 +4648,45 @@ void main() {
         .stencils
         .singleWhere((entry) => entry.name == 'Dashed Connector');
     final shape = dashed.build(51, 3, 3);
+    final custom = shape.line.customDashPattern;
     expect(
       shape.line.pattern,
-      2,
-      reason: 'a dashed-only edge template is LinePattern 2 in tokens.txt',
+      1,
+      reason: 'mxShape.configureCanvas dashed=1 with no dashpattern uses '
+          'createState 3 3 as veDashPattern, not tokens.txt LinePattern 2',
+    );
+    expect(shape.line.fixedDash, isTrue);
+    expect(custom, isNotNull);
+    expect(custom!.length, greaterThanOrEqualTo(2));
+    expect(
+      (custom.first - custom[1]).abs(),
+      lessThan(1e-6),
+      reason: 'createState dashPattern is equal on/off 3 3',
     );
     expect(shape.geometries, isNotEmpty);
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(dashed.build(id, 3, 3)),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<MoveTo>()
+          .length,
+      greaterThanOrEqualTo(2),
+      reason: 'libvisio _lineProperties treats 0xfe as solid; leftover bakes '
+          'the 3 3 veDashPattern into MoveTo gaps Draw can stroke',
+    );
   });
 
   test('sidebar edge templates capture native geometry for LibreOffice', () {
@@ -5149,12 +5182,16 @@ void main() {
         'Draw.io JS / UML25 / uml 2.5',
         'Template signature',
       ).build(90, 3, 3);
+      final signatureDash = signature.line.customDashPattern;
       expect(
         signature.line.pattern,
-        2,
-        reason:
-            'mxShape.configureCanvas dashed=1 is LinePattern 2 in tokens.txt',
+        1,
+        reason: 'mxShape.configureCanvas dashed=1 with no dashpattern uses '
+            'createState 3 3 as veDashPattern, not tokens.txt LinePattern 2',
       );
+      expect(signature.line.fixedDash, isTrue);
+      expect(signatureDash, isNotNull);
+      expect(signatureDash!.length, greaterThanOrEqualTo(2));
 
       final cloud = stencil(
         'Draw.io JS / DFD / Data Flow Diagram',
@@ -5256,7 +5293,16 @@ void main() {
             .any((command) => command is CubBezTo || command is RelCubBezTo),
         isTrue,
       );
-      expect(leftover.findShapeById(dashId)!.line.pattern, 2);
+      expect(
+        leftover
+            .findShapeById(dashId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save bakes Template signature 3 3 into MoveTo gaps',
+      );
       expect(
         leftover
             .findShapeById(cylId)!
@@ -5520,11 +5566,16 @@ void main() {
         isTrue,
         reason: 'fillColor=none group box must not leave a fill plate',
       );
+      final zoneDash = zone.line.customDashPattern;
       expect(
         zone.line.pattern,
-        2,
-        reason: 'dashed=1 Availability Zone is LinePattern 2 in tokens.txt',
+        1,
+        reason: 'mxShape.configureCanvas dashed=1 with no dashpattern uses '
+            'createState 3 3 as veDashPattern, not tokens.txt LinePattern 2',
       );
+      expect(zone.line.fixedDash, isTrue);
+      expect(zoneDash, isNotNull);
+      expect(zoneDash!.length, greaterThanOrEqualTo(2));
 
       final security = stencil(
         'Draw.io JS / AWS4 / AWS / Groups',
@@ -5564,8 +5615,14 @@ void main() {
         isTrue,
       );
       expect(
-        leftover.findShapeById(zoneId)!.line.pattern,
-        2,
+        leftover
+            .findShapeById(zoneId)!
+            .geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save bakes Availability Zone 3 3 into MoveTo gaps',
       );
     },
   );
@@ -5815,17 +5872,19 @@ void main() {
   );
 
   test(
-    'mxImageShape SVG url(#gradient) stays FillPattern 25–40 for LibreOffice',
+    'mxImageShape SVG url(#gradient) tessellates FillForegnd for LibreOffice',
     () {
-      final cyan = VsdxColor.tryParse('#00B8F1')!;
-      final navy = VsdxColor.tryParse('#1E5FBB')!;
-
-      bool isSapLogoRamp(VsdxFill fill) {
-        if (!fill.hasFill || fill.pattern < 25 || fill.pattern > 40) {
-          return false;
-        }
-        final colors = <VsdxColor?>{fill.foreground, fill.background};
-        return colors.contains(cyan) && colors.contains(navy);
+      bool isSapLogoBand(VsdxFill fill) {
+        if (!fill.hasFill || fill.pattern != 1) return false;
+        final color = fill.foreground;
+        if (color == null) return false;
+        // SAP_Logo.svg url(#b) tessellates navy #1E5FBB → cyan #05A7E6.
+        // libvisio has no FillGradient token; leftover FillPattern 25–40
+        // would 0→1 the XForm. Keep FillForegnd slabs.
+        return color.red <= 0x1E &&
+            color.green >= 0x5F &&
+            color.green <= 0xA7 &&
+            color.blue >= 0xBB;
       }
 
       Iterable<VsdxFill> descendantFills(VsdxShape shape) sync* {
@@ -5843,10 +5902,11 @@ void main() {
           .singleWhere((entry) => entry.name == 'SAP')
           .build(134, 3, 3);
       expect(
-        descendantFills(sap).any(isSapLogoRamp),
-        isTrue,
-        reason: 'SAP_Logo.svg fill=url(#b) must become FillPattern 25–40 '
-            'that libvisio _fillAndShadowProperties maps to draw:style=linear',
+        descendantFills(sap).where(isSapLogoBand).length,
+        greaterThanOrEqualTo(4),
+        reason: 'SAP_Logo.svg fill=url(#b) tessellates as FillPattern 1 '
+            'navy→cyan slabs Draw can paint; FillPattern 25–40 would 0→1 '
+            'the XForm',
       );
       expect(
         descendantFills(sap).any(
@@ -5884,9 +5944,9 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        descendantFills(leftover).any(isSapLogoRamp),
-        isTrue,
-        reason: 'a second save must keep the SAP Logo FillPattern ramp',
+        descendantFills(leftover).where(isSapLogoBand).length,
+        greaterThanOrEqualTo(4),
+        reason: 'a second save must keep the SAP Logo FillForegnd slabs',
       );
     },
   );
@@ -7387,8 +7447,21 @@ void main() {
         reason: 'a second save must keep Search handle CubBezTo corners',
       );
 
-      final lens = search.children.where((child) => child.fill.pattern == 40);
-      expect(lens, isNotEmpty);
+      final lens = search.children.where(
+        (child) =>
+            child.fill.pattern == 1 &&
+            child.fill.foreground == VsdxColor.white &&
+            child.geometries.any(
+              (geometry) => geometry.commands.any((command) => command is EllipseCmd),
+            ),
+      );
+      expect(
+        lens,
+        isNotEmpty,
+        reason: 'Search.svg lens tessellates the radial as FillForegnd '
+            'bands plus a white EllipseCmd; FillPattern 40 would 0→1 a '
+            'circle that covers the handle',
+      );
       final ellipse = lens.first.geometries.first.commands.whereType<EllipseCmd>().first;
       final cx = ellipse.cx;
       final cy = ellipse.cy;
@@ -7533,10 +7606,10 @@ void main() {
   );
 
   test(
-    'mxImageShape SVG axial url(#gradient) stays FillPattern 26–29 for LibreOffice',
+    'mxImageShape SVG axial url(#gradient) stays FillPattern 26–30 for LibreOffice',
     () {
-      final tunnelPeak = VsdxColor.tryParse('#BEE4FF')!;
-      final tunnelEdge = VsdxColor.tryParse('#1574FF')!;
+      final tunnelPeak = VsdxColor.tryParse('#B9DCFB')!;
+      final tunnelEdge = VsdxColor.tryParse('#090A9E')!;
 
       bool isAxialWash(VsdxFill fill, VsdxColor peak, VsdxColor edge, int pattern) {
         if (!fill.hasFill || fill.pattern != pattern) return false;
@@ -7581,31 +7654,59 @@ void main() {
       final tunnel = ad('Tunnel').build(158, 3, 3);
       expect(
         descendantFills(tunnel).any(
-          (fill) => isAxialWash(fill, tunnelPeak, tunnelEdge, 29),
+          (fill) => isAxialWash(fill, tunnelEdge, tunnelPeak, 30),
         ),
         isTrue,
-        reason: 'tunnel.svg url(#B) 0/#1574ff .5/#bee4ff 1/#1473ff must '
-            'become FillPattern 29 (ODF axial north) so Draw paints the '
-            'highlight, not a first/last two-stop #1574ff→#1473ff bar',
+        reason: 'tunnel.svg capture is fillgradient north #B9DCFB→#090A9E; '
+            'FillPattern 30 is ODF linear (draw:angle 0) with FillForegnd '
+            'the south stop. A three-stop axial would be FillPattern 29; '
+            'do not guess that from north',
+      );
+
+      final arc = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Other',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Arc Data Services')
+          .build(1581, 3, 3);
+      final arcPeak = VsdxColor.tryParse('#0078D4')!;
+      final arcEdge = VsdxColor.tryParse('#005BA1')!;
+      expect(
+        descendantFills(arc).any(
+          (fill) => isAxialWash(fill, arcPeak, arcEdge, 26),
+        ),
+        isTrue,
+        reason: 'Arc Data Services fillgradient axial-east is FillPattern 26 '
+            'that libvisio _fillAndShadowProperties maps to draw:style=axial',
       );
 
       const writer = VsdxWriter();
       const parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
-      final id = doc.pages.first.nextFreeShapeId();
-      doc = doc.replacePage(
-        0,
-        doc.pages.first.addShape(phone.copyWith(id: id)),
+      final phoneId = doc.pages.first.nextFreeShapeId();
+      var page = doc.pages.first.addShape(ad('Cell Phone').build(phoneId, 3, 3));
+      final tunnelId = page.nextFreeShapeId();
+      page = page.addShape(ad('Tunnel').build(tunnelId, 3, 3));
+      final arcId = page.nextFreeShapeId();
+      page = page.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / Azure2 / Azure / Other',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Arc Data Services')
+            .build(arcId, 3, 3),
       );
+      doc = doc.replacePage(0, page);
       final leftover = parser
           .parse(
             writer.write(originalBytes: writer.emptyDocument(), edited: doc),
           )
           .pages
-          .first
-          .findShapeById(id)!;
+          .first;
       expect(
-        descendantFills(leftover).where((fill) {
+        descendantFills(leftover.findShapeById(phoneId)!).where((fill) {
           final color = fill.foreground;
           if (color == null ||
               fill.pattern != 1 ||
@@ -7619,6 +7720,20 @@ void main() {
         }).length,
         greaterThanOrEqualTo(2),
         reason: 'a second save must keep the Cell Phone light-peak slabs',
+      );
+      expect(
+        descendantFills(leftover.findShapeById(tunnelId)!).any(
+          (fill) => isAxialWash(fill, tunnelEdge, tunnelPeak, 30),
+        ),
+        isTrue,
+        reason: 'a second save must keep Tunnel FillPattern 30',
+      );
+      expect(
+        descendantFills(leftover.findShapeById(arcId)!).any(
+          (fill) => isAxialWash(fill, arcPeak, arcEdge, 26),
+        ),
+        isTrue,
+        reason: 'a second save must keep Arc Data Services FillPattern 26',
       );
     },
   );

@@ -583,6 +583,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxShape `dashed=1` without `dashpattern` leftover now stays
+  native in LibreOffice. Official `mxAbstractCanvas2D.createState` uses
+  `dashPattern: '3 3'`. Catalog decode already writes that as
+  `veDashPattern`; `_lineProperties` treats custom `0xfe` as solid, so
+  leftover bakes MoveTo gaps (IBM Dashed Connector, Availability Zone,
+  UML Template signature). Tests that still expected tokens.txt
+  LinePattern 2 now walk those gaps. A second save keeps the dashes.
+- draw.io SVG `url(#gradient)` leftover now matches what libvisio can
+  paint. SAP Logo tessellates navy→cyan FillForegnd slabs (no
+  FillGradient token). Tunnel capture is FillPattern 30 north; Arc Data
+  Services `axial-east` stays FillPattern 26 leftover. Azure Search lens
+  is a white `EllipseCmd`, not FillPattern 40. Catalog tests follow that
+  tessellation. A second save keeps the slabs and axial.
+
 - draw.io Chen Weak Entity / Identifying Relationship extra inherit
   fills now stay native in LibreOffice. `collectGeometry` concatenates
   every NoFill=0 section into one evenodd path. A second concentric
