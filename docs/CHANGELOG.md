@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil default `dashPattern: 3 3` now stays native in
+  LibreOffice. Official `mxAbstractCanvas2D.createState` uses `'3 3'`;
+  `setDashed(true)` without `<dashpattern>` (AWS 3D Dashed Edge, Cisco
+  Metro 1500) fell through to Visio `LinePattern` 2 (`6×`/`3×`
+  LineWeight) that `_lineProperties` case 2 paints. Short rails looked
+  solid. The decoder now freezes the 3 3 array as `veDashPattern`; leftover
+  bakes MoveTo gaps because custom `0xfe` is solid in libvisio. Explicit
+  `<dashpattern>` is unchanged. A second save keeps the gaps.
 - draw.io mxStencil shape `strokewidth="2"` now stays native in LibreOffice.
   Official `mxStencil.drawShape` does `Number(strokewidth) * minScale`
   before `drawNode` (Networks Comm Link / Firewall). Catalog decode only

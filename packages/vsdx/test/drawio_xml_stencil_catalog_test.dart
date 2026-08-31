@@ -1092,6 +1092,74 @@ void main() {
     );
   });
 
+  test('mxStencil default dashPattern is 3 3 for LibreOffice', () {
+    bool hasFixedDefaultDash(VsdxShape shape, double expected) {
+      final custom = shape.line.customDashPattern;
+      if (shape.line.hasLine &&
+          shape.line.fixedDash &&
+          custom != null &&
+          custom.length >= 2 &&
+          (custom.first - expected).abs() < 0.05) {
+        return true;
+      }
+      return shape.children
+          .any((child) => hasFixedDefaultDash(child, expected));
+    }
+
+    bool hasBakedDashGaps(VsdxShape shape) {
+      if (shape.line.hasLine) {
+        final moves = shape.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length;
+        if (moves >= 2) return true;
+      }
+      return shape.children.any(hasBakedDashGaps);
+    }
+
+    // AWS 3D Dashed Edge: dashed=1, no dashpattern. Catalog scale is
+    // 1.5/31.6; createState '3 3' → 3 * minScale / (1/96) CSS-px.
+    const expected = 3 * (1.5 / 31.6) * 96;
+    final edge = dynamic
+        .singleWhere((group) => group.name == 'Draw.io JS / AWS3D / AWS 3D')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Dashed Edge')
+        .build(88, 3, 3);
+    expect(
+      hasFixedDefaultDash(edge, expected),
+      isTrue,
+      reason: 'dashed without dashpattern must use mx 3 3 as veDashPattern, '
+          'not Visio LinePattern 2 (6× LineWeight)',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        dynamic
+            .singleWhere(
+              (group) => group.name == 'Draw.io JS / AWS3D / AWS 3D',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'Dashed Edge')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      hasBakedDashGaps(leftover),
+      isTrue,
+      reason: 'a second save bakes veFixedDash 3 3 into MoveTo gaps',
+    );
+  });
+
   test(
     'mxStencil save/restore keeps post-restore strokes solid for LibreOffice',
     () {

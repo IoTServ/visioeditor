@@ -83,6 +83,9 @@ class _DrawioXmlLibrary {
 /// collectCharIX `fo:font-size` matched. 0.5pt still rejects empty Size.
 const double _kMxMinCharSizeInches = 0.5 / 72.0;
 
+/// mxAbstractCanvas2D.createState `dashPattern: '3 3'`.
+const List<double> _kMxDefaultDashPattern = <double>[3, 3];
+
 /// mxAbstractCanvas2D.save/restore paint. Path geometry stays live.
 class _MxPaintState {
   const _MxPaintState({
@@ -1078,8 +1081,13 @@ class _DrawioXmlShapeDecoder {
   }
 
   List<double>? _fixedDashPatternValues([List<double>? raw]) {
-    final source = raw ?? _dashPattern;
-    if (source == null || source.isEmpty) return null;
+    // mxAbstractCanvas2D.createState dashPattern is '3 3'. A dashed
+    // stroke with no <dashpattern> (AWS 3D Dashed Edge, Cisco Metro
+    // 1500) must not fall through to Visio LinePattern 2 (6×/3×
+    // LineWeight) — libvisio `_lineProperties` case 2 would paint
+    // weight-scaled dashes that look solid on a short rail.
+    final source = raw ?? _dashPattern ?? _kMxDefaultDashPattern;
+    if (source.isEmpty) return null;
     final scale = math.min(scaleX.abs(), scaleY.abs());
     final values = <double>[
       for (final value in source)
@@ -1180,7 +1188,7 @@ class _DrawioXmlShapeDecoder {
     }
     if (doStroke && _dashed) {
       _parentDashed = true;
-      _parentDashPattern ??= _dashPattern;
+      _parentDashPattern ??= _dashPattern ?? _kMxDefaultDashPattern;
     }
     if (doStroke && _strokeWidth != null) {
       _parentStrokeWidth ??= _strokeWidth;
