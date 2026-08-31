@@ -583,6 +583,22 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil omitted `<fontfamily>` / `<fontcolor>` now stay
+  Arial / `#000000` in LibreOffice, matching `createState`
+  `DEFAULT_FONTFAMILY` and `fontColor`. Catalog decode left Char.Font /
+  Color null (platform face / theme). Electrical Flip-Flop D/Q glyphs
+  have no those tags; leftover writes the cells `collectCharIX` maps to
+  `style:font-name` / `fo:color`. Cell values still use defaultVertex
+  Helvetica via `applyTextStyle`. A second save keeps Arial black.
+- draw.io JS vertex-cells capture now emits `createState` between
+  cells. One recording canvas used to leak the previous cell's
+  `applyTextStyle` Helvetica/12, `dashed=1`, FillForegnd hex, and round
+  cap onto the next NestedStencil (`bindStyle` zeroed tokens so the
+  real setters became no-ops). Official `configureCanvas` always
+  `setFillColor` / `setDashed`; NestedStencil and `bindStyle` now emit
+  Arial / `#000000` / solid 1px so leftover collectCharIX / collectLine
+  stay on this stencil. Cell values still use defaultVertex Helvetica
+  via `applyTextStyle`. A second save keeps the reset.
 - draw.io mxStencil omitted `<fontsize>` now stays 11px in LibreOffice,
   matching `mxAbstractCanvas2D.createState` /
   `mxConstants.DEFAULT_FONTSIZE`. Catalog decode and JS capture used 12

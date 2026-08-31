@@ -260,6 +260,8 @@ class CanvasRecorder {
     this._fontStyleToken = 0;
     this._fontBgToken = 'none';
     this._fontBorderToken = 'none';
+    // text() emits <fontsize>; bindStyle compares this to createState 11.
+    this._fontSizeToken = 11;
     this._strokeWidthToken = 1;
     this._dashedToken = null;
     this._dashToken = null;
@@ -767,6 +769,7 @@ class CanvasRecorder {
     const vert = String(valign ?? '').toLowerCase();
     const fontSize = Number(this.state.fontSize);
     if (Number.isFinite(fontSize) && fontSize > 0) {
+      this._fontSizeToken = fontSize;
       this.operations.push(`<fontsize size="${number(fontSize)}"/>`);
     }
     const p = this.map(x, y);
@@ -865,19 +868,65 @@ class CanvasRecorder {
   bindStyle(fill, stroke) {
     this.styleFill = fill;
     this.styleStroke = stroke;
-    this._fillToken = 'fill';
-    this._strokeToken = 'stroke';
-    this._fontToken = null;
-    this._fontFamilyToken = null;
-    this._fontStyleToken = 0;
-    this._fontBgToken = 'none';
-    this._fontBorderToken = 'none';
-    this._strokeWidthToken = 1;
-    this._alphaToken = 1;
-    this._fillAlphaToken = 1;
-    this._strokeAlphaToken = 1;
     this.state.shadow = false;
     this._shadowToken = '0';
+    // One recording canvas paints every cell of a vertex-cells template.
+    // mxShape.paint / configureCanvas starts from createState. Zeroing
+    // _fillToken / _fontFamilyToken first made the real setters no-ops,
+    // so the previous cell's applyTextStyle Helvetica/12, dashed=1,
+    // FillForegnd hex, or round cap leaked onto the next NestedStencil
+    // (omitted <fontfamily>, solid rails). Emit the createState values
+    // libvisio collectCharIX / collectLine actually see.
+    if (this._fontSizeToken !== 11) {
+      this.finishPath();
+      this.operations.push('<fontsize size="11"/>');
+      this._fontSizeToken = 11;
+    }
+    this.state.fontSize = 11;
+    if (this._fontStyleToken !== 0) this.setFontStyle(0);
+    else this.state.fontStyle = 0;
+    if (this._fontFamilyToken !== 'Arial') this.setFontFamily('Arial');
+    else this.state.fontFamily = 'Arial';
+    if (this._fontToken !== '#000000') this.setFontColor('#000000');
+    else this.state.fontColor = '#000000';
+    if (this._fontBgToken !== 'none') this.setFontBackgroundColor(null);
+    else this.state.fontBackgroundColor = null;
+    if (this._fontBorderToken !== 'none') this.setFontBorderColor(null);
+    else this.state.fontBorderColor = null;
+    this.state.textOpacity = 100;
+    this.state.verticalText = false;
+    this.state.wrap = false;
+    this.state.spacingLeft = 0;
+    this.state.spacingRight = 0;
+    this.state.spacingTop = 0;
+    this.state.spacingBottom = 0;
+    this.state.gradientColor = null;
+    this.state.fixDash = false;
+    // Do not freeze _fillToken to 'fill' before setFillColor: a previous
+    // hex FillForegnd would then skip the inherit token and stick.
+    this.setFillColor(isNoneColor(fill) ? null : fill);
+    this.setStrokeColor(isNoneColor(stroke) ? null : stroke);
+    if (this._dashedToken === true) this.setDashed(false);
+    else this.state.dashed = false;
+    if (this._dashToken && this._dashToken !== '3 3') {
+      this.setDashPattern('3 3');
+    }
+    if (this._lineCapToken && this._lineCapToken !== 'flat') {
+      this.setLineCap('flat');
+    }
+    if (this._lineJoinToken && this._lineJoinToken !== 'miter') {
+      this.setLineJoin('miter');
+    }
+    if (this._miterToken !== 10) this.setMiterLimit(10);
+    else this.state.miterLimit = 10;
+    if (this._strokeWidthToken !== 1) this.setStrokeWidth(1);
+    else this.state.strokeWidth = 1;
+    if (this._alphaToken !== 1) this.setAlpha(1);
+    else this.state.alpha = 1;
+    if (this._fillAlphaToken !== 1) this.setFillAlpha(1);
+    else this.state.fillAlpha = 1;
+    if (this._strokeAlphaToken !== 1) this.setStrokeAlpha(1);
+    else this.state.strokeAlpha = 1;
   }
 
   _emitPaint(tag, token) {
@@ -6394,14 +6443,18 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     const stencil = stencilMap[String(name).toLowerCase()];
     if (stencil) {
       const ghost = {style, fill, stroke, direction: style.direction || null};
-      if (style.dashed === '1') canvas.setDashed(true);
+      // mxShape.configureCanvas always setFillColor / setDashed from the
+      // cell. NestedStencil used to skip those when the style omitted
+      // dashed=1 / none fill, so the previous vertex-cells sibling leaked
+      // collectLine dashes and FillForegnd onto this stencil.
+      canvas.setFillColor(isNoneColor(fill) ? null : fill);
+      canvas.setStrokeColor(isNoneColor(stroke) ? null : stroke);
+      canvas.setDashed(style.dashed === '1');
       if (style.dashPattern) canvas.setDashPattern(style.dashPattern);
       if (style.linecap) canvas.setLineCap(style.linecap);
       if (style.linejoin) canvas.setLineJoin(style.linejoin);
       if (style.miterlimit) canvas.setMiterLimit(style.miterlimit);
       if (style.shadow == 1) canvas.setShadow(true);
-      if (isNoneColor(fill)) canvas.setFillColor(null);
-      if (isNoneColor(stroke)) canvas.setStrokeColor(null);
       stencil.drawShape(canvas, ghost, x, y, width, height);
       canvas.finish();
       return ghost;

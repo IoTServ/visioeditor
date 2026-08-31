@@ -96,6 +96,13 @@ VsdxShape decodeDrawioMxStencilXml(
 /// defaultVertex still pins cell labels at 12 via applyTextStyle.
 const double _kMxDefaultFontSize = 11;
 
+/// mxConstants.DEFAULT_FONTFAMILY first face (`Arial,Helvetica`).
+/// defaultVertex still pins cell labels at Helvetica via applyTextStyle.
+const String _kMxDefaultFontFamily = 'Arial';
+
+/// mxAbstractCanvas2D.createState `fontColor: '#000000'`.
+const VsdxColor _kMxDefaultFontColor = VsdxColor.black;
+
 /// Visio Char.Size UI floor is 0.5pt. The old 0.04in (~2.88pt) clamp
 /// flattened mxText `font-size:14px` / `9px` on wide composites
 /// (Salesforce Header 930px) after catalog scale `1.5 / max(w,h)`, so
@@ -193,8 +200,8 @@ class _DrawioXmlShapeDecoder {
   List<VsdxPathCommand>? _pending;
   double _fontSize = _kMxDefaultFontSize;
   int _fontStyle = 0;
-  String? _fontFamily;
-  VsdxColor? _fontColor;
+  String? _fontFamily = _kMxDefaultFontFamily;
+  VsdxColor? _fontColor = _kMxDefaultFontColor;
   VsdxColor? _fontBackground;
   VsdxColor? _fillColor;
   VsdxFill? _fillOverride;

@@ -10380,6 +10380,18 @@ void main() {
         reason: 'createState fontSize is 11. collectCharIX Size must not use '
             'defaultVertex 12 when the stencil omits <fontsize>',
       );
+      expect(
+        runExact(omitted, 'D')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'createState fontFamily is DEFAULT_FONTFAMILY Arial,Helvetica; '
+            'collectCharIX Font maps the first face',
+      );
+      expect(
+        runExact(omitted, 'D')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'createState fontColor is #000000 that collectCharIX maps '
+            'to fo:color',
+      );
 
       final flipFlop = migrated
           .singleWhere(
@@ -10393,6 +10405,8 @@ void main() {
         closeTo(11 * omittedScale, 0.0005),
         reason: 'D Type Flip-Flop D/Q glyphs have no <fontsize>',
       );
+      expect(runExact(flipFlop, 'D')!.charStyle.fontFamily, 'Arial');
+      expect(runExact(flipFlop, 'D')!.charStyle.color, VsdxColor.black);
       expect(
         runExact(flipFlop, 'Q')!.charStyle.fontSizeInches,
         closeTo(11 * omittedScale, 0.0005),
@@ -10419,6 +10433,132 @@ void main() {
         reason: 'a second save must keep createState 11 as Char.Size that '
             'collectCharIX maps to fo:font-size',
       );
+      expect(
+        runExact(leftover, 'D')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'a second save must keep Char.Font Arial',
+      );
+      expect(
+        runExact(leftover, 'D')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'a second save must keep Char.Color #000000',
+      );
+    },
+  );
+
+  test(
+    'vertex-cells bindStyle resets createState before NestedStencil glyphs',
+    () {
+      VsdxTextRun? runExact(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text == text) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runExact(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      // Concatenated vertex-cells XML: previous applyTextStyle then the
+      // bindStyle createState emit. Decoder walks one canvas; omitted
+      // NestedStencil tags used to keep Helvetica / 12 / italic / red.
+      final cells = decodeDrawioMxStencilXml(
+        '<shape name="Cells" w="100" h="80" strokewidth="inherit">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '<fontsize size="12"/>'
+        '<fontfamily family="Helvetica"/>'
+        '<fontstyle style="2"/>'
+        '<fontcolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="40" h="20"/>'
+        '<stroke/>'
+        '<text align="center" str="Title" valign="middle" x="20" y="10"/>'
+        '<dashed dashed="0"/>'
+        '<fontsize size="11"/>'
+        '<fontfamily family="Arial"/>'
+        '<fontstyle style="0"/>'
+        '<fontcolor color="#000000"/>'
+        '<text align="center" str="D" valign="bottom" x="25" y="25"/>'
+        '</foreground>'
+        '</shape>',
+        id: 446,
+      );
+      const scale = 1.5 / 100;
+      expect(
+        runExact(cells, 'Title')!.charStyle.fontFamily,
+        'Helvetica',
+      );
+      expect(
+        runExact(cells, 'Title')!.charStyle.fontSizeInches,
+        closeTo(12 * scale, 0.0005),
+      );
+      expect(runExact(cells, 'Title')!.charStyle.style.italic, isTrue);
+      expect(
+        runExact(cells, 'Title')!.charStyle.color,
+        const VsdxColor(0xFFFF0000),
+      );
+      expect(
+        runExact(cells, 'D')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'bindStyle createState DEFAULT_FONTFAMILY first face',
+      );
+      expect(
+        runExact(cells, 'D')!.charStyle.fontSizeInches,
+        closeTo(11 * scale, 0.0005),
+        reason: 'bindStyle createState DEFAULT_FONTSIZE 11',
+      );
+      expect(
+        runExact(cells, 'D')!.charStyle.style.italic,
+        isFalse,
+        reason: 'bindStyle createState fontStyle 0',
+      );
+      expect(
+        runExact(cells, 'D')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'bindStyle createState fontColor #000000',
+      );
+
+      final jsFlipFlop = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Electrical / Electrical / Logic Gates',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'D Type Flip-Flop')
+          .build(447, 3, 3);
+      expect(
+        runExact(jsFlipFlop, 'D')!.charStyle.fontFamily,
+        'Arial',
+        reason: 'JS NestedStencil D/Q omit fontfamily; bindStyle Arial',
+      );
+      expect(
+        runExact(jsFlipFlop, 'D')!.charStyle.fontSizeInches,
+        closeTo(11 * scale, 0.0005),
+      );
+      expect(runExact(jsFlipFlop, 'D')!.charStyle.color, VsdxColor.black);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(jsFlipFlop.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(runExact(leftover, 'D')!.charStyle.fontFamily, 'Arial');
+      expect(
+        runExact(leftover, 'D')!.charStyle.fontSizeInches,
+        closeTo(11 * scale, 0.0005),
+      );
+      expect(runExact(leftover, 'D')!.charStyle.color, VsdxColor.black);
     },
   );
 
