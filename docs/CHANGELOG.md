@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Graph autosizeText now stays native in LibreOffice. Official
+  `Graph.computeAutosizeTextFontSize` binary-searches 6–84px so General
+  Autosize Title (`fontSize=25` in a 160×40 cell) and the wrapped Note
+  paragraph fit the box. Catalog capture used the style token, so Draw
+  overflowed (`tokens.txt` has no autosizeText; `collectCharIX` Size is
+  `fo:font-size`). Capture now leftover-bakes the fitted size. A second
+  save keeps Char.Size.
 - draw.io mxText html entity stereotypes now stay native in LibreOffice.
   Official `mxText` html=1 paints SysML Package Diagram's
   `&lt;&lt;import&gt;&gt;` through the foreignObject UA as `<<import>>`.

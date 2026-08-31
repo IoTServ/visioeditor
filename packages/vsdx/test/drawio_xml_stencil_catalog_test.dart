@@ -11186,4 +11186,101 @@ void main() {
       expect(countExact(leftover, '<<import>>'), 1);
     },
   );
+
+  test(
+    'mxGraph autosizeText leftover-bakes fitted Char Size for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      Stencil stencil(String name) => dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      // 160×40 cell, catalog scale 1.5/160. Unfitted fontSize=25 is 16.875pt.
+      const titleScale = 1.5 / 160;
+      final title = stencil('Autosize Title').build(530, 3, 3);
+      final titlePt = runContaining(title, 'Autosize Title')!
+          .charStyle
+          .fontSizeInches *
+          72;
+      expect(
+        titlePt,
+        lessThan(25 * titleScale * 72 - 1),
+        reason: 'Graph.computeAutosizeTextFontSize must shrink 25px in a '
+            '40px-tall cell so leftover Char.Size is not the style token',
+      );
+      expect(
+        titlePt,
+        greaterThanOrEqualTo(6 * titleScale * 72 - 0.2),
+        reason: 'autosizeText floor is 6px, collectCharIX Size maps to '
+            'fo:font-size',
+      );
+
+      // 150×150 note, scale 1.5/150. Unfitted fontSize=20 is 14.4pt.
+      const noteScale = 1.5 / 150;
+      final note = stencil('note').build(531, 3, 3);
+      final notePt = runContaining(
+            note,
+            'The size of the font in this note will change',
+          )!
+          .charStyle
+          .fontSizeInches *
+          72;
+      expect(
+        notePt,
+        lessThan(20 * noteScale * 72 - 0.5),
+        reason: 'whiteSpace=wrap autosizeText must fit the paragraph in the '
+            'note box before collectCharIX',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      VsdxShape leftoverOf(VsdxShape shape) {
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(shape.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      expect(
+        runContaining(leftoverOf(title), 'Autosize Title')!
+                .charStyle
+                .fontSizeInches *
+            72,
+        closeTo(titlePt, 0.05),
+        reason: 'a second save must keep the fitted Char.Size',
+      );
+      expect(
+        runContaining(
+              leftoverOf(note),
+              'The size of the font in this note will change',
+            )!
+                .charStyle
+                .fontSizeInches *
+            72,
+        closeTo(notePt, 0.05),
+      );
+    },
+  );
 }

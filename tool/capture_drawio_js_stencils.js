@@ -5689,9 +5689,56 @@ const mxUtilsBase = {
   getColorValue(style, key, fallback) {
     return style && style[key] != null ? style[key] : fallback;
   },
-  getSizeForString(value, fontSize) {
+  htmlEntities(s, newline) {
+    let out = String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+    if (newline !== false) out = out.replace(/\n/g, '&#xa;');
+    return out;
+  },
+  // Graph.computeAutosizeTextFontSize / mxUtils.getSizeForString. HTML
+  // <br> is a line; textWidth wraps like white-space:normal. Capture has
+  // no DOM, so leftover Char.Size uses the same 0.6em × 1.2lh metric as
+  // html border-bottom / list pad estimates.
+  getSizeForString(value, fontSize, fontFamily, textWidth, fontStyle) {
     const size = Number(fontSize) || 11;
-    return {width: String(value || '').length * size * 0.6, height: size * 1.2};
+    const em = size * 0.6;
+    const lineH = size * (Number(mxConstants.LINE_HEIGHT) || 1.2);
+    const html = String(value || '');
+    const plain = html.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '');
+    const paras = plain.split('\n');
+    const measure = (str) => String(str || '').length * em;
+    const wrapW = textWidth != null && Number(textWidth) > 0 ? Number(textWidth) : null;
+    if (wrapW == null) {
+      let maxW = 0;
+      for (const para of paras) maxW = Math.max(maxW, measure(para));
+      return {width: maxW, height: Math.max(1, paras.length) * lineH};
+    }
+    let lines = 0;
+    let maxW = 0;
+    for (const para of paras) {
+      if (!para.length) {
+        lines += 1;
+        continue;
+      }
+      const words = para.split(/[\s]+/).filter((word) => word.length);
+      let cur = 0;
+      for (const word of words) {
+        const ww = measure(word);
+        if (cur === 0) cur = ww;
+        else if (cur + em + ww <= wrapW) cur += em + ww;
+        else {
+          lines += 1;
+          maxW = Math.max(maxW, Math.min(wrapW, cur));
+          cur = ww;
+        }
+      }
+      lines += 1;
+      maxW = Math.max(maxW, Math.min(wrapW, cur));
+    }
+    return {width: maxW, height: Math.max(1, lines) * lineH};
   },
   parseColorList(value) {
     return String(value || '').split(/[\s,]+/).filter(Boolean);
@@ -7939,7 +7986,78 @@ function isHtmlCellStyle(style) {
   return !!(style && (style.html == 1 || style.html === '1'));
 }
 
-function applyTextStyle(canvas, style) {
+// Graph.getAutosizeTextAvailableSpace: spacing 2 plus spacingLeft/Right
+// defaults of 2. tokens.txt has no autosizeText; leftover freezes the
+// fitted Char.Size collectCharIX maps to fo:font-size.
+function getAutosizeTextAvailableSpace(style, w, h) {
+  const spacing = parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING, 2));
+  const sl = parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_LEFT, 2));
+  const sr = parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_RIGHT, 2));
+  const st = parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_TOP, 2));
+  const sb = parseFloat(mxUtils.getValue(style, mxConstants.STYLE_SPACING_BOTTOM, 2));
+  let dx = 2 * (Number.isFinite(spacing) ? spacing : 2)
+    + (Number.isFinite(sl) ? sl : 2)
+    + (Number.isFinite(sr) ? sr : 2);
+  let dy = 2 * (Number.isFinite(spacing) ? spacing : 2)
+    + (Number.isFinite(st) ? st : 2)
+    + (Number.isFinite(sb) ? sb : 2);
+  if (style && style[mxConstants.STYLE_IMAGE] != null &&
+      style[mxConstants.STYLE_SHAPE] == mxConstants.SHAPE_LABEL) {
+    if (style[mxConstants.STYLE_VERTICAL_ALIGN] == mxConstants.ALIGN_MIDDLE) {
+      dx += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_IMAGE_WIDTH, 24));
+    }
+    if (style[mxConstants.STYLE_ALIGN] != mxConstants.ALIGN_CENTER) {
+      dy += parseFloat(mxUtils.getValue(style, mxConstants.STYLE_IMAGE_HEIGHT, 24));
+    }
+  }
+  const horizontal = mxUtils.getValue(style, mxConstants.STYLE_HORIZONTAL, true);
+  const availW = (horizontal == 0 || horizontal === '0' || horizontal === false ? h : w) - dx;
+  const availH = (horizontal == 0 || horizontal === '0' || horizontal === false ? w : h) - dy;
+  if (!(availW > 0) || !(availH > 0)) return null;
+  return {availW, availH};
+}
+
+function computeAutosizeTextFontSize(value, availW, availH, fontFamily, fontStyle, wrap) {
+  let lo = 1;
+  let hi = 84;
+  const textW = wrap ? availW : null;
+  let wordsValue = null;
+  if (wrap) {
+    const plainText = String(value || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '');
+    const words = plainText.split(/[\s\n]+/).filter((word) => word.length);
+    if (words.length) {
+      wordsValue = words.map((word) => mxUtils.htmlEntities(word, false)).join('<br>');
+    }
+  }
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const size = mxUtils.getSizeForString(value, mid, fontFamily, textW, fontStyle);
+    let fits = wrap ? (size.height <= availH) : (size.width <= availW && size.height <= availH);
+    if (fits && wrap && wordsValue != null) {
+      const wordsSize = mxUtils.getSizeForString(wordsValue, mid, fontFamily, null, fontStyle);
+      if (wordsSize.width > availW) fits = false;
+    }
+    if (fits) lo = mid;
+    else hi = mid - 1;
+  }
+  return Math.max(6, lo);
+}
+
+function fittedAutosizeTextFontSize(style, w, h, label) {
+  if (!style || (style.autosizeText != 1 && style.autosizeText !== '1')) return null;
+  const space = getAutosizeTextAvailableSpace(style, w, h);
+  if (!space) return null;
+  let value = String(label || '');
+  if (!value) return null;
+  if (!isHtmlCellStyle(style)) value = mxUtils.htmlEntities(value, false);
+  value = value.replace(/\n/g, '<br>');
+  const wrap = String(style.whiteSpace || '') === 'wrap';
+  return computeAutosizeTextFontSize(
+    value, space.availW, space.availH, style.fontFamily, style.fontStyle, wrap,
+  );
+}
+
+function applyTextStyle(canvas, style, box) {
   if (!canvas || !style) return;
   // mxText.configureCanvas: cell labels are not paintVertexShape.
   // LibreOffice collectCharIX / collectTextBlock only see Char.Size /
@@ -7956,7 +8074,11 @@ function applyTextStyle(canvas, style) {
   if (style.fontFamily != null && canvas.setFontFamily) {
     canvas.setFontFamily(style.fontFamily);
   }
-  const size = Number(style.fontSize);
+  let size = Number(style.fontSize);
+  if (box && box.w > 0 && box.h > 0 && box.label) {
+    const fitted = fittedAutosizeTextFontSize(style, box.w, box.h, box.label);
+    if (Number.isFinite(fitted) && fitted > 0) size = fitted;
+  }
   if (Number.isFinite(size) && size > 0 && canvas.setFontSize) {
     canvas.setFontSize(size);
   }
@@ -8140,7 +8262,7 @@ function paintCurvedTextGlyph(canvas, ch, x, y, rotation) {
 function paintCurvedTextLeftover(canvas, x, y, w, h, label, style) {
   const text = String(label || '');
   if (!text) return false;
-  applyTextStyle(canvas, style);
+  applyTextStyle(canvas, style, {w, h, label: text});
   const fontSize = Number(canvas.state.fontSize) || 11;
   const d = curvedTextPathD(
     curvedTextControlPoints(x, y, w, h, style, fontSize),
@@ -8175,7 +8297,7 @@ function paintTemplateLabel(entry, style, width, height, canvas, shape) {
     return;
   }
   if (isNoLabelStyle(style)) return;
-  applyTextStyle(canvas, style);
+  applyTextStyle(canvas, style, {w: width, h: height, label});
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
   const box = mxVertexInnerLabelBox(shape, style, 0, 0, width, height);
@@ -8451,7 +8573,7 @@ function paintCellTree(cells, canvas, width, height) {
           )) {
         painted = true;
       } else if (label && !isNoLabelStyle(cellStyle)) {
-        applyTextStyle(canvas, cellStyle);
+        applyTextStyle(canvas, cellStyle, {w: cellWidth, h: cellHeight, label});
         const align = String(cellStyle.align || 'center');
         const valign = String(cellStyle.verticalAlign || 'middle');
         const box = mxVertexInnerLabelBox(
