@@ -6726,6 +6726,12 @@ function htmlAlignToken(raw) {
   return null;
 }
 
+// HTML UA list padding (css 2.1 appendix D / html.spec rendering).
+// mxText html=1 paints <ul>/<ol> via foreignObject; leftover Bullet 1
+// is U+2022 that collectParaIX maps to text:bullet-char, then
+// libvisio_write bakes the glyph because Draw never paints that char.
+const kHtmlListPadPx = 40;
+
 // mxText HTML/CSS on <p>/<span>/<font>: color, size, weight, italic,
 // text-decoration, font-family, block text-align. collectCharIX maps
 // Style 0x4 to underline; collectParaIX HorzAlign is fo:text-align.
@@ -7026,6 +7032,14 @@ function cloneHtmlStyle(style) {
     marginBottom: Number(style.marginBottom) || 0,
     marginLeft: Number(style.marginLeft) || 0,
     paraStart: !!style.paraStart,
+    // mxText html=1 <ul>/<ol>/<li>. Bullet 1 is Visio disc (U+2022);
+    // ordered items prefix "1. " because tokens.txt has no decimal list.
+    bullet: Number(style.bullet) || 0,
+    listKind: style.listKind || null,
+    listPad: Number(style.listPad) || 0,
+    olIndex: Number(style.olIndex) || 0,
+    olNeedPrefix: !!style.olNeedPrefix,
+    textPosAfterBullet: Number(style.textPosAfterBullet) || 0,
   };
 }
 
@@ -7041,7 +7055,9 @@ function sameHtmlStyle(a, b) {
     && (Number(a.marginTop) || 0) === (Number(b.marginTop) || 0)
     && (Number(a.marginRight) || 0) === (Number(b.marginRight) || 0)
     && (Number(a.marginBottom) || 0) === (Number(b.marginBottom) || 0)
-    && (Number(a.marginLeft) || 0) === (Number(b.marginLeft) || 0);
+    && (Number(a.marginLeft) || 0) === (Number(b.marginLeft) || 0)
+    && (Number(a.bullet) || 0) === (Number(b.bullet) || 0)
+    && (Number(a.textPosAfterBullet) || 0) === (Number(b.textPosAfterBullet) || 0);
 }
 
 function htmlLabelRunsDiffer(runs, state) {
@@ -7081,12 +7097,18 @@ function htmlRunAttrs(run) {
   if (Math.abs(mr) > 1e-9) attrs.push(`margin-right="${number(mr)}"`);
   if (Math.abs(mt) > 1e-9) attrs.push(`margin-top="${number(mt)}"`);
   if (Math.abs(mb) > 1e-9) attrs.push(`margin-bottom="${number(mb)}"`);
+  const bullet = Number(run.bullet) || 0;
+  if (bullet > 0) attrs.push(`bullet="${bullet}"`);
+  const tab = Number(run.textPosAfterBullet) || 0;
+  if (Math.abs(tab) > 1e-9) attrs.push(`text-pos-after-bullet="${number(tab)}"`);
   return attrs.join(' ');
 }
 
 // mxText html=1: <b>/<i>/<font>/<sup>/<sub> and CSS text-decoration become
 // Char Style / Color / Size / Pos that collectCharIX maps to fo:font-weight /
 // fo:color / fo:font-size / style:text-underline-type / style:text-position.
+// <ul>/<ol>/<li> become collectParaIX Bullet / TextPosAfterBullet (disc)
+// or a "1. " prefix (decimal; tokens.txt has no numbered list).
 function parseHtmlLabel(html, base) {
   const runs = [];
   const stack = [cloneHtmlStyle(base)];
@@ -7095,7 +7117,14 @@ function parseHtmlLabel(html, base) {
   const pushRun = (text) => {
     if (!text) return;
     const style = current();
+    // HTML ol ::marker is decimal. tokens.txt has no numbered list, so
+    // prefix "1. " that leftover Draw collects as Character text.
+    if (style.olNeedPrefix && Number(style.olIndex) > 0 && text !== '\n') {
+      text = `${Number(style.olIndex)}. ${text}`;
+      style.olNeedPrefix = false;
+    }
     const emit = cloneHtmlStyle(style);
+    emit.olNeedPrefix = false;
     if (!style.paraStart) emit.marginTop = 0;
     // SpAfter belongs on the last run of the block (or the leftover
     // pending after CSS collapse). Inner <font>/<b> clones would
@@ -7103,9 +7132,9 @@ function parseHtmlLabel(html, base) {
     emit.marginBottom = 0;
     if (text === '\n') {
       emit.marginTop = 0;
-      emit.marginRight = 0;
       emit.marginBottom = 0;
-      emit.marginLeft = 0;
+      // Keep margin-left / bullet / TextPosAfterBullet so <ol>/<ul>
+      // items stay one Character row (Visio breaks paragraphs at \n).
     }
     const last = runs[runs.length - 1];
     if (last && sameHtmlStyle(last, emit)) last.str += text;
@@ -7155,6 +7184,36 @@ function parseHtmlLabel(html, base) {
     else if (tag === 's' || tag === 'strike' || tag === 'del') next.fontStyle |= 8;
     else if (tag === 'sup') next.position = 1;
     else if (tag === 'sub') next.position = 2;
+    // html.spec UA: ul disc / ol decimal, padding-inline-start 40px.
+    // collectParaIX Bullet 1 is U+2022; leftover bakes that glyph because
+    // Draw never paints text:bullet-char.
+    else if (tag === 'ul') {
+      next.listKind = 'ul';
+      next.bullet = 1;
+      next.listPad = (Number(next.listPad) || 0) + kHtmlListPadPx;
+      next.olIndex = 0;
+      next.olNeedPrefix = false;
+    } else if (tag === 'ol') {
+      next.listKind = 'ol';
+      next.bullet = 0;
+      next.listPad = (Number(next.listPad) || 0) + kHtmlListPadPx;
+      next.olIndex = 0;
+      next.olNeedPrefix = false;
+    } else if (tag === 'li') {
+      if (next.listKind === 'ol') {
+        const parent = current();
+        parent.olIndex = (Number(parent.olIndex) || 0) + 1;
+        next.olIndex = parent.olIndex;
+        next.olNeedPrefix = true;
+        next.bullet = 0;
+        next.marginLeft = (Number(next.marginLeft) || 0)
+          + (Number(next.listPad) || kHtmlListPadPx);
+      } else if (next.listKind === 'ul') {
+        next.bullet = 1;
+        next.textPosAfterBullet = Number(next.listPad) || kHtmlListPadPx;
+        next.olNeedPrefix = false;
+      }
+    }
     applyHtmlCss(next, attrs, tag);
     if (block && pendingBlockMarginAfter) {
       next.marginTop = Math.max(

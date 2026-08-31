@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html `<ul>` / `<ol>` now stay native in LibreOffice.
+  Official `mxText` html=1 paints list markers through the foreignObject
+  UA stylesheet (`ul` disc, `ol` decimal, `padding-inline-start: 40px`).
+  Catalog capture flattened General Unordered/Ordered List to three
+  unmarked lines. Capture now records `Bullet` 1 / `TextPosAfterBullet`
+  for discs that leftover bakes as U+2022 (`Draw` never paints
+  `text:bullet-char`) and prefixes `"1. "` for decimals (`tokens.txt`
+  has no numbered list). A second save keeps the markers.
 - draw.io mxStencil omitted `<fontfamily>` / `<fontcolor>` now stay
   Arial / `#000000` in LibreOffice, matching `createState`
   `DEFAULT_FONTFAMILY` and `fontColor`. Catalog decode left Char.Font /

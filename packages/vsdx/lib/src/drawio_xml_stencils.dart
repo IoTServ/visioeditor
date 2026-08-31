@@ -86,9 +86,8 @@ VsdxShape decodeDrawioMxStencilXml(
 }) {
   final document = XmlDocument.parse(xml);
   final root = document.rootElement;
-  final shape = root.name.local == 'shape'
-      ? root
-      : root.findElements('shape').first;
+  final shape =
+      root.name.local == 'shape' ? root : root.findElements('shape').first;
   return _DrawioXmlShapeDecoder(shape).build(id, cx, cy);
 }
 
@@ -686,7 +685,10 @@ class _DrawioXmlShapeDecoder {
       // that collectCharIX maps to fo:color (xmlStringToColour zeros alpha).
       // `text` `run` children follow mxText html=1 <b>/<font> onto extra
       // Character rows collectCharIX maps to fo:font-weight / fo:color /
-      // fo:font-size.
+      // fo:font-size, and html `<ul><li>` onto collectParaIX Bullet /
+      // TextPosAfterBullet (leftover bakes U+2022 because Draw never
+      // paints text:bullet-char). `<ol><li>` prefixes "1. " in the
+      // Character text (tokens.txt has no decimal list).
       // `labelBounds` follows draw.io mxStencil.getLabelBounds (boundedLbl)
       // onto TxtPin / TxtWidth / TxtHeight that collectTextBlock maps
       // below the stacked Multi-Document sheet.
@@ -1103,6 +1105,8 @@ class _DrawioXmlShapeDecoder {
             marginRight: _number(el, 'margin-right'),
             marginTop: _number(el, 'margin-top'),
             marginBottom: _number(el, 'margin-bottom'),
+            bullet: _number(el, 'bullet').round(),
+            textPosAfterBullet: _number(el, 'text-pos-after-bullet'),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
@@ -1709,6 +1713,8 @@ class _DrawioXmlShapeDecoder {
                 indentRightInches: run.marginRight * scale,
                 spaceBeforeInches: run.marginTop * scale,
                 spaceAfterInches: run.marginBottom * scale,
+                bullet: run.bullet,
+                textPosAfterBulletInches: run.textPosAfterBullet * scale,
               ),
             ),
         ],
@@ -1813,6 +1819,8 @@ class _DrawioStencilLabelRun {
     this.marginRight = 0,
     this.marginTop = 0,
     this.marginBottom = 0,
+    this.bullet = 0,
+    this.textPosAfterBullet = 0,
   });
 
   final String text;
@@ -1835,6 +1843,16 @@ class _DrawioStencilLabelRun {
   final double marginRight;
   final double marginTop;
   final double marginBottom;
+
+  /// mxText html `<ul><li>` → Paragraph Bullet. collectParaIX maps 1 to
+  /// U+2022 `text:bullet-char`; leftover bakes the glyph because Draw
+  /// never paints that character.
+  final int bullet;
+
+  /// html.spec UA `padding-inline-start: 40px` on `<ul>`, in mxGraph
+  /// pixels. collectParaIX TextPosAfterBullet is the leftover hanging
+  /// indent Draw collects as fo:margin-left / fo:text-indent.
+  final double textPosAfterBullet;
 }
 
 class _DrawioColoredPart {

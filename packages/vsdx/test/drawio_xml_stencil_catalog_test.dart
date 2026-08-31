@@ -10703,4 +10703,82 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxText html ul/ol leftover-bakes list markers for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      const group = 'Draw.io JS / General / misc';
+      final unordered = stencil(group, 'Unordered List').build(520, 3, 3);
+      final disc = glyphContaining(unordered, 'Value 1')!;
+      expect(
+        disc.richText.runs.any((run) => run.paraStyle.bullet == 1),
+        isTrue,
+        reason: 'html.spec UA ul disc is collectParaIX Bullet 1 (U+2022)',
+      );
+      expect(
+        disc.richText.runs.any(
+          (run) => run.paraStyle.textPosAfterBulletInches > 0.05,
+        ),
+        isTrue,
+        reason: 'UA padding-inline-start 40px is TextPosAfterBullet leftover '
+            'hangs as fo:margin-left',
+      );
+
+      final ordered = stencil(group, 'Ordered List').build(521, 3, 3);
+      final numbered = glyphContaining(ordered, 'Value 1')!;
+      expect(
+        numbered.text,
+        contains('1. '),
+        reason: 'html.spec UA ol decimal prefixes Character text; tokens.txt '
+            'has no numbered list',
+      );
+      expect(numbered.text, contains('2. '));
+      expect(
+        numbered.richText.runs.every((run) => run.paraStyle.bullet == 0),
+        isTrue,
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final unorderedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(unordered.copyWith(id: unorderedId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(unorderedId)!;
+      final leftoverDisc = glyphContaining(leftover, 'Value 1')!;
+      expect(
+        leftoverDisc.text,
+        contains('\u2022'),
+        reason: 'Draw never paints text:bullet-char; leftover bakes U+2022',
+      );
+      expect(
+        leftoverDisc.richText.runs.every((run) => run.paraStyle.bullet == 0),
+        isTrue,
+        reason: 'Bullet cells drop after the glyph bake so a second save '
+            'does not stack another marker',
+      );
+    },
+  );
 }
