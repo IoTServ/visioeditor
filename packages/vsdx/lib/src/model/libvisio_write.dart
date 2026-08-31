@@ -8403,13 +8403,14 @@ double imageSoftEdgesInchesForLibvisioWrite(VsdxShape shape) {
   return shape.line.softEdgesInches;
 }
 
-/// `true` when Img* crop must composite into the Foreign frame for Draw.
+/// `true` when Img* overflow must composite into the Foreign frame for Draw.
 ///
-/// libvisio collects ImgOffset / ImgWidth / ImgHeight, but it emits
-/// `svg:width` from ImgWidth. Draw paints that unclipped bitmap; canvas /
-/// SVG clip to the box. A save writes a frame-sized PNG. 1-D pictures stay
-/// native (no Foreign box to clip). A second save does not restack: Img*
-/// already fill the frame.
+/// libvisio collects ImgOffset / ImgWidth / ImgHeight and emits `svg:x` /
+/// `svg:width` from those cells. Draw paints that unclipped; a zoom/pan
+/// crop larger than the box overflows. An inset inside the cell stays
+/// native. Canvas / SVG clip overflow. A save writes a frame-sized PNG
+/// only for overflow. 1-D pictures stay native. A second save does not
+/// restack: Img* already fill the frame.
 bool shapeNeedsLibvisioImageCropBake(VsdxShape shape) {
   if (!shape.hasImage || shape.is1D) return false;
   if (shape.width.abs() <= 1e-9 || shape.height.abs() <= 1e-9) return false;

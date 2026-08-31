@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil `<image>` x/y/w/h now stays native in LibreOffice.
+  IBM Floating IP is a mid-band PNG (`x≈0.61 y≈20.18 w≈58.78 h≈19.65`
+  on a 60×60 cell). Catalog decode used to stretch that bitmap over the
+  XForm. `collectForeignDataType` maps ImgOffset / ImgWidth / ImgHeight
+  to `svg:x` / `svg:width` / `svg:height`. Inset is not crop overflow, so
+  leftover keeps those cells instead of compositing a frame-sized PNG.
+  A second save keeps the inset.
 - draw.io mxStencil `<labelBounds>` now stays native in LibreOffice.
   Flowchart Multi-Document (`boundedLbl=1`) insets the cell with
   `x=0 y=10 w=78 h=47` on an 88×60.28 stencil. Catalog decode dropped

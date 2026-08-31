@@ -9331,6 +9331,22 @@ void main() {
         isFalse,
         reason: 'only the bitmap should show, not a filled frame',
       );
+      expect(
+        floating.imgWidthInches! / floating.width,
+        closeTo(58.775510204081634 / 60, 0.02),
+        reason: 'mxStencil image w on a 60-wide cell is ImgWidth that '
+            'collectForeignDataType maps to svg:width',
+      );
+      expect(
+        floating.imgHeightInches! / floating.height,
+        closeTo(19.647346938775513 / 60, 0.02),
+        reason: 'the PNG is a mid-band icon, not a full XForm stretch',
+      );
+      expect(
+        floating.imgOffsetYInches! / floating.height,
+        closeTo((60 - 20.176326530612243 - 19.647346938775513) / 60, 0.03),
+        reason: 'image y is stencil-top; ImgOffsetY is Visio Y-up',
+      );
 
       final writer = VsdxWriter();
       final parser = DocumentParser();
@@ -9349,6 +9365,11 @@ void main() {
         leftover.images.findByPart(leftoverShape.imagePartName!),
         isNotNull,
         reason: 'a second save must keep the PNG media part',
+      );
+      expect(
+        leftoverShape.imgHeightInches! / leftoverShape.height,
+        closeTo(19.647346938775513 / 60, 0.02),
+        reason: 'inset ImgHeight is not crop overflow; leftover must keep it',
       );
     },
   );

@@ -458,13 +458,14 @@ bool visioImageAdjustmentsNeedBake({
       softEdgesInches > 1e-6;
 }
 
-/// `true` when ImgOffset / ImgWidth / ImgHeight do not fill the Foreign frame.
+/// `true` when the Img* bitmap spills past the Foreign frame (Visio crop).
 ///
-/// libvisio emits `svg:width` / `svg:height` from those cells, so Draw paints
-/// the unclipped bitmap (it does not clip to the Foreign box). Canvas / SVG
-/// already clip. A save composites that window into a frame-sized PNG.
-/// Cropped SoftEdges still composite first so the halo sits on the visible
-/// window rather than the hidden bitmap edge.
+/// libvisio `collectForeignDataType` maps ImgOffset / ImgWidth to `svg:x` /
+/// `svg:width`. Draw paints that unclipped, so a zoom/pan window larger
+/// than the box overflows. An inset (mxStencil `image` x/y/w/h inside the
+/// cell, IBM Floating IP) is the opposite: Draw should keep the smaller
+/// box. Canvas / SVG already clip overflow. A save composites only the
+/// overflowing window into a frame-sized PNG.
 bool visioPictureFrameIsCropped({
   required double frameWidthInches,
   required double frameHeightInches,
@@ -473,16 +474,12 @@ bool visioPictureFrameIsCropped({
   double? imgWidthInches,
   double? imgHeightInches,
 }) {
-  if (imgOffsetXInches.abs() > 1e-6) return true;
-  if (imgOffsetYInches.abs() > 1e-6) return true;
-  if (imgWidthInches != null &&
-      (imgWidthInches - frameWidthInches).abs() > 1e-6) {
-    return true;
-  }
-  if (imgHeightInches != null &&
-      (imgHeightInches - frameHeightInches).abs() > 1e-6) {
-    return true;
-  }
+  final imgW = imgWidthInches ?? frameWidthInches;
+  final imgH = imgHeightInches ?? frameHeightInches;
+  if (imgOffsetXInches < -1e-6) return true;
+  if (imgOffsetYInches < -1e-6) return true;
+  if (imgOffsetXInches + imgW > frameWidthInches + 1e-6) return true;
+  if (imgOffsetYInches + imgH > frameHeightInches + 1e-6) return true;
   return false;
 }
 

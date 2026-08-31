@@ -220,6 +220,12 @@ class _DrawioXmlShapeDecoder {
   final List<_MxPaintState> _saveStack = <_MxPaintState>[];
   String? _rasterPart;
   String? _rasterMime;
+  double? _rasterLeft;
+  double? _rasterTop;
+  double? _rasterBoxW;
+  double? _rasterBoxH;
+  bool _rasterFlipH = false;
+  bool _rasterFlipV = false;
   bool _sketchEnabled = false;
   String? _sketchFill;
   double? _sketchGap;
@@ -390,6 +396,7 @@ class _DrawioXmlShapeDecoder {
         transparency: _parentStrokeTransparency,
       );
     }
+    final rasterBox = _rasterImageBox();
     return _withLineUserCells(VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -419,6 +426,12 @@ class _DrawioXmlShapeDecoder {
               mimeType: _rasterMime ?? '',
               partName: _rasterPart!,
             ),
+      imgOffsetXInches: rasterBox?.offsetX ?? 0,
+      imgOffsetYInches: rasterBox?.offsetY ?? 0,
+      imgWidthInches: rasterBox?.width,
+      imgHeightInches: rasterBox?.height,
+      flipX: _rasterFlipH,
+      flipY: _rasterFlipV,
       richText: _stencilLabelRichText(),
     ));
   }
@@ -629,6 +642,8 @@ class _DrawioXmlShapeDecoder {
       // `labelBounds` follows draw.io mxStencil.getLabelBounds (boundedLbl)
       // onto TxtPin / TxtWidth / TxtHeight that collectTextBlock maps
       // below the stacked Multi-Document sheet.
+      // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
+      // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
       // stay on the parent so applyStencilStyle can still recolor the body.
       // Other style keys (fillColor2, …) bake `default` like
@@ -649,6 +664,36 @@ class _DrawioXmlShapeDecoder {
     _rasterPart = registerDrawioStencilImage(
       parsed.bytes,
       mimeType: parsed.mime,
+    );
+    // mxStencil.drawNode image x/y/w/h. libvisio collectForeignDataType
+    // maps ImgOffsetX/Y + ImgWidth/Height to svg:x/y/width/height.
+    // A missing box stretches the PNG over the XForm (IBM Floating IP
+    // is a mid-band icon on a 60×60 cell).
+    _rasterLeft = _number(node, 'x');
+    _rasterTop = _number(node, 'y');
+    final boxW = _number(node, 'w');
+    final boxH = _number(node, 'h');
+    _rasterBoxW = boxW > 1e-9 ? boxW : null;
+    _rasterBoxH = boxH > 1e-9 ? boxH : null;
+    _rasterFlipH = node.getAttribute('flipH') == '1';
+    _rasterFlipV = node.getAttribute('flipV') == '1';
+  }
+
+  /// Visio Image Properties are Y-up from the shape origin. mxStencil
+  /// image y is top-down stencil space, same as `<rect>`.
+  ({double offsetX, double offsetY, double width, double height})?
+      _rasterImageBox() {
+    final boxW = _rasterBoxW;
+    final boxH = _rasterBoxH;
+    if (_rasterPart == null || boxW == null || boxH == null) return null;
+    final width = boxW * scaleX.abs();
+    final height = boxH * scaleY.abs();
+    if (width <= 1e-9 || height <= 1e-9) return null;
+    return (
+      offsetX: _x(_rasterLeft ?? 0),
+      offsetY: _y((_rasterTop ?? 0) + boxH),
+      width: width,
+      height: height,
     );
   }
 
