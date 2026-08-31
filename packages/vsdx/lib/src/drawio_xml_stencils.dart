@@ -146,7 +146,11 @@ class _DrawioXmlShapeDecoder {
   _DrawioXmlShapeDecoder(
     this.element, {
     Map<String, VsdxColor> libraryStyleKeyDefaults = const {},
-  }) : _libraryStyleKeyDefaults = libraryStyleKeyDefaults;
+  })  : _libraryStyleKeyDefaults = libraryStyleKeyDefaults,
+        // mxStencil.drawShape: numeric shape @strokewidth * minScale.
+        // inherit / omitted stay null so applyStencilStyle can still
+        // pin the palette LineWeight (collectLine).
+        _strokeWidth = _mxShapeAttrStrokeWidth(element);
 
   final XmlElement element;
   final Map<String, VsdxColor> _libraryStyleKeyDefaults;
@@ -1038,9 +1042,11 @@ class _DrawioXmlShapeDecoder {
   double get _strokeWeightInches {
     final width = _strokeWidth;
     if (width == null) return VsdxLine.defaultLine.weightInches;
-    // mxStencil.drawNode: width * (fixed ? 1 : minScale). The catalog
-    // freezes the stencil at targetWidth×targetHeight, so both cases
-    // scale with the same min(scaleX, scaleY) as MoveTo/LineTo.
+    // mxStencil.drawShape sets canvas width to attr * minScale before
+    // drawNode; `<strokewidth width>` then does width * (fixed ? 1 :
+    // minScale). The catalog freezes the stencil at
+    // targetWidth×targetHeight, so both cases scale with the same
+    // min(scaleX, scaleY) as MoveTo/LineTo.
     final scale = math.min(scaleX.abs(), scaleY.abs());
     return math.max(0.001, width * scale);
   }
@@ -2025,6 +2031,18 @@ List<VsdxGradientStop> _parseMxGradientStops(String? raw) {
   }
   out.sort((a, b) => a.position.compareTo(b.position));
   return out;
+}
+
+/// mxStencil.parseDescription: `strokewidth` is inherit or a number
+/// (default `"1"`). drawShape uses `Number(strokewidth) * minScale`
+/// when it is not inherit. Catalog decode has no cell style, so inherit
+/// / omitted stay unset and applyStencilStyle can still pin LineWeight.
+double? _mxShapeAttrStrokeWidth(XmlElement element) {
+  final raw = (element.getAttribute('strokewidth') ?? '').trim();
+  if (raw.isEmpty || raw.toLowerCase() == 'inherit') return null;
+  final value = double.tryParse(raw);
+  if (value == null || !value.isFinite || value <= 0) return null;
+  return value;
 }
 
 /// Visio LineCap: 0 round, 1 extended/butt, 2 square. libvisio

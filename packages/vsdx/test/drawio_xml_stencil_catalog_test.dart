@@ -669,6 +669,54 @@ void main() {
     );
   });
 
+  test('mxStencil shape strokewidth stays LineWeight for LibreOffice', () {
+    // Networks Comm Link is w=30 h=100 strokewidth="2" with no child
+    // <strokewidth>. mxStencil.drawShape does 2 * minScale; catalog
+    // scale is 1.5 / 100 → LineWeight 0.03. Leaving _strokeWidth unset
+    // used Visio 0.01 and applyStencilStyle pinned 0.012.
+    const expected = 2 * (1.5 / 100);
+    final link = migrated
+        .singleWhere((group) => group.name == 'Draw.io / Networks')
+        .stencils
+        .singleWhere((entry) => entry.name == 'Comm Link')
+        .build(83, 3, 3);
+    expect(
+      link.line.hasLine,
+      isTrue,
+      reason: 'inherit fillstroke stays on the parent',
+    );
+    expect(
+      link.line.weightInches,
+      closeTo(expected, 1e-6),
+      reason: 'shape strokewidth="2" must reach collectLine LineWeight',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere((group) => group.name == 'Draw.io / Networks')
+            .stencils
+            .singleWhere((entry) => entry.name == 'Comm Link')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      leftover.line.weightInches,
+      closeTo(expected, 1e-6),
+      reason: 'a second save must keep LineWeight 0.03',
+    );
+  });
+
   test('mxGraph setGradient stays FillPattern 25–34 for LibreOffice', () {
     const magenta = VsdxColor(0xFFBC1356);
     const pink = VsdxColor(0xFFF34482);

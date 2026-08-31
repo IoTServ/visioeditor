@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil shape `strokewidth="2"` now stays native in LibreOffice.
+  Official `mxStencil.drawShape` does `Number(strokewidth) * minScale`
+  before `drawNode` (Networks Comm Link / Firewall). Catalog decode only
+  read child `<strokewidth>` tags, so the numeric attribute stayed Visio
+  0.01 in and `applyStencilStyle` pinned the palette 0.012 that
+  `collectLine` mapped to a hairline `svg:stroke-width`. Authored
+  widths freeze LineWeight. `inherit` / omitted still take the palette.
+  A second save keeps 0.03 in.
 - draw.io mxStencil default `<linecap>` now stays native in LibreOffice.
   Official `mxAbstractCanvas2D.createState` uses `lineCap: 'flat'` (SVG
   butt). Catalog decode left `_lineCap` unset, so inherit / hex strokes
