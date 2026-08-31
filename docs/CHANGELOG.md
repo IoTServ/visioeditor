@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Networks2 XML `neutralFill` now stays native in LibreOffice.
+  Official `mxStencil.getColorValue` reads the cell style then the node's
+  `default`; Sidebar-Network2.js sets `neutralFill=#9DA6A8` and global
+  server ships that `default`, but hub / server / mail server LEDs omit
+  it. Catalog decode has no cell style, so the LED stayed inherit fill
+  and `applyStencilStyle` washed it to the palette. Unique library
+  defaults become sibling `FillForegnd`. A second save keeps the grey
+  LED without a SoftEdges PNG.
 - draw.io glued `fontColor=#4d4d4dlfontSize=13` now stays native in
   LibreOffice. GMDL stepper `addDataEntry` XML omits the `;` between
   `fontColor` and `fontSize`, so official `mxUtils.isValidColor` rejects

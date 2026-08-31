@@ -33,6 +33,7 @@ class _DrawioXmlLibrary {
 
   final _DrawioXmlLibraryRecord record;
   List<XmlElement>? _shapes;
+  Map<String, VsdxColor>? _libraryStyleKeyDefaults;
 
   StencilGroup toStencilGroup() => StencilGroup(
         record.groupName,
@@ -50,7 +51,15 @@ class _DrawioXmlLibrary {
     if (index < 0 || index >= shapes.length) {
       throw RangeError.index(index, shapes, 'index');
     }
-    return _DrawioXmlShapeDecoder(shapes[index]).build(id, cx, cy);
+    // Catalog decode has no cell style. mxStencil.getColorValue then
+    // uses the node's `default`; Networks2 hub LED is
+    // `color="neutralFill"` with no default, while global server (and
+    // Sidebar-Network2.js `sn`) share `neutralFill=#9DA6A8`.
+    return _DrawioXmlShapeDecoder(
+      shapes[index],
+      libraryStyleKeyDefaults: _libraryStyleKeyDefaults ??=
+          _mxUniqueStencilStyleKeyDefaults(shapes),
+    ).build(id, cx, cy);
   }
 
   List<XmlElement> _decodeShapes() {
@@ -134,9 +143,15 @@ class _MxPaintState {
 }
 
 class _DrawioXmlShapeDecoder {
-  _DrawioXmlShapeDecoder(this.element);
+  _DrawioXmlShapeDecoder(
+    this.element, {
+    Map<String, VsdxColor> libraryStyleKeyDefaults = const {},
+  }) : _libraryStyleKeyDefaults = libraryStyleKeyDefaults;
 
   final XmlElement element;
+  final Map<String, VsdxColor> _libraryStyleKeyDefaults;
+  late final Map<String, VsdxColor> _shapeStyleKeyDefaults =
+      _mxStencilStyleKeyDefaults(element);
 
   late final double sourceWidth = _number(element, 'w', fallback: 100);
   late final double sourceHeight = _number(element, 'h', fallback: 100);
@@ -548,6 +563,9 @@ class _DrawioXmlShapeDecoder {
       // stay on the parent so applyStencilStyle can still recolor the body.
       // Other style keys (fillColor2, …) bake `default` like
       // mxStencil.getColorValue when the catalog has no cell style.
+      // A later node, or a unique default on a sibling stencil in the
+      // same library (Networks2 `neutralFill`), fills in a missing
+      // `default` the way Sidebar-Network2.js `sn` does.
       default:
         break;
     }
@@ -671,14 +689,15 @@ class _DrawioXmlShapeDecoder {
       _fillIsNone = false;
       return;
     }
-    // mxStencil.getColorValue: missing style key uses `default`.
+    // mxStencil.getColorValue: missing style key uses `default`, then
+    // a unique library default (Networks2 hub `neutralFill`).
     // Android Keyboard fillColor3=none must not inherit the palette fill.
-    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+    if (_styleKeyIsNone(token, fallback)) {
       _fillColor = null;
       _fillIsNone = true;
       return;
     }
-    _fillColor = _mxStencilStyleKeyColor(token, fallback);
+    _fillColor = _styleKeyColor(token, fallback);
     _fillIsNone = false;
   }
 
@@ -819,12 +838,12 @@ class _DrawioXmlShapeDecoder {
       _strokeIsNone = false;
       return;
     }
-    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+    if (_styleKeyIsNone(token, fallback)) {
       _strokeColor = null;
       _strokeIsNone = true;
       return;
     }
-    _strokeColor = _mxStencilStyleKeyColor(token, fallback);
+    _strokeColor = _styleKeyColor(token, fallback);
     _strokeIsNone = false;
   }
 
@@ -848,11 +867,11 @@ class _DrawioXmlShapeDecoder {
       _fontColor = parsed;
       return;
     }
-    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+    if (_styleKeyIsNone(token, fallback)) {
       _fontColor = null;
       return;
     }
-    _fontColor = _mxStencilStyleKeyColor(token, fallback);
+    _fontColor = _styleKeyColor(token, fallback);
   }
 
   void _applyMxFontBackground(String? raw, {String? fallback}) {
@@ -867,11 +886,26 @@ class _DrawioXmlShapeDecoder {
       _fontBackground = parsed;
       return;
     }
-    if (_mxStencilStyleKeyIsNone(token, fallback)) {
+    if (_styleKeyIsNone(token, fallback)) {
       _fontBackground = null;
       return;
     }
-    _fontBackground = _mxStencilStyleKeyColor(token, fallback);
+    _fontBackground = _styleKeyColor(token, fallback);
+  }
+
+  /// mxStencil.getColorValue: cell style, then node `default`, then a
+  /// `default` already seen on this shape, then a unique default from
+  /// another stencil in the same XML library (Networks2 `neutralFill`).
+  VsdxColor? _styleKeyColor(String token, String? fallback) {
+    if (token.isEmpty || _mxIsCellStyleColorKey(token)) return null;
+    return _mxGraphPaintColor(fallback) ??
+        _shapeStyleKeyDefaults[token] ??
+        _libraryStyleKeyDefaults[token];
+  }
+
+  bool _styleKeyIsNone(String token, String? fallback) {
+    if (token.isEmpty || _mxIsCellStyleColorKey(token)) return false;
+    return (fallback ?? '').trim().toLowerCase() == 'none';
   }
 
   /// mxText html=1: `<run>` children are extra Character rows. A bare
@@ -1770,16 +1804,42 @@ bool _mxIsCellStyleColorKey(String token) =>
     token == 'labelBackgroundColor' ||
     token == 'labelBorderColor';
 
-/// mxStencil.getColorValue: when `color` is a style key the cell does
-/// not define, use the node's `default` (Keyboard fillColor2 `#000000`).
-VsdxColor? _mxStencilStyleKeyColor(String token, String? fallback) {
-  if (token.isEmpty || _mxIsCellStyleColorKey(token)) return null;
-  return _mxGraphPaintColor(fallback);
+/// mxStencil.getColorValue node `default` values keyed by custom style
+/// name (`neutralFill`, `fillColor2`). Cell keys stay inherit.
+Map<String, VsdxColor> _mxStencilStyleKeyDefaults(XmlElement root) {
+  final defaults = <String, VsdxColor>{};
+  for (final node in root.descendants.whereType<XmlElement>()) {
+    final name = node.name.local;
+    if (name != 'fillcolor' &&
+        name != 'strokecolor' &&
+        name != 'fontcolor' &&
+        name != 'fontbackgroundcolor') {
+      continue;
+    }
+    final key = (node.getAttribute('color') ?? '').trim();
+    if (key.isEmpty || _mxIsCellStyleColorKey(key)) continue;
+    final color = _mxGraphPaintColor(node.getAttribute('default'));
+    if (color == null) continue;
+    defaults.putIfAbsent(key, () => color);
+  }
+  return defaults;
 }
 
-bool _mxStencilStyleKeyIsNone(String token, String? fallback) {
-  if (token.isEmpty || _mxIsCellStyleColorKey(token)) return false;
-  return (fallback ?? '').trim().toLowerCase() == 'none';
+/// Library-wide unique `default` for a custom style key. Mixed hexes
+/// (Cisco `fillColor2`) stay inherit so we do not pick a sibling's LED.
+Map<String, VsdxColor> _mxUniqueStencilStyleKeyDefaults(
+  Iterable<XmlElement> shapes,
+) {
+  final hexes = <String, Set<int>>{};
+  for (final shape in shapes) {
+    for (final entry in _mxStencilStyleKeyDefaults(shape).entries) {
+      hexes.putIfAbsent(entry.key, () => {}).add(entry.value.value);
+    }
+  }
+  return {
+    for (final entry in hexes.entries)
+      if (entry.value.length == 1) entry.key: VsdxColor(entry.value.single),
+  };
 }
 
 /// mxText CSS `text-align` / STYLE_ALIGN → collectParaIX HorzAlign

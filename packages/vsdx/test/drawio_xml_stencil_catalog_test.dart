@@ -1188,6 +1188,86 @@ void main() {
   );
 
   test(
+    'mxStencil library style-key defaults stay FillForegnd for LibreOffice',
+    () {
+      const ledGrey = VsdxColor(0xFF9DA6A8);
+
+      bool hasFill(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.hasFill && shape.fill.foreground == color) {
+          return true;
+        }
+        return shape.children.any((child) => hasFill(child, color));
+      }
+
+      bool hasSoftEdges(VsdxShape shape) {
+        if (isLibvisioSoftEdgesPlate(shape)) return true;
+        return shape.children.any(hasSoftEdges);
+      }
+
+      VsdxShape buildNamed(String name) => migrated
+          .singleWhere((group) => group.name == 'Draw.io / Networks2')
+          .stencils
+          .singleWhere((entry) => entry.name == name)
+          .build(46, 3, 3);
+
+      final hub = buildNamed('hub');
+      expect(
+        hasFill(hub, ledGrey),
+        isTrue,
+        reason: 'hub LED is fillcolor color="neutralFill" with no node '
+            'default; mxStencil.getColorValue uses the cell key, and '
+            'Sidebar-Network2.js sn / global server default=#9DA6A8',
+      );
+      expect(
+        hub.fill.foreground,
+        isNot(ledGrey),
+        reason: 'the chassis stays inherit fill for applyStencilStyle; '
+            'only the LED sibling bakes #9DA6A8',
+      );
+
+      final server = buildNamed('server');
+      expect(
+        hasFill(server, ledGrey),
+        isTrue,
+        reason: 'server LED also omits default on neutralFill',
+      );
+
+      final global = buildNamed('global server');
+      expect(
+        hasFill(global, ledGrey),
+        isTrue,
+        reason: 'global server already has default="#9DA6A8" on the node',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(hub.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasFill(leftover, ledGrey),
+        isTrue,
+        reason: 'a second save must keep neutralFill as FillForegnd',
+      );
+      expect(
+        hasSoftEdges(leftover),
+        isFalse,
+        reason: 'solid neutralFill hex must not bake a SoftEdges PNG',
+      );
+    },
+  );
+
+  test(
     'mxGraph CSS named colors stay FillForegnd for LibreOffice',
     () {
       const cssGray = VsdxColor(0xFF808080);
