@@ -1859,6 +1859,68 @@ void main() {
     );
   });
 
+  test('mxStencil default linejoin is miter for LibreOffice', () {
+    bool hasRoundCapMiter(VsdxShape shape) {
+      if (shape.line.hasLine &&
+          shape.line.cap == LineCap.round &&
+          shape.line.join == VsdxLineJoin.miter) {
+        return true;
+      }
+      return shape.children.any(hasRoundCapMiter);
+    }
+
+    bool hasMiterJoin(VsdxShape shape) {
+      if (shape.line.hasLine && shape.line.join == VsdxLineJoin.miter) {
+        return true;
+      }
+      return shape.children.any(hasMiterJoin);
+    }
+
+    final mail = migrated
+        .singleWhere(
+          (group) => group.name == 'Draw.io / Google Material Design',
+        )
+        .stencils
+        .singleWhere((entry) => entry.name == 'mail')
+        .build(92, 3, 3);
+    expect(
+      hasRoundCapMiter(mail),
+      isTrue,
+      reason: 'GMDL mail flap is linecap=round with no linejoin. '
+          'mxAbstractCanvas2D.createState lineJoin is miter; libvisio '
+          '_lineProperties maps join from LineCap, so leftover flattens '
+          'the round cap to LineCap 1 for Draw to miter the V',
+    );
+
+    const writer = VsdxWriter();
+    const parser = DocumentParser();
+    var doc = parser.parse(writer.emptyDocument());
+    final id = doc.pages.first.nextFreeShapeId();
+    doc = doc.replacePage(
+      0,
+      doc.pages.first.addShape(
+        migrated
+            .singleWhere(
+              (group) => group.name == 'Draw.io / Google Material Design',
+            )
+            .stencils
+            .singleWhere((entry) => entry.name == 'mail')
+            .build(id, 3, 3),
+      ),
+    );
+    final leftover = parser
+        .parse(writer.write(originalBytes: writer.emptyDocument(), edited: doc))
+        .pages
+        .first
+        .findShapeById(id)!;
+    expect(
+      hasMiterJoin(leftover),
+      isTrue,
+      reason: 'a second save must keep veLineJoin miter (Draw reads join '
+          'from flattened LineCap 1)',
+    );
+  });
+
   test('mxGraph shadow=1 stays ShdwPattern for LibreOffice', () {
     bool hasHardShadow(VsdxShape shape) {
       final shadow = shape.shadow;

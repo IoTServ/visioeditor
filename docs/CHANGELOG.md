@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil default `lineJoin: miter` now stays native in
+  LibreOffice. Official `mxAbstractCanvas2D.createState` uses
+  `lineJoin: 'miter'` independently of `lineCap`. Catalog decode left
+  `_lineJoin` unset, so `linecap=round` without `<linejoin>` (GMDL mail
+  flap) used Visio round join and `_lineProperties` case 0 painted
+  `svg:stroke-linejoin=round`. The decoder now starts at miter; leftover
+  flattens that round cap to LineCap 1 so Draw miters the elbow.
+  Explicit `linejoin=round` is unchanged. A second save keeps the join.
 - draw.io mxStencil default `dashPattern: 3 3` now stays native in
   LibreOffice. Official `mxAbstractCanvas2D.createState` uses `'3 3'`;
   `setDashed(true)` without `<dashpattern>` (AWS 3D Dashed Edge, Cisco

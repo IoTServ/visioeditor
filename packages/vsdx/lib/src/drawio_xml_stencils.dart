@@ -197,12 +197,15 @@ class _DrawioXmlShapeDecoder {
   bool _parentDashed = false;
   List<double>? _parentDashPattern;
   List<double>? _dashPattern;
-  // mxAbstractCanvas2D.createState: lineCap 'flat' (SVG butt). Do not
-  // change VsdxLine.defaultLine — that is the Visio factory round cap.
-  // libvisio `_lineProperties` case 0 emits round cap+join; LineCap 1
-  // is svg:stroke-linecap=butt / stroke-linejoin=miter.
+  // mxAbstractCanvas2D.createState: lineCap 'flat' (SVG butt) and
+  // lineJoin 'miter'. Do not change VsdxLine.defaultLine — that is
+  // the Visio factory round cap. libvisio `_lineProperties` case 0
+  // emits round cap+join; LineCap 1 is svg:stroke-linecap=butt /
+  // stroke-linejoin=miter. An explicit miter join on a round cap
+  // is leftover-flattened to LineCap 1 so Draw miters (GMDL mail
+  // flap). Join stays null-as-round only when XML sets linejoin=round.
   LineCap? _lineCap = LineCap.extended;
-  VsdxLineJoin? _lineJoin;
+  VsdxLineJoin? _lineJoin = VsdxLineJoin.miter;
   double? _miterLimit;
   bool _capturedParentLineStyle = false;
   LineCap? _parentStrokeCap;
