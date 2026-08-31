@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io CSS named colours now stay native in LibreOffice. Official
+  `mxUtils.isValidColor` / `color2hex` resolve canvas `fillStyle` names
+  (`gray` `#808080`, `silver` `#C0C0C0`, `white`), but the decoder only
+  parsed hex / `RGB()`. Azure Application Gateway Containers SVG
+  `fill="gray"` / `silver` stayed inherit fill, and SAP Build Workzone
+  `fillgradient color1=white` dropped the white stop. `collectFillAndShadow`
+  then missed those `draw:fill-color` siblings. Named colours become
+  sibling `FillForegnd` / `FillBkgnd`. A second save keeps them without
+  a SoftEdges PNG.
 - draw.io NestedStencil style-key `default` colours now stay native in
   LibreOffice. Sidebar Android Keyboard is `shape=mxgraph.android.keyboard`
   and capture inlines official `mxStencil.drawShape`, but

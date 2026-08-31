@@ -1187,6 +1187,123 @@ void main() {
     },
   );
 
+  test(
+    'mxGraph CSS named colors stay FillForegnd for LibreOffice',
+    () {
+      const cssGray = VsdxColor(0xFF808080);
+      const cssSilver = VsdxColor(0xFFC0C0C0);
+      const cssWhite = VsdxColor.white;
+      const wash = VsdxColor(0xFFEAECEE);
+
+      bool hasFill(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.hasFill && shape.fill.foreground == color) {
+          return true;
+        }
+        return shape.children.any((child) => hasFill(child, color));
+      }
+
+      bool hasSoftEdges(VsdxShape shape) {
+        if (isLibvisioSoftEdgesPlate(shape)) return true;
+        return shape.children.any(hasSoftEdges);
+      }
+
+      bool hasNamedGradient(VsdxShape shape) {
+        final fill = shape.fill;
+        if (fill.pattern == 32 &&
+            fill.foreground == wash &&
+            fill.background == cssWhite) {
+          return true;
+        }
+        return shape.children.any(hasNamedGradient);
+      }
+
+      final gateways = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Networking',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Application Gateway Containers')
+          .build(46, 3, 3);
+      expect(
+        hasFill(gateways, cssGray),
+        isTrue,
+        reason: 'SVG fill="gray" is a canvas named colour; mxUtils.'
+            'color2hex / parseColor keep it, so FillForegnd must be '
+            '#808080 not inherit that applyStencilStyle washes',
+      );
+      expect(
+        hasFill(gateways, cssSilver),
+        isTrue,
+        reason: 'SVG fill="silver" is CSS #C0C0C0; collectFillAndShadow '
+            'maps sibling FillForegnd to draw:fill-color',
+      );
+
+      final sap = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / SAP / SAP / Build Workzone',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Unnamed Shape (7)')
+          .build(47, 3, 3);
+      expect(
+        hasNamedGradient(sap),
+        isTrue,
+        reason: 'fillgradient color1=white is CSS white; southeast '
+            'FillPattern 32 is FillBkgnd white / FillForegnd #EAECEE',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(gateways.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasFill(leftover, cssGray) && hasFill(leftover, cssSilver),
+        isTrue,
+        reason: 'a second save must keep CSS gray/silver FillForegnd',
+      );
+      expect(
+        hasSoftEdges(leftover),
+        isFalse,
+        reason: 'solid named-colour fills must not bake a SoftEdges PNG',
+      );
+
+      var sapDoc = parser.parse(writer.emptyDocument());
+      final sapId = sapDoc.pages.first.nextFreeShapeId();
+      sapDoc = sapDoc.replacePage(
+        0,
+        sapDoc.pages.first.addShape(sap.copyWith(id: sapId)),
+      );
+      final sapLeftover = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: sapDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(sapId)!;
+      expect(
+        hasNamedGradient(sapLeftover),
+        isTrue,
+        reason: 'a second save must keep color1=white as FillBkgnd',
+      );
+    },
+  );
+
   test('mxStencil linecap stays LineCap for LibreOffice', () {
     bool hasCap(VsdxShape shape, LineCap cap) {
       if (shape.line.hasLine && shape.line.cap == cap) return true;
