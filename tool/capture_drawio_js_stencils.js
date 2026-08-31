@@ -162,7 +162,31 @@ function fillPaintToken(value, styleFill, forceHex) {
   return String(value);
 }
 
-function mxStencilColor(color, shape) {
+const kMxCellStyleColorKeys = new Set([
+  'fillColor', 'strokeColor', 'fontColor', 'gradientColor',
+  'labelBackgroundColor', 'labelBorderColor',
+]);
+
+function mxStencilColorIsStyleKey(color) {
+  if (color == null) return false;
+  const token = String(color).trim();
+  if (!token || token.charAt(0) === '#') return false;
+  const lower = token.toLowerCase();
+  if (lower === 'none' || lower === 'fill' || lower === 'stroke' ||
+      lower === 'font' || lower === 'default' || lower === 'inherit') {
+    return false;
+  }
+  if (/^[0-9a-fA-F]{3,8}$/.test(token)) return false;
+  return true;
+}
+
+// fillColor2 is not on the cell; force hex so #fff == style fillColor
+// does not collapse to the `fill` token (Keyboard fillColor4 keys).
+function mxStencilForceHex(color) {
+  return mxStencilColorIsStyleKey(color) && !kMxCellStyleColorKeys.has(color);
+}
+
+function mxStencilColor(color, shape, fallback) {
   if (color == null || color === '') return color;
   if (color === 'none') return null;
   if (color === 'fill') return shape ? shape.fill : null;
@@ -172,6 +196,12 @@ function mxStencilColor(color, shape) {
   }
   if (shape && shape.style && Object.prototype.hasOwnProperty.call(shape.style, color)) {
     return stylePaintColor(shape.style[color], color);
+  }
+  // mxStencil.getColorValue: missing style key uses the node's `default`.
+  if (mxStencilForceHex(color) && fallback != null && String(fallback).trim() !== '') {
+    const def = String(fallback).trim();
+    if (def.toLowerCase() === 'none') return null;
+    return def;
   }
   return color;
 }
@@ -4990,11 +5020,19 @@ class NestedStencil {
     else if (name === 'fill') canvas.fill();
     else if (name === 'stroke') canvas.stroke();
     else if (name === 'fillcolor') {
-      canvas.setFillColor(mxStencilColor(node.attrs.color, shape));
+      canvas.setFillColor(
+        mxStencilColor(node.attrs.color, shape, node.attrs.default),
+        mxStencilForceHex(node.attrs.color),
+      );
     } else if (name === 'strokecolor') {
-      canvas.setStrokeColor(mxStencilColor(node.attrs.color, shape));
+      canvas.setStrokeColor(
+        mxStencilColor(node.attrs.color, shape, node.attrs.default),
+        mxStencilForceHex(node.attrs.color),
+      );
     } else if (name === 'fontcolor') {
-      canvas.setFontColor(mxStencilColor(node.attrs.color, shape));
+      canvas.setFontColor(
+        mxStencilColor(node.attrs.color, shape, node.attrs.default),
+      );
     } else if (name === 'strokewidth') {
       // mxStencil.drawNode: width * (fixed==1 ? 1 : minScale).
       const s = node.attrs.fixed === '1' ? 1 : minScale;

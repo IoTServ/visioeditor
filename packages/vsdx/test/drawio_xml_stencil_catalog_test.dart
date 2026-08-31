@@ -393,8 +393,13 @@ void main() {
       'Draw.io JS / Android / android',
       'Split Action Bar',
     ).build(32, 3, 3);
-    expect(bar.geometries.length, greaterThan(1),
-        reason: 'vertex-cells mockups must paint built-in rectangles');
+    expect(
+      descendantGeometries(bar).length,
+      greaterThan(1),
+      reason: 'vertex-cells mockups must paint built-in rectangles; '
+          'fillColor2 defaults bake as sibling FillForegnd',
+    );
+    expect(bar.children, isNotEmpty);
 
     const writer = VsdxWriter();
     const parser = DocumentParser();
@@ -1095,6 +1100,89 @@ void main() {
         glyphColor(leftover, 'Q'),
         VsdxColor.white,
         reason: 'a second save must keep QWERTY fo:color white',
+      );
+    },
+  );
+
+  test(
+    'mxStencil NestedStencil default colors stay FillForegnd for LibreOffice',
+    () {
+      const paletteBlue = VsdxColor(0xFFDAE8FC);
+      const keyGrey = VsdxColor(0xFF333333);
+      const keySilver = VsdxColor(0xFF999999);
+
+      bool hasFill(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.hasFill && shape.fill.foreground == color) {
+          return true;
+        }
+        return shape.children.any((child) => hasFill(child, color));
+      }
+
+      VsdxColor? glyphColor(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first.charStyle.color;
+          }
+          final nested = glyphColor(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final keyboard = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Android / android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Keyboard')
+          .build(45, 3, 3);
+      expect(
+        hasFill(keyboard, VsdxColor.black) &&
+            hasFill(keyboard, keyGrey) &&
+            hasFill(keyboard, keySilver),
+        isTrue,
+        reason: 'sidebar Android Keyboard is NestedStencil.drawShape; '
+            'mxStencil.getColorValue uses default when the cell has no '
+            'fillColor2, so capture must bake #000/#333/#999',
+      );
+      expect(
+        hasFill(keyboard, paletteBlue),
+        isFalse,
+        reason: 'fillColor2 default #ffffff must forceHex so it does not '
+            'collapse to the cell fill token and wash #DAE8FC',
+      );
+      expect(
+        glyphColor(keyboard, 'Q'),
+        VsdxColor.white,
+        reason: 'fontcolor fillColor4 default #ffffff is collectCharIX Color',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(keyboard.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasFill(leftover, VsdxColor.black) &&
+            hasFill(leftover, keyGrey) &&
+            hasFill(leftover, keySilver),
+        isTrue,
+        reason: 'a second save must keep NestedStencil fillColor2 hex',
+      );
+      expect(
+        glyphColor(leftover, 'Q'),
+        VsdxColor.white,
+        reason: 'a second save must keep sidebar QWERTY fo:color white',
       );
     },
   );

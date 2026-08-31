@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io NestedStencil style-key `default` colours now stay native in
+  LibreOffice. Sidebar Android Keyboard is `shape=mxgraph.android.keyboard`
+  and capture inlines official `mxStencil.drawShape`, but
+  `mxStencilColor` dropped the node's `default` so `fillColor2` stayed
+  inherit fill. `applyStencilStyle` washed the keys `#DAE8FC` and
+  `collectFillAndShadow` painted a palette-blue keyboard. Capture now
+  follows `getColorValue` (and force-hex so `#fff` == cell fillColor
+  does not collapse to the `fill` token). A second save keeps the
+  chassis / keys / QWERTY.
 - draw.io mxStencil style-key `default` colours now stay native in
   LibreOffice. Official `mxStencil.getColorValue` uses the node's
   `default` when the cell style has no `fillColor2` / `fillColor3`
