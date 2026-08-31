@@ -7090,6 +7090,22 @@ function applyHtmlCss(next, attrs, tag) {
   htmlUaHeadingDefaults(next, tag);
   const color = htmlAttr(attrs, 'color') || htmlStyleProp(attrs, 'color');
   if (color) next.fontColor = color;
+  // CSS background-color on <font>/<b> (Atlassian Nested discussion
+  // AUTHOR chip rgb(244,245,247)). Char.Highlight is skipped by
+  // readCharIX; leftover still leftover-bakes it so
+  // bakeMixedHighlightForLibvisioWrite can emit FillForegnd plates
+  // Draw paints. `initial` / none / transparent clear the inherit.
+  const bgRaw = htmlStyleProp(attrs, 'background-color')
+    || htmlStyleProp(attrs, 'background');
+  if (bgRaw) {
+    const token = String(bgRaw).trim();
+    if (/^(none|transparent|initial|unset)$/i.test(token)) {
+      next.highlight = null;
+    } else {
+      const hex = htmlCssColorToHex(token);
+      if (hex) next.highlight = hex;
+    }
+  }
   // CSS font-size is px (GCP 11px) or em (Lean Mapping 2em). HTML
   // size="1"–"7" is not px — Chromium maps it onto xx-small…xxx-large
   // (10/13/16/18/24/32/48) which collectCharIX Size maps to fo:font-size.
@@ -7450,6 +7466,7 @@ function cloneHtmlStyle(style) {
     olNeedPrefix: !!style.olNeedPrefix,
     textPosAfterBullet: Number(style.textPosAfterBullet) || 0,
     lineHeight: Number(style.lineHeight) || 1,
+    highlight: style.highlight || null,
   };
 }
 
@@ -7468,7 +7485,8 @@ function sameHtmlStyle(a, b) {
     && (Number(a.marginLeft) || 0) === (Number(b.marginLeft) || 0)
     && (Number(a.bullet) || 0) === (Number(b.bullet) || 0)
     && (Number(a.textPosAfterBullet) || 0) === (Number(b.textPosAfterBullet) || 0)
-    && (Number(a.lineHeight) || 1) === (Number(b.lineHeight) || 1);
+    && (Number(a.lineHeight) || 1) === (Number(b.lineHeight) || 1)
+    && String(a.highlight || '') === String(b.highlight || '');
 }
 
 function htmlLabelRunsDiffer(runs, state) {
@@ -7528,6 +7546,10 @@ function htmlRunAttrs(run) {
   const lineHeight = Number(run.lineHeight) || 1;
   if (Math.abs(lineHeight - 1) > 1e-9) {
     attrs.push(`line-height="${number(lineHeight)}"`);
+  }
+  if (run.highlight) {
+    const hex = htmlCssColorToHex(run.highlight) || String(run.highlight);
+    attrs.push(`highlight="${xmlEscape(hex)}"`);
   }
   return attrs.join(' ');
 }
@@ -7780,7 +7802,9 @@ function htmlTablePaddingPx(html) {
 function htmlCssBackgroundHex(attrs) {
   const from = htmlStyleProp(attrs, 'background-color')
     || htmlStyleProp(attrs, 'background');
-  if (!from || /^(none|transparent)$/i.test(String(from).trim())) return null;
+  if (!from || /^(none|transparent|initial|unset)$/i.test(String(from).trim())) {
+    return null;
+  }
   return htmlCssColorToHex(from);
 }
 

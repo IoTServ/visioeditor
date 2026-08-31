@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html CSS `background-color` now stays native in
+  LibreOffice. Official Atlassian Nested discussion chips (`AUTHOR`,
+  `@Matthew Wu`) use `background-color: rgb(244, 245, 247)`. Catalog
+  capture dropped that, so leftover Char.Highlight stayed empty
+  (`readCharIX` skips Highlight; mixed leftover bakes FillForegnd
+  plates Draw paints). Capture now leftover-bakes the chip hex. A
+  second save keeps the plates.
 - draw.io mxText html CSS `font-size` keywords now stay native in
   LibreOffice. Official SAP Text Elements use
   `font-size: x-small` (Chromium 10px at medium 16px). Catalog capture

@@ -1120,6 +1120,7 @@ class _DrawioXmlShapeDecoder {
             bullet: _number(el, 'bullet').round(),
             textPosAfterBullet: _number(el, 'text-pos-after-bullet'),
             lineHeight: _number(el, 'line-height', fallback: 1),
+            highlight: _mxGraphPaintColor(el.getAttribute('highlight')),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
@@ -1719,6 +1720,7 @@ class _DrawioXmlShapeDecoder {
                   2 => VsdxTextPosition.subscript,
                   _ => VsdxTextPosition.normal,
                 },
+                highlight: run.highlight,
               ),
               paraStyle: VsdxParaStyle(
                 horizontalAlign: _mxHorzAlign(run.align ?? label.align),
@@ -1836,6 +1838,7 @@ class _DrawioStencilLabelRun {
     this.bullet = 0,
     this.textPosAfterBullet = 0,
     this.lineHeight = 1,
+    this.highlight,
   });
 
   final String text;
@@ -1872,6 +1875,11 @@ class _DrawioStencilLabelRun {
   /// CSS `line-height` on a block tag as a multiplier. collectParaIX
   /// SpLine < 0 (e.g. 114% → −1.14) maps to fo:line-height PERCENT.
   final double lineHeight;
+
+  /// CSS `background-color` on an inline tag. Char.Highlight is skipped
+  /// by libvisio `readCharIX`; leftover still leftover-bakes the hex so
+  /// `bakeMixedHighlightForLibvisioWrite` can emit FillForegnd plates.
+  final VsdxColor? highlight;
 }
 
 class _DrawioColoredPart {

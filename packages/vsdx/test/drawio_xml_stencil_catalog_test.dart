@@ -4115,6 +4115,76 @@ void main() {
   );
 
   test(
+    'mxText html CSS background-color stays Char Highlight for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool hasHighlightPlate(VsdxShape shape, VsdxColor color) {
+        if (isLibvisioHighlightPlate(shape) &&
+            shape.fill.foreground == color) {
+          return true;
+        }
+        for (final child in shape.children) {
+          if (hasHighlightPlate(child, color)) return true;
+        }
+        return false;
+      }
+
+      final nested = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Atlassian / Atlassian',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Nested discussion')
+          .build(456, 3, 3);
+      final chip = VsdxColor.tryParse('#F4F5F7')!;
+      expect(
+        runContaining(nested, 'AUTHOR')!.charStyle.highlight,
+        chip,
+        reason: 'CSS background-color:rgb(244,245,247) on AUTHOR is '
+            'Char.Highlight leftover that bakeMixedHighlightForLibvisioWrite '
+            'turns into FillForegnd plates; readCharIX skips Highlight',
+      );
+      expect(
+        runContaining(nested, '@Matthew Wu')!.charStyle.highlight,
+        chip,
+        reason: 'the mention chip uses the same CSS background-color',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(nested.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasHighlightPlate(leftover, chip),
+        isTrue,
+        reason: 'a second save must keep the AUTHOR chip as FillForegnd '
+            'plates Draw paints (readCharIX skips Highlight)',
+      );
+    },
+  );
+
+  test(
     'mxText html defaultVertex fontColor stays black after a colored font for LibreOffice',
     () {
       VsdxTextRun? runContaining(VsdxShape shape, String text) {
