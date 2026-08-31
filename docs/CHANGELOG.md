@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxText html `<hr>` empty compartments now stay native in
+  LibreOffice. Official `mxText` overflow=fill html=1 is a foreignObject
+  with CSS block flow, so UML Class 3/4's title `<p>` is content-sized,
+  then `<hr>`, then an empty `height:2px` spacer. Catalog capture
+  weighted only visible text, stretched the title, and leftover-baked
+  the rule onto the cell bottom (`tokens.txt` has no hr token;
+  `collectLine` is `svg:stroke`). Capture now sizes bands like HTML
+  flow and gives leftover height to empty compartments. A second save
+  keeps the rule under the title.
 - draw.io Graph autosizeText now stays native in LibreOffice. Official
   `Graph.computeAutosizeTextFontSize` binary-searches 6–84px so General
   Autosize Title (`fontSize=25` in a 160×40 cell) and the wrapped Note

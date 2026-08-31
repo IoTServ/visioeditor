@@ -11283,4 +11283,117 @@ void main() {
       );
     },
   );
+
+  test(
+    'mxText html hr empty compartments leftover-bake for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if ((child.text ?? '').contains(text)) return child;
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<double> ruleYs(VsdxShape shape) {
+        final ys = <double>[];
+        for (final geometry in shape.geometries) {
+          if (!geometry.noFill || geometry.noLine) continue;
+          final cmds = geometry.commands;
+          for (var i = 1; i < cmds.length; i++) {
+            final prev = cmds[i - 1];
+            final cur = cmds[i];
+            if (prev is! MoveTo || cur is! LineTo) continue;
+            final dx = (cur.x - prev.x).abs();
+            final dy = (cur.y - prev.y).abs();
+            if (dx > shape.width * 0.3 && dy < 0.05) {
+              ys.add((prev.y + cur.y) / 2);
+            }
+          }
+        }
+        for (final child in shape.children) {
+          ys.addAll(ruleYs(child));
+        }
+        return ys;
+      }
+
+      Stencil stencil(String name) => dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / UML / uml')
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      // 140×60 cell, catalog scale 1.5/140. Official mxText overflow=fill
+      // html=1 is CSS block flow: title content-sized, <hr>, empty 2px.
+      final class3 = stencil('Class 3').build(532, 3, 3);
+      final title3 = glyphContaining(class3, 'Class')!;
+      final rules3 = ruleYs(class3);
+      expect(
+        title3.height,
+        lessThan(class3.height * 0.45),
+        reason: 'the empty height:2px compartment after <hr> must eat '
+            'leftover overflow=fill space so the title is not stretched',
+      );
+      expect(
+        title3.pinY,
+        greaterThan(class3.height * 0.6),
+        reason: 'Visio Y-up: content-sized title sits in the top band',
+      );
+      expect(
+        rules3,
+        isNotEmpty,
+        reason: 'UML Class 3 <hr> is a collectLine sibling Draw paints',
+      );
+      expect(
+        rules3.first,
+        greaterThan(class3.height * 0.5),
+        reason: 'the rule must sit under the title, not on the cell bottom',
+      );
+
+      final class4 = stencil('Class 4').build(533, 3, 3);
+      final rules4 = ruleYs(class4)..sort();
+      expect(
+        rules4.length,
+        2,
+        reason: 'Class 4 has two <hr> around the 2px spacers',
+      );
+      expect(
+        rules4.first,
+        greaterThan(class4.height * 0.35),
+        reason: 'both rules stay under the title, not stacked on the bottom',
+      );
+      expect(
+        rules4.last - rules4.first,
+        lessThan(class4.height * 0.25),
+        reason: 'the 2px spacer between rules is a thin band, not half the cell',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(class3.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverTitle = glyphContaining(leftover, 'Class')!;
+      expect(
+        leftoverTitle.height,
+        lessThan(leftover.height * 0.45),
+        reason: 'a second save must keep the content-sized title band',
+      );
+      expect(
+        ruleYs(leftover).first,
+        greaterThan(leftover.height * 0.5),
+        reason: 'a second save must keep the collectLine under the title',
+      );
+    },
+  );
 }

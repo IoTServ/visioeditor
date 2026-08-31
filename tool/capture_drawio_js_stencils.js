@@ -7846,10 +7846,60 @@ function htmlHrParts(html) {
   return {parts, rules};
 }
 
-function htmlHrFlowWeight(html) {
-  if (!htmlHasVisibleText(html)) return 0;
+function htmlHrPartCssHeight(html) {
+  const n = htmlCssPx(htmlStyleProp(htmlLeadingBlock(html).attrs, 'height'));
+  return n != null && n > 0 ? n : 0;
+}
+
+function htmlHrPartMarginTop(html) {
+  const attrs = htmlLeadingBlock(html).attrs;
+  const mt = htmlCssPx(htmlStyleProp(attrs, 'margin-top'));
+  if (mt != null) return Math.max(0, mt);
+  const box = String(htmlStyleProp(attrs, 'margin') || '').trim();
+  if (!box) return 0;
+  const parts = box.split(/\s+/).map(htmlCssPx);
+  return parts[0] != null ? Math.max(0, parts[0]) : 0;
+}
+
+// Official mxText overflow=fill html=1 is a foreignObject with CSS block
+// flow: the title <p> is content-sized, <hr> follows, and UML Class 3/4's
+// empty `<div style="height:2px">` is a 2px spacer. Weighting only visible
+// text gave empty parts 0 and stretched the title, so the leftover
+// collectLine sat on the bottom of the cell. tokens.txt has no hr token.
+function htmlHrPartContentHeight(html, fontSize) {
+  const fs = Number(fontSize) > 0 ? Number(fontSize) : 11;
+  const cssH = htmlHrPartCssHeight(html);
+  if (!htmlHasVisibleText(html)) return cssH;
   const text = cellLabel(html, false);
-  return Math.max(1, text.split('\n').filter((s) => s.trim()).length);
+  const lines = Math.max(1, text.split('\n').filter((s) => s.trim()).length);
+  return Math.max(cssH, lines * fs * 1.2 + htmlHrPartMarginTop(html));
+}
+
+function htmlHrBandHeights(parts, rules, h, fontSize) {
+  const fs = Number(fontSize) > 0 ? Number(fontSize) : 11;
+  const hrBand = Math.max(6, fs * 0.55);
+  const ruleH = hrBand * rules.length;
+  const heights = parts.map((html) => htmlHrPartContentHeight(html, fs));
+  let contentSum = heights.reduce((sum, v) => sum + v, 0);
+  const maxContent = Math.max(0, h - ruleH);
+  if (contentSum > maxContent && contentSum > 0) {
+    const scale = maxContent / contentSum;
+    for (let i = 0; i < heights.length; i++) heights[i] *= scale;
+    contentSum = maxContent;
+  }
+  const leftover = Math.max(0, maxContent - contentSum);
+  if (leftover > 0) {
+    let grown = false;
+    for (let i = heights.length - 1; i >= 0; i--) {
+      if (!htmlHasVisibleText(parts[i])) {
+        heights[i] += leftover;
+        grown = true;
+        break;
+      }
+    }
+    if (!grown && heights.length) heights[heights.length - 1] += leftover;
+  }
+  return {heights, hrBand};
 }
 
 function paintHtmlHrRule(canvas, x, y, w, bandH, attrs) {
@@ -7946,12 +7996,7 @@ function paintHtmlHrLabel(
   const {parts, rules} = spec;
   if (!parts.some(htmlHasVisibleText)) return false;
   const fontSize = canvas && canvas.state ? canvas.state.fontSize : 11;
-  const size = Number(fontSize);
-  const hrBand = Math.max(6, (Number.isFinite(size) && size > 0 ? size : 11) * 0.55);
-  const weights = parts.map(htmlHrFlowWeight);
-  const weightSum = weights.reduce((sum, v) => sum + v, 0) || 1;
-  const available = Math.max(0, h - hrBand * rules.length);
-  const heights = weights.map((wt) => available * wt / weightSum);
+  const {heights, hrBand} = htmlHrBandHeights(parts, rules, h, fontSize);
   let top = y;
   let painted = false;
   for (let i = 0; i < parts.length; i++) {
