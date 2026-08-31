@@ -10348,6 +10348,81 @@ void main() {
   );
 
   test(
+    'mxAbstractCanvas2D createState fontSize 11 stays Char Size for LibreOffice',
+    () {
+      VsdxTextRun? runExact(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text == text) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runExact(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      // mxStencil.drawNode does not setFontSize from defaultVertex. Omitted
+      // <fontsize> uses createState DEFAULT_FONTSIZE 11, not 12.
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="FF" w="100" h="80" strokewidth="inherit">'
+        '<foreground>'
+        '<rect x="20" y="0" w="60" h="80"/>'
+        '<fillstroke/>'
+        '<text align="center" str="D" valign="bottom" x="25" y="25"/>'
+        '</foreground>'
+        '</shape>',
+        id: 444,
+      );
+      const omittedScale = 1.5 / 100;
+      expect(
+        runExact(omitted, 'D')!.charStyle.fontSizeInches,
+        closeTo(11 * omittedScale, 0.0005),
+        reason: 'createState fontSize is 11. collectCharIX Size must not use '
+            'defaultVertex 12 when the stencil omits <fontsize>',
+      );
+
+      final flipFlop = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Electrical / Logic Gates',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'D Type Flip-Flop')
+          .build(445, 3, 3);
+      expect(
+        runExact(flipFlop, 'D')!.charStyle.fontSizeInches,
+        closeTo(11 * omittedScale, 0.0005),
+        reason: 'D Type Flip-Flop D/Q glyphs have no <fontsize>',
+      );
+      expect(
+        runExact(flipFlop, 'Q')!.charStyle.fontSizeInches,
+        closeTo(11 * omittedScale, 0.0005),
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(flipFlop.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runExact(leftover, 'D')!.charStyle.fontSizeInches,
+        closeTo(11 * omittedScale, 0.0005),
+        reason: 'a second save must keep createState 11 as Char.Size that '
+            'collectCharIX maps to fo:font-size',
+      );
+    },
+  );
+
+  test(
     'mxStencil roundrect arcsize 0 uses 15 percent rounding for LibreOffice',
     () {
       final rounded = decodeDrawioMxStencilXml(

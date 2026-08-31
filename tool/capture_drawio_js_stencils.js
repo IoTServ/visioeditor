@@ -276,7 +276,9 @@ class CanvasRecorder {
     this.state = {
       fillColor: '#ffffff',
       strokeColor: '#000000',
-      fontSize: 12,
+      // mxAbstractCanvas2D.createState / mxConstants.DEFAULT_FONTSIZE.
+      // defaultVertex still pins cell labels at 12 via applyTextStyle.
+      fontSize: 11,
       fontStyle: 0,
       fontFamily: null,
       fontColor: null,
@@ -4537,7 +4539,7 @@ function paintSvgTextRun(canvas, raw, st, x, y, rotation) {
   // SVG y is baseline. Pass a box whose bottom sits on y so
   // collectTextBlock svg:height is wide enough that Draw does not wrap
   // "DDos" (pdftotext was splitting DDo/s on a zero-size glyph pin).
-  const fs = Number(canvas.state.fontSize) || 12;
+  const fs = Number(canvas.state.fontSize) || 11;
   const rot = Number(rotation) || 0;
   if (rot) {
     // canvas.text multiplies w/h by map() scale. Use SVG user units so
@@ -4595,7 +4597,7 @@ function paintSvgTextPath(canvas, node, inherited, css, root) {
   for (const chunk of chunks) {
     const compact = String(chunk.text || '').replace(/\s+/g, ' ');
     const fs = svgLength(
-      chunk.style['font-size'], Number(canvas.state.fontSize) || 12,
+      chunk.style['font-size'], Number(canvas.state.fontSize) || 11,
     );
     for (const ch of Array.from(compact)) {
       chars.push({ch, style: chunk.style, fs, adv: svgGlyphAdvance(ch, fs)});
@@ -5639,7 +5641,7 @@ const mxUtilsBase = {
     return style && style[key] != null ? style[key] : fallback;
   },
   getSizeForString(value, fontSize) {
-    const size = Number(fontSize) || 12;
+    const size = Number(fontSize) || 11;
     return {width: String(value || '').length * size * 0.6, height: size * 1.2};
   },
   parseColorList(value) {
@@ -5997,7 +5999,7 @@ function Sidebar() {
       graph: {
         appendFontSize(style) { return String(style || ''); },
         vertexFontSize: 12,
-        edgeFontSize: 12,
+        edgeFontSize: 11,
       },
     },
   };
@@ -6765,7 +6767,8 @@ function htmlCssLength(raw, percentOf) {
   return htmlCssPx(token);
 }
 
-// CSS font-size em/% is of the parent size (mxText default 12). rem is
+// CSS font-size em/% is of the parent size (createState 11; cell labels
+// get defaultVertex 12 from applyTextStyle first). rem is
 // the HTML medium (16px). parseFloat("2em") must not freeze 2px.
 function htmlCssFontSizePx(raw, currentPx) {
   const token = String(raw || '').trim();
@@ -6849,14 +6852,14 @@ function htmlUaHeadingDefaults(next, tag) {
   const heading = kHtmlHeadingUa[tag];
   if (!heading) return;
   const parentPx = Number(next.fontSize);
-  const base = Number.isFinite(parentPx) && parentPx > 0 ? parentPx : 12;
+  const base = Number.isFinite(parentPx) && parentPx > 0 ? parentPx : 11;
   next.fontSize = base * heading.sizeEm;
   next.fontStyle |= 1;
 }
 
 function htmlUaBlockMargins(next, tag) {
   const sizePx = Number(next.fontSize);
-  const base = Number.isFinite(sizePx) && sizePx > 0 ? sizePx : 12;
+  const base = Number.isFinite(sizePx) && sizePx > 0 ? sizePx : 11;
   const heading = kHtmlHeadingUa[tag];
   if (heading) {
     const m = base * heading.marginEm;
@@ -6921,7 +6924,7 @@ function paintHtmlBorderBottom(canvas, x, y, w, h, align, valign, runs) {
   const boxW = Number(w);
   const boxH = Number(h);
   if (!(boxW > 0 && boxH > 0)) return;
-  const fallback = Number(canvas.state.fontSize) || 12;
+  const fallback = Number(canvas.state.fontSize) || 11;
   let textW = 0;
   let textH = 0;
   for (const run of marked) {
@@ -7280,7 +7283,7 @@ function paintHtmlTableLabel(
 ) {
   const rows = htmlTableRowSpecs(html);
   if (!rows) return false;
-  const baseSize = canvas && canvas.state ? canvas.state.fontSize : 12;
+  const baseSize = canvas && canvas.state ? canvas.state.fontSize : 11;
   const tableSize = htmlTableFontSizePx(html, baseSize);
   const fontSize = tableSize != null ? tableSize : baseSize;
   const heights = rows.map((row) => htmlRowHeightPx(
@@ -7503,9 +7506,9 @@ function paintHtmlHrLabel(
   if (!spec) return false;
   const {parts, rules} = spec;
   if (!parts.some(htmlHasVisibleText)) return false;
-  const fontSize = canvas && canvas.state ? canvas.state.fontSize : 12;
+  const fontSize = canvas && canvas.state ? canvas.state.fontSize : 11;
   const size = Number(fontSize);
-  const hrBand = Math.max(6, (Number.isFinite(size) && size > 0 ? size : 12) * 0.55);
+  const hrBand = Math.max(6, (Number.isFinite(size) && size > 0 ? size : 11) * 0.55);
   const weights = parts.map(htmlHrFlowWeight);
   const weightSum = weights.reduce((sum, v) => sum + v, 0) || 1;
   const available = Math.max(0, h - hrBand * rules.length);

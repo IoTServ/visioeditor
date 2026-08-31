@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxStencil omitted `<fontsize>` now stays 11px in LibreOffice,
+  matching `mxAbstractCanvas2D.createState` /
+  `mxConstants.DEFAULT_FONTSIZE`. Catalog decode and JS capture used 12
+  (defaultVertex cell labels). Electrical Flip-Flop D/Q glyphs have no
+  size tag; `configureCanvas` does not copy vertex `fontSize` onto the
+  stencil canvas. leftover keeps Char.Size that `collectCharIX` maps to
+  `fo:font-size`. Cell values still use defaultVertex 12 via
+  `applyTextStyle`. A second save keeps 11.
 - draw.io mxStencil `roundrect` `arcsize="0"` now stays 15% rounded in
   LibreOffice, matching official `drawNode`
   (`RECTANGLE_ROUNDING_FACTOR * 100`). Canvas `roundrect(r=0)` (Android
