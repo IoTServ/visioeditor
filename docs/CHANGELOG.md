@@ -587,7 +587,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   Arial / `#000000` in LibreOffice, matching `createState`
   `DEFAULT_FONTFAMILY` and `fontColor`. Catalog decode left Char.Font /
   Color null (platform face / theme). Electrical Flip-Flop D/Q glyphs
-  have no those tags; leftover writes the cells `collectCharIX` maps to
+  omit those tags; leftover writes the cells `collectCharIX` maps to
   `style:font-name` / `fo:color`. Cell values still use defaultVertex
   Helvetica via `applyTextStyle`. A second save keeps Arial black.
 - draw.io JS vertex-cells capture now emits `createState` between
