@@ -4803,8 +4803,21 @@ void main() {
     ).build(61, 3, 3);
     expect(
       table.geometries.length,
+      greaterThan(1),
+      reason: 'the outer box stays native geometry',
+    );
+    expect(
+      descendantGeometries(table)
+          .where(
+            (geometry) =>
+                !geometry.noLine &&
+                geometry.commands.whereType<LineTo>().length >= 3,
+          )
+          .length,
       greaterThan(2),
-      reason: 'table/tableRow need getTitleSize so cells stay native geometry',
+      reason: 'JS capture emits table cell rects as consecutive <move> '
+          'without <line>; coalesce them so collectGeometry paints the '
+          'grid LibreOffice would otherwise drop',
     );
     expect(
       table.children.where((child) => (child.text ?? '').isNotEmpty).length,
@@ -4839,6 +4852,17 @@ void main() {
             (child) => (child.text ?? '').isNotEmpty,
           ),
       isTrue,
+    );
+    expect(
+      descendantGeometries(leftover.findShapeById(tableId)!)
+          .where(
+            (geometry) =>
+                !geometry.noLine &&
+                geometry.commands.whereType<LineTo>().length >= 3,
+          )
+          .length,
+      greaterThan(2),
+      reason: 'a second save must keep the coalesced cell LineTo rails',
     );
   });
 

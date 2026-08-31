@@ -1117,9 +1117,11 @@ class _DrawioXmlShapeDecoder {
 
   void _finish({required bool fill, required bool stroke}) {
     if (!_dashed) _solidPaintBeforeDash = true;
-    final commands = _pending;
+    var commands = _pending;
     _pending = null;
     if (commands == null || commands.isEmpty) return;
+    commands = _closedPolylineFromMoveOnly(commands);
+    if (commands.isEmpty) return;
     final doFill = fill && !_fillIsNone;
     final doStroke = stroke && !_strokeIsNone;
     if (!doFill && !doStroke && (fill || stroke)) return;
@@ -1208,7 +1210,7 @@ class _DrawioXmlShapeDecoder {
     for (final command in path.childElements) {
       _decodePathNode(command, commands);
     }
-    return commands;
+    return _closedPolylineFromMoveOnly(commands);
   }
 
   void _decodePathNode(XmlElement command, List<VsdxPathCommand> commands) {
@@ -2179,6 +2181,30 @@ List<_DrawioArcCurve> _svgArcCurves(
 double _number(XmlElement element, String name, {double fallback = 0}) {
   final value = double.tryParse(element.getAttribute(name) ?? '');
   return value?.isFinite == true ? value! : fallback;
+}
+
+/// mxGraph `rect()` + stroke is four corners. Some JS captures (mockup
+/// Table cells, C4 Legend) emit those as consecutive `<move>` without
+/// `<line>`. libvisio `collectGeometry` skips a MoveTo-only section, so
+/// Draw would miss the grid. Close the polyline like a regular rect.
+List<VsdxPathCommand> _closedPolylineFromMoveOnly(
+  List<VsdxPathCommand> commands,
+) {
+  if (commands.length < 3) return commands;
+  if (commands.any((command) => command is! MoveTo)) return commands;
+  final points = <MoveTo>[
+    for (final command in commands) command as MoveTo,
+  ];
+  final out = <VsdxPathCommand>[MoveTo(points.first.x, points.first.y)];
+  for (var i = 1; i < points.length; i++) {
+    out.add(LineTo(points[i].x, points[i].y));
+  }
+  final first = points.first;
+  final last = points.last;
+  if ((first.x - last.x).abs() > 1e-9 || (first.y - last.y).abs() > 1e-9) {
+    out.add(LineTo(first.x, first.y));
+  }
+  return out;
 }
 
 ({Uint8List bytes, String mime})? _dataUriImage(String src) {

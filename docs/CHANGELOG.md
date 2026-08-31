@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mockup Table cell rects now stay native in LibreOffice. JS
+  capture emits those `rect()` corners as consecutive `<move>` without
+  `<line>` (C4 Legend, ER Table 2). `collectGeometry` skips a
+  MoveTo-only section, so Draw lost the grid. The decoder closes that
+  polyline like a regular rect. Cell labels are unchanged. A second
+  save keeps the LineTo rails.
 - draw.io mxStencil omitted `strokewidth` now stays native in
   LibreOffice. Official `mxStencil.parseDescription` defaults a
   missing attribute to `"1"` and `drawShape` does `1 * minScale`
