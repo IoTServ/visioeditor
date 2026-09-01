@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io BPMN Service leftover fills gears with white for LibreOffice.
+  Official `mxShapeBpmn2Task` case `service` does
+  `setFillColor(STYLE_FILLCOLOR)` before `mxgraph.bpmn.service_task`.
+  `Graph.replaceDefaultColor` maps defaultVertex `fillColor=default` to
+  white before paint. Capture collapsed that to inherit `fill` after the
+  inset `fill none` stroke so decoder inherit `FillForegnd`
+  (`tokens.txt` → `svg:fill`) painted both cogs the palette. Capture now
+  leftover-bakes `#ffffff` after fill none. A second save keeps the
+  white gears.
 - draw.io BPMN Send leftover strokes the envelope with white for
   LibreOffice. Official `mxShapeBpmn2Task` case `send` does
   `setStrokeColor(STYLE_FILLCOLOR)` then `setFillColor(STYLE_STROKECOLOR)`

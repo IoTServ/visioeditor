@@ -13939,6 +13939,88 @@ void main() {
   );
 
   test(
+    'BPMN Service leftover fills gears with white for LibreOffice',
+    () {
+      const paletteBlue = VsdxColor(0xFFDAE8FC);
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isWhiteGear(VsdxShape shape) {
+        return shape.fill.hasFill &&
+            shape.fill.foreground == VsdxColor.white &&
+            shape.geometries.any(
+              (geometry) => geometry.commands.length >= 20,
+            );
+      }
+
+      final service = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / BPMN / BPMN 2.0  Tasks',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Service')
+          .build(1, 3, 3);
+      expect(
+        service.fill.foreground,
+        paletteBlue,
+        reason: 'the task body still inherit-fills kStencilPrimary',
+      );
+      final gears = descendants(service).where(isWhiteGear).toList();
+      expect(
+        gears,
+        hasLength(2),
+        reason: 'mxShapeBpmn2Task case service setFillColor(STYLE_FILLCOLOR) '
+            'before mxgraph.bpmn.service_task. Graph.replaceDefaultColor maps '
+            'defaultVertex fillColor=default to white. Capture left inherit '
+            'FillForegnd after fill none so applyStencilStyle painted both '
+            'cogs the palette (tokens.txt FillForegnd → svg:fill)',
+      );
+      expect(
+        descendants(service).any(
+          (shape) =>
+              !identical(shape, service) &&
+              shape.fill.hasFill &&
+              shape.fill.foreground == paletteBlue,
+        ),
+        isFalse,
+        reason: 'the cogs must not ride kStencilPrimary FillForegnd',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(service.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(leftover.fill.foreground, paletteBlue);
+      expect(descendants(leftover).where(isWhiteGear).length, 2);
+      expect(
+        descendants(leftover).any(
+          (shape) =>
+              !identical(shape, leftover) &&
+              shape.fill.hasFill &&
+              shape.fill.foreground == paletteBlue,
+        ),
+        isFalse,
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

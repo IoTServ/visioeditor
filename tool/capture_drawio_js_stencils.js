@@ -1383,7 +1383,11 @@ class CanvasRecorder {
     // After a hex sibling, bake DEFAULT_FILLCOLOR #ffffff.
     const prev = this._fillToken == null ? '' : String(this._fillToken);
     if (cssColorKey(value) === 'default') {
-      if (prev.charAt(0) === '#') {
+      // After a hex sibling (Circular Callout holes) or fill none
+      // (BPMN Service gears after the inset stroke), leftover-bake
+      // DEFAULT_FILLCOLOR. First-paint prev is inherit `fill` so AWS
+      // Cloud puffs stay recolorable (tokens.txt FillForegnd → svg:fill).
+      if (prev.charAt(0) === '#' || prev === 'none') {
         paintValue = '#ffffff';
         force = true;
       } else {
