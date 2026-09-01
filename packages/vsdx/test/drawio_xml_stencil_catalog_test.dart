@@ -13781,6 +13781,68 @@ void main() {
   );
 
   test(
+    'Infographic Circular Callout leftover fills inner disks with white for LibreOffice',
+    () {
+      const paletteBlue = VsdxColor(0xFFDAE8FC);
+      const teal = VsdxColor(0xFF10739E);
+
+      bool hasFill(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.hasFill && shape.fill.foreground == color) {
+          return true;
+        }
+        return shape.children.any((child) => hasFill(child, color));
+      }
+
+      final callout = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Circular Callout (2)')
+          .build(1, 3, 3);
+      expect(
+        hasFill(callout, teal),
+        isTrue,
+        reason: 'mxShapeInfographicCircularCallout2 setFillColor(strokeColor) '
+            'paints the body',
+      );
+      expect(
+        hasFill(callout, VsdxColor.white),
+        isTrue,
+        reason: 'after the evenodd body it setFillColor(STYLE_FILLCOLOR). '
+            'Graph.replaceDefaultColor maps defaultVertex fillColor=default '
+            'to white. Capture left the keyword so decoder inherit '
+            'FillForegnd (tokens.txt → svg:fill) painted the inner disks '
+            'the palette',
+      );
+      expect(
+        hasFill(callout, paletteBlue),
+        isFalse,
+        reason: 'the inner disks must not ride kStencilPrimary',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(callout.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(hasFill(leftover, teal), isTrue);
+      expect(hasFill(leftover, VsdxColor.white), isTrue);
+      expect(hasFill(leftover, paletteBlue), isFalse);
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

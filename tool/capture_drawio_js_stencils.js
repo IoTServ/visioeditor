@@ -1372,7 +1372,25 @@ class CanvasRecorder {
   setFillAlpha(value) { this._setAlphaChannel('fillalpha', value); }
   setStrokeAlpha(value) { this._setAlphaChannel('strokealpha', value); }
   setFillColor(value, forceHex) {
-    this.state.fillColor = isNoneColor(value) ? null : value;
+    let paintValue = value;
+    let force = forceHex === true;
+    // Graph.replaceDefaultColor(STYLE_FILLCOLOR, shapeBackgroundColor)
+    // runs in getCellStyle before paint. parseStyle keeps the keyword so
+    // first-paint inherit `fill` can recolor (AWS Cloud puffs). JS
+    // painters then setFillColor(STYLE_FILLCOLOR); leftover
+    // fillcolor=default decoder-inherits FillForegnd so Circular Callout
+    // 2 inner disks are the palette (tokens.txt FillForegnd → svg:fill).
+    // After a hex sibling, bake DEFAULT_FILLCOLOR #ffffff.
+    const prev = this._fillToken == null ? '' : String(this._fillToken);
+    if (cssColorKey(value) === 'default') {
+      if (prev.charAt(0) === '#') {
+        paintValue = '#ffffff';
+        force = true;
+      } else {
+        paintValue = this.styleFill || '#ffffff';
+      }
+    }
+    this.state.fillColor = isNoneColor(paintValue) ? null : paintValue;
     this.state.gradientColor = null;
     this.state.gradientDir = null;
     this.state.gradientAlpha1 = 1;
@@ -1383,9 +1401,9 @@ class CanvasRecorder {
     // on one shape. forceHex on fillAlpha<1 split Circular Dial (2)'s
     // fillOpacity=20 donut into a sibling, so the 65% arc occupied the
     // parent and Draw painted the track on top of the value.
-    const matchesInherit = !isNoneColor(value) &&
+    const matchesInherit = !isNoneColor(paintValue) &&
       this.styleFill != null &&
-      cssColorKey(value) === cssColorKey(this.styleFill);
+      cssColorKey(paintValue) === cssColorKey(this.styleFill);
     // After a hex FillForegnd sibling, collapsing default-white back to
     // inherit `fill` leftover-bakes extraInheritFill with null _styleFill
     // that applyStencilStyle washes to kStencilPrimary (Mockup Color
@@ -1393,14 +1411,13 @@ class CanvasRecorder {
     // hardcode #ffffff without a custom style key, so they stay inherit.
     // Child white must not be washed (applyStencilStyle isRoot:false;
     // tokens.txt FillForegnd is svg:fill).
-    const prev = this._fillToken == null ? '' : String(this._fillToken);
-    const whiteAfterHex = matchesInherit && isCssDefaultWhite(value) &&
+    const whiteAfterHex = matchesInherit && isCssDefaultWhite(paintValue) &&
       prev.charAt(0) === '#' &&
-      stylePinsPaintColor(this.cellStyle, value);
+      stylePinsPaintColor(this.cellStyle, paintValue);
     const token = fillPaintToken(
-      value,
+      paintValue,
       this.styleFill,
-      forceHex === true ||
+      force ||
         whiteAfterHex ||
         (!matchesInherit && this._effectiveFillOpacity() < 1 - 1e-9),
     );

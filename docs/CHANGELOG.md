@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Infographic Circular Callout leftover fills inner disks with
+  white for LibreOffice. Official
+  `mxShapeInfographicCircularCallout2.paintVertexShape` fills the body
+  with `STYLE_STROKECOLOR` then `setFillColor(STYLE_FILLCOLOR)` for the
+  evenodd holes. `Graph.replaceDefaultColor` maps defaultVertex
+  `fillColor=default` to white before paint. Capture left the keyword
+  so decoder inherit `FillForegnd` (`tokens.txt` → `svg:fill`) painted
+  the inner disks the palette. Capture now leftover-bakes `#ffffff`
+  after a hex sibling. A second save keeps the white holes.
 - draw.io mxSwimlane startSize=0 leftover has no origin Line cap for
   LibreOffice. Official `paintSwimlane` still strokes the header as
   `move(0,start)/line(0,0)/line(w,0)/line(w,start)` when sidebar
