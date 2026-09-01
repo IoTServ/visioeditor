@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io General Filled Edge leftover keeps a dark casing plus a white
+  inner band for LibreOffice. Official `FilledEdge.paintEdgeShape`
+  strokes `this.stroke` then `fillColor` at `strokeWidth-2`. Capture
+  emits inherit stroke then `<strokecolor color="#ffffff"/>`; decoder
+  `collectLine` is shape-level so that hex leaked onto the parent
+  (`tokens.txt` LineColor → `svg:stroke`) and Draw painted both rails
+  white. Parent LineColor now freezes at the inherit rail. A second
+  save keeps the tube.
 - draw.io General isometric / elbow / orthogonal edge leftovers keep their
   routed polylines for LibreOffice. Sidebar `isometricEdgeStyle`,
   `elbowEdgeStyle` and `orthogonalEdgeStyle` go through

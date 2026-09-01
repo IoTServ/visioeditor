@@ -216,6 +216,8 @@ class _DrawioXmlShapeDecoder {
   double _strokeAlpha = 1;
   double? _strokeWidth;
   double? _parentStrokeWidth;
+  bool _capturedParentStrokeColor = false;
+  VsdxColor? _parentStrokeColor;
   double? _parentFillTransparency;
   double? _parentStrokeTransparency;
   bool _dashed = false;
@@ -376,10 +378,20 @@ class _DrawioXmlShapeDecoder {
       _lineJoin = _parentStrokeJoin;
       _miterLimit = _parentMiterLimit;
     }
+    // collectLine is shape-level. A later `<strokecolor>` (Filled Edge /
+    // Pipe inner fillColor band) must not leak onto the inherit rail
+    // Draw strokes via tokens.txt LineColor → svg:stroke.
+    final savedStrokeColor = _strokeColor;
+    if (inheritLine && _capturedParentStrokeColor) {
+      _strokeColor = _parentStrokeColor;
+    }
     var parentLine =
         _rasterPart != null || (!inheritLine && children.isNotEmpty)
             ? const VsdxLine(pattern: 0)
             : _paintLine(stroke: true);
+    if (inheritLine && _capturedParentStrokeColor) {
+      _strokeColor = savedStrokeColor;
+    }
     if (inheritLine && _capturedParentLineStyle) {
       _lineCap = savedCap;
       _lineJoin = savedJoin;
@@ -1339,6 +1351,12 @@ class _DrawioXmlShapeDecoder {
       _parentStrokeCap = _lineCap;
       _parentStrokeJoin = _lineJoin;
       _parentMiterLimit = _miterLimit;
+    }
+    if (doStroke && !_capturedParentStrokeColor) {
+      // Null means inherit LineColor (defaultEdge #000000). Capture
+      // even then so a later hex inner band cannot wash the rail.
+      _capturedParentStrokeColor = true;
+      _parentStrokeColor = _strokeColor;
     }
     if (doStroke && _dashed) {
       _parentDashed = true;

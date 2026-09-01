@@ -14822,6 +14822,41 @@ void main() {
         greaterThan(2),
         reason: 'a second save must keep the orthogonal RelLineTo',
       );
+
+      bool isWhiteCore(VsdxShape shape) =>
+          !shape.fill.hasFill &&
+          shape.line.hasLine &&
+          shape.line.color == VsdxColor.white;
+
+      expect(
+        filled.line.hasLine && filled.line.color != VsdxColor.white,
+        isTrue,
+        reason: 'FilledEdge.paintEdgeShape first origPaintEdgeShape uses '
+            'this.stroke (defaultEdge #000000). collectLine LineColor is '
+            'svg:stroke; a later fillColor inner band must not wash the '
+            'casing so Draw can see the tube on a white page',
+      );
+      expect(
+        filled.line.weightInches,
+        closeTo(0.25, 0.02),
+        reason: 'sidebar strokeWidth=10 leftover-bakes LineWeight 0.25in',
+      );
+      expect(
+        filled.children.any(isWhiteCore),
+        isTrue,
+        reason: 'the second origPaintEdgeShape leftover-bakes fillColor '
+            '#ffffff at strokeWidth-2 so Draw keeps the inner band',
+      );
+      expect(
+        leftoverF.line.hasLine && leftoverF.line.color != VsdxColor.white,
+        isTrue,
+        reason: 'a second save must keep the inherit casing LineColor',
+      );
+      expect(
+        leftoverF.children.any(isWhiteCore),
+        isTrue,
+        reason: 'a second save must keep the white inner LineColor band',
+      );
     },
   );
 
