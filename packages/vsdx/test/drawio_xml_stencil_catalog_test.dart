@@ -12352,6 +12352,78 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape ellipse leftover follows canvas ellipse stretch for LibreOffice',
+    () {
+      EllipseCmd? ovalOf(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands.whereType<EllipseCmd>()) {
+            return command;
+          }
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.dot" x="10" y="10" w="80" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="dot" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 453,
+      );
+      const canvasScale = 1.5 / 100;
+      final oval = ovalOf(host);
+      expect(oval, isNotNull);
+      expect(
+        (oval!.aX - oval.cx).abs(),
+        closeTo(40 * canvasScale, 1e-6),
+        reason: 'mxStencil.drawNode canvas.ellipse(w*sx, h*sy); leftover '
+            'collectEllipse A is the include-box right vertex, not min(sx,sy)',
+      );
+      expect(
+        (oval.bY - oval.cy).abs(),
+        closeTo(20 * canvasScale, 1e-6),
+        reason: 'include 80×40 of a 10×10 disc is an ellipse; Draw rx≠ry',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final saved = ovalOf(leftover);
+      expect(saved, isNotNull);
+      expect(
+        (saved!.aX - saved.cx).abs(),
+        closeTo(40 * canvasScale, 1e-6),
+        reason: 'a second save keeps the stretched Ellipse (tokens.txt)',
+      );
+      expect(
+        (saved.bY - saved.cy).abs(),
+        closeTo(20 * canvasScale, 1e-6),
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

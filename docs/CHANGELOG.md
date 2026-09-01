@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape ellipse canvas stretch for
+  LibreOffice. Official `mxStencil.drawNode` ellipse is
+  `canvas.ellipse(w×sx, h×sy)`. leftover used `min(scaleX,scaleY)` on
+  near-circular source discs so include-shape variable aspect kept a
+  circle and Draw collectEllipse missed the include box (`tokens.txt`
+  Ellipse). leftover now writes A/B vertices through independent
+  `_x`/`_y`. Catalog leftover stays uniform (long side 1.5"). A second
+  save keeps Ellipse.
 - draw.io leftover mxStencil include-shape rounded path canvas arcSize for
   LibreOffice. Official `mxStencil.drawNode` `path rounded="1"` runs
   `mxShape.addPoints` in canvas pixels: vertices are already `x*sx`, and

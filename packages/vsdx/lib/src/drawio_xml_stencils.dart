@@ -2134,31 +2134,11 @@ class _DrawioXmlShapeDecoder {
     final cySrc = top + height / 2;
     final cx = _x(cxSrc);
     final cy = _y(cySrc);
-    final span = math.max(width.abs(), height.abs());
-    final circular =
-        span > 1e-9 && (width.abs() - height.abs()).abs() <= 0.15 * span;
-    if (circular) {
-      // mxMarker oval is canvas.ellipse(size, size): a circle in source
-      // pixels. Catalog leftover is uniform, but an anamorphic XForm
-      // (user resize, leftover Flip) would still stretch collectEllipse
-      // into a needle. min(scaleX,scaleY) keeps the startSize circle
-      // Draw paints beside the dashed rail.
-      final r = math.min(
-        (width / 2).abs() * scaleX.abs(),
-        (height / 2).abs() * scaleY.abs(),
-      );
-      final yUp = _y(top) >= cy;
-      return <VsdxPathCommand>[
-        EllipseCmd(
-          cx: cx,
-          cy: cy,
-          aX: cx + r,
-          aY: cy,
-          bX: cx,
-          bY: yUp ? cy + r : cy - r,
-        ),
-      ];
-    }
+    // mxStencil.drawNode canvas.ellipse(w*sx, h*sy). leftover A/B
+    // vertices follow independent `_x`/`_y` so collectEllipse rx/ry
+    // match the include box. A min(scaleX,scaleY) circle used to hide
+    // that stretch (and was a no-op on catalog leftover, where scale
+    // is already uniform from the long side).
     return <VsdxPathCommand>[
       EllipseCmd(
         cx: cx,
