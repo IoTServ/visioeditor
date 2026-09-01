@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Bootstrap Range input leftover keeps a trailing Character space
+  for LibreOffice. Official Sidebar `mxCell('Example range ')` (and Tabs
+  `Home `) ends with U+0020. leftover `readShapeText` /
+  `trimXmlWhitespace` drops that so `collectText` (`tokens.txt`
+  Character) lost the glyph. Capture now leftover-bakes U+00A0 like
+  Chevron list / Use Case. A second save keeps the shift.
 - draw.io Android Progress Scrubber leftover strokes the track with fill
   for LibreOffice. Official `mxShapeAndroidProgressScrubberPressed`
   does `setStrokeColor(STYLE_FILLCOLOR)` then strokes `0..dx`. Capture

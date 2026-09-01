@@ -937,6 +937,22 @@ class CanvasRecorder {
         htmlRuns[0].str = `\u00a0${htmlRuns[0].str}`;
       }
     }
+    // leftover trimXmlWhitespace also drops U+0020. Official Sidebar
+    // `mxCell('Example range ')` (Bootstrap Range input (2)) and
+    // `mxCell('Home ')` (Tabs with description) lose that Character
+    // space on save; collectText (tokens.txt Character) is fo:content.
+    // Bake trailing / leading ASCII spaces as U+00A0 like Chevron.
+    if (s.charAt(0) === ' ' || s.charAt(s.length - 1) === ' ') {
+      s = s.replace(/^ +/, (m) => '\u00a0'.repeat(m.length))
+        .replace(/ +$/, (m) => '\u00a0'.repeat(m.length));
+      if (htmlRuns && htmlRuns.length) {
+        htmlRuns[0].str = String(htmlRuns[0].str)
+          .replace(/^ +/, (m) => '\u00a0'.repeat(m.length));
+        const last = htmlRuns[htmlRuns.length - 1];
+        last.str = String(last.str)
+          .replace(/ +$/, (m) => '\u00a0'.repeat(m.length));
+      }
+    }
     const attrs = [
       `x="${number(p.x)}"`,
       `y="${number(p.y)}"`,

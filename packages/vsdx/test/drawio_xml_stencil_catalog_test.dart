@@ -14156,6 +14156,61 @@ void main() {
   );
 
   test(
+    'Bootstrap Range input leftover keeps trailing Character nbsp for LibreOffice',
+    () {
+      const nbsp = '\u00a0';
+
+      VsdxShape? rangeLabel(VsdxShape shape) {
+        final t = shape.text ?? '';
+        if (t.contains('Example range')) return shape;
+        for (final child in shape.children) {
+          final nested = rangeLabel(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final range = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Bootstrap / bootstrap',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Range input (2)')
+          .build(1, 3, 3);
+      final inMemory = rangeLabel(range)!;
+      expect(
+        inMemory.text,
+        equals('Example range$nbsp'),
+        reason: 'Sidebar mxCell(\'Example range \') with align=left. leftover '
+            'readShapeText / trimXmlWhitespace drops U+0020 so collectText '
+            '(tokens.txt Character) lost the trailing space. Capture now '
+            'leftover-bakes U+00A0 like Chevron list / Use Case',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(range.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        rangeLabel(leftover)!.text,
+        equals('Example range$nbsp'),
+        reason: 'a second save must keep the trailing Character U+00A0',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
