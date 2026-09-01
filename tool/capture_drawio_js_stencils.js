@@ -7623,7 +7623,12 @@ function parseHtmlLabel(html, base) {
     else runs.push({str: text, ...emit});
     for (const frame of stack) frame.paraStart = false;
   };
-  const tokenRe = /<!--[\s\S]*?-->|<(\/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+)/g;
+  // HTML: a `<` that is not a tag / comment / doctype is text.
+  // `([^<]+)` alone lets /g skip `<< Prev` so leftover Character lost
+  // the chevrons (Mockup Pagination; tokens.txt Character is collectText).
+  // `&lt;&lt;import&gt;&gt;` is still one text run then decodeHtmlEntities.
+  const tokenRe =
+    /<!--[\s\S]*?-->|<(\/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+|<)/g;
   let match;
   while ((match = tokenRe.exec(html))) {
     if (match[0].startsWith('<!--')) continue;

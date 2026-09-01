@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Mockup Pagination now keeps `<< Prev` chevrons in LibreOffice.
+  Official sidebar text is `html=1` `<< Prev 1 2 3 4 5 6 7 8 9 10 Next >>`.
+  Catalog HTML capture skipped stray `<` that are not tags, so leftover
+  Character lost the chevrons (`tokens.txt` Character is collectText).
+  Capture now leftover-bakes them with `fontStyle=4` underline. A second
+  save keeps them.
 - draw.io Mockup Horizontal Ruler now keeps unit ticks in LibreOffice.
   Official `mxMockupMisc.js` `ruler2` reads `graph.getLabel(cell)` for
   the scale (`dx=100` → `"2"` / `"3"` at 350px). Catalog capture stubbed

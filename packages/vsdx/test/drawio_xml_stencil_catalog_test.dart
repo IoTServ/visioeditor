@@ -12439,6 +12439,82 @@ void main() {
   );
 
   test(
+    'mxText html leftover-bakes stray << Pagination chevrons for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final pagination = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Mockup / Mockup Navigation',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Pagination')
+          .build(1, 3, 3);
+      const label = '<< Prev 1 2 3 4 5 6 7 8 9 10 Next >>';
+      expect(
+        allText(pagination),
+        contains(label),
+        reason: 'html=1 `<< Prev` is foreignObject text, not a tag; '
+            'tokens.txt Character is collectText',
+      );
+      expect(
+        runContaining(pagination, '<< Prev')!.charStyle.color,
+        const VsdxColor(0xFF0000FF),
+        reason: 'fontColor=#0000ff is collectCharIX fo:color',
+      );
+      expect(
+        runContaining(pagination, '<< Prev')!.charStyle.underline,
+        isTrue,
+        reason: 'fontStyle=4 is Char Style 0x4 that readCharIX maps to '
+            'style:text-underline-type',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(pagination.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        allText(leftover),
+        contains(label),
+        reason: 'a second save must keep the << Prev Character run',
+      );
+      expect(runContaining(leftover, '<< Prev')!.charStyle.underline, isTrue);
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
