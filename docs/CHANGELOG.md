@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil foreground disableShadow for LibreOffice.
+  Official `mxStencil.drawShape` paints background with the canvas
+  shadow and `drawNode` calls `setShadow(false)` after each foreground
+  fill/stroke. leftover used to keep ShdwPattern on later hex siblings,
+  so Draw `_fillAndShadowProperties` offset decorations
+  (`tokens.txt` ShdwPattern). leftover now drops shadow after the first
+  foreground paint, matching NestedStencil. A second save keeps the
+  parent shadow and unshadowed glyphs.
 - draw.io leftover mxStencil strokewidth fixed="1" for LibreOffice.
   Official `mxStencil.drawNode` sets canvas width to `width * (fixed=="1"
   ? 1 : minScale)` in graph pixels. leftover used to always multiply by

@@ -12385,6 +12385,90 @@ void main() {
   );
 
   test(
+    'mxStencil foreground disableShadow leftover drops later ShdwPattern for LibreOffice',
+    () {
+      final shape = decodeDrawioMxStencilXml(
+        '<shape name="Shdw" w="100" h="100" strokewidth="1">'
+        '<background>'
+        '<shadow enabled="1" dx="4" dy="6" color="#808080"/>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</background>'
+        '<foreground>'
+        '<fillcolor color="#ff0000"/>'
+        '<rect x="8" y="8" w="30" h="30"/>'
+        '<fillstroke/>'
+        '<fillcolor color="#00aa00"/>'
+        '<rect x="62" y="62" w="30" h="30"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 449,
+      );
+      expect(
+        shape.shadow.enabled && shape.shadow.pattern == 1,
+        isTrue,
+        reason: 'background fill keeps canvas shadow; leftover parent '
+            'ShdwPattern 1 so Draw collectFillAndShadow emits draw:shadow',
+      );
+      final red = shape.children.where(
+        (child) => child.fill.foreground == const VsdxColor(0xFFFF0000),
+      );
+      final green = shape.children.where(
+        (child) => child.fill.foreground == const VsdxColor(0xFF00AA00),
+      );
+      expect(red, isNotEmpty);
+      expect(green, isNotEmpty);
+      expect(
+        red.first.shadow.enabled && red.first.shadow.pattern == 1,
+        isTrue,
+        reason: 'drawNode disableShadow runs after the first foreground '
+            'fillstroke, so that plate still offsets',
+      );
+      expect(
+        green.first.shadow.enabled,
+        isFalse,
+        reason: 'later foreground fillstroke is setShadow(false); leftover '
+            'must not keep ShdwPattern on the decoration',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(shape.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.shadow.enabled && leftover.shadow.pattern == 1,
+        isTrue,
+        reason: 'a second save keeps parent ShdwPattern (tokens.txt)',
+      );
+      final leftoverGreen = leftover.children.where(
+        (child) => child.fill.foreground == const VsdxColor(0xFF00AA00),
+      );
+      expect(
+        leftoverGreen, isNotEmpty,
+        reason: 'a second save keeps the unshadowed green plate',
+      );
+      expect(
+        leftoverGreen.first.shadow.enabled,
+        isFalse,
+        reason: 'a second save must not restore ShdwPattern on later '
+            'foreground siblings',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {

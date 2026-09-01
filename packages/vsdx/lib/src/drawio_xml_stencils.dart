@@ -374,8 +374,17 @@ class _DrawioXmlShapeDecoder {
     for (final sectionName in const <String>['background', 'foreground']) {
       final section = element.getElement(sectionName);
       if (section == null) continue;
+      // mxStencil.drawShape: background keeps the canvas shadow;
+      // foreground disableShadow calls setShadow(false) after each
+      // fill/stroke. leftover bakes that as ShdwPattern 0 on later
+      // siblings so Draw collectFillAndShadow does not offset glyphs.
+      // JS Canvas captures flatten paintBackground+paintForeground into
+      // one `<foreground>` and already emit `<shadow enabled="0"/>`;
+      // only real mxStencil XML with a background section uses this.
+      final disableShadow = sectionName == 'foreground' &&
+          element.getElement('background') != null;
       for (final child in section.childElements) {
-        _consume(child);
+        _consume(child, disableShadow: disableShadow);
       }
     }
     if (_pending != null && _pending!.isNotEmpty) {
@@ -574,7 +583,7 @@ class _DrawioXmlShapeDecoder {
     ));
   }
 
-  void _consume(XmlElement node) {
+  void _consume(XmlElement node, {bool disableShadow = false}) {
     switch (node.name.local) {
       case 'path':
         _resetPen();
@@ -644,12 +653,15 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'fill':
         _finish(fill: true, stroke: false);
+        if (disableShadow) _shadow = null;
         break;
       case 'stroke':
         _finish(fill: false, stroke: true);
+        if (disableShadow) _shadow = null;
         break;
       case 'fillstroke':
         _finish(fill: true, stroke: true);
+        if (disableShadow) _shadow = null;
         break;
       case 'fillstrokecolor':
         // IBM Cloud `ibm-watson--discovery` writes
@@ -838,6 +850,8 @@ class _DrawioXmlShapeDecoder {
       // `include-shape` follows drawNode stencil.drawShape into the
       // include box (NestedStencil already does). leftover merges
       // nested Geometry in that box so Draw collectGeometry paints it.
+      // foreground fill/stroke disableShadow follows drawNode
+      // setShadow(false) onto later siblings (tokens.txt ShdwPattern).
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
       // stay on the parent so applyStencilStyle can still recolor the body.
       // Other style keys (fillColor2, …) bake `default` like
