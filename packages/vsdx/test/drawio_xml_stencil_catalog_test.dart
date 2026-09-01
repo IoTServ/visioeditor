@@ -12543,6 +12543,105 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape leftover keeps nested canvas stroke on later host paint for LibreOffice',
+    () {
+      bool isRed(VsdxLine line) =>
+          line.hasLine &&
+          line.color != null &&
+          line.color!.red == 255 &&
+          line.color!.green == 0 &&
+          line.color!.blue == 0;
+
+      double redWeight(VsdxShape shape) {
+        var best = 0.0;
+        void walk(VsdxShape next) {
+          if (isRed(next.line)) {
+            best = math.max(best, next.line.weightInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return best;
+      }
+
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.dot" x="10" y="10" w="80" h="80"/>'
+        '<strokecolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="20" h="20"/>'
+        '<stroke/>'
+        '<text x="50" y="90" str="B" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="dot" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="2"/>'
+        '<fontsize size="10"/>'
+        '<ellipse x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 450,
+      );
+      const canvasScale = 1.5 / 100;
+      const nestedMinScale = (80 / 10) * canvasScale;
+      expect(
+        redWeight(host),
+        closeTo(2 * nestedMinScale, 1e-6),
+        reason: 'mxStencil.drawNode include-shape leaves nested '
+            'setStrokeWidth(width * minScale) on the shared canvas; leftover '
+            'host collectLine must keep that LineWeight, not 2× catalog scale',
+      );
+      expect(
+        glyphShape(host, 'B')!.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(10 * nestedMinScale, 0.01),
+        reason: 'nested setFontSize(size * minScale) stays for later host text',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        redWeight(leftover),
+        closeTo(2 * nestedMinScale, 1e-6),
+        reason: 'a second save keeps the shared-canvas LineWeight',
+      );
+      expect(
+        glyphShape(leftover, 'B')!.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(10 * nestedMinScale, 0.01),
+        reason: 'a second save keeps nested minScale Char size on later text',
+      );
+    },
+  );
+
+  test(
     'mxStencil foreground disableShadow leftover drops later ShdwPattern for LibreOffice',
     () {
       final shape = decodeDrawioMxStencilXml(

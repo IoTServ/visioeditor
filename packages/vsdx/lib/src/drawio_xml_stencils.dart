@@ -861,6 +861,10 @@ class _DrawioXmlShapeDecoder {
       // Char size follow nested minScale (not the catalog 1.5" scale).
       // Nested `strokewidth="inherit"` follows drawShape (host cell
       // STYLE_STROKEWIDTH, default 1 canvas pixel, not nested minScale).
+      // After include-shape the official canvas keeps nested
+      // setStrokeWidth / setFontSize; leftover converts those leftover
+      // inches back into host stencil units so a later host stroke
+      // collectLine matches NestedStencil.
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -1006,7 +1010,9 @@ class _DrawioXmlShapeDecoder {
       _rasterFlipV = nested._rasterFlipV;
     }
     // Official canvas is shared; nested setStrokeWidth / fillcolor stay.
-    _adoptPaint(nested);
+    // leftover scale-dependent state is leftover inches on the nested
+    // decoder — copy those into host stencil units, not nested XML units.
+    _adoptNestedCanvas(nested);
   }
 
   XmlElement? _lookupStencil(String? raw) {
@@ -1015,6 +1021,52 @@ class _DrawioXmlShapeDecoder {
     return _stencilByName[name] ??
         _stencilByName[name.toLowerCase()] ??
         _stencilByName[name.replaceAll(' ', '_').toLowerCase()];
+  }
+
+  /// mxStencil.drawNode include-shape shares the canvas. Nested
+  /// `setStrokeWidth(width * minScale)` / `setFontSize(size * minScale)`
+  /// / `setDashPattern(part * minScale)` stay for later host paint.
+  /// leftover `_strokeWidth` / `_fontSize` / `_dashPattern` are stencil
+  /// units interpreted with the current decoder's scale, so copy nested
+  /// leftover inches back into host units.
+  void _adoptNestedCanvas(_DrawioXmlShapeDecoder nested) {
+    final hostMin = math.min(scaleX.abs(), scaleY.abs());
+    final nestedMin = math.min(nested.scaleX.abs(), nested.scaleY.abs());
+    final hostFont = _fontSize;
+    final hostDash = _dashPattern;
+    _adoptPaint(nested);
+    if (hostMin < 1e-12) return;
+    // Nested drawShape always setStrokeWidth from the nested stencil.
+    if (nested._strokeWidth != null) {
+      _strokeWidth = nested._strokeWeightInches / hostMin;
+      _strokeWidthFixed = false;
+    }
+    // Nested drawShape does not reset font / dash; only convert when
+    // nested drawNode actually changed them.
+    if ((nested._fontSize - hostFont).abs() > 1e-12) {
+      _fontSize = nested._fontSize * nestedMin / hostMin;
+    } else {
+      _fontSize = hostFont;
+    }
+    if (!_sameDashPattern(nested._dashPattern, hostDash)) {
+      final dashes = nested._dashPattern;
+      if (dashes != null && dashes.isNotEmpty) {
+        final ratio = nestedMin / hostMin;
+        _dashPattern = [for (final value in dashes) value * ratio];
+      }
+    } else {
+      _dashPattern = hostDash == null ? null : List<double>.of(hostDash);
+    }
+  }
+
+  static bool _sameDashPattern(List<double>? a, List<double>? b) {
+    if (identical(a, b)) return true;
+    if (a == null || b == null) return a == b;
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if ((a[i] - b[i]).abs() > 1e-12) return false;
+    }
+    return true;
   }
 
   void _adoptPaint(_DrawioXmlShapeDecoder other) {

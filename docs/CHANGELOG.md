@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape shared canvas for LibreOffice.
+  Official `mxStencil.drawNode` include-shape calls nested `drawShape` on
+  the same canvas, so later host `stroke` / `text` keep nested
+  `setStrokeWidth(width * minScale)` and `setFontSize(size * minScale)`.
+  leftover used to `_adoptPaint` nested XML units and multiply by the
+  catalog 1.5" scale, so Draw collectLine / collectCharIX painted a
+  hairline and a tiny glyph (`tokens.txt` LineWeight / Char). leftover
+  now converts nested leftover inches back into host stencil units.
+  A second save keeps both cells.
 - draw.io leftover mxStencil include-shape strokewidth inherit for
   LibreOffice. Official `mxStencil.drawShape` maps `inherit` to the host
   cell `STYLE_STROKEWIDTH` (default 1) in graph pixels, not nested
