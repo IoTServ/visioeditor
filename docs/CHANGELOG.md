@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io AWS 3D Elastic MapReduce leftover has no origin Line cap for
+  LibreOffice. Official `mxAws3dElasticMapReduce.foreground` leaves
+  `moveTo(0,0)/lineTo(0,0)/arcTo(0,0)` after fill(); mxSvgCanvas2D
+  `begin()` discards that unpainted path. Capture closed it so decoder
+  concatenation (Crossbar) glued a `tokens.txt` Line onto the ridge
+  stroke Draw paints as `svg:stroke`. Capture now drops degenerate
+  open paths. A second save keeps the isometric ridges without the cap.
 - draw.io SysML Sequence Diagram leftover has no trailing Character
   newline for LibreOffice. Official sidebar is html=1
   `<p><b>sd</b> Interaction1</p>`; parseHtmlLabel fused `</p>`'s `\n`

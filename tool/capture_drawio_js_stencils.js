@@ -1608,10 +1608,53 @@ class CanvasRecorder {
   }
   finishPath() {
     this._flushLiveRing();
-    if (this.pathOpen) {
-      this.operations.push('</path>');
-      this.pathOpen = false;
+    if (!this.pathOpen) return;
+    // Official mxAws3dElasticMapReduce.foreground leaves
+    // moveTo(0,0)/lineTo(0,0)/arcTo(0,0) after fill(), then begin().
+    // mxSvgCanvas2D begin() discards that unpainted path; capture used
+    // to leftover-bake a tokens.txt Line Draw paints as svg:stroke.
+    // Adjacent <path> concatenation (Crossbar) glued the cap onto the
+    // next ridge stroke. Measure the emitted ops: emitMappedRings
+    // writes via command() and never touches _liveRing.
+    if (this._openPathIsDegenerate()) {
+      this._dropOpenPath();
+      return;
     }
+    this.operations.push('</path>');
+    this.pathOpen = false;
+  }
+
+  _openPathIsDegenerate() {
+    let i = this.operations.length - 1;
+    while (i >= 0 && this.operations[i] !== '<path>') i--;
+    if (i < 0) return true;
+    const pts = [];
+    for (let j = i + 1; j < this.operations.length; j++) {
+      const op = this.operations[j];
+      if (op === '<close/>') continue;
+      const xs = [...String(op).matchAll(/\bx(?:[123])?="([^"]+)"/g)]
+        .map((m) => Number(m[1]));
+      const ys = [...String(op).matchAll(/\by(?:[123])?="([^"]+)"/g)]
+        .map((m) => Number(m[1]));
+      const n = Math.min(xs.length, ys.length);
+      for (let k = 0; k < n; k++) {
+        if (Number.isFinite(xs[k]) && Number.isFinite(ys[k])) {
+          pts.push({x: xs[k], y: ys[k]});
+        }
+      }
+    }
+    if (!pts.length) return true;
+    let minX = pts[0].x;
+    let maxX = pts[0].x;
+    let minY = pts[0].y;
+    let maxY = pts[0].y;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return Math.hypot(maxX - minX, maxY - minY) < 1e-6;
   }
   finish() { this.finishPath(); }
 }

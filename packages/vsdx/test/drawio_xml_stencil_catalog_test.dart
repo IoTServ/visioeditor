@@ -13544,6 +13544,77 @@ void main() {
   );
 
   test(
+    'AWS 3D Elastic MapReduce leftover has no origin Line cap for LibreOffice',
+    () {
+      bool degenerateStem(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          final cmds = geometry.commands;
+          for (var i = 0; i + 1 < cmds.length; i++) {
+            final a = cmds[i];
+            final b = cmds[i + 1];
+            if (a is MoveTo &&
+                b is LineTo &&
+                (a.x - b.x).abs() < 1e-6 &&
+                (a.y - b.y).abs() < 1e-6 &&
+                !geometry.noLine) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      final emr = dynamic
+          .singleWhere((group) => group.name == 'Draw.io JS / AWS3D / AWS 3D')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Elastic MapReduce')
+          .build(1, 3, 3);
+      expect(
+        degenerateStem(emr),
+        isFalse,
+        reason: 'mxAws3dElasticMapReduce.foreground leaves moveTo(0,0) after '
+            'fill(); mxSvgCanvas2D begin() discards it. Capture used to '
+            'leftover-bake a tokens.txt Line Draw paints as svg:stroke',
+      );
+      expect(
+        emr.geometries.any(
+          (geometry) =>
+              !geometry.noLine &&
+              geometry.commands.whereType<LineTo>().length >= 6,
+        ),
+        isTrue,
+        reason: 'the isometric ridge Lines after the hexagon fill stay',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(emr.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(degenerateStem(leftover), isFalse);
+      expect(
+        leftover.geometries.any(
+          (geometry) =>
+              !geometry.noLine &&
+              geometry.commands.whereType<LineTo>().length >= 6,
+        ),
+        isTrue,
+        reason: 'a second save must keep the ridge Lines without the cap',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
