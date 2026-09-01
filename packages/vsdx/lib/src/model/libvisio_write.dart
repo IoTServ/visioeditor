@@ -183,7 +183,10 @@
 /// bidi, so those runs stay untouched. `_lineProperties` derives `stroke-linejoin`
 /// from `LineCap` only (round cap → round join, otherwise miter), so an
 /// explicit round / arcs join on a square/flat cap is baked with the same
-/// RelQuadBezTo fillets as shape-level Rounding, and a bevel join becomes a
+/// RelQuadBezTo fillets as shape-level Rounding (`computeRounding` only
+/// fillets L→L). CubBezTo-only rails (Cloud Callout) cannot take those
+/// fillets, so leftover writes LineCap 0 and Draw round-joins the
+/// RelCubBezTo path. A bevel join becomes a
 /// LineTo chamfer (including when the cap is round: Draw would otherwise
 /// round the elbow, so the written LineCap is flattened to extended).
 /// The same flatten applies to an explicit miter / miter-clip join on a
@@ -11920,19 +11923,18 @@ LibvisioShapeWrite libvisioShapeWrite(
     line = line.copyWith(color: color);
   }
 
-  // Custom / flow dash already flattened to MoveTo/LineTo. Sampling
-  // CubBezTo into those dashes invents kinks whose miter exceeds Draw's
-  // ODF default 4, so a later ribbon filled each dash (P&ID Basket Reel;
-  // tokens.txt LineColor → svg:stroke). AWS Group dashed roundrects stay
-  // 2-point strokes and never hit that path.
-  final ribbon = (dashed == null && flowed == null)
-      ? bakeStrokeRibbonForLibvisio(
-          shape: working,
-          geometries: geometries,
-          line: line,
-          theme: theme,
-        )
-      : null;
+  // Custom / flow / LinePattern dashes are already MoveTo/LineTo here so
+  // a LineColorTrans ribbon keeps the gaps (GMDL text-field underlines).
+  // CubBezTo custom dashes never flatten — they snap to LinePattern
+  // 2–23 (P&ID Basket Reel) and shapeNeedsLibvisioStrokeRibbon skips
+  // them. Opaque flattened meshes also skip, so leftover keeps the
+  // stroked dash instead of filling each segment.
+  final ribbon = bakeStrokeRibbonForLibvisio(
+    shape: working,
+    geometries: geometries,
+    line: line,
+    theme: theme,
+  );
   if (ribbon != null) {
     geometries = ribbon.geometries;
     line = ribbon.line;
@@ -11960,6 +11962,13 @@ LibvisioShapeWrite libvisioShapeWrite(
           shapeNeedsLibvisioRoundCapMiterFlatten(shape)) &&
       sourceLine.cap == LineCap.round) {
     line = line.copyWith(cap: LineCap.extended);
+  }
+  if (_shapeNeedsLibvisioRoundCapForUnfilletedJoin(
+    shape,
+    geometries,
+    sourceLine,
+  )) {
+    line = line.copyWith(cap: LineCap.round);
   }
   if (miterLimitForLibvisioChamfer(sourceLine) != null ||
       shapeNeedsLibvisioMiterSpikeBake(shape)) {
@@ -12643,12 +12652,74 @@ bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
   return false;
 }
 
+/// `true` when an explicit round / arcs join has no RelQuadBezTo leftover
+/// for Draw.
+///
+/// `_lineProperties` maps `svg:stroke-linejoin` from LineCap only.
+/// Polyline L→L corners already become RelQuadBezTo
+/// ([bakePolylineRounding], matching `computeRounding`). CubBezTo-only
+/// rails (Cloud Callout) cannot take those fillets, so leftover writes
+/// LineCap 0 and Draw round-joins the RelCubBezTo path. Mixed LineTo +
+/// curve leftover that *did* fillet L→L keeps the authored cap so those
+/// quadratics are not also round-joined. Straight 2-point edges have no
+/// join and stay square/extended.
+bool _shapeNeedsLibvisioRoundCapForUnfilletedJoin(
+  VsdxShape shape,
+  List<VsdxGeometry> geometries,
+  VsdxLine sourceLine,
+) {
+  if (sourceLine.join != VsdxLineJoin.round &&
+      sourceLine.join != VsdxLineJoin.arcs) {
+    return false;
+  }
+  if (sourceLine.cap == LineCap.round) return false;
+  if (chamferForLibvisioWrite(sourceLine)) return false;
+  if (shapeNeedsLibvisioRoundCapMiterFlatten(shape)) return false;
+  final radius = roundingForLibvisioWrite(sourceLine);
+  if (radius <= 1e-12) return false;
+  var sawJoinable = false;
+  for (final geometry in geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    if (_geometryHasLibvisioCurveRows(geometry)) {
+      sawJoinable = true;
+    } else {
+      final points = _strokedVertices(geometry, shape);
+      if (points != null && points.length >= 3) sawJoinable = true;
+    }
+    final baked = bakePolylineRounding(
+      geometry,
+      width: shape.width,
+      height: shape.height,
+      radius: radius,
+      chamfer: false,
+      miterLimit: miterLimitForLibvisioChamfer(sourceLine),
+    );
+    if (!identical(baked, geometry)) return false;
+  }
+  return sawJoinable;
+}
+
+/// `true` when a flattened MoveTo/LineTo dash mesh still needs a ribbon.
+///
+/// `tokens.txt` has no LineColorTrans / LineGradient. Opaque dash leftovers
+/// already look dashed as stroked LineTo; LineColorTrans must become
+/// FillForegndTrans (`draw:opacity`) or Draw paints each dash opaque.
+bool _flattenedDashMeshNeedsStrokeRibbon(VsdxShape shape) {
+  if (!shape.line.hasLine) return false;
+  if (!shape.line.hasGradient && shape.line.transparency <= 1e-9) {
+    return false;
+  }
+  if (_shapePaintsFill(shape, shape.geometries)) return false;
+  if (_openArrowheadsBlockStrokeBake(shape)) return false;
+  if (_shapeHasNonEllipseCurveStroke(shape)) return false;
+  return true;
+}
+
 /// `true` when Geometry is already a custom/flow dash flatten: many short
-/// unfilled MoveTo/LineTo strokes. Sampling CubBezTo into those dashes
-/// invents kinks whose miter exceeds Draw's ODF default 4, so a later
-/// ribbon filled each dash (P&ID Basket Reel; tokens.txt LineColor →
-/// svg:stroke). A first save skips ribbon after [bakeCustomDashForLibvisio];
-/// this keeps a second save from filling the leftover mesh.
+/// unfilled MoveTo/LineTo strokes. Opaque meshes stay stroked — filling
+/// each dash would hide the gaps Draw already paints as LineColor.
+/// CubBezTo custom dashes never reach this path: they snap to LinePattern
+/// 2–23 (P&ID Basket Reel) instead of sampling into LineTo kinks.
 bool _looksLikeLibvisioFlattenedDashStrokes(VsdxShape shape) {
   var stroked = 0;
   var short = 0;
@@ -12743,9 +12814,14 @@ VsdxFill _opaqueFillFromLine(
 /// (Android Quickscroll, Cisco wireless arcs) sample into that ribbon
 /// too — FillForegndTrans *is* a token (`draw:opacity`) — while opaque
 /// curve leftovers keep RelCubBezTo (Capacitor 2) and dashed cubics keep
-/// LinePattern (Draw actually dashes 2–23).
+/// LinePattern (Draw actually dashes 2–23). Flattened polyline dashes
+/// with LineColorTrans (GMDL text-field underlines) still ribbon after
+/// [bakeCustomDashForLibvisio]; opaque dash meshes stay stroked.
 bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
-  if (_looksLikeLibvisioFlattenedDashStrokes(shape)) return false;
+  if (_looksLikeLibvisioFlattenedDashStrokes(shape) &&
+      !_flattenedDashMeshNeedsStrokeRibbon(shape)) {
+    return false;
+  }
   if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
   if (_shapeHasNonEllipseCurveStroke(shape)) {

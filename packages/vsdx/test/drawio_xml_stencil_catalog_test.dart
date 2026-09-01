@@ -2329,6 +2329,86 @@ void main() {
     },
   );
 
+  test(
+    'Cloud Callout leftover writes LineCap round for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final callout = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Basic')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Cloud Callout')
+          .build(98, 3, 3);
+      expect(
+        descendants(callout).any(
+          (child) =>
+              child.line.hasLine && child.line.join == VsdxLineJoin.round,
+        ),
+        isTrue,
+        reason: 'basic.xml Cloud Callout is linejoin=round CubBezTo',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(callout.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      final cloud = descendants(leftover).firstWhere(
+        (child) =>
+            child.line.hasLine &&
+            child.geometries.any(
+              (geometry) =>
+                  geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+            ),
+      );
+      expect(
+        cloud.line.cap,
+        LineCap.round,
+        reason: '_lineProperties maps join from LineCap; CubBezTo rails '
+            'cannot take RelQuadBezTo fillets so leftover writes LineCap 0',
+      );
+      expect(
+        cloud.geometries.any(
+          (geometry) => geometry.commands.whereType<RelQuadBezTo>().isNotEmpty,
+        ),
+        isFalse,
+        reason: 'computeRounding only fillets L→L; leftover must keep C',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      final twice = descendants(second.pages.first.findShapeById(id)!).firstWhere(
+        (child) =>
+            child.line.hasLine &&
+            child.geometries.any(
+              (geometry) =>
+                  geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+            ),
+      );
+      expect(
+        twice.line.cap,
+        LineCap.round,
+        reason: 'a second save must keep LineCap 0 so Draw still round-joins',
+      );
+    },
+  );
+
   test('mxStencil default miterlimit is 10 for LibreOffice', () {
     bool hasMiter10(VsdxShape shape) {
       if (shape.line.hasLine &&
@@ -3483,6 +3563,99 @@ void main() {
         hasTransRibbon(second.pages.first.findShapeById(id)!),
         isTrue,
         reason: 'a second save must keep the FillForegndTrans ribbon',
+      );
+    },
+  );
+
+  test(
+    'GMDL text field leftover ribbons dashed LineColorTrans for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasTransLine(VsdxShape shape) => descendants(shape).any(
+            (child) => child.line.hasLine && child.line.transparency > 0.05,
+          );
+
+      bool hasTransRibbon(VsdxShape shape) => descendants(shape).any(
+            (child) =>
+                child.fill.hasFill &&
+                !child.line.hasLine &&
+                child.fill.foregroundTransparency > 0.05 &&
+                child.geometries.any(
+                  (geometry) => !geometry.noFill && geometry.noLine,
+                ),
+          );
+
+      final field = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Gmdl / GMDL / Text Fields',
+          )
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Single-line text field (normal) (3)',
+          )
+          .build(111, 3, 3);
+      final underline = descendants(field).firstWhere(
+        (child) => child.line.hasLine && child.line.transparency > 0.05,
+      );
+      expect(
+        underline.line.customDashPattern,
+        isNotNull,
+        reason: 'GMDL underline is veDashPattern, not LinePattern 2–23',
+      );
+      expect(underline.line.transparency, closeTo(0.2, 1e-6));
+      final ink = underline.line.color;
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(field.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        hasTransLine(leftover),
+        isFalse,
+        reason: 'LineColorTrans is not a token; leftover must not keep it',
+      );
+      expect(
+        hasTransRibbon(leftover),
+        isTrue,
+        reason: 'custom dash flatten used to skip the FillForegndTrans ribbon '
+            'and blend LineColor toward white (#ADADAD)',
+      );
+      final ribbon = descendants(leftover).firstWhere(
+        (child) =>
+            child.fill.hasFill &&
+            !child.line.hasLine &&
+            child.fill.foregroundTransparency > 0.05,
+      );
+      expect(ribbon.fill.foregroundTransparency, closeTo(0.2, 1e-6));
+      if (ink != null) {
+        expect(ribbon.fill.foreground?.value, ink.value);
+      }
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      expect(
+        hasTransRibbon(second.pages.first.findShapeById(id)!),
+        isTrue,
+        reason: 'a second save must keep the FillForegndTrans dash ribbon',
       );
     },
   );

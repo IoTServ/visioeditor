@@ -582,6 +582,26 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io GMDL text field leftover ribbons dashed LineColorTrans
+  for LibreOffice. Official GMDL Single-line text field (normal) (3)
+  is `veDashPattern` plus LineColorTrans 0.2 (`tokens.txt` has no
+  LineColorTrans; `xmlStringToColour` zeros `Colour.a`). leftover used
+  to flatten the custom dash then skip the FillForegndTrans ribbon,
+  blending LineColor toward white so Draw painted opaque `#ADADAD`
+  dashes. Flattened polyline dashes now sample into filled ribbons
+  whose FillForegndTrans `_fillAndShadowProperties` maps to
+  `draw:opacity`. Opaque custom-dash meshes still stay stroked; dashed
+  CubBezTo still snaps to LinePattern (P&ID Basket Reel). A second
+  save keeps the wash.
+- draw.io Cloud Callout leftover writes LineCap round for
+  LibreOffice. Official `basic.xml` Cloud Callout is
+  `linejoin=round` CubBezTo (`tokens.txt` has no LineJoin;
+  `_lineProperties` maps `svg:stroke-linejoin` from LineCap). leftover
+  fillets L→L as RelQuadBezTo (`computeRounding`) but CubBezTo-only
+  rails cannot take those fillets, so Draw used to miter an extended
+  cap. leftover now writes LineCap 0 on those unfilleted round joins.
+  Jump-in Arrow 1 still leftover-bakes the arrowhead V as RelQuadBezTo.
+  A second save keeps LineCap 0.
 - draw.io Android Quickscroll leftover ribbons CubBezTo LineColorTrans
   for LibreOffice. Official `android.xml` Quickscroll is `<arc>` plus
   translucent cyan (`tokens.txt` has no LineColorTrans;
