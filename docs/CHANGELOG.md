@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io Android Quickscroll leftover ribbons CubBezTo LineColorTrans
+  for LibreOffice. Official `android.xml` Quickscroll is `<arc>` plus
+  translucent cyan (`tokens.txt` has no LineColorTrans;
+  `xmlStringToColour` zeros `Colour.a`). leftover used to skip the
+  FillForegndTrans ribbon on any CubBezTo rail and blend LineColor
+  toward white, so Draw painted opaque `#99DAF2`. Solid curve rails now
+  sample into a filled ribbon whose FillForegndTrans
+  `_fillAndShadowProperties` maps to `draw:opacity`. Opaque Capacitor 2
+  plates still keep RelCubBezTo; dashed cubics still keep LinePattern.
+  Cisco 19 wireless arcs use the same ribbon. A second save keeps the
+  wash.
 - draw.io GMDL Date picker leftover composites Char ColorTrans over the
   teal header for LibreOffice. Official `mxText.apply` writes
   `textOpacity` onto `this.opacity` and `configureCanvas` calls

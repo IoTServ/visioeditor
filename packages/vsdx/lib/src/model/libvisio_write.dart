@@ -77,7 +77,9 @@
 /// Draw does not punch the body, while first-aid / no-entry cut-outs
 /// keep `User.veLibvisioEvenoddHole`. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
-/// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect.
+/// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect —
+/// including solid CubBezTo / RelQuadBezTo rails (Android Quickscroll)
+/// that a toward-white LineColor bake would otherwise paint opaque.
 /// A three-stop linear whose ends match (BG–FG–BG) is that same
 /// FillPattern 26 / 29 axial at 0° / 90°; FillForegnd must be the middle
 /// stop or a white–colour–white stroke ribbon becomes all-white in Draw.
@@ -12735,13 +12737,22 @@ VsdxFill _opaqueFillFromLine(
 /// Geometry first. Arrow-less 1-D strokes bake the same ribbon as 2-D:
 /// XForm1D / glue cells are untouched, matching CompoundType. Filled
 /// shapes already occupy FillPattern, so they keep LineColor (Draw will
-/// show an opaque stroke). A `veMiterLimit` above 4 on an unfilled solid
-/// polyline uses the same ribbon so Draw does not bevel ratio>4 elbows.
+/// show an opaque stroke) unless a sibling ribbon bakes. A `veMiterLimit`
+/// above 4 on an unfilled solid polyline uses the same ribbon so Draw
+/// does not bevel ratio>4 elbows. Solid CubBezTo / RelQuadBezTo rails
+/// (Android Quickscroll, Cisco wireless arcs) sample into that ribbon
+/// too — FillForegndTrans *is* a token (`draw:opacity`) — while opaque
+/// curve leftovers keep RelCubBezTo (Capacitor 2) and dashed cubics keep
+/// LinePattern (Draw actually dashes 2–23).
 bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
   if (_looksLikeLibvisioFlattenedDashStrokes(shape)) return false;
   if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
-  if (_shapeHasNonEllipseCurveStroke(shape)) return false;
+  if (_shapeHasNonEllipseCurveStroke(shape)) {
+    if (shape.line.pattern != 1) return false;
+    final custom = shape.line.customDashPattern;
+    if (custom != null && custom.isNotEmpty) return false;
+  }
   if (!shape.line.hasGradient &&
       shape.line.transparency <= 1e-9 &&
       !shapeNeedsLibvisioMiterSpikeBake(shape)) {

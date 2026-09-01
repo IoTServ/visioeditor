@@ -3394,6 +3394,100 @@ void main() {
   );
 
   test(
+    'Android Quickscroll leftover ribbons CubBezTo LineColorTrans for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasCub(VsdxShape shape) => descendants(shape).any(
+            (child) => child.geometries.any(
+              (geometry) => geometry.commands.any(
+                (command) => command is CubBezTo || command is RelCubBezTo,
+              ),
+            ),
+          );
+
+      bool hasTransLine(VsdxShape shape) => descendants(shape).any(
+            (child) => child.line.hasLine && child.line.transparency > 0.05,
+          );
+
+      bool hasTransRibbon(VsdxShape shape) => descendants(shape).any(
+            (child) =>
+                child.fill.hasFill &&
+                !child.line.hasLine &&
+                child.fill.foregroundTransparency > 0.4 &&
+                child.geometries.any(
+                  (geometry) => !geometry.noFill && geometry.noLine,
+                ),
+          );
+
+      final scroll = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Android / Android')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Quickscroll')
+          .build(110, 3, 3);
+      expect(
+        hasCub(scroll),
+        isTrue,
+        reason: 'android.xml Quickscroll thumb is <arc> leftover-decoded as '
+            'CubBezTo',
+      );
+      expect(
+        hasTransLine(scroll),
+        isTrue,
+        reason: 'fillalpha/strokealpha on the cyan thumb is LineColorTrans',
+      );
+      expect(
+        descendants(scroll).any(shapeNeedsLibvisioStrokeRibbon),
+        isTrue,
+        reason: 'LineColorTrans is not a token; leftover must sample the '
+            'CubBezTo rail into a FillForegndTrans ribbon',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(scroll.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        hasTransLine(leftover),
+        isFalse,
+        reason: 'LineColorTrans is not a token; leftover must not keep it',
+      );
+      expect(
+        hasTransRibbon(leftover),
+        isTrue,
+        reason: 'FillForegndTrans is a token (_fillAndShadowProperties → '
+            'draw:opacity). Toward-white LineColor used to wash #33B5E5 '
+            'opaque #99DAF2',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      expect(
+        hasTransRibbon(second.pages.first.findShapeById(id)!),
+        isTrue,
+        reason: 'a second save must keep the FillForegndTrans ribbon',
+      );
+    },
+  );
+
+  test(
     'mxGraph inherit colors freeze parent hex for LibreOffice',
     () {
       VsdxTextRun? glyphRun(VsdxShape shape, String text) {

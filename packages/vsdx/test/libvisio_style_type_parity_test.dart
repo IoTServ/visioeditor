@@ -13503,6 +13503,49 @@ void main() {
     expect(runOf('CANCEL').charStyle.transparency, closeTo(0, 1e-9));
   });
 
+  test('CubBezTo LineColorTrans leftover ribbons FillForegndTrans', () {
+    final shape = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 2,
+      pinY: 2,
+      width: 2,
+      height: 1,
+      name: 'CubTrans',
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(
+        color: VsdxColor(0xFF33B5E5),
+        weightInches: 0.04,
+        transparency: 0.5,
+      ),
+    ).copyWith(
+      geometries: const <VsdxGeometry>[
+        VsdxGeometry(
+          commands: <VsdxPathCommand>[
+            MoveTo(0, 0.5),
+            CubBezTo(x: 2, y: 0.5, x1: 0.5, y1: 1.2, x2: 1.5, y2: -0.2),
+          ],
+        ),
+      ],
+    );
+    expect(shapeNeedsLibvisioStrokeRibbon(shape), isTrue);
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+    final leftover = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(1)!;
+    expect(leftover.line.hasLine, isFalse);
+    expect(leftover.fill.hasFill, isTrue);
+    expect(leftover.fill.foregroundTransparency, closeTo(0.5, 1e-6));
+    expect(leftover.fill.foreground?.value, 0xFF33B5E5);
+    expect(
+      leftover.geometries.any((g) => g.commands.whereType<RelCubBezTo>().isNotEmpty),
+      isFalse,
+    );
+  });
+
   test('theme-only FillForegndTrans freezes RGB for LibreOffice', () {
     const slot = ThemeSlot.accent6;
     const trans = 0.7;
