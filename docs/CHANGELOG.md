@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text align-shape FlipX/Y for LibreOffice.
+  Official `mxStencil.drawNode` `align-shape="0"` subtracts
+  `shape.rotation` from canvas.text, or adds it when exactly one of
+  STYLE_FLIPH / STYLE_FLIPV is set (NestedStencil already does).
+  leftover used to always counter collectXFormData Angle and leave
+  FlipX only on image `flipH`, so Draw applyXForm did not mirror the
+  cell and librevenge:rotate spun the glyph with Geometry
+  (`tokens.txt` FlipX / TxtAngle). leftover now writes FlipX/Y from
+  `cellfliph` / `cellflipv` and xors TxtAngle. A second save keeps
+  both cells.
 - draw.io leftover mxStencil include-shape nested text for LibreOffice.
   Official `mxStencil.drawNode` include-shape calls nested `drawShape`,
   so `canvas.text` / `setFontSize(size * minScale)` use the include-box

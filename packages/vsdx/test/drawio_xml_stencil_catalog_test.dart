@@ -12203,6 +12203,90 @@ void main() {
   );
 
   test(
+    'mxStencil text align-shape leftover keeps TxtAngle with FlipX for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final flipped = decodeDrawioMxStencilXml(
+        '<shape name="Flipped" w="100" h="40" cellrotation="-90" '
+        'cellfliph="1" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="40"/>'
+        '<fillstroke/>'
+        '<text x="50" y="20" str="A" align="center" valign="middle" '
+        'align-shape="0"/>'
+        '</foreground>'
+        '</shape>',
+        id: 448,
+      );
+      expect(flipped.flipX, isTrue);
+      expect(flipped.flipY, isFalse);
+      expect(
+        flipped.angleRad,
+        closeTo(math.pi / 2, 0.05),
+        reason: 'cellrotation=-90 leftover-bakes collectXFormData Angle',
+      );
+      expect(
+        glyphShape(flipped, 'A')!.richText.textBlock.angleRad,
+        closeTo(math.pi / 2, 0.05),
+        reason: 'mxStencil.drawNode align-shape="0" with STYLE_FLIPH xor '
+            'adds shape.rotation so leftover TxtAngle matches Angle; '
+            'Draw applyXForm FlipX then librevenge:rotate stays upright',
+      );
+
+      final both = decodeDrawioMxStencilXml(
+        '<shape name="Both" w="100" h="40" cellrotation="-90" '
+        'cellfliph="1" cellflipv="1" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="40"/>'
+        '<fillstroke/>'
+        '<text x="50" y="20" str="A" align="center" valign="middle" '
+        'align-shape="0"/>'
+        '</foreground>'
+        '</shape>',
+        id: 449,
+      );
+      expect(both.flipX, isTrue);
+      expect(both.flipY, isTrue);
+      expect(
+        glyphShape(both, 'A')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'flipH && flipV still subtracts shape.rotation',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(flipped.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(leftover.flipX, isTrue);
+      expect(leftover.angleRad, closeTo(math.pi / 2, 0.05));
+      expect(
+        glyphShape(leftover, 'A')!.richText.textBlock.angleRad,
+        closeTo(math.pi / 2, 0.05),
+        reason: 'a second save must keep FlipX and TxtAngle xor',
+      );
+    },
+  );
+
+  test(
     'mxStencil include-shape leftover keeps nested Ellipse for LibreOffice',
     () {
       final host = decodeDrawioMxStencilXml(

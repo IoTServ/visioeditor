@@ -577,8 +577,13 @@ class _DrawioXmlShapeDecoder {
       imgOffsetYInches: rasterBox?.offsetY ?? 0,
       imgWidthInches: rasterBox?.width,
       imgHeightInches: rasterBox?.height,
-      flipX: _rasterFlipH,
-      flipY: _rasterFlipV,
+      // Image `flipH`/`flipV` leftover-bake FlipX/Y for
+      // collectForeignDataType `draw:mirror-*`. Cell STYLE_FLIPH/V is
+      // `cellfliph` / `cellflipv` (like cellrotation); leftover XForm
+      // FlipX is what collectXFormData / applyXForm mirrors. Do not
+      // OR the two — image flip is not STYLE_FLIPH.
+      flipX: _rasterPart != null ? _rasterFlipH : _stencilCellFlipH,
+      flipY: _rasterPart != null ? _rasterFlipV : _stencilCellFlipV,
       richText: _stencilLabelRichText(),
     ));
   }
@@ -845,6 +850,8 @@ class _DrawioXmlShapeDecoder {
       // fall through to regular MoveTo/LineTo/CubBezTo like official.
       // `text` align-shape="0" follows drawNode onto TxtAngle that
       // counters collectXFormData Angle so Draw keeps the glyph upright.
+      // STYLE_FLIPH xor STYLE_FLIPV (one axis) adds Angle instead;
+      // leftover FlipX/Y comes from `cellfliph` / `cellflipv`.
       // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
       // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
       // `include-shape` follows drawNode stencil.drawShape into the
@@ -2229,11 +2236,21 @@ class _DrawioXmlShapeDecoder {
     // glyphs (w=h=0) keep the mxStencil vertical → TxtAngle shortcut.
     final boxedVertical = hasBox && label.vertical;
     if (label.vertical && !hasBox) angle -= math.pi / 2;
-    // mxStencil.drawNode align-shape="0": subtract shape.rotation so the
-    // glyph stays screen-upright while collectXFormData still rotates
-    // Geometry. Catalog leftover bakes STYLE_ROTATION as cellrotation /
-    // Angle; TxtAngle counters that Angle (flips stay native XForm).
-    if (!label.alignShape) angle -= _stencilCellRotationRad();
+    // mxStencil.drawNode align-shape="0": ignore shape.rotation for
+    // canvas.text except the STYLE_FLIPH/V xor (NestedStencil already
+    // does). leftover TxtAngle counters collectXFormData Angle; a
+    // single FlipX/Y adds that Angle instead of subtracting so Draw
+    // librevenge:rotate stays screen-upright after applyXForm FlipX.
+    if (!label.alignShape) {
+      final dr = _stencilCellRotationRad();
+      if (_stencilCellFlipH && _stencilCellFlipV) {
+        angle -= dr;
+      } else if (_stencilCellFlipH || _stencilCellFlipV) {
+        angle += dr;
+      } else {
+        angle -= dr;
+      }
+    }
     var shape = VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -2397,6 +2414,14 @@ class _DrawioXmlShapeDecoder {
     if (rotDeg == null || rotDeg.abs() < 1e-9) return 0;
     return -rotDeg * math.pi / 180;
   }
+
+  /// Capture `cellfliph` / `cellflipv` is mxGraph STYLE_FLIPH / STYLE_FLIPV.
+  /// Official drawNode align-shape="0" xors those with shape.rotation.
+  bool get _stencilCellFlipH =>
+      (element.getAttribute('cellfliph') ?? '').trim() == '1';
+
+  bool get _stencilCellFlipV =>
+      (element.getAttribute('cellflipv') ?? '').trim() == '1';
 
   /// mxStencil.computeAspect: STYLE_DIRECTION north/south swaps sx/sy.
   /// leftover XML uses `celldirection` / `direction=` the same way
