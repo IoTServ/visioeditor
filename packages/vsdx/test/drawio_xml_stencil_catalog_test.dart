@@ -12683,6 +12683,85 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape leftover keeps nested text in the include box for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="50" h="50"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<fontsize size="10"/>'
+        '<text x="5" y="5" str="A" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 447,
+      );
+      const canvasScale = 1.5 / 100;
+      const overlay = 5 * canvasScale;
+      final glyph = glyphShape(host, 'A');
+      expect(glyph, isNotNull);
+      expect(
+        glyph!.pinX,
+        closeTo(5 * overlay, 0.02),
+        reason: 'mxStencil.drawNode include-shape canvas.text uses the '
+            'nested aspect; leftover TxtPin must sit in the 50×50 include '
+            'box, not at host stencil (5,5)',
+      );
+      expect(
+        glyph.pinY,
+        closeTo(
+          (100 - 50) * canvasScale + (10 - 5) * overlay,
+          0.02,
+        ),
+        reason: 'nested leftover Y-up origin is the include-box bottom',
+      );
+      expect(
+        glyph.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(10 * overlay, 0.01),
+        reason: 'mxStencil.drawNode setFontSize(size * minScale) in the '
+            'include box; leftover Char size must follow nested minScale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverGlyph = glyphShape(leftover, 'A')!;
+      expect(leftoverGlyph.pinX, closeTo(5 * overlay, 0.02));
+      expect(
+        leftoverGlyph.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(10 * overlay, 0.01),
+        reason: 'a second save keeps nested include-shape Char size',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {

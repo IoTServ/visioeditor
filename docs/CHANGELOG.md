@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape nested text for LibreOffice.
+  Official `mxStencil.drawNode` include-shape calls nested `drawShape`,
+  so `canvas.text` / `setFontSize(size * minScale)` use the include-box
+  aspect. leftover already merged nested Geometry in that box but kept
+  `<text>` in nested stencil units until the host `_labelShape`, so Draw
+  `collectTextBlock` pinned the glyph at the catalog origin and
+  `collectCharIX` used the 1.5" host scale (`tokens.txt` TxtPin /
+  Char). leftover now remaps nested labels into host stencil space.
+  A second save keeps TxtPin and Char size.
 - draw.io leftover mxStencil include-shape STYLE_DIRECTION for
   LibreOffice. Official `mxStencil.computeAspect` swaps sx/sy and
   shifts origin when the host cell is north/south. leftover include-shape

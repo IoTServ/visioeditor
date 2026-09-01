@@ -850,6 +850,8 @@ class _DrawioXmlShapeDecoder {
       // `include-shape` follows drawNode stencil.drawShape into the
       // include box (NestedStencil already does). leftover merges
       // nested Geometry in that box so Draw collectGeometry paints it.
+      // Nested `<text>` is remapped into host stencil space so TxtPin /
+      // Char size follow nested minScale (not the catalog 1.5" scale).
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -963,7 +965,16 @@ class _DrawioXmlShapeDecoder {
     nested._paintSections();
     _geometries.addAll(nested._geometries);
     _coloredParts.addAll(nested._coloredParts);
-    _labels.addAll(nested._labels);
+    // Nested `_consume` stores text in nested stencil units. Geometry
+    // already went through nested `_x`/`_y` (include overlay). Labels
+    // used to wait for the host `_labelShape`, which multiplied by the
+    // catalog 1.5" scale, so include-shape glyphs sat at the host origin
+    // and Char size ignored nested minScale. Remap into host stencil
+    // space so collectTextBlock / collectCharIX match NestedStencil.
+    _labels.addAll([
+      for (final label in nested._labels)
+        nested._labelInParentStencilSpace(label, parent: this),
+    ]);
     if (nested._rasterPart != null) {
       _rasterPart = nested._rasterPart;
       _rasterMime = nested._rasterMime;
@@ -2308,6 +2319,76 @@ class _DrawioXmlShapeDecoder {
 
   double _x(double source) => _originX + source * scaleX;
   double _y(double source) => _originY + (sourceHeight - source) * scaleY;
+
+  /// Map a nested-stencil-space label into [parent] stencil units so
+  /// host `_labelShape` `_x`/`_y` / minScale match NestedStencil
+  /// `canvas.text` / `setFontSize(size * minScale)` in the include box.
+  _DrawioStencilLabel _labelInParentStencilSpace(
+    _DrawioStencilLabel label, {
+    required _DrawioXmlShapeDecoder parent,
+  }) {
+    final leftoverX = _x(label.x);
+    final leftoverY = _y(label.y);
+    final parentScaleX = parent.scaleX;
+    final parentScaleY = parent.scaleY;
+    final parentX = parentScaleX.abs() < 1e-12
+        ? 0.0
+        : (leftoverX - parent._originX) / parentScaleX;
+    final parentY = parentScaleY.abs() < 1e-12
+        ? 0.0
+        : parent.sourceHeight - (leftoverY - parent._originY) / parentScaleY;
+    final scaleXRatio =
+        parentScaleX.abs() < 1e-12 ? 1.0 : scaleX.abs() / parentScaleX.abs();
+    final scaleYRatio =
+        parentScaleY.abs() < 1e-12 ? 1.0 : scaleY.abs() / parentScaleY.abs();
+    final nestedMin = math.min(scaleX.abs(), scaleY.abs());
+    final parentMin = math.min(parentScaleX.abs(), parentScaleY.abs());
+    final fontRatio = parentMin < 1e-12 ? 1.0 : nestedMin / parentMin;
+    return _DrawioStencilLabel(
+      text: label.text,
+      x: parentX,
+      y: parentY,
+      boxWidth: label.boxWidth * scaleXRatio,
+      boxHeight: label.boxHeight * scaleYRatio,
+      spacingLeft: label.spacingLeft * scaleXRatio,
+      spacingRight: label.spacingRight * scaleXRatio,
+      spacingTop: label.spacingTop * scaleYRatio,
+      spacingBottom: label.spacingBottom * scaleYRatio,
+      align: label.align,
+      valign: label.valign,
+      vertical: label.vertical,
+      wrap: label.wrap,
+      rotationDegrees: label.rotationDegrees,
+      alignShape: label.alignShape,
+      fontSize: label.fontSize * fontRatio,
+      fontStyle: label.fontStyle,
+      fontFamily: label.fontFamily,
+      color: label.color,
+      background: label.background,
+      textOpacity: label.textOpacity,
+      runs: [
+        for (final run in label.runs)
+          _DrawioStencilLabelRun(
+            text: run.text,
+            fontSize: run.fontSize * fontRatio,
+            fontStyle: run.fontStyle,
+            fontFamily: run.fontFamily,
+            color: run.color,
+            textOpacity: run.textOpacity,
+            position: run.position,
+            align: run.align,
+            marginLeft: run.marginLeft * fontRatio,
+            marginRight: run.marginRight * fontRatio,
+            marginTop: run.marginTop * fontRatio,
+            marginBottom: run.marginBottom * fontRatio,
+            bullet: run.bullet,
+            textPosAfterBullet: run.textPosAfterBullet * fontRatio,
+            lineHeight: run.lineHeight,
+            highlight: run.highlight,
+          ),
+      ],
+    );
+  }
 
   /// Capture `cellrotation` is mxGraph STYLE_ROTATION degrees. Visio
   /// Angle / libvisio collectXFormData is CCW radians (`draw:rotate`).
