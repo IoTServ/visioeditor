@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io dashed ellipses leftover keep `Ellipse` for LibreOffice.
+  P&ID rotary-drum `<ellipse/>` after `dashpattern="2 2"` and BPMN
+  `eventNonint` (`setDashed(true)` then `ellipse`) are ellipse-only
+  children. leftover used to sample those into MoveTo gaps so Draw lost
+  `tokens.txt` Ellipse → `svg:ellipse`. They now stay Ellipse and snap
+  onto LinePattern 2–23 (`_lineProperties` dashes 2–23; 0xfe is solid).
+  Message Flow's solid start oval beside a dashed rail is unchanged. A
+  second save keeps the circle.
 - draw.io BPMN Message Flow leftover keeps the oval start marker for
   LibreOffice. Official Sidebar is `startArrow=oval;startFill=0` plus
   `dashPattern=8 4`. `mxConnector` paints markers with `setDashed(false)`.

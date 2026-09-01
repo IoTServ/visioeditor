@@ -13940,6 +13940,173 @@ void main() {
   );
 
   test(
+    'P&ID rotary drum leftover keeps the dashed Ellipse for LibreOffice',
+    () {
+      VsdxShape? dashedOval(VsdxShape shape) {
+        Iterable<VsdxShape> walk(VsdxShape node) sync* {
+          yield node;
+          for (final child in node.children) {
+            yield* walk(child);
+          }
+        }
+
+        for (final node in walk(shape)) {
+          if (isLibvisioBakePlate(node)) continue;
+          for (final geometry in node.geometries) {
+            if (geometry.noShow || geometry.noLine) continue;
+            if (geometry.commands.whereType<EllipseCmd>().isNotEmpty) {
+              return node;
+            }
+          }
+        }
+        return null;
+      }
+
+      VsdxShape leftoverOf(VsdxShape root) {
+        const writer = VsdxWriter();
+        const parser = DocumentParser();
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(root.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      final drum = migrated
+          .singleWhere((group) => group.name == 'Draw.io / P&ID / Filters')
+          .stencils
+          .singleWhere(
+            (entry) => entry.name == 'Liquid Filter (Rotary, Drum or Disc)',
+          )
+          .build(1, 3, 3);
+      expect(
+        dashedOval(drum),
+        isNotNull,
+        reason: 'filters.xml <ellipse/> after dashpattern 2 2 leftover-bakes '
+            'an EllipseCmd. tokens.txt Ellipse is svg:ellipse',
+      );
+
+      final leftover = leftoverOf(drum);
+      final oval = dashedOval(leftover);
+      expect(
+        oval,
+        isNotNull,
+        reason: 'veDashPattern must not sample the drum into MoveTo gaps; '
+            'collectEllipse plus LinePattern 2–23 dashes it',
+      );
+      expect(
+        oval!.line.pattern,
+        inInclusiveRange(2, 23),
+        reason: 'libvisio _lineProperties treats 0xfe as solid',
+      );
+
+      final leftover2 = leftoverOf(leftover);
+      expect(
+        dashedOval(leftover2),
+        isNotNull,
+        reason: 'a second save must keep the circle',
+      );
+    },
+  );
+
+  test(
+    'BPMN non-interrupting subprocess leftover keeps the event Ellipse for LibreOffice',
+    () {
+      VsdxShape? eventOval(VsdxShape shape) {
+        Iterable<VsdxShape> walk(VsdxShape node) sync* {
+          yield node;
+          for (final child in node.children) {
+            yield* walk(child);
+          }
+        }
+
+        for (final node in walk(shape)) {
+          if (isLibvisioBakePlate(node)) continue;
+          for (final geometry in node.geometries) {
+            if (geometry.noShow || geometry.noLine) continue;
+            if (geometry.commands.whereType<EllipseCmd>().isNotEmpty) {
+              return node;
+            }
+          }
+        }
+        return null;
+      }
+
+      final collapsed = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / BPMN / BPMN 2.0  Tasks',
+          )
+          .stencils
+          .singleWhere(
+            (entry) =>
+                entry.name ==
+                'Message-Event Sub-Process, Non-interrupting, Collapsed',
+          )
+          .build(1, 3, 3);
+      expect(
+        eventOval(collapsed),
+        isNotNull,
+        reason: 'eventNonint setDashed(true) then ellipse leftover-bakes '
+            'EllipseCmd. tokens.txt Ellipse is svg:ellipse',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(collapsed.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final oval = eventOval(leftover);
+      expect(
+        oval,
+        isNotNull,
+        reason: 'mxBpmnShape2 eventNonint restores dash after the circle; '
+            'leftover must keep collectEllipse, not sampled MoveTo gaps',
+      );
+      expect(
+        oval!.line.pattern,
+        inInclusiveRange(2, 23),
+        reason: 'LinePattern 2–23 is what _lineProperties dashes',
+      );
+
+      doc = parser.parse(writer.emptyDocument());
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(leftover.copyWith(id: id)),
+      );
+      final leftover2 = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        eventOval(leftover2),
+        isNotNull,
+        reason: 'a second save must keep the circle',
+      );
+    },
+  );
+
+  test(
     'BPMN Send leftover strokes envelope with white for LibreOffice',
     () {
       const paletteStroke = VsdxColor(0xFF6C8EBF);

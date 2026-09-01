@@ -13477,15 +13477,33 @@ List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
   final inches = effectiveDashPatternForLine(sourceLine);
   if (inches == null || inches.isEmpty) return null;
   final flattened = _flattenDashGeometries(shape, sourceGeoms, inches);
-  if (flattened == null) return null;
-  return (
-    geometries: flattened,
-    line: sourceLine.copyWith(
-      pattern: 1,
-      customDashPattern: null,
-      fixedDash: false,
-    ),
-  );
+  if (flattened != null) {
+    return (
+      geometries: flattened,
+      line: sourceLine.copyWith(
+        pattern: 1,
+        customDashPattern: null,
+        fixedDash: false,
+      ),
+    );
+  }
+  // Ellipse-only strokes cannot flatten without dropping collectEllipse.
+  // Snap onto LinePattern 2–23 so `_lineProperties` dashes the oval
+  // (P&ID drum, BPMN eventNonint). veDashPattern 0xfe would be solid.
+  if (_geometriesAreEllipseOnlyStrokes(sourceGeoms)) {
+    final custom = sourceLine.customDashPattern;
+    if (custom != null && custom.isNotEmpty) {
+      return (
+        geometries: sourceGeoms,
+        line: sourceLine.copyWith(
+          pattern: nearestLibvisioLinePattern(custom),
+          customDashPattern: null,
+          fixedDash: false,
+        ),
+      );
+    }
+  }
+  return null;
 }
 
 /// `true` when built-in LinePattern 2–23 must flatten before a stroke ribbon.
@@ -13556,48 +13574,40 @@ List<VsdxGeometry>? _flattenDashGeometries(
 ) {
   final out = <VsdxGeometry>[];
   var added = false;
-  var sawEllipseMarker = false;
   for (final geometry in sourceGeoms) {
     if (geometry.noShow || geometry.noLine) {
       out.add(geometry);
       continue;
     }
-    // mxConnector paints markers with setDashed(false). BPMN Message
-    // Flow is `startArrow=oval` plus dashPattern 8 4; sampling that
-    // Ellipse into MoveTo gaps dropped the circle Draw collects as
-    // tokens.txt Ellipse → svg:ellipse / draw:ellipse. Keep the oval
-    // in place so collectLine LinePattern 1 strokes it solid.
+    // Ellipse stays a tokens.txt Ellipse (svg:ellipse). Sampling it
+    // into MoveTo gaps dropped the circle: mxConnector startArrow=oval
+    // is painted with setDashed(false) beside a dashed rail, and P&ID
+    // drum / BPMN eventNonint ovals are themselves dashed — Draw
+    // dashes those via LinePattern 2–23 on collectEllipse.
     if (_geometryIsEllipseOnly(geometry)) {
       out.add(geometry);
-      sawEllipseMarker = true;
       continue;
     }
     if (_appendDashFlattenedGeometry(out, shape, geometry, inches)) {
       added = true;
     }
   }
-  if (added) return out;
-  if (!sawEllipseMarker) return null;
-  final retry = <VsdxGeometry>[];
-  var ellipseAdded = false;
-  for (final geometry in sourceGeoms) {
-    if (geometry.noShow || geometry.noLine) {
-      retry.add(geometry);
-      continue;
-    }
-    if (!_geometryIsEllipseOnly(geometry)) {
-      retry.add(geometry);
-      continue;
-    }
-    if (_appendDashFlattenedGeometry(retry, shape, geometry, inches)) {
-      ellipseAdded = true;
-    }
-  }
-  return ellipseAdded ? retry : null;
+  if (!added) return null;
+  return out;
 }
 
 bool _geometryIsEllipseOnly(VsdxGeometry geometry) =>
     geometry.commands.length == 1 && geometry.commands.first is EllipseCmd;
+
+bool _geometriesAreEllipseOnlyStrokes(List<VsdxGeometry> geometries) {
+  var saw = false;
+  for (final geometry in geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    if (!_geometryIsEllipseOnly(geometry)) return false;
+    saw = true;
+  }
+  return saw;
+}
 
 bool _appendDashFlattenedGeometry(
   List<VsdxGeometry> out,
