@@ -188,9 +188,12 @@
 /// from `LineCap` only (round cap → round join, otherwise miter), so an
 /// explicit round / arcs join on a square/flat cap is baked with the same
 /// RelQuadBezTo fillets as shape-level Rounding (`computeRounding` only
-/// fillets L→L). CubBezTo-only rails (Cloud Callout) cannot take those
-/// fillets, so leftover writes LineCap 0 and Draw round-joins the
-/// RelCubBezTo path. A bevel join becomes a
+/// fillets L→L). CubBezTo rails (Cloud Callout, Cisco PC monitor,
+/// Government Building arches) cannot take those fillets, so leftover
+/// writes LineCap 0 and Draw round-joins the RelCubBezTo path — including
+/// when sibling L→L corners on the same shape already became RelQuadBezTo
+/// (those G1 vertices ignore join). Pure polylines still keep the authored
+/// cap so open U tips stay square. A bevel join becomes a
 /// LineTo chamfer (including when the cap is round: Draw would otherwise
 /// round the elbow, so the written LineCap is flattened to extended).
 /// The same flatten applies to an explicit miter / miter-clip join on a
@@ -1058,44 +1061,47 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
   return bakeInPlaceStrokeRibbonFillsForLibvisioWrite(
     bakeHatchTransForLibvisioWrite(
-    bakeThemeRgbCacheForLibvisioWrite(
-      bakePageColorForLibvisioWrite(
-        bakeCoveredForLibvisioWrite(
-          bakeCollapsedForLibvisioWrite(
-            bakeShapeInsideForLibvisioWrite(
-              bakeWordWrapForLibvisioWrite(
-                bakeLabelBorderForLibvisioWrite(
-                  bakeLabelPaddingForLibvisioWrite(
-                    bakeFilledStrokeRibbonForLibvisioWrite(
-                      bakeGeometrySoftEdgesForLibvisioWrite(
-                        bakeReflectionForLibvisioWrite(
-                          bakeImageAdjustmentsForLibvisioWrite(
-                            bakeGlowPlateForLibvisioWrite(
-                              bakeGlassForLibvisioWrite(
-                                bakeSketchForLibvisioWrite(
-                                  bakePageShadowForLibvisioWrite(
-                                    bakeShadowForLibvisioWrite(
-                                      bakeCurvedTextForLibvisioWrite(
-                                        bakeCharColorTransForLibvisioWrite(
-                                        bakeShapeOpacityForLibvisioWrite(
-                                          bakeSolidLineSpacingForLibvisioWrite(
-                                            bakeDefaultTabStopForLibvisioWrite(
-                                              bakeHorzAlignFullForLibvisioWrite(
-                                                bakeLetterspaceForLibvisioWrite(
-                                                  bakeLineEdgeSpacesForLibvisioWrite(
-                                                    bakeMixedScriptFontForLibvisioWrite(
-                                                      bakeLangIdRtlForLibvisioWrite(
-                                                        bakeDoubleStrikethroughForLibvisioWrite(
-                                                        bakeOverlineForLibvisioWrite(
-                                                          bakeMixedHighlightForLibvisioWrite(
-                                                            bakeLooseEdgeLabelForLibvisioWrite(
-                                                              bakeAutoRotateLabelForLibvisioWrite(
-                                                                bakeTextDirectionForLibvisioWrite(
-                                                                  bakeBulletGlyphForLibvisioWrite(
-                                                                    bakeUnsupportedBitmapsForLibvisioWrite(
-                                                                      bakeMetafileBitmapsForLibvisioWrite(
-                                                                        bakeOlePreviewsForLibvisioWrite(
-                                                                          hopped,
+      bakeThemeRgbCacheForLibvisioWrite(
+        bakePageColorForLibvisioWrite(
+          bakeCoveredForLibvisioWrite(
+            bakeCollapsedForLibvisioWrite(
+              bakeShapeInsideForLibvisioWrite(
+                bakeWordWrapForLibvisioWrite(
+                  bakeLabelBorderForLibvisioWrite(
+                    bakeLabelPaddingForLibvisioWrite(
+                      bakeFilledStrokeRibbonForLibvisioWrite(
+                        bakeGeometrySoftEdgesForLibvisioWrite(
+                          bakeReflectionForLibvisioWrite(
+                            bakeImageAdjustmentsForLibvisioWrite(
+                              bakeGlowPlateForLibvisioWrite(
+                                bakeGlassForLibvisioWrite(
+                                  bakeSketchForLibvisioWrite(
+                                    bakePageShadowForLibvisioWrite(
+                                      bakeShadowForLibvisioWrite(
+                                        bakeCurvedTextForLibvisioWrite(
+                                          bakeCharColorTransForLibvisioWrite(
+                                            bakeShapeOpacityForLibvisioWrite(
+                                              bakeSolidLineSpacingForLibvisioWrite(
+                                                bakeDefaultTabStopForLibvisioWrite(
+                                                  bakeHorzAlignFullForLibvisioWrite(
+                                                    bakeLetterspaceForLibvisioWrite(
+                                                      bakeLineEdgeSpacesForLibvisioWrite(
+                                                        bakeMixedScriptFontForLibvisioWrite(
+                                                          bakeLangIdRtlForLibvisioWrite(
+                                                            bakeDoubleStrikethroughForLibvisioWrite(
+                                                              bakeOverlineForLibvisioWrite(
+                                                                bakeMixedHighlightForLibvisioWrite(
+                                                                  bakeLooseEdgeLabelForLibvisioWrite(
+                                                                    bakeAutoRotateLabelForLibvisioWrite(
+                                                                      bakeTextDirectionForLibvisioWrite(
+                                                                        bakeBulletGlyphForLibvisioWrite(
+                                                                          bakeUnsupportedBitmapsForLibvisioWrite(
+                                                                            bakeMetafileBitmapsForLibvisioWrite(
+                                                                              bakeOlePreviewsForLibvisioWrite(
+                                                                                hopped,
+                                                                              ),
+                                                                            ),
+                                                                          ),
                                                                         ),
                                                                       ),
                                                                     ),
@@ -1106,14 +1112,12 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                                           ),
                                                         ),
                                                       ),
-                                                      ),
                                                     ),
                                                   ),
                                                 ),
                                               ),
                                             ),
                                           ),
-                                        ),
                                         ),
                                       ),
                                     ),
@@ -1132,7 +1136,6 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
           ),
         ),
       ),
-    ),
     ),
   );
 }
@@ -6846,8 +6849,7 @@ List<VsdxTextRun> bakeLineEdgeSpaceRunsForLibvisioWrite(
 }
 
 bool shapeNeedsLibvisioLineEdgeSpaceBake(VsdxShape shape) {
-  if (shape.text != null &&
-      textForLibvisioWrite(shape.text!) != shape.text) {
+  if (shape.text != null && textForLibvisioWrite(shape.text!) != shape.text) {
     return true;
   }
   if (shape.richText.runs.isEmpty) return false;
@@ -8879,8 +8881,8 @@ _CharColorTransFill? _shapeFillLayerInParent(
 ) {
   final color = _shapeOwnFillRgbForCharBackdrop(shape, theme, behind);
   if (color == null) return null;
-  final aabb = _shapePaintedFillAabbInParent(shape) ??
-      _shapeXformAabbInParent(shape);
+  final aabb =
+      _shapePaintedFillAabbInParent(shape) ?? _shapeXformAabbInParent(shape);
   return _CharColorTransFill(aabb, color);
 }
 
@@ -12307,6 +12309,33 @@ bool _geometryHasLibvisioCurveRows(VsdxGeometry geometry) {
   return false;
 }
 
+/// Authored curve rows whose joints Draw can only round-join from LineCap.
+///
+/// RelQuadBezTo leftover from [bakePolylineRounding] is a G1 L→L fillet,
+/// not an authored `<quad>` / CubBezTo joint. Counting those would round-cap
+/// every filleted polyline (Branch Office open ticks).
+bool _geometryHasAuthoredLibvisioCurveJoin(VsdxGeometry geometry) {
+  for (final command in geometry.commands) {
+    switch (command) {
+      case CubBezTo() ||
+            RelCubBezTo() ||
+            QuadBezTo() ||
+            ArcTo() ||
+            RelArcTo() ||
+            EllipticalArcTo() ||
+            RelEllipticalArcTo() ||
+            EllipseCmd() ||
+            NurbsTo() ||
+            SplineStart() ||
+            SplineKnot():
+        return true;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
 bool _geometryHasInfiniteLine(VsdxGeometry geometry) {
   for (final command in geometry.commands) {
     if (command is InfiniteLineCmd) return true;
@@ -12818,12 +12847,13 @@ bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
 ///
 /// `_lineProperties` maps `svg:stroke-linejoin` from LineCap only.
 /// Polyline L→L corners already become RelQuadBezTo
-/// ([bakePolylineRounding], matching `computeRounding`). CubBezTo-only
-/// rails (Cloud Callout) cannot take those fillets, so leftover writes
-/// LineCap 0 and Draw round-joins the RelCubBezTo path. Mixed LineTo +
-/// curve leftover that *did* fillet L→L keeps the authored cap so those
-/// quadratics are not also round-joined. Straight 2-point edges have no
-/// join and stay square/extended.
+/// ([bakePolylineRounding], matching `computeRounding`). CubBezTo rails
+/// (Cloud Callout, Cisco PC, Government Building) cannot take those
+/// fillets, so leftover writes LineCap 0 and Draw round-joins the
+/// RelCubBezTo path. Sibling L→L fillets on the same shape stay G1, so
+/// that extra join is unused. Pure polylines that *did* fillet keep the
+/// authored cap so open U tips stay square. Straight 2-point edges have
+/// no join and stay square/extended.
 bool _shapeNeedsLibvisioRoundCapForUnfilletedJoin(
   VsdxShape shape,
   List<VsdxGeometry> geometries,
@@ -12838,15 +12868,16 @@ bool _shapeNeedsLibvisioRoundCapForUnfilletedJoin(
   if (shapeNeedsLibvisioRoundCapMiterFlatten(shape)) return false;
   final radius = roundingForLibvisioWrite(sourceLine);
   if (radius <= 1e-12) return false;
-  var sawJoinable = false;
+  var sawAuthoredCurveJoin = false;
+  var sawUnfilletedPolylineJoin = false;
   for (final geometry in geometries) {
     if (geometry.noShow || geometry.noLine) continue;
-    if (_geometryHasLibvisioCurveRows(geometry)) {
-      sawJoinable = true;
-    } else {
-      final points = _strokedVertices(geometry, shape);
-      if (points != null && points.length >= 3) sawJoinable = true;
+    if (_geometryHasAuthoredLibvisioCurveJoin(geometry)) {
+      sawAuthoredCurveJoin = true;
+      continue;
     }
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 3) continue;
     final baked = bakePolylineRounding(
       geometry,
       width: shape.width,
@@ -12855,9 +12886,9 @@ bool _shapeNeedsLibvisioRoundCapForUnfilletedJoin(
       chamfer: false,
       miterLimit: miterLimitForLibvisioChamfer(sourceLine),
     );
-    if (!identical(baked, geometry)) return false;
+    if (identical(baked, geometry)) sawUnfilletedPolylineJoin = true;
   }
-  return sawJoinable;
+  return sawAuthoredCurveJoin || sawUnfilletedPolylineJoin;
 }
 
 /// `true` when a flattened MoveTo/LineTo dash mesh still needs a ribbon.

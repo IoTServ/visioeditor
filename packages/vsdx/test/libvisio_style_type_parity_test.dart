@@ -13647,6 +13647,76 @@ void main() {
     );
   });
 
+  test(
+    'mixed LineTo + CubBezTo round join leftover writes LineCap round',
+    () {
+      final shape = VsdxShapeFactory.rectangle(
+        id: 1,
+        pinX: 2,
+        pinY: 2,
+        width: 2,
+        height: 1,
+        name: 'MixedJoin',
+        fill: const VsdxFill(pattern: 0),
+        line: const VsdxLine(
+          color: VsdxColor(0xFF000000),
+          weightInches: 0.02,
+          cap: LineCap.extended,
+          join: VsdxLineJoin.round,
+        ),
+      ).copyWith(
+        geometries: const <VsdxGeometry>[
+          VsdxGeometry(
+            commands: <VsdxPathCommand>[
+              MoveTo(0, 0),
+              LineTo(0.4, 0),
+              LineTo(0.4, 0.4),
+              LineTo(0, 0.4),
+              LineTo(0, 0),
+            ],
+          ),
+          VsdxGeometry(
+            noFill: true,
+            commands: <VsdxPathCommand>[
+              MoveTo(1, 0.5),
+              CubBezTo(x: 1.5, y: 1, x1: 1.1, y1: 1, x2: 1.4, y2: 1),
+              CubBezTo(x: 2, y: 0.5, x1: 1.6, y1: 1, x2: 1.9, y2: 1),
+              LineTo(1, 0.5),
+            ],
+          ),
+        ],
+      );
+      final blank = writer.emptyDocument();
+      var doc = parser.parse(blank);
+      doc = doc.replacePage(0, doc.pages.first.addShape(shape));
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: blank, edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(1)!;
+      expect(leftover.line.cap, LineCap.round);
+      expect(
+        leftover.geometries.any(
+          (geometry) => geometry.commands.whereType<RelQuadBezTo>().isNotEmpty,
+        ),
+        isTrue,
+        reason: 'L→L box still fillets as RelQuadBezTo',
+      );
+      expect(
+        leftover.geometries.any(
+          (geometry) => geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+        ),
+        isTrue,
+        reason: 'tokens.txt RelCubBezTo → svg:d C',
+      );
+      final twice = parser
+          .parse(writer.write(originalBytes: blank, edited: leftoverDoc))
+          .pages
+          .first
+          .findShapeById(1)!;
+      expect(twice.line.cap, LineCap.round);
+    },
+  );
+
   test('theme-only FillForegndTrans freezes RGB for LibreOffice', () {
     const slot = ThemeSlot.accent6;
     const trans = 0.7;

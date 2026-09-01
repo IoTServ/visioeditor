@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io mixed CubBezTo round-join leftover writes LineCap round
+  for LibreOffice. Official Cisco PC / Government Building (and
+  Jump-in Arrow 1) mix `<linejoin join="round"/>` LineTo with
+  CubBezTo (`tokens.txt` has no LineJoin; `_lineProperties` maps
+  `svg:stroke-linejoin` from LineCap). leftover already fillets
+  L→L as RelQuadBezTo (`computeRounding`) but used to skip LineCap
+  0 as soon as any section filleted, so Draw mitered the remaining
+  RelCubBezTo joints. leftover now writes LineCap 0 whenever an
+  authored cubic remains; G1 RelQuadBezTo fillets ignore that join.
+  Branch Office polylines still keep an extended cap. A second
+  save keeps LineCap 0.
 - draw.io AWS open-arrow leftover splits overlapping stroke ribbons
   for LibreOffice. Official AWS4 `Open (thin, left) (2)` is two
   unfilled polylines whose leftover miter ribbon

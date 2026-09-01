@@ -2303,6 +2303,13 @@ void main() {
         reason: 'tokens.txt RelCubBezTo → svg:d C; leftover must keep the jump',
       );
       expect(
+        leftover.line.cap,
+        LineCap.round,
+        reason: '_lineProperties maps join from LineCap; leftover RelCubBezTo '
+            'jump joints cannot take RelQuadBezTo fillets so leftover writes '
+            'LineCap 0. Arrowhead V RelQuadBezTo stays G1',
+      );
+      expect(
         countType<RelQuadBezTo>(leftover),
         greaterThanOrEqualTo(3),
         reason: '_lineProperties maps join from LineCap, so Draw would miter '
@@ -2405,6 +2412,200 @@ void main() {
         twice.line.cap,
         LineCap.round,
         reason: 'a second save must keep LineCap 0 so Draw still round-joins',
+      );
+    },
+  );
+
+  test(
+    'Cisco PC leftover writes LineCap round beside RelQuadBezTo for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final pc = migrated
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io / Cisco / Computers And Peripherals',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'PC')
+          .build(99, 3, 3);
+      expect(
+        descendants(pc).any(
+          (child) =>
+              child.line.hasLine && child.line.join == VsdxLineJoin.round,
+        ),
+        isTrue,
+        reason: 'cisco computers_and_peripherals.xml PC is linejoin=round',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(pc.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      final monitor = descendants(leftover).firstWhere(
+        (child) =>
+            child.line.hasLine &&
+            child.geometries.any(
+              (geometry) =>
+                  geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+            ),
+      );
+      expect(
+        monitor.line.cap,
+        LineCap.round,
+        reason: 'Sheet.1 also fillets the chassis L→L as RelQuadBezTo; leftover '
+            'must still write LineCap 0 so Draw round-joins the monitor cubics',
+      );
+      expect(
+        monitor.geometries.any(
+          (geometry) => geometry.commands.whereType<RelQuadBezTo>().isNotEmpty,
+        ),
+        isTrue,
+        reason: 'computeRounding still fillets the chassis L→L',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      final twice = descendants(second.pages.first.findShapeById(id)!).firstWhere(
+        (child) =>
+            child.line.hasLine &&
+            child.geometries.any(
+              (geometry) =>
+                  geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+            ),
+      );
+      expect(
+        twice.line.cap,
+        LineCap.round,
+        reason: 'a second save must keep LineCap 0 so Draw still round-joins',
+      );
+    },
+  );
+
+  test(
+    'Government Building leftover writes LineCap round for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final building = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Cisco / Buildings',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Government Building')
+          .build(100, 3, 3);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(building.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      final body = descendants(leftover).firstWhere(
+        (child) =>
+            child.line.hasLine &&
+            child.geometries.any(
+              (geometry) =>
+                  geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+            ),
+      );
+      expect(
+        body.line.cap,
+        LineCap.round,
+        reason: 'arches are RelCubBezTo beside L→L RelQuadBezTo fillets; '
+            'Draw only round-joins from LineCap',
+      );
+
+      final twice = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: leftoverDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(twice).firstWhere(
+          (child) =>
+              child.line.hasLine &&
+              child.geometries.any(
+                (geometry) =>
+                    geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+              ),
+        ).line.cap,
+        LineCap.round,
+        reason: 'a second save must keep LineCap 0',
+      );
+    },
+  );
+
+  test(
+    'Branch Office leftover keeps extended cap on filleted polylines',
+    () {
+      final office = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Cisco / Buildings',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Branch Office')
+          .build(101, 3, 3);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(office.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.line.cap,
+        LineCap.extended,
+        reason: 'all L→L corners are RelQuadBezTo; round cap would round '
+            'open window ticks',
+      );
+      expect(
+        leftover.geometries.any(
+          (geometry) => geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+        ),
+        isFalse,
       );
     },
   );
