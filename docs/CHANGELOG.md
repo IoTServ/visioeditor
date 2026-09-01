@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io mxSwimlane startSize=0 leftover has no origin Line cap for
+  LibreOffice. Official `paintSwimlane` still strokes the header as
+  `move(0,start)/line(0,0)/line(w,0)/line(w,start)` when sidebar
+  Container uses `startSize=0`. SVG butt cap hides those zero
+  segments; leftover `Line` is a `tokens.txt` cap Draw paints as
+  `svg:stroke`. Capture now skips coincident `lineTo` and drops
+  degenerate subpaths (`mxShapeAws3dLambda` origin rings after
+  `close()`). A second save keeps the top edge and body U without the
+  cap.
 - draw.io SysML Activity Final leftover fills the inner disk with stroke
   for LibreOffice. Official `mxShapeSysMLActivityFinal.paintVertexShape`
   does `setFillColor(STYLE_STROKECOLOR)` after the outer

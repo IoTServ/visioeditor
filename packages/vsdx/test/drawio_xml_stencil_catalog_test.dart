@@ -13694,6 +13694,93 @@ void main() {
   );
 
   test(
+    'mxSwimlane startSize=0 leftover has no origin Line cap for LibreOffice',
+    () {
+      bool coincidentStem(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          final cmds = geometry.commands;
+          for (var i = 0; i + 1 < cmds.length; i++) {
+            final a = cmds[i];
+            final b = cmds[i + 1];
+            if (a is MoveTo &&
+                b is LineTo &&
+                (a.x - b.x).abs() < 1e-6 &&
+                (a.y - b.y).abs() < 1e-6) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      final container = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / general',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Container')
+          .build(1, 3, 3);
+      expect(
+        coincidentStem(container),
+        isFalse,
+        reason: 'mxSwimlane.paintSwimlane startSize=0 paints '
+            'move(0,start)/line(0,0)/line(w,0)/line(w,start). SVG butt '
+            'cap hides the zero segments; leftover Line is a tokens.txt '
+            'cap Draw paints as svg:stroke',
+      );
+      expect(
+        container.geometries.length,
+        2,
+        reason: 'the zero-height header still leftover-bakes the top edge '
+            'the body U-path omits',
+      );
+      expect(
+        container.geometries.first.commands.whereType<LineTo>().length,
+        1,
+        reason: 'only the top edge remains after dropping zero lineTos',
+      );
+
+      final lambda = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / AWS3D / AWS 3D',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Lambda')
+          .build(2, 3, 3);
+      expect(
+        coincidentStem(lambda),
+        isFalse,
+        reason: 'mxShapeAws3dLambda.foreground close()s two origin rings '
+            'onto the shading path; SVG fills nothing, leftover kept '
+            'MoveTo(0)+LineTo(0) on the FillForegnd sibling',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(container.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(coincidentStem(leftover), isFalse);
+      expect(leftover.geometries.length, 2);
+      expect(
+        leftover.geometries.first.commands.whereType<LineTo>().length,
+        1,
+        reason: 'a second save must keep the top edge without the cap',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

@@ -562,6 +562,10 @@ class CanvasRecorder {
     this._liveRing = [];
   }
   moveTo(x, y) {
+    // A previous moveTo with only zero-length lineTos left a stray
+    // <move> (patternFillRect hatch at the origin). mxSvgCanvas2D
+    // starts a new subpath; leftover Line is a Draw cap.
+    this._dropDegenerateCurrentSubpath();
     this._flushLiveRing();
     const p = this.map(x, y);
     this._liveRing = [p];
@@ -569,6 +573,15 @@ class CanvasRecorder {
   }
   lineTo(x, y) {
     const p = this.map(x, y);
+    const last = this._liveRing && this._liveRing.length
+      ? this._liveRing[this._liveRing.length - 1]
+      : null;
+    // mxSwimlane startSize=0 header is move(0,start)/line(0,0)/line(w,0)
+    // /line(w,start). SVG butt cap hides the zero segments; leftover
+    // Line is a tokens.txt cap Draw paints as svg:stroke (Container).
+    if (last != null && Math.hypot(p.x - last.x, p.y - last.y) < 1e-6) {
+      return;
+    }
     this._liveRing.push(p);
     this.command('line', {x: p.x, y: p.y});
   }
@@ -603,6 +616,10 @@ class CanvasRecorder {
   }
   close() {
     this._flushLiveRing();
+    // mxShapeAws3dLambda.foreground close()s two moveTo(0,0)/lineTo(0,0)
+    // rings onto the shading path before fill(). SVG fills a zero-area
+    // subpath as nothing; leftover Geometry keeps the origin Line.
+    if (this._dropDegenerateCurrentSubpath()) return;
     this.operations.push('<close/>');
   }
   // Clip intersection already ran in map() space; do not map again.
@@ -1625,6 +1642,7 @@ class CanvasRecorder {
     this.operations.push(`<${name}${values}/>`);
   }
   finishPath() {
+    this._dropDegenerateCurrentSubpath();
     this._flushLiveRing();
     if (!this.pathOpen) return;
     // Official mxAws3dElasticMapReduce.foreground leaves
@@ -1642,14 +1660,20 @@ class CanvasRecorder {
     this.pathOpen = false;
   }
 
-  _openPathIsDegenerate() {
-    let i = this.operations.length - 1;
-    while (i >= 0 && this.operations[i] !== '<path>') i--;
-    if (i < 0) return true;
+  _subpathStartIndex() {
+    for (let i = this.operations.length - 1; i >= 0; i--) {
+      const op = this.operations[i];
+      if (op === '<path>' || op === '<close/>') return i + 1;
+      if (typeof op === 'string' && op.startsWith('<move ')) return i;
+    }
+    return this.operations.length;
+  }
+
+  _opsExtent(start, end) {
     const pts = [];
-    for (let j = i + 1; j < this.operations.length; j++) {
+    for (let j = start; j < end; j++) {
       const op = this.operations[j];
-      if (op === '<close/>') continue;
+      if (op === '<close/>' || op === '<path>') continue;
       const xs = [...String(op).matchAll(/\bx(?:[123])?="([^"]+)"/g)]
         .map((m) => Number(m[1]));
       const ys = [...String(op).matchAll(/\by(?:[123])?="([^"]+)"/g)]
@@ -1661,7 +1685,7 @@ class CanvasRecorder {
         }
       }
     }
-    if (!pts.length) return true;
+    if (!pts.length) return 0;
     let minX = pts[0].x;
     let maxX = pts[0].x;
     let minY = pts[0].y;
@@ -1672,7 +1696,24 @@ class CanvasRecorder {
       if (p.y < minY) minY = p.y;
       if (p.y > maxY) maxY = p.y;
     }
-    return Math.hypot(maxX - minX, maxY - minY) < 1e-6;
+    return Math.hypot(maxX - minX, maxY - minY);
+  }
+
+  _dropDegenerateCurrentSubpath() {
+    if (!this.pathOpen) return false;
+    const start = this._subpathStartIndex();
+    if (start >= this.operations.length) return false;
+    if (this._opsExtent(start, this.operations.length) >= 1e-6) return false;
+    this.operations.splice(start);
+    this._liveRing = [];
+    return true;
+  }
+
+  _openPathIsDegenerate() {
+    let i = this.operations.length - 1;
+    while (i >= 0 && this.operations[i] !== '<path>') i--;
+    if (i < 0) return true;
+    return this._opsExtent(i + 1, this.operations.length) < 1e-6;
   }
   finish() { this.finishPath(); }
 }
