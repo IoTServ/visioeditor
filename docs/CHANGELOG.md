@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Mockup Carousel leftover keeps a doubled Character space for
+  LibreOffice. Official mxStencil `carousel.xml` paints
+  `str=">>  View All"`. leftover `trimXmlWhitespace` keeps those
+  U+0020, but Draw ODF collapses a `text:p` run of spaces so
+  `collectText` (`tokens.txt` Character) lost the extra gap. Capture,
+  XML decode and leftover write now leftover-bake U+00A0 like Chevron /
+  Range input / Object Node. A second save keeps the shift.
 - draw.io SysML Object Node leftover keeps an inner-line Character space
   for LibreOffice. Official Sidebar
   `mxCell('object node name:\n type name\n[state, state ...]')` indents

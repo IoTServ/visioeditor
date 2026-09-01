@@ -153,12 +153,14 @@ function xmlEscape(value) {
 
 // leftover trimXmlWhitespace only strips whole-string U+0020/09/0A/0D.
 // Draw ODF still drops a U+0020 at the start of a text:p, so SysML
-// Object Node `mxCell('...\n type name\n...')` loses the indent.
-// Bake line-edge ASCII spaces as U+00A0 like Chevron / Range input.
+// Object Node `mxCell('...\n type name\n...')` loses the indent, and
+// collapses `>>  View All` (Carousel) to one space. Bake line-edge
+// ASCII spaces and doubled runs as U+00A0 like Chevron / Range input.
 function bakeLineEdgeAsciiSpaces(str) {
   return String(str)
     .replace(/(^|\n)( +)/g, (_, brk, sp) => brk + '\u00a0'.repeat(sp.length))
-    .replace(/( +)(\n|$)/g, (_, sp, brk) => '\u00a0'.repeat(sp.length) + brk);
+    .replace(/( +)(\n|$)/g, (_, sp, brk) => '\u00a0'.repeat(sp.length) + brk)
+    .replace(/ {2,}/g, (m) => '\u00a0'.repeat(m.length));
 }
 
 // HTML elements mxText foreignObject paints. UML `<<keyword>>` is a

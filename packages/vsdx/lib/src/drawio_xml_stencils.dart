@@ -1104,7 +1104,7 @@ class _DrawioXmlShapeDecoder {
       for (final el in node.childElements)
         if (el.name.local == 'run')
           _DrawioStencilLabelRun(
-            text: el.getAttribute('str') ?? '',
+            text: textForLibvisioWrite(el.getAttribute('str') ?? ''),
             fontSize: _number(el, 'fontsize', fallback: _fontSize),
             fontStyle: _number(
               el,
@@ -1133,7 +1133,7 @@ class _DrawioXmlShapeDecoder {
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (runs.isNotEmpty) return runs;
-    final str = node.getAttribute('str') ?? '';
+    final str = textForLibvisioWrite(node.getAttribute('str') ?? '');
     if (str.isEmpty) return const <_DrawioStencilLabelRun>[];
     return <_DrawioStencilLabelRun>[
       _DrawioStencilLabelRun(

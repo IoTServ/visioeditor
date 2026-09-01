@@ -403,7 +403,9 @@
 /// condense. ASCII U+0020 at line edges (after `\n`, or before `\n` /
 /// the string ends) is rewritten to U+00A0 so Draw's `text:p` keeps
 /// SysML Object Node indents; leftover `trimXmlWhitespace` only strips
-/// whole-string edges. Page `PageColor` is not a token either
+/// whole-string edges. A run of two or more U+0020 in the middle of a
+/// line is the same missing paint (ODF collapses `>>  View All` to one
+/// space). Page `PageColor` is not a token either
 /// (`readPageSheetProperties` only stores size, scale, and ShdwOffset*) —
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
@@ -6617,13 +6619,16 @@ VsdxShape bakeLetterspaceShapeForLibvisioWrite(VsdxShape shape) {
   return next;
 }
 
-/// Rewrite ASCII U+0020 at line edges to U+00A0.
+/// Rewrite ASCII spaces Draw's `text:p` would collapse or drop.
 ///
 /// leftover `trimXmlWhitespace` only strips whole-string U+0020/09/0A/0D.
 /// Draw ODF still drops a U+0020 at the start of a `text:p`, so SysML
 /// Object Node `'\n type name'` loses the indent while canvas / SVG
-/// paint that space. Capture bakes the same Character as Chevron /
-/// Range input; a save does too so user-authored `\n ` survives Draw.
+/// paint that space. A run of two or more U+0020 in the middle of a
+/// line (Mockup Carousel `>>  View All`) is the same missing paint:
+/// ODF default whitespace collapse keeps one space. Capture and a
+/// save leftover-bake those edges and doubled runs to U+00A0 like
+/// Chevron / Range input so user-authored `\n ` / `  ` survives Draw.
 String textForLibvisioWrite(String text) {
   if (text.isEmpty || !text.contains(' ')) return text;
   return text
@@ -6634,6 +6639,10 @@ String textForLibvisioWrite(String text) {
       .replaceAllMapped(
         RegExp(r'( +)(\n|$)'),
         (match) => '${'\u00a0' * match[1]!.length}${match[2]}',
+      )
+      .replaceAllMapped(
+        RegExp(r' {2,}'),
+        (match) => '\u00a0' * match[0]!.length,
       );
 }
 

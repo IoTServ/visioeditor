@@ -14527,6 +14527,76 @@ void main() {
   );
 
   test(
+    'Mockup Carousel leftover keeps doubled Character nbsp for LibreOffice',
+    () {
+      const nbsp = '\u00a0';
+
+      VsdxShape? viewAll(VsdxShape shape) {
+        final t = shape.text ?? '';
+        if (t.contains('View All')) return shape;
+        for (final child in shape.children) {
+          final nested = viewAll(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final carousel = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Mockup / Carousel',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Carousel 2')
+          .build(1, 3, 3);
+      final inMemory = viewAll(carousel)!;
+      expect(
+        inMemory.text,
+        equals('>>$nbsp${nbsp}View All'),
+        reason: 'mxStencil carousel.xml paints str=">>  View All". leftover '
+            'trimXmlWhitespace keeps inner U+0020 but Draw ODF collapses a '
+            'text:p run of spaces so collectText (tokens.txt Character) '
+            'lost the extra gap. Decoder leftover-bakes U+00A0 like '
+            'Chevron / Range input / Object Node',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(carousel.copyWith(id: id)),
+      );
+      final leftoverBytes = writer.write(
+        originalBytes: writer.emptyDocument(),
+        edited: doc,
+      );
+      final leftoverDoc = parser.parse(leftoverBytes);
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        viewAll(leftover)!.text,
+        equals('>>$nbsp${nbsp}View All'),
+        reason: 'a second save must keep the doubled Character U+00A0',
+      );
+
+      final twice = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: leftoverDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        viewAll(twice)!.text,
+        equals('>>$nbsp${nbsp}View All'),
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
