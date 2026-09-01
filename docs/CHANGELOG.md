@@ -582,7 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
-### Fixed
+- draw.io General Isometric Square leftover keeps the 30° diamond for
+  LibreOffice. Official `IsoRectangleShape` uses
+  `tan(mxUtils.toRadians(30))`. Capture's `mxUtils` Proxy returned
+  `null` so `tan(0)` collapsed every vertex onto one Y, and Draw
+  collected a hairline (`tokens.txt` LineTo → `svg:d`). Capture now
+  implements `toRadians` / `toDegree` / `getRotatedPoint` like
+  `mxUtils.js`. A second save keeps the diamond.
 - draw.io Mockup Carousel leftover keeps a doubled Character space for
   LibreOffice. Official mxStencil `carousel.xml` paints
   `str=">>  View All"`. leftover `trimXmlWhitespace` keeps those

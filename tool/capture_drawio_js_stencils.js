@@ -6114,6 +6114,21 @@ const mxUtilsBase = {
   isNode() { return false; },
   indexOf(arr, item) { return arr.indexOf(item); },
   mod(n, m) { return ((n % m) + m) % m; },
+  // mxUtils.js toRadians / toDegree. The Proxy fallback is () => null, so
+  // Math.tan(mxUtils.toRadians(30)) was tan(0). IsoRectangleShape then
+  // painted a collapsed horizontal line (all Y = 0.25 m) instead of the
+  // 30° isometric diamond Draw must collect as RelLineTo.
+  toRadians(deg) { return Math.PI * Number(deg) / 180; },
+  toDegree(rad) { return Number(rad) * 180 / Math.PI; },
+  // mxUtils.js getRotatedPoint. Shapes.js isometric connectors rotate
+  // isoHVector / isoVVector at load with toRadians(-30/-150).
+  getRotatedPoint(pt, cos, sin, c) {
+    const cx = (c != null ? Number(c.x) : 0) || 0;
+    const cy = (c != null ? Number(c.y) : 0) || 0;
+    const x = Number(pt && pt.x) - cx;
+    const y = Number(pt && pt.y) - cy;
+    return new mxPoint(x * cos - y * sin + cx, y * cos + x * sin + cy);
+  },
   relativeCcw(x1, y1, x2, y2, px, py) {
     x2 -= x1;
     y2 -= y1;

@@ -14597,6 +14597,70 @@ void main() {
   );
 
   test(
+    'IsoRectangleShape leftover keeps the 30° isometric diamond for LibreOffice',
+    () {
+      double spanY(VsdxShape shape) {
+        var minY = double.infinity;
+        var maxY = -double.infinity;
+        void acc(double y) {
+          if (y < minY) minY = y;
+          if (y > maxY) maxY = y;
+        }
+
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands) {
+            switch (command) {
+              case MoveTo(:final y):
+              case LineTo(:final y):
+                acc(y);
+              default:
+                break;
+            }
+          }
+        }
+        return maxY - minY;
+      }
+
+      final square = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Isometric Square')
+          .build(1, 3, 3);
+      expect(
+        spanY(square),
+        greaterThan(square.height * 0.8),
+        reason: 'Shapes.js IsoRectangleShape uses tan(mxUtils.toRadians(30)). '
+            'Capture Proxy toRadians was () => null so tan(0) collapsed '
+            'every vertex onto Y=0.25m; leftover collectGeometry must keep '
+            'the 30° diamond Draw paints as svg:d',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(square.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        spanY(leftover),
+        greaterThan(leftover.height * 0.8),
+        reason: 'a second save must keep the isometric diamond',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
