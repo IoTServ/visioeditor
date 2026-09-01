@@ -12424,6 +12424,99 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape arc leftover keeps canvas rx*sx ry*sy for LibreOffice',
+    () {
+      CubBezTo? firstCubic(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands.whereType<CubBezTo>()) {
+            return command;
+          }
+        }
+        return null;
+      }
+
+      CubBezTo? lastCubic(VsdxShape shape) {
+        CubBezTo? last;
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands.whereType<CubBezTo>()) {
+            last = command;
+          }
+        }
+        return last;
+      }
+
+      int cubicCount(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in descendantGeometries(shape)) {
+          n += geometry.commands.whereType<CubBezTo>().length;
+          n += geometry.commands.whereType<RelCubBezTo>().length;
+        }
+        return n;
+      }
+
+      VsdxShape hostOf(String rotation) => decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" strokewidth="1">'
+            '<foreground>'
+            '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+            '</foreground>'
+            '</shape>'
+            '<shape name="tile" w="10" h="10" strokewidth="1">'
+            '<foreground>'
+            '<path>'
+            '<move x="1" y="5"/>'
+            '<arc rx="5" ry="2" x-axis-rotation="$rotation" '
+            'large-arc-flag="0" sweep-flag="1" x="9" y="5"/>'
+            '</path>'
+            '<stroke/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+          );
+
+      final upright = hostOf('0');
+      final rotated = hostOf('45');
+      expect(firstCubic(upright), isNotNull);
+      expect(firstCubic(rotated), isNotNull);
+      expect(
+        (firstCubic(rotated)!.x1 - firstCubic(upright)!.x1).abs() +
+            (firstCubic(rotated)!.y1 - firstCubic(upright)!.y1).abs(),
+        greaterThan(0.01),
+        reason: 'mxStencil.drawNode canvas.arcTo keeps x-axis-rotation in '
+            'canvas pixels (rx*sx, ry*sy); leftover must not shear that '
+            'ellipse by expanding in stencil space then `_x`/`_y`',
+      );
+      const canvasScale = 1.5 / 100;
+      expect(
+        lastCubic(rotated)!.x,
+        closeTo(0.15 + 9 * 8 * canvasScale, 0.02),
+        reason: 'arc end is include-box leftover of nested (9,5)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(rotated.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        cubicCount(leftover),
+        greaterThan(0),
+        reason: 'a second save keeps RelCubBezTo (tokens.txt has no CubBezTo)',
+      );
+    },
+  );
+
+  test(
     'mxStencil fontbordercolor leftover bakes a Draw collectLine plate for LibreOffice',
     () {
       const border = VsdxColor(0xFF1565C0);

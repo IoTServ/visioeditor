@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape SVG arc canvas radii for
+  LibreOffice. Official `mxStencil.drawNode` arc is
+  `canvas.arcTo(rx×sx, ry×sy, φ, …)` in canvas pixels. leftover used to
+  expand the SVG ellipse in stencil space then `_x`/`_y` the cubics, so
+  include-shape variable aspect sheared `x-axis-rotation` and Draw
+  collectGeometry RelCubBezTo missed the canvas ellipse (`tokens.txt`
+  has no CubBezTo). leftover now expands in leftover inches. A second
+  save keeps the cubics.
 - draw.io leftover mxStencil fontbordercolor for LibreOffice.
   Official mxText.configureCanvas / mxXmlCanvas2D `setFontBorderColor`
   strokes a 1px label frame. leftover used to ignore `<fontbordercolor>`

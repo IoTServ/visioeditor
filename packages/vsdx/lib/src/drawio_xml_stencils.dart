@@ -2026,28 +2026,42 @@ class _DrawioXmlShapeDecoder {
       case 'arc':
         final endX = _number(command, 'x');
         final endY = _number(command, 'y');
+        // mxStencil.drawNode canvas.arcTo(rx*sx, ry*sy, φ, large, sweep,
+        // x0+x*sx, y0+y*sy). leftover used to expand the SVG ellipse in
+        // stencil space then `_x`/`_y` the cubics, which shears
+        // x-axis-rotation when include-shape sx≠sy. Compute the ellipse
+        // in leftover inches (canvas pixels × overlay scale) so
+        // collectGeometry RelCubBezTo matches NestedStencil.
+        final startLX = _x(_penX);
+        final startLY = _y(_penY);
+        final endLX = _x(endX);
+        final endLY = _y(endY);
+        final rxL = _number(command, 'rx').abs() * scaleX.abs();
+        final ryL = _number(command, 'ry').abs() * scaleY.abs();
+        // Canvas Y-down φ; leftover `_y` is Y-up.
+        final rot = -_number(command, 'x-axis-rotation') * math.pi / 180;
         final curves = _svgArcCurves(
-          _penX,
-          _penY,
-          endX,
-          endY,
-          _number(command, 'rx').abs(),
-          _number(command, 'ry').abs(),
-          _number(command, 'x-axis-rotation') * math.pi / 180,
+          startLX,
+          startLY,
+          endLX,
+          endLY,
+          rxL,
+          ryL,
+          rot,
           _flag(command, 'large-arc-flag'),
           _flag(command, 'sweep-flag'),
         );
         if (curves.isEmpty) {
-          commands.add(LineTo(_x(endX), _y(endY)));
+          commands.add(LineTo(endLX, endLY));
         } else {
           for (final curve in curves) {
             commands.add(CubBezTo(
-              x: _x(curve.endX),
-              y: _y(curve.endY),
-              x1: _x(curve.x1),
-              y1: _y(curve.y1),
-              x2: _x(curve.x2),
-              y2: _y(curve.y2),
+              x: curve.endX,
+              y: curve.endY,
+              x1: curve.x1,
+              y1: curve.y1,
+              x2: curve.x2,
+              y2: curve.y2,
             ));
           }
         }
