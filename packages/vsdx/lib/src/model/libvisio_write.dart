@@ -3508,17 +3508,18 @@ List<VsdxGeometry> _filledStrokeRibbonGeometries(VsdxShape shape) {
     final limit = _lineUsesMiterJoin(shape.line) ? shape.line.miterLimit : 4.0;
     for (final geometry in shape.geometries) {
       if (geometry.noShow || geometry.noLine) continue;
-      final points = _strokedVertices(geometry, shape);
-      if (points == null || points.length < 2) continue;
-      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-      final commands = strokeRibbonCommands(
-        points,
-        halfWidth: half,
-        closed: closed,
-        miterLimit: limit,
-      );
-      if (commands.length < 3) continue;
-      out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+      for (final points in _strokedSubpaths(geometry, shape)) {
+        if (points.length < 2) continue;
+        final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+        final commands = strokeRibbonCommands(
+          points,
+          halfWidth: half,
+          closed: closed,
+          miterLimit: limit,
+        );
+        if (commands.length < 3) continue;
+        out.add(VsdxGeometry(noFill: false, noLine: true, commands: commands));
+      }
     }
   }
   if (_openArrowheadsBlockStrokeBake(shape)) {
@@ -11618,6 +11619,58 @@ List<Offset2D>? _strokedVertices(VsdxGeometry geometry, VsdxShape shape) {
       points;
 }
 
+/// Stroke vertices split at MoveTo / pen-up.
+///
+/// [ShapePerimeter.sampledPathVertices] concatenates disconnected outline
+/// segments. A Capacitor 2 (four MoveTo rails plus a CubBezTo plate) then
+/// looked like a hairpin whose miter ratio blew past Draw's ODF default 4,
+/// so leftover baked one filled ribbon of the whole blob (`tokens.txt`
+/// LineColor → `svg:stroke`). Each subpath is tested / expanded on its own.
+List<List<Offset2D>> _strokedSubpaths(VsdxGeometry geometry, VsdxShape shape) {
+  if (_geometryHasInfiniteLine(geometry)) {
+    final points = _strokedVertices(geometry, shape);
+    if (points == null || points.length < 2) {
+      return const <List<Offset2D>>[];
+    }
+    return <List<Offset2D>>[points];
+  }
+  final probe = geometry.copyWith(
+    noShow: false,
+    noSnap: false,
+    noLine: false,
+    noFill: false,
+  );
+  final segs = ShapePerimeter.outlineSegments(
+    VsdxShape(
+      id: 0,
+      name: '_',
+      pinX: 0,
+      pinY: 0,
+      width: shape.width,
+      height: shape.height,
+      geometries: <VsdxGeometry>[probe],
+    ),
+  );
+  if (segs.isEmpty) return const <List<Offset2D>>[];
+  final subpaths = <List<Offset2D>>[];
+  List<Offset2D>? current;
+  for (final (a, b) in segs) {
+    if (current == null) {
+      current = <Offset2D>[a, b];
+      continue;
+    }
+    final last = current.last;
+    if ((last.x - a.x).abs() > 1e-9 || (last.y - a.y).abs() > 1e-9) {
+      if (current.length >= 2) subpaths.add(current);
+      current = <Offset2D>[a, b];
+    } else {
+      current.add(b);
+    }
+  }
+  if (current != null && current.length >= 2) subpaths.add(current);
+  return subpaths;
+}
+
 bool _geometryHasInfiniteLine(VsdxGeometry geometry) {
   for (final command in geometry.commands) {
     if (command is InfiniteLineCmd) return true;
@@ -12102,10 +12155,11 @@ bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
   if (shape.line.roundingInches > 1e-12) return false;
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
-    final points = _strokedVertices(geometry, shape);
-    if (points == null || points.length < 3) continue;
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    if (polylineHasElbow(points, closed: closed)) return true;
+    for (final points in _strokedSubpaths(geometry, shape)) {
+      if (points.length < 3) continue;
+      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      if (polylineHasElbow(points, closed: closed)) return true;
+    }
   }
   return false;
 }
@@ -12120,10 +12174,11 @@ bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
   if (shape.line.miterLimit <= 4.0 + 1e-6) return false;
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
-    final points = _strokedVertices(geometry, shape);
-    if (points == null || points.length < 3) continue;
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    if (polylineHasDrawClippedMiter(points, closed: closed)) return true;
+    for (final points in _strokedSubpaths(geometry, shape)) {
+      if (points.length < 3) continue;
+      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      if (polylineHasDrawClippedMiter(points, closed: closed)) return true;
+    }
   }
   return false;
 }
@@ -12932,30 +12987,33 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
       out.add(geometry);
       continue;
     }
-    final points = _strokedVertices(geometry, shape);
-    if (points == null || points.length < 2) {
+    final subpaths = _strokedSubpaths(geometry, shape);
+    if (subpaths.isEmpty) {
       out.add(geometry);
       continue;
     }
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    final commands = strokeRibbonCommands(
-      points,
-      halfWidth: half,
-      closed: closed,
-      miterLimit: line.miterLimit,
-    );
-    if (commands.length < 3) {
-      out.add(geometry);
-      continue;
+    var ribboned = false;
+    for (final points in subpaths) {
+      if (points.length < 2) continue;
+      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      final commands = strokeRibbonCommands(
+        points,
+        halfWidth: half,
+        closed: closed,
+        miterLimit: line.miterLimit,
+      );
+      if (commands.length < 3) continue;
+      out.add(
+        VsdxGeometry(
+          noFill: false,
+          noLine: true,
+          commands: commands,
+        ),
+      );
+      ribboned = true;
+      added = true;
     }
-    out.add(
-      VsdxGeometry(
-        noFill: false,
-        noLine: true,
-        commands: commands,
-      ),
-    );
-    added = true;
+    if (!ribboned) out.add(geometry);
   }
   if (!added) return null;
 

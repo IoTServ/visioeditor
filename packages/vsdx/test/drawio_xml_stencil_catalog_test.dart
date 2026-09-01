@@ -14211,6 +14211,80 @@ void main() {
   );
 
   test(
+    'Electrical Capacitor 2 leftover keeps RelCubBezTo stroke for LibreOffice',
+    () {
+      bool hasCubFamily(VsdxShape shape) {
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is CubBezTo || command is RelCubBezTo) return true;
+          }
+        }
+        return shape.children.any(hasCubFamily);
+      }
+
+      bool isOpenStroke(VsdxShape shape) {
+        return shape.line.hasLine &&
+            shape.geometries.any(
+              (geometry) => geometry.noFill && !geometry.noLine,
+            );
+      }
+
+      final cap = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Electrical / Capacitors',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Capacitor 2')
+          .build(1, 3, 3);
+      expect(
+        hasCubFamily(cap),
+        isTrue,
+        reason: 'mxStencil <arc> for the curved plate is CubBezTo',
+      );
+      expect(
+        isOpenStroke(cap),
+        isTrue,
+        reason: 'Capacitor 2 is <stroke/>, four MoveTo rails plus the arc',
+      );
+      expect(
+        shapeNeedsLibvisioStrokeRibbon(cap),
+        isFalse,
+        reason: 'sampledPathVertices used to concatenate those MoveTo rails '
+            'into a hairpin whose miter ratio exceeded Draw\'s ODF default 4, '
+            'so leftover filled one ribbon blob (tokens.txt LineColor → '
+            'svg:stroke). Each subpath is tested on its own',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cap.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.line.hasLine,
+        isTrue,
+        reason: 'leftover must keep collectLine LinePattern, not a fill ribbon',
+      );
+      expect(
+        hasCubFamily(leftover),
+        isTrue,
+        reason: 'tokens.txt has RelCubBezTo; a second save must keep the plate',
+      );
+      expect(isOpenStroke(leftover), isTrue);
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
