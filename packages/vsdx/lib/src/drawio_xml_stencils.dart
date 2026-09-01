@@ -270,9 +270,14 @@ class _DrawioXmlShapeDecoder {
         sourceWidth.isFinite && sourceWidth > 0 ? sourceWidth : 100.0;
     final safeHeight =
         sourceHeight.isFinite && sourceHeight > 0 ? sourceHeight : 100.0;
+    // mxStencil.computeAspect uses one scale (or min(sx,sy) when
+    // aspect=fixed). Catalog leftover fits the long side to 1.5".
+    // Independent 0.25" floors used to make scaleY≫scaleX on eh=0
+    // rails (h=1) and 800×20 Range inputs, so leftover CubBezTo /
+    // collectEllipse / thumbs were needles or fat bars in Draw.
     final scale = 1.5 / math.max(safeWidth, safeHeight);
-    targetWidth = math.max(0.25, safeWidth * scale);
-    targetHeight = math.max(0.25, safeHeight * scale);
+    targetWidth = safeWidth * scale;
+    targetHeight = safeHeight * scale;
     scaleX = targetWidth / safeWidth;
     scaleY = targetHeight / safeHeight;
 
@@ -1621,10 +1626,10 @@ class _DrawioXmlShapeDecoder {
         span > 1e-9 && (width.abs() - height.abs()).abs() <= 0.15 * span;
     if (circular) {
       // mxMarker oval is canvas.ellipse(size, size): a circle in source
-      // pixels. Edge templates with eh=0 capture as h=1, then
-      // targetHeight clamps to 0.25 so scaleY ≫ scaleX. collectEllipse
-      // would stroke a 1" needle (svg path) instead of the startSize
-      // circle Draw keeps next to the dashed rail.
+      // pixels. Catalog leftover is uniform, but an anamorphic XForm
+      // (user resize, leftover Flip) would still stretch collectEllipse
+      // into a needle. min(scaleX,scaleY) keeps the startSize circle
+      // Draw paints beside the dashed rail.
       final r = math.min(
         (width / 2).abs() * scaleX.abs(),
         (height / 2).abs() * scaleY.abs(),

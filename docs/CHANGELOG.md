@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover catalog stamps keep mxStencil aspect for
+  LibreOffice. `mxStencil.computeAspect` uses one scale (fixed
+  aspect uses `min(sx,sy)`). leftover used to floor Width and Height
+  independently at 0.25", so eh=0 Message Flow rails (`h="1"`) and
+  Bootstrap Range inputs (`800×20`) became anamorphic XForms —
+  Draw `collectEllipse` / thumbs painted needles or fat bars, and
+  Android Spinner / AWS open-arrow leftover had to ribbon miters
+  that Draw's ODF default 4 already covers at uniform scale.
+  leftover now fits the long side to 1.5" with uniform scaleX=scaleY.
+  A second save keeps that box.
 - draw.io IBM watson leftover keeps fillstrokecolor as a colour token
   for LibreOffice. Official ibm_cloud.xml `ibm-watson--discovery` writes
   `<fillstrokecolor color="currentColor"/>` after stroking the 32×32

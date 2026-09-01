@@ -2695,7 +2695,7 @@ void main() {
   });
 
   test(
-    'Android Spinner leftover ribbons the open caret stroke for LibreOffice',
+    'Android Spinner leftover keeps the open caret stroke for LibreOffice',
     () {
       bool hasStrokeRibbon(VsdxShape shape) {
         if (isLibvisioStrokeRibbonPlate(shape)) return true;
@@ -2709,14 +2709,30 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == 'Spinner')
           .build(1, 3, 3);
+      expect(
+        spinner.width / spinner.height,
+        closeTo(110 / 10, 0.5),
+        reason: 'android.xml Spinner is w=110 h=10; leftover used to floor '
+            'Height at 0.25" so the 10px caret miter exceeded Draw\'s ODF '
+            'default 4',
+      );
       expect(spinner.line.hasLine, isTrue);
       expect(spinner.fill.hasFill, isTrue);
       expect(
         shapeNeedsLibvisioFilledStrokeRibbonBake(spinner),
-        isTrue,
-        reason: 'variable-aspect Spinner stretches the 10px caret so the '
-            'tip miter exceeds Draw\'s ODF default 4; leftover must bake a '
-            'LineColor ribbon (tokens.txt LineColor → svg:stroke)',
+        isFalse,
+        reason: 'uniform catalog scale keeps the caret miter under Draw\'s '
+            'ODF default 4; leftover strokes LineColor (tokens.txt → '
+            'svg:stroke) instead of a filled ribbon',
+      );
+      expect(
+        spinner.geometries.single.commands.whereType<MoveTo>().length,
+        1,
+      );
+      expect(
+        spinner.geometries.single.commands.length,
+        4,
+        reason: 'fill body stays the authored open caret',
       );
 
       const writer = VsdxWriter();
@@ -2734,34 +2750,26 @@ void main() {
       expect(leftover.fill.hasFill, isTrue);
       expect(
         leftover.line.hasLine,
-        isFalse,
-        reason: 'filled source drops LinePattern once the stroke is a sibling',
+        isTrue,
+        reason: 'Draw collects LineColor on the open caret; a 0.25" Height '
+            'floor used to ribbon that stroke and drop LinePattern',
       );
+      expect(hasStrokeRibbon(leftoverDoc.pages.first.shapes.single), isFalse);
       expect(
         leftover.geometries.single.commands.whereType<MoveTo>().length,
         1,
       );
-      expect(
-        leftover.geometries.single.commands.length,
-        4,
-        reason: 'fill body stays the authored open caret',
-      );
-      final ribbon = leftoverDoc.pages.first.shapes.singleWhere(hasStrokeRibbon);
-      expect(
-        ribbon.geometries.single.commands.whereType<MoveTo>().length,
-        1,
-        reason: 'canvas stroke() does not close; treating !noFill as closed '
-            'invented a 180° hairpin at Pin and leftover wrote two offset '
-            'rings. Open caret leftover is one sausage around the 3 segments',
-      );
+      expect(leftover.geometries.single.commands.length, 4);
 
       final leftover2Doc = parser.parse(
         writer.write(originalBytes: writer.emptyDocument(), edited: leftoverDoc),
       );
+      final leftover2 = leftover2Doc.pages.first.findShapeById(id)!;
+      expect(leftover2.line.hasLine, isTrue);
       expect(
         leftover2Doc.pages.first.shapes.any(hasStrokeRibbon),
-        isTrue,
-        reason: 'a second save must keep the open caret ribbon',
+        isFalse,
+        reason: 'a second save must keep the open caret as a native stroke',
       );
     },
   );
@@ -3862,7 +3870,7 @@ void main() {
   );
 
   test(
-    'AWS open-arrow leftover splits overlapping stroke ribbons for LibreOffice',
+    'AWS open-arrow leftover keeps two stroked polylines for LibreOffice',
     () {
       Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
         yield shape;
@@ -3913,6 +3921,12 @@ void main() {
           .singleWhere((entry) => entry.name == 'Open (thin, left) (2)')
           .build(112, 3, 3);
       expect(
+        arrow.width / arrow.height,
+        greaterThan(20),
+        reason: 'open arrows are eh=0 rails; leftover used to floor Height '
+            'at 0.25" then ribbon both strokes so evenodd punched the chevron',
+      );
+      expect(
         arrow.geometries.where((g) => g.noFill && !g.noLine).length,
         greaterThanOrEqualTo(2),
         reason: 'mxStencil open arrow is two stroked polylines',
@@ -3931,15 +3945,26 @@ void main() {
       );
       final leftover = leftoverDoc.pages.first.findShapeById(id)!;
       expect(
-        descendants(leftover).any((child) => child.isLibvisioFillSplitChild),
+        leftover.line.hasLine,
         isTrue,
-        reason: 'collectGeometry evenodd would punch the chevron out of the '
-            'shaft once leftover ribbons both strokes on one shape',
+        reason: 'uniform catalog scale keeps LineColor strokes Draw paints '
+            'as svg:stroke; leftover no longer ribbons them into overlapping '
+            'NoFill=0 sections',
+      );
+      expect(
+        leftover.geometries.where((g) => g.noFill && !g.noLine).length,
+        greaterThanOrEqualTo(2),
+      );
+      expect(
+        descendants(leftover).any((child) => child.isLibvisioFillSplitChild),
+        isFalse,
+        reason: 'without filled ribbons there is no evenodd chevron punch',
       );
       expect(
         descendants(leftover).any(leftoverFillsOverlap),
         isFalse,
-        reason: 'each leftover ribbon must be its own shape',
+        reason: 'leftover strokes stay NoFill so collectGeometry does not '
+            'punch the shaft',
       );
 
       final second = parser.parse(
@@ -3948,11 +3973,11 @@ void main() {
           edited: leftoverDoc,
         ),
       );
+      final leftover2 = second.pages.first.findShapeById(id)!;
       expect(
-        descendants(second.pages.first.findShapeById(id)!)
-            .any((child) => child.isLibvisioFillSplitChild),
-        isTrue,
-        reason: 'a second save must keep the split chevron sibling',
+        leftover2.geometries.where((g) => g.noFill && !g.noLine).length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep both open-arrow strokes',
       );
     },
   );
@@ -14868,8 +14893,9 @@ void main() {
         expect(
           rx / math.max(ry, 1e-12),
           closeTo(1, 0.2),
-          reason: 'eh=0 cells clamp targetHeight to 0.25 and used to '
-              'stretch startSize=4 into a 1" needle; mxMarker oval is '
+          reason: 'eh=0 Message Flow is w=160 h=1; leftover fits the '
+              'long side to 1.5" without a 0.25" floor that used to '
+              'stretch startSize=4 into a needle. mxMarker oval is '
               'canvas.ellipse(size,size)',
         );
         expect(
@@ -14886,6 +14912,12 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == 'Message Flow')
           .build(1, 3, 3);
+      expect(
+        flow.width / flow.height,
+        closeTo(160, 1),
+        reason: 'captured w=160 h=1 must stay an eh=0 rail; a 0.25" Height '
+            'floor used to stretch collectEllipse and leftover thumbs',
+      );
       expectCircle(
         ovalOf(flow),
         reason: 'Sidebar startArrow=oval;startFill=0 leftover-bakes an '
@@ -14907,6 +14939,11 @@ void main() {
           .pages
           .first
           .findShapeById(id)!;
+      expect(
+        leftover.width / leftover.height,
+        closeTo(160, 1),
+        reason: 'a second save must keep the eh=0 rail XForm',
+      );
       expectCircle(
         ovalOf(leftover),
         reason: 'veDashPattern MoveTo gaps must not sample the oval; '
@@ -15560,6 +15597,48 @@ void main() {
               shape.line.color == rail,
         ),
         isTrue,
+      );
+    },
+  );
+
+  test(
+    'Bootstrap Range input leftover keeps mxStencil aspect for LibreOffice',
+    () {
+      Stencil stencil(String groupName, String shapeName) => dynamic
+          .singleWhere((group) => group.name == groupName)
+          .stencils
+          .singleWhere((entry) => entry.name == shapeName);
+
+      const group = 'Draw.io JS / Bootstrap / bootstrap';
+      final range = stencil(group, 'Range input').build(1, 3, 3);
+      expect(
+        range.width / range.height,
+        closeTo(800 / 20, 0.5),
+        reason: 'mxStencil.computeAspect is uniform; leftover used to floor '
+            'Height at 0.25" so the 10×20 thumb became a needle in Draw',
+      );
+      expect(range.width, closeTo(1.5, 0.01));
+      expect(range.height, lessThan(0.08));
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(range.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.width / leftover.height,
+        closeTo(800 / 20, 0.5),
+        reason: 'a second save must keep the uniform catalog XForm',
       );
     },
   );
