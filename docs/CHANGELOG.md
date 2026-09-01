@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SysML Required Interface leftover keeps floating stems for
+  LibreOffice. Official `insertEdge` pins the card as source with
+  `exitX=0` and template-local `targetPoint (0,0)/(0,60)`. Capture
+  extra-walked the unparented edge from the card so those points sat
+  on the card origin, collapsing `sysMLReqInt` / `sysMLProvInt` into a
+  degenerate `Line` Draw paints as `svg:stroke`. Capture now leftover-
+  bakes Graph.view parent coordinates. A second save keeps both stems.
 - draw.io UML Lollipop leftover keeps the oval at the junction for
   LibreOffice. Official `createVertexTemplateFromData` edges use
   `target="id"` plus `perimeter=centerPerimeter`; capture used the

@@ -13371,6 +13371,104 @@ void main() {
   );
 
   test(
+    'SysML Required Interface leftover keeps floating stems for LibreOffice',
+    () {
+      bool degenerateStem(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          final cmds = geometry.commands;
+          for (var i = 0; i + 1 < cmds.length; i++) {
+            final a = cmds[i];
+            final b = cmds[i + 1];
+            if (a is MoveTo &&
+                b is LineTo &&
+                (a.x - b.x).abs() < 1e-6 &&
+                (a.y - b.y).abs() < 1e-6 &&
+                !geometry.noLine) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }
+
+      final required = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Sysml / SysML / Ports and Flows',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Required Interface')
+          .build(1, 3, 3);
+      expect(
+        degenerateStem(required),
+        isFalse,
+        reason: 'insertEdge does not parent the edge; targetPoint (0,0) is '
+            'template-local. Adding the card origin collapsed both ends so '
+            'Draw painted a tokens.txt Line cap (svg:stroke)',
+      );
+      final stems = required.geometries
+          .where((geometry) =>
+              !geometry.noLine &&
+              geometry.commands.whereType<LineTo>().length == 1)
+          .toList();
+      expect(
+        stems.length,
+        greaterThanOrEqualTo(2),
+        reason: 'ITransCmd / ITransData leftover-bake Lines from exitX=0 to '
+            'the floating targetPoints',
+      );
+      expect(
+        stems.every(
+          (geometry) => geometry.commands.whereType<LineTo>().first.x < 0.05,
+        ),
+        isTrue,
+        reason: 'stems must reach the left of the 250px template (x=0)',
+      );
+      expect(
+        descendantGeometries(required)
+            .expand((geometry) => geometry.commands)
+            .whereType<EllipseCmd>(),
+        isNotEmpty,
+        reason: 'endArrow=sysMLReqInt leftover-bakes the required ellipse',
+      );
+      expect(
+        descendantGeometries(required)
+            .expand((geometry) => geometry.commands)
+            .whereType<CubBezTo>(),
+        isNotEmpty,
+        reason: 'endArrow=sysMLProvInt leftover-bakes the provided arc '
+            '(tokens.txt EllipticalArcTo / CubBezTo is svg:path)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(required.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(degenerateStem(leftover), isFalse);
+      expect(
+        leftover.geometries
+            .where((geometry) =>
+                !geometry.noLine &&
+                geometry.commands.whereType<LineTo>().length == 1)
+            .length,
+        greaterThanOrEqualTo(2),
+        reason: 'a second save must keep both floating stems',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

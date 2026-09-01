@@ -8954,13 +8954,40 @@ function terminalPerimeterPoint(terminal, otherX, otherY) {
   return mxPts(cx + t * nx, cy + t * ny);
 }
 
-function floatingEdgePoint(geometry, isSource, x, y, width, height) {
+function floatingEdgePoint(geometry, isSource, x, y, width, height, cell) {
   const named = geometry && (isSource ? geometry.sourcePoint : geometry.targetPoint);
-  if (named) return {x: x + named.x, y: y + named.y};
+  if (named) {
+    // mxGeometry points are in the parent coordinate system. insertEdge
+    // does not parent the edge (SysML Required Interface), so extra-walk
+    // from the source vertex must not add that vertex's origin — leftover
+    // would collapse targetPoint (0,0) onto the card and Draw paints a
+    // tokens.txt Line cap (svg:stroke).
+    const parented = !!(cell && cell.parent);
+    const ox = parented ? x : 0;
+    const oy = parented ? y : 0;
+    return {x: ox + named.x, y: oy + named.y};
+  }
   return {
     x: isSource ? x : x + width,
     y: y + height / 2,
   };
+}
+
+function edgeConstraintPoint(cell, style, isSource) {
+  const terminal = cell && (isSource ? cell.source : cell.target);
+  if (!terminal || !terminal.vertex || !terminal._layout) return null;
+  const xKey = isSource ? 'exitX' : 'entryX';
+  const yKey = isSource ? 'exitY' : 'entryY';
+  if (style == null || style[xKey] == null || style[yKey] == null) return null;
+  const fx = Number(style[xKey]);
+  const fy = Number(style[yKey]);
+  if (!Number.isFinite(fx) || !Number.isFinite(fy)) return null;
+  const L = terminal._layout;
+  return mxPts(L.x + fx * L.w, L.y + fy * L.h);
+}
+
+function edgeWaypointOrigin(x, y, cell) {
+  return cell && cell.parent ? {x, y} : {x: 0, y: 0};
 }
 
 // Official mxGraph edges with target="id" connect to that vertex, not to
@@ -8970,28 +8997,34 @@ function floatingEdgePoint(geometry, isSource, x, y, width, height) {
 function edgePoints(style, width, height, x, y, geometry, cell) {
   const startTerm = cell && cell.source && cell.source.vertex ? cell.source : null;
   const endTerm = cell && cell.target && cell.target.vertex ? cell.target : null;
-  const startFloat = floatingEdgePoint(geometry, true, x, y, width, height);
-  const endFloat = floatingEdgePoint(geometry, false, x, y, width, height);
-  let sx = startTerm && startTerm._layout
-    ? startTerm._layout.x + startTerm._layout.w / 2
-    : startFloat.x;
-  let sy = startTerm && startTerm._layout
-    ? startTerm._layout.y + startTerm._layout.h / 2
-    : startFloat.y;
-  let ex = endTerm && endTerm._layout
-    ? endTerm._layout.x + endTerm._layout.w / 2
-    : endFloat.x;
-  let ey = endTerm && endTerm._layout
-    ? endTerm._layout.y + endTerm._layout.h / 2
-    : endFloat.y;
-  if (startTerm && startTerm._layout) {
+  const startConstraint = edgeConstraintPoint(cell, style, true);
+  const endConstraint = edgeConstraintPoint(cell, style, false);
+  const startFloat = floatingEdgePoint(geometry, true, x, y, width, height, cell);
+  const endFloat = floatingEdgePoint(geometry, false, x, y, width, height, cell);
+  let sx = startConstraint ? startConstraint.x
+    : (startTerm && startTerm._layout
+      ? startTerm._layout.x + startTerm._layout.w / 2
+      : startFloat.x);
+  let sy = startConstraint ? startConstraint.y
+    : (startTerm && startTerm._layout
+      ? startTerm._layout.y + startTerm._layout.h / 2
+      : startFloat.y);
+  let ex = endConstraint ? endConstraint.x
+    : (endTerm && endTerm._layout
+      ? endTerm._layout.x + endTerm._layout.w / 2
+      : endFloat.x);
+  let ey = endConstraint ? endConstraint.y
+    : (endTerm && endTerm._layout
+      ? endTerm._layout.y + endTerm._layout.h / 2
+      : endFloat.y);
+  if (!startConstraint && startTerm && startTerm._layout) {
     const p = terminalPerimeterPoint(startTerm, ex, ey);
     if (p) {
       sx = p.x;
       sy = p.y;
     }
   }
-  if (endTerm && endTerm._layout) {
+  if (!endConstraint && endTerm && endTerm._layout) {
     const p = terminalPerimeterPoint(endTerm, sx, sy);
     if (p) {
       ex = p.x;
@@ -8999,8 +9032,9 @@ function edgePoints(style, width, height, x, y, geometry, cell) {
     }
   }
   const pts = [mxPts(sx, sy)];
+  const origin = edgeWaypointOrigin(x, y, cell);
   for (const p of (geometry && geometry.points) || []) {
-    pts.push(mxPts(x + p.x, y + p.y));
+    pts.push(mxPts(origin.x + p.x, origin.y + p.y));
   }
   pts.push(mxPts(ex, ey));
   return pts;
