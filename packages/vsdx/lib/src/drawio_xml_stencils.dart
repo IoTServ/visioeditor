@@ -2054,44 +2054,55 @@ class _DrawioXmlShapeDecoder {
     var arcSize = _number(rect, 'arcsize', fallback: 15);
     if (arcSize <= 0) arcSize = 15;
     arcSize = arcSize.clamp(0.0, 100.0);
-    final radius = math.min(width, height) * arcSize / 100;
-    final k = radius * 0.5522847498307936;
+    // mxStencil.drawNode: r = min(w*factor, h*factor) in canvas pixels
+    // (roundrect rx=ry). leftover `_x`/`_y` are independent, and
+    // include-shape variable aspect makes scaleX≠scaleY, so a single
+    // stencil-space radius would collectGeometry an ellipse. Axis
+    // radii map that canvas circle into leftover inches.
+    final factor = arcSize / 100;
+    final rInches =
+        factor * math.min(width * scaleX.abs(), height * scaleY.abs());
+    final radiusX = scaleX.abs() < 1e-12 ? 0.0 : rInches / scaleX.abs();
+    final radiusY = scaleY.abs() < 1e-12 ? 0.0 : rInches / scaleY.abs();
+    const kappa = 0.5522847498307936;
+    final kX = radiusX * kappa;
+    final kY = radiusY * kappa;
     return <VsdxPathCommand>[
-      MoveTo(_x(left + radius), _y(top)),
-      LineTo(_x(right - radius), _y(top)),
+      MoveTo(_x(left + radiusX), _y(top)),
+      LineTo(_x(right - radiusX), _y(top)),
       CubBezTo(
         x: _x(right),
-        y: _y(top + radius),
-        x1: _x(right - radius + k),
+        y: _y(top + radiusY),
+        x1: _x(right - radiusX + kX),
         y1: _y(top),
         x2: _x(right),
-        y2: _y(top + radius - k),
+        y2: _y(top + radiusY - kY),
       ),
-      LineTo(_x(right), _y(bottom - radius)),
+      LineTo(_x(right), _y(bottom - radiusY)),
       CubBezTo(
-        x: _x(right - radius),
+        x: _x(right - radiusX),
         y: _y(bottom),
         x1: _x(right),
-        y1: _y(bottom - radius + k),
-        x2: _x(right - radius + k),
+        y1: _y(bottom - radiusY + kY),
+        x2: _x(right - radiusX + kX),
         y2: _y(bottom),
       ),
-      LineTo(_x(left + radius), _y(bottom)),
+      LineTo(_x(left + radiusX), _y(bottom)),
       CubBezTo(
         x: _x(left),
-        y: _y(bottom - radius),
-        x1: _x(left + radius - k),
+        y: _y(bottom - radiusY),
+        x1: _x(left + radiusX - kX),
         y1: _y(bottom),
         x2: _x(left),
-        y2: _y(bottom - radius + k),
+        y2: _y(bottom - radiusY + kY),
       ),
-      LineTo(_x(left), _y(top + radius)),
+      LineTo(_x(left), _y(top + radiusY)),
       CubBezTo(
-        x: _x(left + radius),
+        x: _x(left + radiusX),
         y: _y(top),
         x1: _x(left),
-        y1: _y(top + radius - k),
-        x2: _x(left + radius - k),
+        y1: _y(top + radiusY - kY),
+        x2: _x(left + radiusX - kX),
         y2: _y(top),
       ),
     ];

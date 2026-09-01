@@ -12642,6 +12642,100 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape roundrect leftover keeps circular canvas corners for LibreOffice',
+    () {
+      ({double dx, double dy})? firstCornerDelta(VsdxShape root) {
+        ({double dx, double dy})? found;
+        void walk(VsdxShape shape) {
+          if (found != null) return;
+          for (final geometry in shape.geometries) {
+            final cmds = geometry.commands;
+            for (var i = 0; i < cmds.length - 1; i++) {
+              final a = cmds[i];
+              final b = cmds[i + 1];
+              if (a is LineTo && b is CubBezTo) {
+                found = (dx: (b.x - a.x).abs(), dy: (b.y - a.y).abs());
+                return;
+              }
+              if (a is LineTo && b is RelCubBezTo) {
+                found = (
+                  dx: (b.fx * shape.width - a.x).abs(),
+                  dy: (b.fy * shape.height - a.y).abs(),
+                );
+                return;
+              }
+            }
+          }
+          for (final child in shape.children) {
+            walk(child);
+            if (found != null) return;
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="10" h="10" arcsize="15"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 451,
+      );
+      const canvasScale = 1.5 / 100;
+      const expected = 0.15 * 40 * canvasScale;
+      final decoded = firstCornerDelta(host);
+      expect(decoded, isNotNull);
+      expect(
+        decoded!.dx,
+        closeTo(decoded.dy, 1e-6),
+        reason: 'mxStencil.drawNode roundrect uses one canvas-pixel radius '
+            '(rx=ry); leftover collectGeometry must not stretch the fillet '
+            'when include-shape sx≠sy',
+      );
+      expect(
+        decoded.dx,
+        closeTo(expected, 1e-6),
+        reason: 'r = 15% of min(include w, include h) in catalog leftover inches',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final saved = firstCornerDelta(leftover);
+      expect(saved, isNotNull);
+      expect(
+        saved!.dx,
+        closeTo(saved.dy, 1e-6),
+        reason: 'a second save keeps circular RelCubBezTo corners',
+      );
+      expect(saved.dx, closeTo(expected, 1e-6));
+    },
+  );
+
+  test(
     'mxStencil foreground disableShadow leftover drops later ShdwPattern for LibreOffice',
     () {
       final shape = decodeDrawioMxStencilXml(

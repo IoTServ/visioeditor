@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape roundrect canvas circle for
+  LibreOffice. Official `mxStencil.drawNode` roundrect uses one canvas
+  radius `min(w,h)×arcsize/100` (`rx=ry`). leftover used a single
+  stencil-space radius through independent `_x`/`_y`, so include-shape
+  variable aspect stretched collectGeometry fillets into ellipses
+  (`tokens.txt` CubBezTo → RelCubBezTo). leftover now maps that canvas
+  circle into leftover inches. A second save keeps the cubics.
 - draw.io leftover mxStencil include-shape shared canvas for LibreOffice.
   Official `mxStencil.drawNode` include-shape calls nested `drawShape` on
   the same canvas, so later host `stroke` / `text` keep nested
