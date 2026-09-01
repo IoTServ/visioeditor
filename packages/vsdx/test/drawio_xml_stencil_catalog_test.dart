@@ -12469,6 +12469,114 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape aspect=fixed leftover keeps uniform box for LibreOffice',
+    () {
+      VsdxShape hostOf(String aspectAttr) => decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" strokewidth="1">'
+            '<foreground>'
+            '<include-shape name="mxgraph.test.tile" x="10" y="30" w="80" h="40"/>'
+            '</foreground>'
+            '</shape>'
+            '<shape name="tile" $aspectAttr w="10" h="10" strokewidth="1">'
+            '<foreground>'
+            '<rect x="0" y="0" w="10" h="10"/>'
+            '<stroke/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+          );
+
+      ({double width, double height}) bbox(VsdxShape shape) {
+        var minX = double.infinity;
+        var minY = double.infinity;
+        var maxX = double.negativeInfinity;
+        var maxY = double.negativeInfinity;
+        void acc(double x, double y) {
+          minX = math.min(minX, x);
+          minY = math.min(minY, y);
+          maxX = math.max(maxX, x);
+          maxY = math.max(maxY, y);
+        }
+
+        for (final geometry in descendantGeometries(shape)) {
+          // Host leftover hit box is 1.5" NoFill/NoLine; measure the
+          // include-shape tile Draw collectGeometry actually strokes.
+          if (geometry.noLine && geometry.noFill) continue;
+          for (final command in geometry.commands) {
+            switch (command) {
+              case MoveTo(:final x, :final y):
+                acc(x, y);
+              case LineTo(:final x, :final y):
+                acc(x, y);
+              default:
+                break;
+            }
+          }
+        }
+        return (width: maxX - minX, height: maxY - minY);
+      }
+
+      const canvasScale = 1.5 / 100;
+      const includeW = 80 * canvasScale;
+      const includeH = 40 * canvasScale;
+      final fixed = hostOf('aspect="fixed"');
+      final stretched = hostOf('aspect="variable"');
+      final fixedBox = bbox(fixed);
+      final stretchedBox = bbox(stretched);
+      expect(
+        fixedBox.width,
+        closeTo(includeH, 0.02),
+        reason: 'mxStencil.computeAspect aspect=fixed uses min(sx,sy); '
+            'include 80×40 of a 10×10 tile leftover-fits the short side',
+      );
+      expect(
+        fixedBox.height,
+        closeTo(includeH, 0.02),
+        reason: 'fixed leftover stays a square so Draw collectGeometry '
+            'does not paint an anamorphic Salesforce icon',
+      );
+      expect(
+        stretchedBox.width,
+        closeTo(includeW, 0.02),
+        reason: 'aspect=variable still fills the include box',
+      );
+      expect(
+        stretchedBox.height,
+        closeTo(includeH, 0.02),
+        reason: 'variable sy follows include height',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(fixed.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverBox = bbox(leftover);
+      expect(
+        leftoverBox.width,
+        closeTo(includeH, 0.02),
+        reason: 'a second save keeps the uniform box',
+      );
+      expect(
+        leftoverBox.height,
+        closeTo(includeH, 0.02),
+        reason: 'a second save keeps aspect=fixed (computeAspect)',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {

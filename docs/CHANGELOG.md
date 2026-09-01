@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape aspect=fixed for LibreOffice.
+  Official `mxStencil.computeAspect` uses `min(sx,sy)` and centres when
+  `aspect="fixed"` (Salesforce icons). leftover include-shape used to
+  stretch nested Geometry to the include box, so Draw collectGeometry
+  painted anamorphic XForms. leftover now matches NestedStencil. A
+  second save keeps the uniform box.
 - draw.io leftover mxStencil foreground disableShadow for LibreOffice.
   Official `mxStencil.drawShape` paints background with the canvas
   shadow and `drawNode` calls `setShadow(false)` after each foreground

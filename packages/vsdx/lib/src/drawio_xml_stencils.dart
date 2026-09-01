@@ -850,6 +850,8 @@ class _DrawioXmlShapeDecoder {
       // `include-shape` follows drawNode stencil.drawShape into the
       // include box (NestedStencil already does). leftover merges
       // nested Geometry in that box so Draw collectGeometry paints it.
+      // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
+      // centre so Salesforce icons are not anamorphic XForms.
       // foreground fill/stroke disableShadow follows drawNode
       // setShadow(false) onto later siblings (tokens.txt ShdwPattern).
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
@@ -920,11 +922,37 @@ class _DrawioXmlShapeDecoder {
     // not the host canvas width leftover copied above.
     nested._strokeWidth = nestedStrokeWidth;
     nested._strokeWidthFixed = nestedStrokeWidthFixed;
+    // mxStencil.computeAspect: aspect=fixed uses min(sx,sy) and centres
+    // in the include box. leftover used to stretch Salesforce icons
+    // (salesforce.xml aspect="fixed") when the include box is not
+    // nested w0×h0.
+    var overlayScaleX = (w / nestedW) * scaleX;
+    var overlayScaleY = (h / nestedH) * scaleY;
+    var originX = _x(x);
+    var originY = _y(y + h);
+    var rasterSx = w / nestedW;
+    var rasterSy = h / nestedH;
+    var rasterPadX = 0.0;
+    var rasterPadY = 0.0;
+    if ((nestedEl.getAttribute('aspect') ?? '').trim().toLowerCase() ==
+        'fixed') {
+      final s = math.min(overlayScaleX.abs(), overlayScaleY.abs());
+      overlayScaleX = s;
+      overlayScaleY = s;
+      final includeW = w * scaleX.abs();
+      final includeH = h * scaleY.abs();
+      originX = _x(x) + (includeW - nestedW * s) / 2;
+      originY = _y(y + h) + (includeH - nestedH * s) / 2;
+      rasterSx = scaleX.abs() > 1e-12 ? s / scaleX.abs() : rasterSx;
+      rasterSy = scaleY.abs() > 1e-12 ? s / scaleY.abs() : rasterSy;
+      rasterPadX = (w - nestedW * rasterSx) / 2;
+      rasterPadY = (h - nestedH * rasterSy) / 2;
+    }
     nested._initOverlayMetrics(
-      originX: _x(x),
-      originY: _y(y + h),
-      overlayScaleX: (w / nestedW) * scaleX,
-      overlayScaleY: (h / nestedH) * scaleY,
+      originX: originX,
+      originY: originY,
+      overlayScaleX: overlayScaleX,
+      overlayScaleY: overlayScaleY,
       canvasScale: _canvasScale,
     );
     nested._paintSections();
@@ -934,14 +962,12 @@ class _DrawioXmlShapeDecoder {
     if (nested._rasterPart != null) {
       _rasterPart = nested._rasterPart;
       _rasterMime = nested._rasterMime;
-      final sx = w / nestedW;
-      final sy = h / nestedH;
-      _rasterLeft = x + (nested._rasterLeft ?? 0) * sx;
-      _rasterTop = y + (nested._rasterTop ?? 0) * sy;
+      _rasterLeft = x + rasterPadX + (nested._rasterLeft ?? 0) * rasterSx;
+      _rasterTop = y + rasterPadY + (nested._rasterTop ?? 0) * rasterSy;
       _rasterBoxW =
-          nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
+          nested._rasterBoxW == null ? null : nested._rasterBoxW! * rasterSx;
       _rasterBoxH =
-          nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
+          nested._rasterBoxH == null ? null : nested._rasterBoxH! * rasterSy;
       _rasterFlipH = nested._rasterFlipH;
       _rasterFlipV = nested._rasterFlipV;
     }
