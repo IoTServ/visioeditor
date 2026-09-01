@@ -13199,6 +13199,67 @@ void main() {
   );
 
   test(
+    'mxGraph Crossbar leftover keeps both ticks for LibreOffice',
+    () {
+      int moveCount(VsdxShape shape) => shape.geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<MoveTo>()
+          .length;
+
+      final group = dynamic.singleWhere(
+        (g) => g.name == 'Draw.io JS / General / misc',
+      );
+      final horizontal = group.stencils
+          .singleWhere((entry) => entry.name == 'Horizontal Crossbar')
+          .build(1, 3, 3);
+      expect(
+        moveCount(horizontal),
+        3,
+        reason: 'CrossbarShape.redrawPath is left tick, right tick, midline; '
+            'each end() is a <path> and decode concatenates them so '
+            'fillAndStroke leftover-bakes all three Lines (tokens.txt '
+            'Line is svg:stroke)',
+      );
+      final vertical = group.stencils
+          .singleWhere((entry) => entry.name == 'Vertical Crossbar')
+          .build(2, 3, 3);
+      expect(
+        moveCount(vertical),
+        3,
+        reason: 'direction=south still leftover-bakes three Crossbar Lines',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(horizontal.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        leftover.geometries
+            .expand((geometry) => geometry.commands)
+            .whereType<MoveTo>()
+            .length,
+        3,
+        reason: 'a second save must keep both ticks and the midline',
+      );
+      expect(
+        leftover.line.hasLine ||
+            leftoverDoc.pages.first.shapes.any(isLibvisioStrokeRibbonPlate),
+        isTrue,
+        reason: 'Draw paints the I-beam as Line or a FillForegnd ribbon; '
+            'LinePattern 0 without a plate would drop the ticks',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

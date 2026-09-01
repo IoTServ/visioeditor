@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Crossbar leftover keeps both dimension ticks for LibreOffice.
+  Official `CrossbarShape.redrawPath` strokes the left tick, right tick
+  and midline, then `mxActor.fillAndStroke`. Capture emits a `<path>`
+  per `end()`; decode used to keep only the last Line (`tokens.txt`
+  Line is `svg:stroke`). Adjacent `<path>` subpaths now concatenate
+  before fill/stroke. A second save keeps the I-beam.
 - Atlassian Comment leftover keeps the unhighlighted mention sentence
   for LibreOffice. Mixed Character Highlight leftover-bakes FillForegnd
   plates because `readCharIX` skips Highlight, then used `HideText` on

@@ -820,7 +820,15 @@ class _DrawioXmlShapeDecoder {
 
   void _setPending(List<VsdxPathCommand> commands) {
     if (commands.isEmpty) return;
-    _pending = commands;
+    // mxActor fillAndStroke paints every subpath opened since begin().
+    // CrossbarShape.redrawPath calls end() between ticks; capture used
+    // to emit three <path> nodes and this replace kept only the midline.
+    // Adjacent path elements before fill/stroke are one Geometry.
+    if (_pending == null || _pending!.isEmpty) {
+      _pending = List<VsdxPathCommand>.of(commands);
+      return;
+    }
+    _pending!.addAll(commands);
   }
 
   void _appendImplicitPathNode(XmlElement node) {
