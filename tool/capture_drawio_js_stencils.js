@@ -1461,9 +1461,24 @@ class CanvasRecorder {
       force = true;
     }
     this.state.strokeColor = isNoneColor(paintValue) ? null : paintValue;
-    const token = (force && !isNoneColor(paintValue))
+    let token = (force && !isNoneColor(paintValue))
       ? String(paintValue)
       : paintToken(paintValue, this.styleFill, this.styleStroke);
+    // Graph paints setStrokeColor(STYLE_FILLCOLOR) with the cell fill
+    // hex. paintToken collapses that to `fill`; leftover decoder copies
+    // inherit FillForegnd (null) so collectLine LineColor is the palette
+    // and a mixed fill+stroke parent drops LinePattern on save (Android
+    // Progress Scrubber track; tokens.txt LineColor → svg:stroke). Bake
+    // the fill hex when canvas fill is still inherit / none.
+    if (!force &&
+        token === 'fill' &&
+        (this._fillToken === 'fill' ||
+          this._fillToken === 'none' ||
+          this._fillToken == null) &&
+        paintValue != null &&
+        String(paintValue).charAt(0) === '#') {
+      token = String(paintValue);
+    }
     if (token === this._strokeToken) return;
     this._strokeToken = token;
     this._emitPaint('strokecolor', token);

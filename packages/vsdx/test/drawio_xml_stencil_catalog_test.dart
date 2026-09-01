@@ -14076,6 +14076,86 @@ void main() {
   );
 
   test(
+    'Android Progress Scrubber leftover strokes the track with fill for LibreOffice',
+    () {
+      const cyan = VsdxColor(0xFF33B5E5);
+      const rail = VsdxColor(0xFF444444);
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isFillTrack(VsdxShape shape) {
+        return !shape.fill.hasFill &&
+            shape.line.hasLine &&
+            shape.line.color == cyan &&
+            shape.geometries.any(
+              (geometry) =>
+                  !geometry.noLine &&
+                  geometry.commands.whereType<LineTo>().isNotEmpty,
+            );
+      }
+
+      final scrubber = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Android / android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Progress Scrubber Pressed')
+          .build(1, 3, 3);
+      expect(
+        descendants(scrubber).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.color == rail,
+        ),
+        isTrue,
+        reason: 'strokeColor2 paints the gray rail',
+      );
+      expect(
+        descendants(scrubber).any(isFillTrack),
+        isTrue,
+        reason: 'mxShapeAndroidProgressScrubberPressed setStrokeColor(fillColor) '
+            'then strokes 0..dx. paintToken collapsed that hex to inherit '
+            'fill so decoder LineColor copied null FillForegnd and '
+            'applyStencilStyle washed the track the palette; leftover then '
+            'dropped LinePattern on the mixed fill+stroke parent '
+            '(tokens.txt LineColor → svg:stroke)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(scrubber.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(descendants(leftover).any(isFillTrack), isTrue);
+      expect(
+        descendants(leftover).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.color == rail,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Android Progress Scrubber leftover strokes the track with fill
+  for LibreOffice. Official `mxShapeAndroidProgressScrubberPressed`
+  does `setStrokeColor(STYLE_FILLCOLOR)` then strokes `0..dx`. Capture
+  collapsed that hex to inherit `fill` so decoder `LineColor` copied
+  inherit `FillForegnd` and `applyStencilStyle` washed the track the
+  palette; leftover then dropped `LinePattern` on the mixed fill+stroke
+  parent (`tokens.txt` LineColor → `svg:stroke`). Capture now
+  leftover-bakes the fill hex. A second save keeps the cyan track over
+  the gray rail.
 - draw.io SysML Use Case leftover keeps a leading Character newline for
   LibreOffice. Official Sidebar `mxCell('\nextension points\np1, p2')`
   with `html=1` and `mxText.replaceLinefeeds` paints a leading `<br/>`
