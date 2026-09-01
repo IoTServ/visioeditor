@@ -33,6 +33,8 @@ class _DrawioXmlLibrary {
 
   final _DrawioXmlLibraryRecord record;
   List<XmlElement>? _shapes;
+  String? _shapesPackage;
+  Map<String, XmlElement>? _stencilByName;
   Map<String, VsdxColor>? _libraryStyleKeyDefaults;
 
   StencilGroup toStencilGroup() => StencilGroup(
@@ -59,6 +61,8 @@ class _DrawioXmlLibrary {
       shapes[index],
       libraryStyleKeyDefaults: _libraryStyleKeyDefaults ??=
           _mxUniqueStencilStyleKeyDefaults(shapes),
+      stencilByName: _stencilByName ??=
+          _mxStencilRegistry(shapes, _shapesPackage),
     ).build(id, cx, cy);
   }
 
@@ -66,6 +70,7 @@ class _DrawioXmlLibrary {
     final compressed = base64Decode(record.encodedXml);
     final xmlBytes = GZipDecoder().decodeBytes(compressed);
     final document = XmlDocument.parse(utf8.decode(xmlBytes));
+    _shapesPackage = document.rootElement.getAttribute('name');
     final shapes = document.rootElement.findElements('shape').toList();
     if (shapes.length != record.shapeNames.length) {
       throw StateError(
@@ -83,12 +88,60 @@ VsdxShape decodeDrawioMxStencilXml(
   int id = 1,
   double cx = 3,
   double cy = 3,
+  String? shapeName,
 }) {
   final document = XmlDocument.parse(xml);
   final root = document.rootElement;
-  final shape =
-      root.name.local == 'shape' ? root : root.findElements('shape').first;
-  return _DrawioXmlShapeDecoder(shape).build(id, cx, cy);
+  final shapes = root.name.local == 'shape'
+      ? <XmlElement>[root]
+      : root.findElements('shape').toList();
+  if (shapes.isEmpty) {
+    throw StateError('draw.io stencil XML produced no <shape>');
+  }
+  final registry = _mxStencilRegistry(
+    shapes,
+    root.name.local == 'shapes' ? root.getAttribute('name') : null,
+  );
+  final shape = shapeName == null
+      ? shapes.first
+      : registry[shapeName] ??
+          registry[shapeName.toLowerCase()] ??
+          registry[shapeName.replaceAll(' ', '_').toLowerCase()];
+  if (shape == null) {
+    throw StateError('draw.io stencil XML has no shape "$shapeName"');
+  }
+  return _DrawioXmlShapeDecoder(
+    shape,
+    stencilByName: registry,
+  ).build(id, cx, cy);
+}
+
+/// mxStencilRegistry.getStencil keys NestedStencil uses: raw name,
+/// lowercase, spaces→underscores, and `shapes@name` prefix.
+Map<String, XmlElement> _mxStencilRegistry(
+  Iterable<XmlElement> shapes,
+  String? packageName,
+) {
+  final map = <String, XmlElement>{};
+  final prefix = (packageName ?? '').trim().toLowerCase();
+  void put(String key, XmlElement element) {
+    if (key.isEmpty) return;
+    map.putIfAbsent(key, () => element);
+  }
+
+  for (final shape in shapes) {
+    final name = (shape.getAttribute('name') ?? '').trim();
+    if (name.isEmpty) continue;
+    final slug = name.replaceAll(' ', '_').toLowerCase();
+    put(name, shape);
+    put(name.toLowerCase(), shape);
+    put(slug, shape);
+    if (prefix.isNotEmpty) {
+      put('$prefix.$slug', shape);
+      put('$prefix.${name.toLowerCase()}', shape);
+    }
+  }
+  return map;
 }
 
 /// mxAbstractCanvas2D.createState / mxConstants.DEFAULT_FONTSIZE.
@@ -174,7 +227,11 @@ class _DrawioXmlShapeDecoder {
   _DrawioXmlShapeDecoder(
     this.element, {
     Map<String, VsdxColor> libraryStyleKeyDefaults = const {},
+    Map<String, XmlElement> stencilByName = const {},
+    int includeDepth = 0,
   })  : _libraryStyleKeyDefaults = libraryStyleKeyDefaults,
+        _stencilByName = stencilByName,
+        _includeDepth = includeDepth,
         // mxStencil.drawShape: numeric / omitted (default "1") shape
         // @strokewidth * minScale. inherit stays null so
         // applyStencilStyle can still pin the palette LineWeight
@@ -183,6 +240,8 @@ class _DrawioXmlShapeDecoder {
 
   final XmlElement element;
   final Map<String, VsdxColor> _libraryStyleKeyDefaults;
+  final Map<String, XmlElement> _stencilByName;
+  final int _includeDepth;
   late final Map<String, VsdxColor> _shapeStyleKeyDefaults =
       _mxStencilStyleKeyDefaults(element);
 
@@ -192,6 +251,8 @@ class _DrawioXmlShapeDecoder {
   late final double targetHeight;
   late final double scaleX;
   late final double scaleY;
+  double _originX = 0;
+  double _originY = 0;
 
   final List<VsdxGeometry> _geometries = <VsdxGeometry>[];
   final List<_DrawioStencilLabel> _labels = <_DrawioStencilLabel>[];
@@ -265,7 +326,7 @@ class _DrawioXmlShapeDecoder {
   double _subY = 0;
   bool _hasSub = false;
 
-  VsdxShape build(int id, double cx, double cy) {
+  void _initCatalogMetrics() {
     final safeWidth =
         sourceWidth.isFinite && sourceWidth > 0 ? sourceWidth : 100.0;
     final safeHeight =
@@ -280,7 +341,25 @@ class _DrawioXmlShapeDecoder {
     targetHeight = safeHeight * scale;
     scaleX = targetWidth / safeWidth;
     scaleY = targetHeight / safeHeight;
+    _originX = 0;
+    _originY = 0;
+  }
 
+  void _initOverlayMetrics({
+    required double originX,
+    required double originY,
+    required double overlayScaleX,
+    required double overlayScaleY,
+  }) {
+    _originX = originX;
+    _originY = originY;
+    scaleX = overlayScaleX;
+    scaleY = overlayScaleY;
+    targetWidth = sourceWidth * overlayScaleX.abs();
+    targetHeight = sourceHeight * overlayScaleY.abs();
+  }
+
+  void _paintSections() {
     for (final sectionName in const <String>['background', 'foreground']) {
       final section = element.getElement(sectionName);
       if (section == null) continue;
@@ -293,6 +372,11 @@ class _DrawioXmlShapeDecoder {
       // (Bootstrap "Button, link") that libvisio needs as a hit box.
       _finish(fill: false, stroke: false);
     }
+  }
+
+  VsdxShape build(int id, double cx, double cy) {
+    _initCatalogMetrics();
+    _paintSections();
 
     if (_geometries.isEmpty && _rasterPart != null) {
       // Picture frame matches VsdxShapeFactory.picture: NoFill/NoLine so
@@ -509,7 +593,9 @@ class _DrawioXmlShapeDecoder {
         _appendImplicitPathNode(node);
         break;
       case 'dashed':
-        _dashed = node.getAttribute('dashed') != '0';
+        // mxStencil.drawNode: setDashed(dashed == '1'). Omitted / "true"
+        // stay solid like official (NestedStencil uses === '1').
+        _dashed = node.getAttribute('dashed') == '1';
         break;
       case 'dashpattern':
         // mxStencil.drawNode / stencils.xsd use `pattern`. Cisco Guard /
@@ -672,6 +758,9 @@ class _DrawioXmlShapeDecoder {
       case 'image':
         _consumeRaster(node);
         break;
+      case 'include-shape':
+        _consumeIncludeShape(node);
+        break;
       case 'save':
         // mxStencil.drawNode canvas.save(). Android Contextual Action Bar
         // dashes a check, restores, then strokes solid icons. Skipping
@@ -733,6 +822,9 @@ class _DrawioXmlShapeDecoder {
       // counters collectXFormData Angle so Draw keeps the glyph upright.
       // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
       // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
+      // `include-shape` follows drawNode stencil.drawShape into the
+      // include box (NestedStencil already does). leftover merges
+      // nested Geometry in that box so Draw collectGeometry paints it.
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
       // stay on the parent so applyStencilStyle can still recolor the body.
       // Other style keys (fillColor2, …) bake `default` like
@@ -766,6 +858,102 @@ class _DrawioXmlShapeDecoder {
     _rasterBoxH = boxH > 1e-9 ? boxH : null;
     _rasterFlipH = node.getAttribute('flipH') == '1';
     _rasterFlipV = node.getAttribute('flipV') == '1';
+  }
+
+  /// mxStencil.drawNode include-shape → nested stencil.drawShape in the
+  /// include box. NestedStencil already does this at capture; leftover
+  /// merges nested Geometry so Draw collectGeometry paints the inset.
+  void _consumeIncludeShape(XmlElement node) {
+    if (_includeDepth > 8) return;
+    final nestedEl = _lookupStencil(node.getAttribute('name'));
+    if (nestedEl == null || identical(nestedEl, element)) return;
+    final x = _number(node, 'x');
+    final y = _number(node, 'y');
+    final w = _number(node, 'w');
+    final h = _number(node, 'h');
+    if (!(w > 1e-9) || !(h > 1e-9)) return;
+    final nestedW = _number(nestedEl, 'w', fallback: 100);
+    final nestedH = _number(nestedEl, 'h', fallback: 100);
+    if (!(nestedW > 1e-9) || !(nestedH > 1e-9)) return;
+    // Nested stencil.drawShape canvas.begin would drop an unpainted
+    // host path. leftover keeps that contour Draw already collected.
+    if (_pending != null && _pending!.isNotEmpty) {
+      _finish(fill: false, stroke: false);
+    }
+    final nested = _DrawioXmlShapeDecoder(
+      nestedEl,
+      libraryStyleKeyDefaults: _libraryStyleKeyDefaults,
+      stencilByName: _stencilByName,
+      includeDepth: _includeDepth + 1,
+    );
+    final nestedStrokeWidth = nested._strokeWidth;
+    nested._adoptPaint(this);
+    // mxStencil.drawShape setStrokeWidth from the nested stencil attr,
+    // not the host canvas width leftover copied above.
+    nested._strokeWidth = nestedStrokeWidth;
+    nested._initOverlayMetrics(
+      originX: _x(x),
+      originY: _y(y + h),
+      overlayScaleX: (w / nestedW) * scaleX,
+      overlayScaleY: (h / nestedH) * scaleY,
+    );
+    nested._paintSections();
+    _geometries.addAll(nested._geometries);
+    _coloredParts.addAll(nested._coloredParts);
+    _labels.addAll(nested._labels);
+    if (nested._rasterPart != null) {
+      _rasterPart = nested._rasterPart;
+      _rasterMime = nested._rasterMime;
+      final sx = w / nestedW;
+      final sy = h / nestedH;
+      _rasterLeft = x + (nested._rasterLeft ?? 0) * sx;
+      _rasterTop = y + (nested._rasterTop ?? 0) * sy;
+      _rasterBoxW = nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
+      _rasterBoxH = nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
+      _rasterFlipH = nested._rasterFlipH;
+      _rasterFlipV = nested._rasterFlipV;
+    }
+    // Official canvas is shared; nested setStrokeWidth / fillcolor stay.
+    _adoptPaint(nested);
+  }
+
+  XmlElement? _lookupStencil(String? raw) {
+    final name = (raw ?? '').trim();
+    if (name.isEmpty || _stencilByName.isEmpty) return null;
+    return _stencilByName[name] ??
+        _stencilByName[name.toLowerCase()] ??
+        _stencilByName[name.replaceAll(' ', '_').toLowerCase()];
+  }
+
+  void _adoptPaint(_DrawioXmlShapeDecoder other) {
+    _fontSize = other._fontSize;
+    _fontStyle = other._fontStyle;
+    _fontFamily = other._fontFamily;
+    _fontColor = other._fontColor;
+    _fontBackground = other._fontBackground;
+    _fillColor = other._fillColor;
+    _fillOverride = other._fillOverride;
+    _fillIsNone = other._fillIsNone;
+    _strokeColor = other._strokeColor;
+    _strokeIsNone = other._strokeIsNone;
+    _overallAlpha = other._overallAlpha;
+    _fillAlpha = other._fillAlpha;
+    _strokeAlpha = other._strokeAlpha;
+    _strokeWidth = other._strokeWidth;
+    _dashed = other._dashed;
+    _dashPattern = other._dashPattern == null
+        ? null
+        : List<double>.of(other._dashPattern!);
+    _lineCap = other._lineCap;
+    _lineJoin = other._lineJoin;
+    _miterLimit = other._miterLimit;
+    _shadow = other._shadow;
+    _sketchEnabled = other._sketchEnabled;
+    _sketchFill = other._sketchFill;
+    _sketchGap = other._sketchGap;
+    _sketchAngle = other._sketchAngle;
+    _sketchWeight = other._sketchWeight;
+    _sketchJiggle = other._sketchJiggle;
   }
 
   /// Visio Image Properties are Y-up from the shape origin. mxStencil
@@ -2028,8 +2216,8 @@ class _DrawioXmlShapeDecoder {
     return shape;
   }
 
-  double _x(double source) => source * scaleX;
-  double _y(double source) => (sourceHeight - source) * scaleY;
+  double _x(double source) => _originX + source * scaleX;
+  double _y(double source) => _originY + (sourceHeight - source) * scaleY;
 
   /// Capture `cellrotation` is mxGraph STYLE_ROTATION degrees. Visio
   /// Angle / libvisio collectXFormData is CCW radians (`draw:rotate`).

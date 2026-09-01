@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape and dashed==1 for
+  LibreOffice. Official `mxStencil.drawNode` paints `<include-shape>`
+  via nested `drawShape` in the include box and
+  `setDashed(dashed=="1")`. leftover used to skip include-shape (no
+  nested Ellipse) and treat a bare `<dashed/>` as on, so Draw missed
+  the inset and could dash a solid rail (`tokens.txt` Ellipse /
+  LinePattern). leftover now merges nested Geometry and only dashes
+  when `dashed="1"`, matching NestedStencil. A second save keeps
+  Ellipse.
 - draw.io leftover mxStencil path rounded and text align-shape for
   LibreOffice. Official `mxStencil.drawNode` fillets `<path rounded="1">`
   move/line subpaths with `addPoints` (`canvas.quadTo`) and, when

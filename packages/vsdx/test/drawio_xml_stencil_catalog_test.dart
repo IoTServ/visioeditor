@@ -12203,6 +12203,111 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape leftover keeps nested Ellipse for LibreOffice',
+    () {
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.dot" x="25" y="25" w="50" h="50"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="dot" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 446,
+      );
+      expect(
+        descendantGeometries(host).expand((geometry) => geometry.commands).any(
+              (command) => command is EllipseCmd,
+            ),
+        isTrue,
+        reason: 'mxStencil.drawNode include-shape calls nested drawShape '
+            'in the include box. leftover merges that Ellipse so Draw '
+            'collectEllipse paints svg:d',
+      );
+      final ell = descendantGeometries(host)
+          .expand((geometry) => geometry.commands)
+          .whereType<EllipseCmd>()
+          .first;
+      expect(
+        ell.aX - ell.cx,
+        closeTo(0.375, 0.02),
+        reason: 'include 50×50 in a 100×100 catalog 1.5" box is a 0.75" '
+            'disc; collectEllipse A is the right vertex',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendantGeometries(leftover)
+            .expand((geometry) => geometry.commands)
+            .any((command) => command is EllipseCmd),
+        isTrue,
+        reason: 'a second save keeps Ellipse (tokens.txt Ellipse)',
+      );
+    },
+  );
+
+  test(
+    'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
+    () {
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="Solid" w="100" h="20" strokewidth="1">'
+        '<foreground>'
+        '<dashed/>'
+        '<path><move x="0" y="10"/><line x="100" y="10"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 447,
+      );
+      expect(
+        omitted.line.pattern,
+        1,
+        reason: 'mxStencil.drawNode setDashed(dashed=="1"); omitted stays '
+            'createState solid so Draw collectLine LinePattern 1 strokes',
+      );
+
+      final dashed = decodeDrawioMxStencilXml(
+        '<shape name="Dash" w="100" h="20" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '<path><move x="0" y="10"/><line x="100" y="10"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 448,
+      );
+      expect(
+        dashed.line.pattern > 1 ||
+            (dashed.line.customDashPattern != null &&
+                dashed.line.customDashPattern!.isNotEmpty),
+        isTrue,
+        reason: 'dashed="1" leftover-bakes a dash Draw can stroke',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {
