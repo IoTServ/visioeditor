@@ -12424,6 +12424,84 @@ void main() {
   );
 
   test(
+    'mxStencil fontbordercolor leftover bakes a Draw collectLine plate for LibreOffice',
+    () {
+      const border = VsdxColor(0xFF1565C0);
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxShape? plateOf(VsdxShape root, int sourceId) {
+        final name = '$kLibvisioLabelBorderShapeNamePrefix$sourceId';
+        VsdxShape? found;
+        void walk(VsdxShape next) {
+          if (found != null) return;
+          if (next.name == name) {
+            found = next;
+            return;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="Border" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor color="#1565c0"/>'
+        '<text x="50" y="50" str="Hi" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+        id: 454,
+      );
+      final glyph = glyphShape(host, 'Hi');
+      expect(glyph, isNotNull);
+      expect(
+        glyph!.labelBorderColor,
+        border,
+        reason: 'mxText.configureCanvas setFontBorderColor; leftover keeps '
+            'User.veLabelBorderColor until write bakes the plate',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftoverPage = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first;
+      final leftover = leftoverPage.findShapeById(id)!;
+      final leftoverGlyph = glyphShape(leftover, 'Hi')!;
+      expect(
+        leftoverGlyph.labelBorderColor,
+        isNull,
+        reason: 'leftover drops the User row after baking the plate',
+      );
+      final plate = plateOf(leftover, leftoverGlyph.id);
+      expect(plate, isNotNull, reason: 'Draw collectLine needs the NoFill sibling');
+      expect(plate!.fill.pattern, 0);
+      expect(plate.line.pattern, 1);
+      expect(plate.line.color, border);
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fontbordercolor for LibreOffice.
+  Official mxText.configureCanvas / mxXmlCanvas2D `setFontBorderColor`
+  strokes a 1px label frame. leftover used to ignore `<fontbordercolor>`
+  (`tokens.txt` has no label border), so Draw collectLine missed the
+  outline. leftover now keeps `User.veLabelBorderColor` and bakes the
+  existing locked NoFill sibling. A second save keeps the plate.
 - draw.io leftover mxStencil include-shape ellipse canvas stretch for
   LibreOffice. Official `mxStencil.drawNode` ellipse is
   `canvas.ellipse(w×sx, h×sy)`. leftover used `min(scaleX,scaleY)` on

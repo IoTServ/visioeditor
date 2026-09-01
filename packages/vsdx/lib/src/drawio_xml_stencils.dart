@@ -172,6 +172,7 @@ class _MxPaintState {
     required this.fontFamily,
     required this.fontColor,
     required this.fontBackground,
+    this.fontBorder,
     required this.fillColor,
     required this.fillOverride,
     required this.fillIsNone,
@@ -201,6 +202,7 @@ class _MxPaintState {
   final String? fontFamily;
   final VsdxColor? fontColor;
   final VsdxColor? fontBackground;
+  final VsdxColor? fontBorder;
   final VsdxColor? fillColor;
   final VsdxFill? fillOverride;
   final bool fillIsNone;
@@ -270,6 +272,7 @@ class _DrawioXmlShapeDecoder {
   String? _fontFamily = _kMxDefaultFontFamily;
   VsdxColor? _fontColor = _kMxDefaultFontColor;
   VsdxColor? _fontBackground;
+  VsdxColor? _fontBorder;
   VsdxColor? _fillColor;
   VsdxFill? _fillOverride;
   VsdxColor? _strokeColor;
@@ -741,6 +744,15 @@ class _DrawioXmlShapeDecoder {
           fallback: node.getAttribute('default'),
         );
         break;
+      case 'fontbordercolor':
+        // mxText.configureCanvas / mxXmlCanvas2D setFontBorderColor.
+        // Visio has no label-border cell; leftover bakes a NoFill sibling
+        // Draw collectLine strokes (`tokens.txt` has no label border).
+        _applyMxFontBorder(
+          node.getAttribute('color'),
+          fallback: node.getAttribute('default'),
+        );
+        break;
       case 'strokewidth':
         // mxStencil.drawNode: width * (fixed=="1" ? 1 : minScale).
         final width = _number(node, 'width');
@@ -778,6 +790,7 @@ class _DrawioXmlShapeDecoder {
             fontFamily: runs.first.fontFamily,
             color: runs.first.color,
             background: _fontBackground,
+            border: _fontBorder,
             // mxText.apply STYLE_TEXT_OPACITY percent. Char ColorTrans
             // is not a libvisio token; a save bakes it into Color RGB.
             textOpacity: runs.first.textOpacity,
@@ -832,6 +845,10 @@ class _DrawioXmlShapeDecoder {
       // that collectCharIX maps to style:font-name.
       // `fontbackgroundcolor` follows mxText.configureCanvas onto TextBkgnd
       // that collectTextBlock maps to fo:background-color.
+      // `fontbordercolor` follows mxText.configureCanvas /
+      // mxXmlCanvas2D setFontBorderColor onto User.veLabelBorderColor;
+      // leftover bakes a locked NoFill sibling Draw collectLine paints
+      // (`tokens.txt` has no label border).
       // `text` `textopacity` follows mxText.apply STYLE_TEXT_OPACITY onto
       // Char.transparency; ColorTrans is not a token, so a save bakes RGB
       // that collectCharIX maps to fo:color (xmlStringToColour zeros alpha).
@@ -1075,6 +1092,7 @@ class _DrawioXmlShapeDecoder {
     _fontFamily = other._fontFamily;
     _fontColor = other._fontColor;
     _fontBackground = other._fontBackground;
+    _fontBorder = other._fontBorder;
     _fillColor = other._fillColor;
     _fillOverride = other._fillOverride;
     _fillIsNone = other._fillIsNone;
@@ -1125,6 +1143,7 @@ class _DrawioXmlShapeDecoder {
         fontFamily: _fontFamily,
         fontColor: _fontColor,
         fontBackground: _fontBackground,
+        fontBorder: _fontBorder,
         fillColor: _fillColor,
         fillOverride: _fillOverride,
         fillIsNone: _fillIsNone,
@@ -1157,6 +1176,7 @@ class _DrawioXmlShapeDecoder {
     _fontFamily = saved.fontFamily;
     _fontColor = saved.fontColor;
     _fontBackground = saved.fontBackground;
+    _fontBorder = saved.fontBorder;
     _fillColor = saved.fillColor;
     _fillOverride = saved.fillOverride;
     _fillIsNone = saved.fillIsNone;
@@ -1447,6 +1467,25 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     _fontBackground = _styleKeyColor(token, fallback);
+  }
+
+  void _applyMxFontBorder(String? raw, {String? fallback}) {
+    final token = (raw ?? '').trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'default' || lower == 'none') {
+      _fontBorder = null;
+      return;
+    }
+    final parsed = _mxGraphPaintColor(token);
+    if (parsed != null) {
+      _fontBorder = parsed;
+      return;
+    }
+    if (_styleKeyIsNone(token, fallback)) {
+      _fontBorder = null;
+      return;
+    }
+    _fontBorder = _styleKeyColor(token, fallback);
   }
 
   /// mxStencil.getColorValue: cell style, then node `default`, then a
@@ -2399,6 +2438,9 @@ class _DrawioXmlShapeDecoder {
     if (hasBox && !label.wrap) {
       shape = shape.withWordWrap(false);
     }
+    if (label.border != null) {
+      shape = shape.withLabelBorderColor(label.border);
+    }
     return shape;
   }
 
@@ -2450,6 +2492,7 @@ class _DrawioXmlShapeDecoder {
       fontFamily: label.fontFamily,
       color: label.color,
       background: label.background,
+      border: label.border,
       textOpacity: label.textOpacity,
       runs: [
         for (final run in label.runs)
@@ -2526,6 +2569,7 @@ class _DrawioStencilLabel {
     this.fontFamily,
     this.color,
     this.background,
+    this.border,
     this.textOpacity = 100,
     required this.runs,
   });
@@ -2550,6 +2594,7 @@ class _DrawioStencilLabel {
   final String? fontFamily;
   final VsdxColor? color;
   final VsdxColor? background;
+  final VsdxColor? border;
   final double textOpacity;
   final List<_DrawioStencilLabelRun> runs;
 }
