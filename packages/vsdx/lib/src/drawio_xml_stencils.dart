@@ -1815,9 +1815,12 @@ class _DrawioXmlShapeDecoder {
 
   /// Official `mxStencil.drawNode` rounded path → `mxShape.addPoints`.
   ///
-  /// Points stay in stencil space; leftover then scales with `_x`/`_y`
-  /// the same way MoveTo/LineTo do. `arcSize` is the drawNode attribute
-  /// (not minScale), matching canvas pixels at the native w0×h0 cell.
+  /// addPoints runs in canvas pixels: path vertices are already
+  /// `x0 + x*sx`, and `arcSize` is the raw XML number (not minScale).
+  /// leftover inches per canvas pixel is `_canvasScale` (include-shape
+  /// keeps the host). Filleting in stencil space then `_x`/`_y` would
+  /// scale the radius by nested sx/sy and stretch collectGeometry
+  /// RelQuadBezTo when the include box is anamorphic.
   List<VsdxPathCommand>? _decodeRoundedPath(XmlElement path) {
     final segs = <List<({double x, double y})>>[];
     for (final child in path.childElements) {
@@ -1834,6 +1837,7 @@ class _DrawioXmlShapeDecoder {
     if (segs.isEmpty) return null;
     var arcSize = _number(path, 'arcSize');
     if (arcSize <= 0) arcSize = _number(path, 'arcsize');
+    final leftoverArc = arcSize * _canvasScale.abs();
     final commands = <VsdxPathCommand>[];
     for (final seg in segs) {
       if (seg.isEmpty) continue;
@@ -1846,13 +1850,27 @@ class _DrawioXmlShapeDecoder {
         close = true;
       }
       if (pts.isEmpty) continue;
-      commands.addAll(_mxAddPoints(pts: pts, close: close, arcSize: arcSize));
+      commands.addAll(
+        _mxAddPoints(
+          pts: [
+            for (final point in pts) (x: _x(point.x), y: _y(point.y)),
+          ],
+          close: close,
+          arcSize: leftoverArc,
+        ),
+      );
+      _penX = pts.last.x;
+      _penY = pts.last.y;
+      _subX = pts.first.x;
+      _subY = pts.first.y;
+      _hasSub = true;
     }
     if (commands.isEmpty) return null;
     return commands;
   }
 
   /// Port of `mxShape.addPoints` with `rounded=true`, `initialMove=true`.
+  /// [pts] and [arcSize] are leftover inches (canvas pixels × `_canvasScale`).
   List<VsdxPathCommand> _mxAddPoints({
     required List<({double x, double y})> pts,
     required bool close,
@@ -1870,7 +1888,8 @@ class _DrawioXmlShapeDecoder {
     }
     var pt = points.first;
     var i = 1;
-    final out = <VsdxPathCommand>[_srcMove(pt.x, pt.y)];
+    final out = <VsdxPathCommand>[MoveTo(pt.x, pt.y)];
+    final pixel = math.max(_canvasScale.abs(), 1e-12);
     while (i < (close ? points.length : points.length - 1)) {
       var tmp = points[_mxMod(i, points.length)];
       final dx0 = pt.x - tmp.x;
@@ -1879,25 +1898,25 @@ class _DrawioXmlShapeDecoder {
         var dist = math.sqrt(dx0 * dx0 + dy0 * dy0);
         final nx1 = dx0 * math.min(arcSize, dist / 2) / dist;
         final ny1 = dy0 * math.min(arcSize, dist / 2) / dist;
-        out.add(_srcLine(tmp.x + nx1, tmp.y + ny1));
+        out.add(LineTo(tmp.x + nx1, tmp.y + ny1));
         var next = points[_mxMod(i + 1, points.length)];
         while (i < points.length - 2 &&
-            (next.x - tmp.x).round() == 0 &&
-            (next.y - tmp.y).round() == 0) {
+            _mxCanvasRound(next.x - tmp.x) == 0 &&
+            _mxCanvasRound(next.y - tmp.y) == 0) {
           next = points[_mxMod(i + 2, points.length)];
           i++;
         }
         final dx = next.x - tmp.x;
         final dy = next.y - tmp.y;
-        dist = math.max(1.0, math.sqrt(dx * dx + dy * dy));
+        dist = math.max(pixel, math.sqrt(dx * dx + dy * dy));
         final nx2 = dx * math.min(arcSize, dist / 2) / dist;
         final ny2 = dy * math.min(arcSize, dist / 2) / dist;
         final x2 = tmp.x + nx2;
         final y2 = tmp.y + ny2;
-        out.add(_srcQuad(tmp.x, tmp.y, x2, y2));
+        out.add(QuadBezTo(x: x2, y: y2, x1: tmp.x, y1: tmp.y));
         tmp = (x: x2, y: y2);
       } else {
-        out.add(_srcLine(tmp.x, tmp.y));
+        out.add(LineTo(tmp.x, tmp.y));
       }
       pt = tmp;
       i++;
@@ -1908,24 +1927,19 @@ class _DrawioXmlShapeDecoder {
         out.add(LineTo(start.x, start.y));
       }
     } else {
-      out.add(_srcLine(pe.x, pe.y));
+      out.add(LineTo(pe.x, pe.y));
     }
-    _penX = pe.x;
-    _penY = pe.y;
-    _subX = pts.first.x;
-    _subY = pts.first.y;
-    _hasSub = true;
     return out;
   }
 
-  MoveTo _srcMove(double x, double y) => MoveTo(_x(x), _y(y));
-  LineTo _srcLine(double x, double y) => LineTo(_x(x), _y(y));
-  QuadBezTo _srcQuad(double x1, double y1, double x, double y) => QuadBezTo(
-        x: _x(x),
-        y: _y(y),
-        x1: _x(x1),
-        y1: _y(y1),
-      );
+  /// `mxShape.addPoints` skips overlapping vertices with
+  /// `Math.round(canvasDx)==0`. leftover inches ÷ `_canvasScale` is that
+  /// canvas delta.
+  int _mxCanvasRound(double leftoverDelta) {
+    final scale = _canvasScale.abs();
+    if (scale < 1e-12) return leftoverDelta.round();
+    return (leftoverDelta / scale).round();
+  }
 
   void _decodePathNode(XmlElement command, List<VsdxPathCommand> commands) {
     switch (command.name.local) {

@@ -12736,6 +12736,97 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape rounded path leftover keeps canvas-pixel arcSize for LibreOffice',
+    () {
+      ({double len})? firstQuadFillet(VsdxShape root) {
+        ({double len})? found;
+        void walk(VsdxShape shape) {
+          if (found != null) return;
+          for (final geometry in shape.geometries) {
+            for (final command in geometry.commands) {
+              if (command is QuadBezTo) {
+                final dx = command.x - command.x1;
+                final dy = command.y - command.y1;
+                found = (len: math.sqrt(dx * dx + dy * dy));
+                return;
+              }
+              if (command is RelQuadBezTo) {
+                final dx = command.fx * shape.width - command.fx1 * shape.width;
+                final dy =
+                    command.fy * shape.height - command.fy1 * shape.height;
+                found = (len: math.sqrt(dx * dx + dy * dy));
+                return;
+              }
+            }
+          }
+          for (final child in shape.children) {
+            walk(child);
+            if (found != null) return;
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<path rounded="1" arcSize="5">'
+        '<move x="0" y="0"/>'
+        '<line x="10" y="0"/>'
+        '<line x="10" y="10"/>'
+        '</path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 452,
+      );
+      const canvasScale = 1.5 / 100;
+      const expected = 5 * canvasScale;
+      final decoded = firstQuadFillet(host);
+      expect(decoded, isNotNull);
+      expect(
+        decoded!.len,
+        closeTo(expected, 1e-6),
+        reason: 'mxStencil.drawNode addPoints uses XML arcSize in canvas '
+            'pixels on already-scaled vertices; leftover must not multiply '
+            'that radius by nested sx/sy',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final saved = firstQuadFillet(leftover);
+      expect(saved, isNotNull);
+      expect(
+        saved!.len,
+        closeTo(expected, 1e-6),
+        reason: 'a second save keeps canvas-pixel RelQuadBezTo fillets',
+      );
+    },
+  );
+
+  test(
     'mxStencil foreground disableShadow leftover drops later ShdwPattern for LibreOffice',
     () {
       final shape = decodeDrawioMxStencilXml(

@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape rounded path canvas arcSize for
+  LibreOffice. Official `mxStencil.drawNode` `path rounded="1"` runs
+  `mxShape.addPoints` in canvas pixels: vertices are already `x*sx`, and
+  `arcSize` is the raw XML number (not minScale / nested sx). leftover
+  used to fillet in stencil space then `_x`/`_y`, so include-shape
+  variable aspect stretched collectGeometry RelQuadBezTo
+  (`tokens.txt` has no QuadBezTo / LineJoin). leftover now fillets in
+  leftover inches with `arcSize×` catalog canvas scale. A second save
+  keeps the quads.
 - draw.io leftover mxStencil include-shape roundrect canvas circle for
   LibreOffice. Official `mxStencil.drawNode` roundrect uses one canvas
   radius `min(w,h)×arcsize/100` (`rx=ry`). leftover used a single
