@@ -181,6 +181,7 @@ class _MxPaintState {
     required this.fillAlpha,
     required this.strokeAlpha,
     required this.strokeWidth,
+    required this.strokeWidthFixed,
     required this.dashed,
     required this.dashPattern,
     required this.lineCap,
@@ -209,6 +210,7 @@ class _MxPaintState {
   final double fillAlpha;
   final double strokeAlpha;
   final double? strokeWidth;
+  final bool strokeWidthFixed;
   final bool dashed;
   final List<double>? dashPattern;
   final LineCap? lineCap;
@@ -253,6 +255,11 @@ class _DrawioXmlShapeDecoder {
   late final double scaleY;
   double _originX = 0;
   double _originY = 0;
+  // leftover inches per official canvas pixel. Catalog leftover maps
+  // one stencil unit (native cell pixel) to scaleX inches. Overlay
+  // include-shape keeps this root scale: `<strokewidth fixed="1">`
+  // is width×1 canvas pixel, not nested minScale.
+  double _canvasScale = 1;
 
   final List<VsdxGeometry> _geometries = <VsdxGeometry>[];
   final List<_DrawioStencilLabel> _labels = <_DrawioStencilLabel>[];
@@ -276,7 +283,8 @@ class _DrawioXmlShapeDecoder {
   double _fillAlpha = 1;
   double _strokeAlpha = 1;
   double? _strokeWidth;
-  double? _parentStrokeWidth;
+  bool _strokeWidthFixed = false;
+  double? _parentStrokeWeightInches;
   bool _capturedParentStrokeColor = false;
   VsdxColor? _parentStrokeColor;
   double? _parentFillTransparency;
@@ -343,6 +351,7 @@ class _DrawioXmlShapeDecoder {
     scaleY = targetHeight / safeHeight;
     _originX = 0;
     _originY = 0;
+    _canvasScale = scaleX.abs();
   }
 
   void _initOverlayMetrics({
@@ -350,6 +359,7 @@ class _DrawioXmlShapeDecoder {
     required double originY,
     required double overlayScaleX,
     required double overlayScaleY,
+    required double canvasScale,
   }) {
     _originX = originX;
     _originY = originY;
@@ -357,6 +367,7 @@ class _DrawioXmlShapeDecoder {
     scaleY = overlayScaleY;
     targetWidth = sourceWidth * overlayScaleX.abs();
     targetHeight = sourceHeight * overlayScaleY.abs();
+    _canvasScale = canvasScale;
   }
 
   void _paintSections() {
@@ -443,7 +454,7 @@ class _DrawioXmlShapeDecoder {
     // into one evenodd path, so a black radio dot on a grey disk would
     // otherwise punch a hole.
     // mxStencil <alpha> is canvas.setAlpha. restore() pops it, so capture
-    // FillForegndTrans at the inherit fill like _parentStrokeWidth.
+    // FillForegndTrans at the inherit fill like _parentStrokeWeightInches.
     // collectFillAndShadow → _fillAndShadowProperties pattern==1 emits
     // draw:opacity = 1 − FillForegndTrans (Networks2 hub shadow 0.25).
     final parentFillTrans = _parentFillTransparency ?? 0.0;
@@ -489,14 +500,14 @@ class _DrawioXmlShapeDecoder {
     if (inheritLine && _styleStroke != null && parentLine.hasLine) {
       parentLine = parentLine.withSolidColor(_styleStroke!);
     }
-    if (inheritLine && _parentStrokeWidth != null) {
+    if (inheritLine && _parentStrokeWeightInches != null) {
       // restore() re-emits the pre-save strokewidth (often 1) after the
-      // contour. collectLine is shape-level, so keep the width that was
-      // in force when parent Geometry was painted.
-      final savedWidth = _strokeWidth;
-      _strokeWidth = _parentStrokeWidth;
-      parentLine = parentLine.copyWith(weightInches: _strokeWeightInches);
-      _strokeWidth = savedWidth;
+      // contour. collectLine is shape-level, so keep leftover inches
+      // captured when parent Geometry was painted (including
+      // `<strokewidth fixed="1">` canvas-pixel width).
+      parentLine = parentLine.copyWith(
+        weightInches: math.max(0.001, _parentStrokeWeightInches!),
+      );
     }
     if (inheritLine && _parentDashed) {
       // Arrowheads call setDashed(false) after the rail. collectLine is
@@ -714,9 +725,11 @@ class _DrawioXmlShapeDecoder {
         );
         break;
       case 'strokewidth':
+        // mxStencil.drawNode: width * (fixed=="1" ? 1 : minScale).
         final width = _number(node, 'width');
         if (width > 0) {
           _strokeWidth = width;
+          _strokeWidthFixed = node.getAttribute('fixed') == '1';
         }
         break;
       case 'text':
@@ -887,15 +900,18 @@ class _DrawioXmlShapeDecoder {
       includeDepth: _includeDepth + 1,
     );
     final nestedStrokeWidth = nested._strokeWidth;
+    final nestedStrokeWidthFixed = nested._strokeWidthFixed;
     nested._adoptPaint(this);
     // mxStencil.drawShape setStrokeWidth from the nested stencil attr,
     // not the host canvas width leftover copied above.
     nested._strokeWidth = nestedStrokeWidth;
+    nested._strokeWidthFixed = nestedStrokeWidthFixed;
     nested._initOverlayMetrics(
       originX: _x(x),
       originY: _y(y + h),
       overlayScaleX: (w / nestedW) * scaleX,
       overlayScaleY: (h / nestedH) * scaleY,
+      canvasScale: _canvasScale,
     );
     nested._paintSections();
     _geometries.addAll(nested._geometries);
@@ -908,8 +924,10 @@ class _DrawioXmlShapeDecoder {
       final sy = h / nestedH;
       _rasterLeft = x + (nested._rasterLeft ?? 0) * sx;
       _rasterTop = y + (nested._rasterTop ?? 0) * sy;
-      _rasterBoxW = nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
-      _rasterBoxH = nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
+      _rasterBoxW =
+          nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
+      _rasterBoxH =
+          nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
       _rasterFlipH = nested._rasterFlipH;
       _rasterFlipV = nested._rasterFlipV;
     }
@@ -940,6 +958,7 @@ class _DrawioXmlShapeDecoder {
     _fillAlpha = other._fillAlpha;
     _strokeAlpha = other._strokeAlpha;
     _strokeWidth = other._strokeWidth;
+    _strokeWidthFixed = other._strokeWidthFixed;
     _dashed = other._dashed;
     _dashPattern = other._dashPattern == null
         ? null
@@ -989,6 +1008,7 @@ class _DrawioXmlShapeDecoder {
         fillAlpha: _fillAlpha,
         strokeAlpha: _strokeAlpha,
         strokeWidth: _strokeWidth,
+        strokeWidthFixed: _strokeWidthFixed,
         dashed: _dashed,
         dashPattern: _dashPattern == null
             ? null
@@ -1020,6 +1040,7 @@ class _DrawioXmlShapeDecoder {
     _fillAlpha = saved.fillAlpha;
     _strokeAlpha = saved.strokeAlpha;
     _strokeWidth = saved.strokeWidth;
+    _strokeWidthFixed = saved.strokeWidthFixed;
     _dashed = saved.dashed;
     _dashPattern = saved.dashPattern == null
         ? null
@@ -1453,11 +1474,14 @@ class _DrawioXmlShapeDecoder {
     final width = _strokeWidth;
     if (width == null) return VsdxLine.defaultLine.weightInches;
     // mxStencil.drawShape sets canvas width to attr * minScale before
-    // drawNode; `<strokewidth width>` then does width * (fixed ? 1 :
-    // minScale). The catalog freezes the stencil at
-    // targetWidth×targetHeight, so both cases scale with the same
-    // min(scaleX, scaleY) as MoveTo/LineTo.
-    final scale = math.min(scaleX.abs(), scaleY.abs());
+    // drawNode; `<strokewidth width>` then does width * (fixed=="1" ? 1
+    // : minScale) in canvas pixels. leftover inches per canvas pixel
+    // is `_canvasScale` (catalog scaleX). Overlay include-shape keeps
+    // that root scale while scaleX/scaleY become the nested aspect, so
+    // fixed strokes stay hairlines when the include box is larger than
+    // nested w0×h0.
+    final scale =
+        _strokeWidthFixed ? _canvasScale : math.min(scaleX.abs(), scaleY.abs());
     return math.max(0.001, width * scale);
   }
 
@@ -1534,6 +1558,27 @@ class _DrawioXmlShapeDecoder {
     final doFill = fill && !_fillIsNone;
     final doStroke = stroke && !_strokeIsNone;
     if (!doFill && !doStroke && (fill || stroke)) return;
+    // Nested drawShape already painted at nested minScale / fixed
+    // canvas pixels. leftover cannot share host collectLine (include
+    // box ≠ nested w0×h0), so bake LineWeight now.
+    if (_includeDepth > 0 && (doFill || doStroke)) {
+      _coloredParts.add(_DrawioColoredPart(
+        commands: List<VsdxPathCommand>.unmodifiable(commands),
+        fill: doFill
+            ? (_fillColor != null || _fillOverride != null
+                ? _paintFill()
+                : VsdxFill(
+                    pattern: 1,
+                    foreground: _styleFill,
+                    foregroundTransparency: _fillTransparency,
+                  ))
+            : const VsdxFill(pattern: 0),
+        line: _paintLine(stroke: doStroke),
+        shadow: _shadow ?? VsdxShadow.disabled,
+      ));
+      if (_shadow != null) _parentShadow ??= _shadow;
+      return;
+    }
     final bakeFill = doFill && _fillColor != null;
     final bakeStroke = doStroke && _strokeColor != null && !doFill;
     // libvisio collectLine is shape-level. A dash after a solid paint
@@ -1623,7 +1668,7 @@ class _DrawioXmlShapeDecoder {
       _parentDashPattern ??= _dashPattern ?? _kMxDefaultDashPattern;
     }
     if (doStroke && _strokeWidth != null) {
-      _parentStrokeWidth ??= _strokeWidth;
+      _parentStrokeWeightInches ??= _strokeWeightInches;
     }
     if (_shadow != null) _parentShadow ??= _shadow;
   }

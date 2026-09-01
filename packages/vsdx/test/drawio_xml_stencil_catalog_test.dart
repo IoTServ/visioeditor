@@ -12308,6 +12308,83 @@ void main() {
   );
 
   test(
+    'mxStencil strokewidth fixed leftover keeps canvas-pixel LineWeight for LibreOffice',
+    () {
+      VsdxShape hostOf(String strokewidthTag) => decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" strokewidth="1">'
+            '<foreground>'
+            '<include-shape name="mxgraph.test.dot" x="10" y="10" w="80" h="80"/>'
+            '</foreground>'
+            '</shape>'
+            '<shape name="dot" w="10" h="10" strokewidth="1">'
+            '<foreground>'
+            '$strokewidthTag'
+            '<ellipse x="0" y="0" w="10" h="10"/>'
+            '<stroke/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+          );
+
+      double lineWeight(VsdxShape shape) {
+        var best = 0.0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            best = math.max(best, next.line.weightInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return best;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const nestedMinScale = (80 / 10) * canvasScale;
+      const width = 2.0;
+      final fixed = hostOf('<strokewidth width="2" fixed="1"/>');
+      final scaled = hostOf('<strokewidth width="2"/>');
+      expect(
+        lineWeight(fixed),
+        closeTo(width * canvasScale, 1e-6),
+        reason: 'mxStencil.drawNode fixed="1" is width×1 canvas pixel. '
+            'leftover inches per pixel is catalog scaleX so Draw '
+            'collectLine stays a hairline when include is 8× nested w0',
+      );
+      expect(
+        lineWeight(scaled),
+        closeTo(width * nestedMinScale, 1e-6),
+        reason: 'without fixed, drawNode uses nested minScale; leftover '
+            'must not reuse host catalog scaleX',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(fixed.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        lineWeight(leftover),
+        closeTo(width * canvasScale, 1e-6),
+        reason: 'a second save keeps LineWeight (tokens.txt LineWeight)',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {

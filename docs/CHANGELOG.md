@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil strokewidth fixed="1" for LibreOffice.
+  Official `mxStencil.drawNode` sets canvas width to `width * (fixed=="1"
+  ? 1 : minScale)` in graph pixels. leftover used to always multiply by
+  nested `min(scaleX,scaleY)`, so an include-shape box larger than
+  nested w0×h0 fattened `fixed` rails (`tokens.txt` LineWeight). leftover
+  now keeps leftover-inches-per-canvas-pixel from the catalog scale and
+  bakes nested Geometry as siblings so Draw collectLine can emit both
+  hairline and scaled strokes. A second save keeps LineWeight.
 - draw.io leftover mxStencil include-shape and dashed==1 for
   LibreOffice. Official `mxStencil.drawNode` paints `<include-shape>`
   via nested `drawShape` in the include box and
