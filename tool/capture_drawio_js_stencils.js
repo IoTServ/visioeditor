@@ -188,6 +188,40 @@ function fillPaintToken(value, styleFill, forceHex) {
   return String(value);
 }
 
+function isCssDefaultWhite(value) {
+  const key = cssColorKey(value);
+  return key === '#ffffff' || key === '#fff' || key === '#ffffffff' ||
+    key === 'white';
+}
+
+// Sidebar custom keys (indicatorColor, fillColor2, iconColor) pin a
+// literal paint. fillColor / gradientColor / fontColor matching the
+// mxGraph default white still mean inherit (AWS Cloud puff siblings).
+function stylePinsPaintColor(style, value) {
+  if (style == null || typeof style !== 'object') return false;
+  const want = cssColorKey(value);
+  if (!want || want === 'none' || want === 'default' || want === 'inherit' ||
+      want === 'fill' || want === 'stroke') {
+    return false;
+  }
+  for (const key of Object.keys(style)) {
+    const lower = String(key).toLowerCase();
+    if (lower === 'fillcolor' || lower === 'gradientcolor' ||
+        lower === 'labelbackgroundcolor' || lower === 'fontcolor') {
+      continue;
+    }
+    const raw = style[key];
+    if (raw == null || raw === '') continue;
+    const token = String(raw).trim();
+    if (token.charAt(0) !== '#' && !/^[0-9a-fA-F]{3,8}$/.test(token) &&
+        token.toLowerCase() !== 'white') {
+      continue;
+    }
+    if (cssColorKey(token) === want) return true;
+  }
+  return false;
+}
+
 const kMxCellStyleColorKeys = new Set([
   'fillColor', 'strokeColor', 'fontColor', 'gradientColor',
   'labelBackgroundColor', 'labelBorderColor',
@@ -266,6 +300,7 @@ class CanvasRecorder {
     this.externalAsset = false;
     this.styleFill = '#ffffff';
     this.styleStroke = '#000000';
+    this.cellStyle = null;
     this._fillToken = 'fill';
     this._strokeToken = 'stroke';
     this._fontToken = null;
@@ -880,7 +915,8 @@ class CanvasRecorder {
     }
   }
 
-  bindStyle(fill, stroke) {
+  bindStyle(fill, stroke, style) {
+    this.cellStyle = style || null;
     // styleFill / styleStroke are the <shape fill/stroke> inherit colours
     // pinned from entryPaintColors. Vertex-cells siblings with a different
     // fillColor (Infographic Angled Entry #B1DDF0 vs first-cell #10739E)
@@ -1272,10 +1308,22 @@ class CanvasRecorder {
     const matchesInherit = !isNoneColor(value) &&
       this.styleFill != null &&
       cssColorKey(value) === cssColorKey(this.styleFill);
+    // After a hex FillForegnd sibling, collapsing default-white back to
+    // inherit `fill` leftover-bakes extraInheritFill with null _styleFill
+    // that applyStencilStyle washes to kStencilPrimary (Mockup Color
+    // Picker indicatorColor=#ffffff became #DAE8FC). AWS Cloud puffs
+    // hardcode #ffffff without a custom style key, so they stay inherit.
+    // Child white must not be washed (applyStencilStyle isRoot:false;
+    // tokens.txt FillForegnd is svg:fill).
+    const prev = this._fillToken == null ? '' : String(this._fillToken);
+    const whiteAfterHex = matchesInherit && isCssDefaultWhite(value) &&
+      prev.charAt(0) === '#' &&
+      stylePinsPaintColor(this.cellStyle, value);
     const token = fillPaintToken(
       value,
       this.styleFill,
       forceHex === true ||
+        whiteAfterHex ||
         (!matchesInherit && this._effectiveFillOpacity() < 1 - 1e-9),
     );
     if (token === this._fillToken) return;
@@ -6680,7 +6728,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   const name = style && style.shape;
   const fill = stylePaintColor(style.fillColor, '#ffffff');
   const stroke = stylePaintColor(style.strokeColor, '#000000');
-  if (typeof canvas.bindStyle === 'function') canvas.bindStyle(fill, stroke);
+  if (typeof canvas.bindStyle === 'function') canvas.bindStyle(fill, stroke, style);
   let ctor = name ? registry[name] : null;
   if (!ctor && opts.allowStencil && name) {
     const stencil = stencilMap[String(name).toLowerCase()];
@@ -8848,7 +8896,7 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) 
     shape.bounds = {x, y, width, height};
     try {
       if (typeof canvas.bindStyle === 'function') {
-        canvas.bindStyle(shape.fill, shape.stroke);
+        canvas.bindStyle(shape.fill, shape.stroke, style);
       }
       if (style.dashed === '1') canvas.setDashed(true);
       if (style.dashPattern) canvas.setDashPattern(style.dashPattern);

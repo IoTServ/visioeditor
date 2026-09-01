@@ -12656,6 +12656,76 @@ void main() {
   );
 
   test(
+    'mxGraph indicatorColor leftover-bakes white FillForegnd for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isFill(VsdxShape shape, String hex) {
+        final want = VsdxColor.tryParse(hex);
+        return want != null &&
+            shape.fill.pattern == 1 &&
+            shape.fill.foreground == want;
+      }
+
+      final picker = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Mockup / Mockup Forms',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Color Picker')
+          .build(1, 3, 3);
+      expect(
+        descendants(picker).where((shape) => isFill(shape, '#AADDFF')),
+        isNotEmpty,
+        reason: 'chosenColor leftover-bakes FillForegnd Draw maps to svg:fill',
+      );
+      expect(
+        descendants(picker).where((shape) => isFill(shape, '#FFFFFF')),
+        isNotEmpty,
+        reason: 'indicatorColor=#ffffff after the chosenColor hex must not '
+            'collapse to inherit fill that applyStencilStyle washes to '
+            'kStencilPrimary #DAE8FC (tokens.txt FillForegnd is svg:fill)',
+      );
+      expect(
+        descendants(picker).where((shape) => isFill(shape, '#999999')),
+        isNotEmpty,
+        reason: 'arrowColor leftover-bakes the drop-arrow FillForegnd',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(picker.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).where((shape) => isFill(shape, '#FFFFFF')),
+        isNotEmpty,
+        reason: 'a second save must keep indicatorColor white FillForegnd',
+      );
+      expect(
+        descendants(leftover).where((shape) => isFill(shape, '#AADDFF')),
+        isNotEmpty,
+        reason: 'a second save must keep chosenColor FillForegnd',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

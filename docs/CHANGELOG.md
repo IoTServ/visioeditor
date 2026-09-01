@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Mockup Color Picker now keeps `indicatorColor` white in
+  LibreOffice. Official `mxMockupForms.js` fills `chosenColor` then
+  `indicatorColor=#ffffff`. Catalog capture collapsed that white to
+  inherit `fill` after the hex sibling, so leftover extra-inherit fill
+  washed to palette `#DAE8FC` (`tokens.txt` FillForegnd is `svg:fill`;
+  `applyStencilStyle` isRoot:false keeps child white). Capture now
+  leftover-bakes the explicit style white. A second save keeps it.
 - draw.io STYLE_ROTATION now leftover-bakes Visio Angle for LibreOffice.
   Official sidebar Vertical Ruler and SysML Activity Partition set
   `rotation=-90`. NestedStencil never called `updateTransform`, so
