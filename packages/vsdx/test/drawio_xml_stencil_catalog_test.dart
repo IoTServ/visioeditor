@@ -12047,6 +12047,162 @@ void main() {
   );
 
   test(
+    'mxStencil path rounded leftover keeps addPoints QuadBezTo for LibreOffice',
+    () {
+      int countType<T extends VsdxPathCommand>(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in descendantGeometries(shape)) {
+          n += geometry.commands.whereType<T>().length;
+        }
+        return n;
+      }
+
+      final rounded = decodeDrawioMxStencilXml(
+        '<shape name="RoundPath" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<path rounded="1" arcSize="10">'
+        '<move x="0" y="0"/>'
+        '<line x="100" y="0"/>'
+        '<line x="100" y="60"/>'
+        '<line x="0" y="60"/>'
+        '<line x="0" y="0"/>'
+        '</path>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 442,
+      );
+      expect(
+        countType<QuadBezTo>(rounded),
+        greaterThan(0),
+        reason: 'mxStencil.drawNode rounded="1" calls addPoints → canvas.quadTo. '
+            'leftover must keep those QuadBezTo so Draw round-joins the '
+            'RelQuadBezTo path (tokens.txt has no LineJoin)',
+      );
+
+      final sharp = decodeDrawioMxStencilXml(
+        '<shape name="SharpPath" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<path>'
+        '<move x="0" y="0"/>'
+        '<line x="100" y="0"/>'
+        '<line x="100" y="60"/>'
+        '<line x="0" y="60"/>'
+        '<line x="0" y="0"/>'
+        '</path>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 443,
+      );
+      expect(
+        countType<QuadBezTo>(sharp),
+        0,
+        reason: 'rounded omitted parses move/line regularly',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(rounded.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        countType<RelQuadBezTo>(leftover) + countType<QuadBezTo>(leftover),
+        greaterThan(0),
+        reason: 'a second save keeps RelQuadBezTo (tokens.txt has no QuadBezTo)',
+      );
+    },
+  );
+
+  test(
+    'mxStencil text align-shape leftover keeps TxtAngle against Angle for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final upright = decodeDrawioMxStencilXml(
+        '<shape name="Upright" w="100" h="40" cellrotation="-90" '
+        'strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="40"/>'
+        '<fillstroke/>'
+        '<text x="50" y="20" str="A" align="center" valign="middle" '
+        'align-shape="0"/>'
+        '</foreground>'
+        '</shape>',
+        id: 444,
+      );
+      expect(
+        upright.angleRad,
+        closeTo(math.pi / 2, 0.05),
+        reason: 'cellrotation=-90 leftover-bakes collectXFormData Angle',
+      );
+      expect(
+        glyphShape(upright, 'A')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'mxStencil.drawNode align-shape="0" subtracts shape.rotation '
+            'so leftover TxtAngle counters Angle; Draw librevenge:rotate '
+            'keeps the glyph screen-upright',
+      );
+
+      final follows = decodeDrawioMxStencilXml(
+        '<shape name="Follows" w="100" h="40" cellrotation="-90" '
+        'strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="40"/>'
+        '<fillstroke/>'
+        '<text x="50" y="20" str="A" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+        id: 445,
+      );
+      expect(
+        glyphShape(follows, 'A')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'omitted align-shape rotates with parent Angle',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(upright.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(leftover.angleRad, closeTo(math.pi / 2, 0.05));
+      expect(
+        glyphShape(leftover, 'A')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save must keep TxtAngle against Angle',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {

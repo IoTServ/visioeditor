@@ -651,6 +651,9 @@ class _DrawioXmlShapeDecoder {
             vertical: node.getAttribute('vertical') == '1',
             wrap: node.getAttribute('wrap') == '1',
             rotationDegrees: _number(node, 'rotation'),
+            // mxStencil.drawNode: align-shape="0" ignores shape.rotation
+            // when setting canvas.text rotation (still subtracts `rotation=`).
+            alignShape: node.getAttribute('align-shape') != '0',
             // mxXmlCanvas2D.text rotation is STYLE_ROTATION; decoder
             // negates into TxtAngle that LibreOffice librevenge:rotate
             // paints (Y-up). STYLE_HORIZONTAL stays `vertical`.
@@ -722,6 +725,12 @@ class _DrawioXmlShapeDecoder {
       // `labelBounds` follows draw.io mxStencil.getLabelBounds (boundedLbl)
       // onto TxtPin / TxtWidth / TxtHeight that collectTextBlock maps
       // below the stacked Multi-Document sheet.
+      // `path rounded="1"` follows mxStencil.drawNode addPoints (move/line
+      // only) onto QuadBezTo leftover RelQuadBezTo (`tokens.txt` has no
+      // LineJoin; Draw round-joins from LineCap). Other path children
+      // fall through to regular MoveTo/LineTo/CubBezTo like official.
+      // `text` align-shape="0" follows drawNode onto TxtAngle that
+      // counters collectXFormData Angle so Draw keeps the glyph upright.
       // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
       // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
@@ -1432,12 +1441,132 @@ class _DrawioXmlShapeDecoder {
   }
 
   List<VsdxPathCommand> _decodePath(XmlElement path) {
+    // mxStencil.drawNode: rounded="1" uses addPoints on move/line
+    // subpaths. Any other child (close, curve, …) falls back.
+    if (path.getAttribute('rounded') == '1') {
+      final rounded = _decodeRoundedPath(path);
+      if (rounded != null) return _closedPolylineFromMoveOnly(rounded);
+    }
     final commands = <VsdxPathCommand>[];
     for (final command in path.childElements) {
       _decodePathNode(command, commands);
     }
     return _closedPolylineFromMoveOnly(commands);
   }
+
+  /// Official `mxStencil.drawNode` rounded path → `mxShape.addPoints`.
+  ///
+  /// Points stay in stencil space; leftover then scales with `_x`/`_y`
+  /// the same way MoveTo/LineTo do. `arcSize` is the drawNode attribute
+  /// (not minScale), matching canvas pixels at the native w0×h0 cell.
+  List<VsdxPathCommand>? _decodeRoundedPath(XmlElement path) {
+    final segs = <List<({double x, double y})>>[];
+    for (final child in path.childElements) {
+      final name = child.name.local;
+      if (name == 'move' || name == 'line') {
+        if (name == 'move' || segs.isEmpty) {
+          segs.add(<({double x, double y})>[]);
+        }
+        segs.last.add((x: _number(child, 'x'), y: _number(child, 'y')));
+      } else {
+        return null;
+      }
+    }
+    if (segs.isEmpty) return null;
+    var arcSize = _number(path, 'arcSize');
+    if (arcSize <= 0) arcSize = _number(path, 'arcsize');
+    final commands = <VsdxPathCommand>[];
+    for (final seg in segs) {
+      if (seg.isEmpty) continue;
+      var pts = List<({double x, double y})>.of(seg);
+      var close = false;
+      if (pts.length >= 2 &&
+          pts.first.x == pts.last.x &&
+          pts.first.y == pts.last.y) {
+        pts = pts.sublist(0, pts.length - 1);
+        close = true;
+      }
+      if (pts.isEmpty) continue;
+      commands.addAll(_mxAddPoints(pts: pts, close: close, arcSize: arcSize));
+    }
+    if (commands.isEmpty) return null;
+    return commands;
+  }
+
+  /// Port of `mxShape.addPoints` with `rounded=true`, `initialMove=true`.
+  List<VsdxPathCommand> _mxAddPoints({
+    required List<({double x, double y})> pts,
+    required bool close,
+    required double arcSize,
+  }) {
+    if (pts.isEmpty) return const <VsdxPathCommand>[];
+    var points = List<({double x, double y})>.of(pts);
+    final pe = points.last;
+    if (close) {
+      final p0 = points.first;
+      points.insert(0, (
+        x: pe.x + (p0.x - pe.x) / 2,
+        y: pe.y + (p0.y - pe.y) / 2,
+      ));
+    }
+    var pt = points.first;
+    var i = 1;
+    final out = <VsdxPathCommand>[_srcMove(pt.x, pt.y)];
+    while (i < (close ? points.length : points.length - 1)) {
+      var tmp = points[_mxMod(i, points.length)];
+      final dx0 = pt.x - tmp.x;
+      final dy0 = pt.y - tmp.y;
+      if (arcSize > 0 && (dx0 != 0 || dy0 != 0)) {
+        var dist = math.sqrt(dx0 * dx0 + dy0 * dy0);
+        final nx1 = dx0 * math.min(arcSize, dist / 2) / dist;
+        final ny1 = dy0 * math.min(arcSize, dist / 2) / dist;
+        out.add(_srcLine(tmp.x + nx1, tmp.y + ny1));
+        var next = points[_mxMod(i + 1, points.length)];
+        while (i < points.length - 2 &&
+            (next.x - tmp.x).round() == 0 &&
+            (next.y - tmp.y).round() == 0) {
+          next = points[_mxMod(i + 2, points.length)];
+          i++;
+        }
+        final dx = next.x - tmp.x;
+        final dy = next.y - tmp.y;
+        dist = math.max(1.0, math.sqrt(dx * dx + dy * dy));
+        final nx2 = dx * math.min(arcSize, dist / 2) / dist;
+        final ny2 = dy * math.min(arcSize, dist / 2) / dist;
+        final x2 = tmp.x + nx2;
+        final y2 = tmp.y + ny2;
+        out.add(_srcQuad(tmp.x, tmp.y, x2, y2));
+        tmp = (x: x2, y: y2);
+      } else {
+        out.add(_srcLine(tmp.x, tmp.y));
+      }
+      pt = tmp;
+      i++;
+    }
+    if (close) {
+      final start = out.first;
+      if (start is MoveTo) {
+        out.add(LineTo(start.x, start.y));
+      }
+    } else {
+      out.add(_srcLine(pe.x, pe.y));
+    }
+    _penX = pe.x;
+    _penY = pe.y;
+    _subX = pts.first.x;
+    _subY = pts.first.y;
+    _hasSub = true;
+    return out;
+  }
+
+  MoveTo _srcMove(double x, double y) => MoveTo(_x(x), _y(y));
+  LineTo _srcLine(double x, double y) => LineTo(_x(x), _y(y));
+  QuadBezTo _srcQuad(double x1, double y1, double x, double y) => QuadBezTo(
+        x: _x(x),
+        y: _y(y),
+        x1: _x(x1),
+        y1: _y(y1),
+      );
 
   void _decodePathNode(XmlElement command, List<VsdxPathCommand> commands) {
     switch (command.name.local) {
@@ -1811,6 +1940,11 @@ class _DrawioXmlShapeDecoder {
     // glyphs (w=h=0) keep the mxStencil vertical → TxtAngle shortcut.
     final boxedVertical = hasBox && label.vertical;
     if (label.vertical && !hasBox) angle -= math.pi / 2;
+    // mxStencil.drawNode align-shape="0": subtract shape.rotation so the
+    // glyph stays screen-upright while collectXFormData still rotates
+    // Geometry. Catalog leftover bakes STYLE_ROTATION as cellrotation /
+    // Angle; TxtAngle counters that Angle (flips stay native XForm).
+    if (!label.alignShape) angle -= _stencilCellRotationRad();
     var shape = VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -1922,6 +2056,7 @@ class _DrawioStencilLabel {
     required this.vertical,
     this.wrap = false,
     required this.rotationDegrees,
+    this.alignShape = true,
     required this.fontSize,
     required this.fontStyle,
     this.fontFamily,
@@ -1945,6 +2080,7 @@ class _DrawioStencilLabel {
   final bool vertical;
   final bool wrap;
   final double rotationDegrees;
+  final bool alignShape;
   final double fontSize;
   final int fontStyle;
   final String? fontFamily;
@@ -2516,6 +2652,11 @@ List<_DrawioArcCurve> _svgArcCurves(
     startAngle = endAngle;
   }
   return curves;
+}
+
+int _mxMod(int n, int m) {
+  if (m == 0) return 0;
+  return ((n % m) + m) % m;
 }
 
 double _number(XmlElement element, String name, {double fallback = 0}) {

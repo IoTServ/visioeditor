@@ -859,16 +859,27 @@ class CanvasRecorder {
   // that still have vector geometry. PNG/JPEG (IBM VPC Floating IP's
   // SVG-in-PNG, clipart) become <image src="data:…"> so the Dart decoder
   // can emit Visio ForeignData that LibreOffice's collectForeignData paints.
-  image(x, y, w, h, src, aspect) {
-    if (paintSvgImage(this, x, y, w, h, src, aspect !== false)) return;
-    paintRaster(this, x, y, w, h, src);
+  image(x, y, w, h, src, aspect, flipH, flipV) {
+    this._imageFlipH = !!flipH;
+    this._imageFlipV = !!flipV;
+    try {
+      if (paintSvgImage(this, x, y, w, h, src, aspect !== false)) return;
+      paintRaster(this, x, y, w, h, src);
+    } finally {
+      this._imageFlipH = false;
+      this._imageFlipV = false;
+    }
   }
   raster(x, y, w, h, mime, b64) {
     this.finishPath();
     if (!(Number(w) > 0 && Number(h) > 0) || !b64) return;
     const p = this.map(x, y);
+    const flips = [];
+    if (this._imageFlipH) flips.push('flipH="1"');
+    if (this._imageFlipV) flips.push('flipV="1"');
+    const flipAttr = flips.length ? ` ${flips.join(' ')}` : '';
     this.operations.push(
-      `<image x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}" src="${xmlEscape(`data:${mime};base64,${b64}`)}"/>`,
+      `<image x="${number(p.x)}" y="${number(p.y)}" w="${number(w * this.sx)}" h="${number(h * this.sy)}"${flipAttr} src="${xmlEscape(`data:${mime};base64,${b64}`)}"/>`,
     );
   }
   setFillStyle(value) {
@@ -5298,6 +5309,59 @@ function attrNum(node, key, fallback = 0) {
 
 const stencilMap = {};
 
+// mxShape.addPoints (rounded=true). NestedStencil.drawNode path
+// rounded="1" uses this so leftover QuadBezTo matches official
+// collectGeometry RelQuadBezTo that Draw paints.
+function nestedAddPoints(canvas, pts, rounded, arcSize, close) {
+  if (!pts || !pts.length) return;
+  const pe = pts[pts.length - 1];
+  if (close && rounded) {
+    pts = pts.slice();
+    const p0 = pts[0];
+    pts.splice(0, 0, {
+      x: pe.x + (p0.x - pe.x) / 2,
+      y: pe.y + (p0.y - pe.y) / 2,
+    });
+  }
+  let pt = pts[0];
+  let i = 1;
+  canvas.moveTo(pt.x, pt.y);
+  const mod = (n, m) => ((n % m) + m) % m;
+  while (i < (close ? pts.length : pts.length - 1)) {
+    let tmp = pts[mod(i, pts.length)];
+    let dx = pt.x - tmp.x;
+    let dy = pt.y - tmp.y;
+    if (rounded && (dx !== 0 || dy !== 0)) {
+      let dist = Math.sqrt(dx * dx + dy * dy);
+      const nx1 = dx * Math.min(arcSize, dist / 2) / dist;
+      const ny1 = dy * Math.min(arcSize, dist / 2) / dist;
+      canvas.lineTo(tmp.x + nx1, tmp.y + ny1);
+      let next = pts[mod(i + 1, pts.length)];
+      while (i < pts.length - 2 &&
+          Math.round(next.x - tmp.x) === 0 &&
+          Math.round(next.y - tmp.y) === 0) {
+        next = pts[mod(i + 2, pts.length)];
+        i++;
+      }
+      dx = next.x - tmp.x;
+      dy = next.y - tmp.y;
+      dist = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+      const nx2 = dx * Math.min(arcSize, dist / 2) / dist;
+      const ny2 = dy * Math.min(arcSize, dist / 2) / dist;
+      const x2 = tmp.x + nx2;
+      const y2 = tmp.y + ny2;
+      canvas.quadTo(tmp.x, tmp.y, x2, y2);
+      tmp = {x: x2, y: y2};
+    } else {
+      canvas.lineTo(tmp.x, tmp.y);
+    }
+    pt = tmp;
+    i++;
+  }
+  if (close) canvas.close();
+  else canvas.lineTo(pe.x, pe.y);
+}
+
 class NestedStencil {
   constructor(desc) {
     this.w0 = Number(desc.attrs.w) || 100;
@@ -5403,8 +5467,43 @@ class NestedStencil {
     else if (name === 'restore') canvas.restore();
     else if (name === 'path') {
       canvas.begin();
-      for (const child of node.children) {
-        this.drawNode(canvas, child, aspect, shape, disableShadow);
+      // mxStencil.drawNode: rounded="1" uses addPoints on move/line
+      // subpaths. Other children (close, curve, …) parse regularly.
+      let parseRegularly = node.attrs.rounded !== '1';
+      const segs = [];
+      if (!parseRegularly) {
+        for (const child of node.children || []) {
+          const childName = child.name;
+          if (childName === 'move' || childName === 'line') {
+            if (childName === 'move' || segs.length === 0) segs.push([]);
+            segs[segs.length - 1].push({
+              x: x0 + attrNum(child, 'x') * sx,
+              y: y0 + attrNum(child, 'y') * sy,
+            });
+          } else if (childName) {
+            parseRegularly = true;
+            break;
+          }
+        }
+      }
+      if (!parseRegularly && segs.some((seg) => seg && seg.length)) {
+        const arcSize = Number(node.attrs.arcSize ?? node.attrs.arcsize) || 0;
+        for (const seg of segs) {
+          if (!seg || !seg.length) continue;
+          const pts = seg.slice();
+          let close = false;
+          const ps = pts[0];
+          const pe = pts[pts.length - 1];
+          if (ps.x === pe.x && ps.y === pe.y) {
+            pts.pop();
+            close = true;
+          }
+          nestedAddPoints(canvas, pts, true, arcSize, close);
+        }
+      } else {
+        for (const child of node.children) {
+          this.drawNode(canvas, child, aspect, shape, disableShadow);
+        }
       }
     } else if (name === 'close') canvas.close();
     else if (name === 'move') canvas.moveTo(X('x'), Y('y'));
@@ -5440,6 +5539,16 @@ class NestedStencil {
       const str = node.attrs.str || '';
       if (!str) return;
       let rotation = node.attrs.vertical === '1' ? -90 : 0;
+      // mxStencil.drawNode align-shape="0": ignore shape.rotation
+      // (still subtracts the text `rotation=` attr).
+      if (node.attrs['align-shape'] === '0') {
+        const dr = Number(shape && shape.rotation) || 0;
+        const flipH = !!(shape && shape.flipH);
+        const flipV = !!(shape && shape.flipV);
+        if (flipH && flipV) rotation -= dr;
+        else if (flipH || flipV) rotation += dr;
+        else rotation -= dr;
+      }
       rotation -= Number(node.attrs.rotation || 0);
       canvas.text(
         X('x'), Y('y'), 0, 0, str,
@@ -5447,6 +5556,18 @@ class NestedStencil {
         node.attrs.valign || 'top',
         0, null, 0, 0, rotation,
       );
+    } else if (name === 'image') {
+      // mxStencil.drawNode canvas.image(x,y,w,h,src,aspect,flipH,flipV).
+      const src = node.attrs.src;
+      if (src && canvas.image) {
+        canvas.image(
+          X('x'), Y('y'),
+          attrNum(node, 'w') * sx, attrNum(node, 'h') * sy,
+          src, false,
+          node.attrs.flipH === '1',
+          node.attrs.flipV === '1',
+        );
+      }
     } else if (name === 'include-shape') {
       const nested = stencilMap[String(node.attrs.name || '').toLowerCase()];
       if (nested) {

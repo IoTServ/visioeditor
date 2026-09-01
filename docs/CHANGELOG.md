@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path rounded and text align-shape for
+  LibreOffice. Official `mxStencil.drawNode` fillets `<path rounded="1">`
+  move/line subpaths with `addPoints` (`canvas.quadTo`) and, when
+  `align-shape="0"`, subtracts `shape.rotation` from canvas.text so the
+  glyph stays screen-upright. leftover used to parse those paths as
+  sharp LineTo and leave TxtAngle 0 under cellrotation Angle, so Draw
+  mitered the corners (`tokens.txt` has no LineJoin) and
+  `librevenge:rotate` spun the label with Geometry. leftover now bakes
+  QuadBezTo / RelQuadBezTo and counters Angle with TxtAngle. NestedStencil
+  capture matches drawNode for `image` / rounded / align-shape. A second
+  save keeps RelQuadBezTo and TxtAngle.
 - draw.io leftover catalog stamps keep mxStencil aspect for
   LibreOffice. `mxStencil.computeAspect` uses one scale (fixed
   aspect uses `min(sx,sy)`). leftover used to floor Width and Height
