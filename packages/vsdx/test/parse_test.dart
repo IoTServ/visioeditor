@@ -307,8 +307,8 @@ void main() {
           .toList();
       expect(inherited, isNotEmpty, reason: '$name inherited labels');
       for (final shape in inherited) {
-        // `shape.text` is the legacy trimmed convenience value; richText is
-        // the lossless source and retains xml:space="preserve" line endings.
+        // `shape.text` trims XML 1.0 whitespace only (not U+00A0); richText
+        // is the lossless source and retains xml:space="preserve" line endings.
         expect(shape.richText.plainText.trim(), shape.text!.trim(),
             reason: '$name shape ${shape.id} should retain Master text style');
       }

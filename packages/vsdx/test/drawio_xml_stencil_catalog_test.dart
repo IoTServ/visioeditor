@@ -12962,6 +12962,77 @@ void main() {
   );
 
   test(
+    'Infographic Chevron list leftover keeps leading Character nbsp for LibreOffice',
+    () {
+      VsdxShape? loremShape(VsdxShape shape) {
+        if ((shape.text ?? '').contains('Lorem') ||
+            shape.richText.runs.any((run) => run.text.contains('Lorem'))) {
+          return shape;
+        }
+        for (final child in shape.children) {
+          final nested = loremShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final chevron = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Infographic / Infographic',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Chevron list')
+          .build(1, 3, 3);
+      final inMemory = loremShape(chevron);
+      expect(
+        inMemory,
+        isNotNull,
+        reason: 'sidebar html=1 authors &nbsp;- Lorem on each list line',
+      );
+      expect(
+        inMemory!.text,
+        startsWith('\u00A0- Lorem ipsum dolor sit amet'),
+        reason: 'foreignObject UA turns a leading &nbsp; into U+00A0; '
+            'tokens.txt Character is collectText, Dart String.trim must not '
+            'eat that indent',
+      );
+      expect(
+        inMemory.text,
+        contains('\n\u00A0- consectetur adipisicing elit'),
+        reason: 'later lines already kept U+00A0 after the line break',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(chevron.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverLorem = loremShape(leftover);
+      expect(
+        leftoverLorem?.text,
+        startsWith('\u00A0- Lorem ipsum dolor sit amet'),
+        reason: 'a second save must keep the leading Character U+00A0',
+      );
+      expect(
+        leftoverLorem?.richText.runs.first.text,
+        startsWith('\u00A0- Lorem'),
+        reason: 'leftover Character rows must match collectText',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

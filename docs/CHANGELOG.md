@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- VSDX parse now keeps a leading Character U+00A0 for LibreOffice.
+  Dart `String.trim` treats NBSP as whitespace, so Infographic Chevron
+  list leftover `shape.text` dropped the sidebar `&nbsp;- Lorem` indent
+  while later lines after `\n` survived (`tokens.txt` Character is
+  collectText; libvisio does not strip U+00A0). `readShapeText` now
+  trims XML 1.0 whitespace only. A second save keeps the indent.
 - draw.io Mockup Alphanumeric leftover no longer keeps a zero-length
   Line for LibreOffice. Official sidebar sets `linkText=` empty;
   `mxShapeMockupAlphanumeric` then `getSizeForString('')` is width 0

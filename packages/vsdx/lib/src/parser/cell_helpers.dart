@@ -117,11 +117,30 @@ String normalizeVisioText(String value) => value
     .replaceAll('\u2028', '\n')
     .replaceAll('\u2029', '\n');
 
+/// Strip XML 1.0 whitespace (space, tab, CR, LF).
+///
+/// Dart [String.trim] also drops U+00A0. libvisio `collectText` keeps that
+/// Character; Draw.io html `&nbsp;` leftover-bakes it as a leading indent.
+String trimXmlWhitespace(String value) {
+  bool isXmlWs(int unit) =>
+      unit == 0x20 || unit == 0x09 || unit == 0x0A || unit == 0x0D;
+  var start = 0;
+  var end = value.length;
+  while (start < end && isXmlWs(value.codeUnitAt(start))) {
+    start++;
+  }
+  while (end > start && isXmlWs(value.codeUnitAt(end - 1))) {
+    end--;
+  }
+  if (start == 0 && end == value.length) return value;
+  return value.substring(start, end);
+}
+
 /// Direct text content of `<Text>` (concatenates all descendant text nodes).
 String? readShapeText(XmlElement shape) {
   for (final child in shape.childElements) {
     if (child.name.local == 'Text') {
-      final t = normalizeVisioText(child.innerText).trim();
+      final t = trimXmlWhitespace(normalizeVisioText(child.innerText));
       return t.isEmpty ? null : t;
     }
   }
