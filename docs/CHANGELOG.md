@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io Android Spinner leftover ribbons the open caret stroke for
+  LibreOffice. Official `android.xml` Spinner is `<path>` +
+  `<fillstroke/>` of an open caret (`tokens.txt` LineColor →
+  `svg:stroke`). leftover treated filled open rings as closed for
+  Rounding, so the implied close was a 180° hairpin at the start and
+  the `veMiterLimit` ribbon became two offset rings along that
+  baseline. Stroke leftover now closes only when first≈last; the
+  scaled caret tip still exceeds Draw's miter 4 and bakes one sausage
+  around the three segments. AWS 2 EMR elbows that actually exceed
+  miter 4 still bake a ribbon. A second save keeps the caret.
 - draw.io ArchiMate Access / Aggregation leftover keeps quadratic
   elbows for LibreOffice. Official `elbowEdgeStyle` with `rounded`
   leftover-bakes `QuadBezTo` (`tokens.txt` RelQuadBezTo → `svg:d` Q).

@@ -9,18 +9,31 @@ typedef FilletPath = ({
   bool closed,
 });
 
+/// Whether a Move/Line polyline is closed for stroking.
+///
+/// Canvas `stroke()` / SVG without `Z` follow the authored vertices.
+/// [polylineLooksClosed] also treats filled open rings as closed so Rounding
+/// fillets every corner; that invented close is a 180° hairpin when the last
+/// point lies on the first edge (Android Spinner caret), so leftover miter
+/// ribbons must not use it.
+bool polylineStrokeLooksClosed(List<Offset2D> pts) {
+  if (pts.length < 3) return false;
+  final a = pts.first, b = pts.last;
+  return (a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9;
+}
+
 /// Whether a Move/Line polyline should be treated as a closed ring for Rounding.
 ///
 /// Explicit first≈last is always closed. Filled outlines (`!noFill`) that omit
 /// the closing LineTo (common Visio rectangles) are also treated as closed so
-/// all corners fillet; open 1-D / NoFill elbows stay open.
+/// all corners fillet; open 1-D / NoFill elbows stay open. Stroke / miter
+/// leftover uses [polylineStrokeLooksClosed] instead.
 bool polylineLooksClosed(
   List<Offset2D> pts, {
   required bool noFill,
 }) {
   if (pts.length < 3) return false;
-  final a = pts.first, b = pts.last;
-  if ((a.x - b.x).abs() < 1e-9 && (a.y - b.y).abs() < 1e-9) return true;
+  if (polylineStrokeLooksClosed(pts)) return true;
   return !noFill;
 }
 

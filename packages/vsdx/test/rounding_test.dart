@@ -92,6 +92,7 @@ void main() {
     ];
     expect(polylineLooksClosed(pts, noFill: false), isTrue);
     expect(polylineLooksClosed(pts, noFill: true), isFalse);
+    expect(polylineStrokeLooksClosed(pts), isFalse);
     expect(
       polylineLooksClosed(
         const <Offset2D>[
@@ -104,6 +105,19 @@ void main() {
       ),
       isTrue,
     );
+  });
+
+  test('polylineHasDrawClippedMiter skips fill-implied close hairpins', () {
+    const spinner = <Offset2D>[
+      Offset2D(0, 10),
+      Offset2D(110, 10),
+      Offset2D(110, 0),
+      Offset2D(100, 10),
+    ];
+    expect(polylineStrokeLooksClosed(spinner), isFalse);
+    expect(polylineLooksClosed(spinner, noFill: false), isTrue);
+    expect(polylineHasDrawClippedMiter(spinner, closed: true), isTrue);
+    expect(polylineHasDrawClippedMiter(spinner, closed: false), isFalse);
   });
 
   test('bakePolylineRounding writes libvisio quadratic corner rows', () {

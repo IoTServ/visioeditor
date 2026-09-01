@@ -3517,7 +3517,7 @@ List<VsdxGeometry> _filledStrokeRibbonGeometries(VsdxShape shape) {
       if (geometry.noShow || geometry.noLine) continue;
       for (final points in _strokedSubpaths(geometry, shape)) {
         if (points.length < 2) continue;
-        final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+        final closed = polylineStrokeLooksClosed(points);
         final commands = strokeRibbonCommands(
           points,
           halfWidth: half,
@@ -3570,7 +3570,7 @@ List<List<Offset2D>> _solidStrokeRibbonPolygons(
     if (geometry.noShow || geometry.noLine) continue;
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 2) continue;
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final closed = polylineStrokeLooksClosed(points);
     final body = _filletSoftEdgesStrokePoints(points, shape, closed: closed);
     final left = offsetPolyline(
       body,
@@ -9976,7 +9976,7 @@ List<List<Offset2D>> _softEdgesDashRibbonPolygons(VsdxShape shape) {
     if (geometry.noShow || geometry.noLine) continue;
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 2) continue;
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final closed = polylineStrokeLooksClosed(points);
     final body = _filletSoftEdgesStrokePoints(points, shape, closed: closed);
     for (final segment in _dashPolyline(body, inches, closed: closed)) {
       if (segment.length < 2) continue;
@@ -10004,7 +10004,7 @@ List<List<Offset2D>> _softEdgesCompoundRibbonPolygons(VsdxShape shape) {
     if (geometry.noShow || geometry.noLine) continue;
     final points = _strokedVertices(geometry, shape);
     if (points == null || points.length < 2) continue;
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final closed = polylineStrokeLooksClosed(points);
     final body = _filletSoftEdgesStrokePoints(points, shape, closed: closed);
     final polylines = dashes != null && dashes.isNotEmpty
         ? _dashPolyline(body, dashes, closed: closed)
@@ -12007,7 +12007,7 @@ VsdxGlow glowForLibvisioWrite(VsdxShape shape) {
       if (geometry.noShow || geometry.noLine) continue;
       final points = _strokedVertices(geometry, shape);
       if (points == null || points.length < 2) continue;
-      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      final closed = polylineStrokeLooksClosed(points);
       final commands = strokeRibbonCommands(
         points,
         halfWidth: math.max(glow.sizeInches, 0.01),
@@ -12246,7 +12246,7 @@ bool _useVariableWidthCompoundRibbons(VsdxShape shape) {
       out.add(geometry);
       continue;
     }
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    final closed = polylineStrokeLooksClosed(points);
     // Keep the authored fill body only while Fill still paints. After a
     // multi-stop FillGradient becomes a SoftEdges PNG, FillPattern is 0
     // but Geometry may still say NoFill=0; filling that leftover with
@@ -12341,7 +12341,7 @@ bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
     if (_geometryHasLibvisioCurveRows(geometry)) continue;
     for (final points in _strokedSubpaths(geometry, shape)) {
       if (points.length < 3) continue;
-      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      final closed = polylineStrokeLooksClosed(points);
       if (polylineHasElbow(points, closed: closed)) return true;
     }
   }
@@ -12384,7 +12384,10 @@ bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
     if (_geometryHasLibvisioCurveRows(geometry)) continue;
     for (final points in _strokedSubpaths(geometry, shape)) {
       if (points.length < 3) continue;
-      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      // Stroke close is first≈last only. Treating a filled open caret as
+      // a ring invents a 180° hairpin at the start (Android Spinner;
+      // tokens.txt LineColor → svg:stroke).
+      final closed = polylineStrokeLooksClosed(points);
       if (polylineHasDrawClippedMiter(points, closed: closed)) return true;
     }
   }
@@ -13208,7 +13211,7 @@ List<VsdxGeometry> bakeArrowGeometriesForLibvisio(VsdxShape shape) {
     var ribboned = false;
     for (final points in subpaths) {
       if (points.length < 2) continue;
-      final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+      final closed = polylineStrokeLooksClosed(points);
       final commands = strokeRibbonCommands(
         points,
         halfWidth: half,
@@ -13659,7 +13662,7 @@ bool _appendDashFlattenedGeometry(
     out.add(geometry);
     return false;
   }
-  final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+  final closed = polylineStrokeLooksClosed(points);
   final segments = _dashPolyline(points, inches, closed: closed);
   if (segments.isEmpty) {
     out.add(geometry);

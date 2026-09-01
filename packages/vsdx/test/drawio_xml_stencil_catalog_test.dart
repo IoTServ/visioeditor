@@ -2329,6 +2329,78 @@ void main() {
     );
   });
 
+  test(
+    'Android Spinner leftover ribbons the open caret stroke for LibreOffice',
+    () {
+      bool hasStrokeRibbon(VsdxShape shape) {
+        if (isLibvisioStrokeRibbonPlate(shape)) return true;
+        return shape.children.any(hasStrokeRibbon);
+      }
+
+      final spinner = migrated
+          .singleWhere(
+            (group) => group.name == 'Draw.io / Android / Android',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Spinner')
+          .build(1, 3, 3);
+      expect(spinner.line.hasLine, isTrue);
+      expect(spinner.fill.hasFill, isTrue);
+      expect(
+        shapeNeedsLibvisioFilledStrokeRibbonBake(spinner),
+        isTrue,
+        reason: 'variable-aspect Spinner stretches the 10px caret so the '
+            'tip miter exceeds Draw\'s ODF default 4; leftover must bake a '
+            'LineColor ribbon (tokens.txt LineColor → svg:stroke)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(spinner.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(leftover.fill.hasFill, isTrue);
+      expect(
+        leftover.line.hasLine,
+        isFalse,
+        reason: 'filled source drops LinePattern once the stroke is a sibling',
+      );
+      expect(
+        leftover.geometries.single.commands.whereType<MoveTo>().length,
+        1,
+      );
+      expect(
+        leftover.geometries.single.commands.length,
+        4,
+        reason: 'fill body stays the authored open caret',
+      );
+      final ribbon = leftoverDoc.pages.first.shapes.singleWhere(hasStrokeRibbon);
+      expect(
+        ribbon.geometries.single.commands.whereType<MoveTo>().length,
+        1,
+        reason: 'canvas stroke() does not close; treating !noFill as closed '
+            'invented a 180° hairpin at Pin and leftover wrote two offset '
+            'rings. Open caret leftover is one sausage around the 3 segments',
+      );
+
+      final leftover2Doc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: leftoverDoc),
+      );
+      expect(
+        leftover2Doc.pages.first.shapes.any(hasStrokeRibbon),
+        isTrue,
+        reason: 'a second save must keep the open caret ribbon',
+      );
+    },
+  );
+
   test('mxGraph shadow=1 stays ShdwPattern for LibreOffice', () {
     bool hasHardShadow(VsdxShape shape) {
       final shadow = shape.shadow;
