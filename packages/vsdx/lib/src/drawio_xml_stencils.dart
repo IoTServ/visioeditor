@@ -1591,15 +1591,42 @@ class _DrawioXmlShapeDecoder {
     if (width.abs() < 1e-9 && height.abs() < 1e-9) {
       return const <VsdxPathCommand>[];
     }
-    final cx = left + width / 2;
-    final cy = top + height / 2;
+    final cxSrc = left + width / 2;
+    final cySrc = top + height / 2;
+    final cx = _x(cxSrc);
+    final cy = _y(cySrc);
+    final span = math.max(width.abs(), height.abs());
+    final circular = span > 1e-9 &&
+        (width.abs() - height.abs()).abs() <= 0.15 * span;
+    if (circular) {
+      // mxMarker oval is canvas.ellipse(size, size): a circle in source
+      // pixels. Edge templates with eh=0 capture as h=1, then
+      // targetHeight clamps to 0.25 so scaleY ≫ scaleX. collectEllipse
+      // would stroke a 1" needle (svg path) instead of the startSize
+      // circle Draw keeps next to the dashed rail.
+      final r = math.min(
+        (width / 2).abs() * scaleX.abs(),
+        (height / 2).abs() * scaleY.abs(),
+      );
+      final yUp = _y(top) >= cy;
+      return <VsdxPathCommand>[
+        EllipseCmd(
+          cx: cx,
+          cy: cy,
+          aX: cx + r,
+          aY: cy,
+          bX: cx,
+          bY: yUp ? cy + r : cy - r,
+        ),
+      ];
+    }
     return <VsdxPathCommand>[
       EllipseCmd(
-        cx: _x(cx),
-        cy: _y(cy),
+        cx: cx,
+        cy: cy,
         aX: _x(left + width),
-        aY: _y(cy),
-        bX: _x(cx),
+        aY: _y(cySrc),
+        bX: _x(cxSrc),
         bY: _y(top),
       ),
     ];

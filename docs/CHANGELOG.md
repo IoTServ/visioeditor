@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io BPMN Message Flow leftover keeps the oval start marker for
+  LibreOffice. Official Sidebar is `startArrow=oval;startFill=0` plus
+  `dashPattern=8 4`. `mxConnector` paints markers with `setDashed(false)`.
+  leftover `veDashPattern` sampled that Ellipse into MoveTo gaps so Draw
+  lost `tokens.txt` Ellipse → `svg:ellipse`. Dash flatten now leaves
+  Ellipse-only sections solid. `eh=0` cells that clamp `targetHeight` to
+  0.25 no longer stretch `startSize=4` into a 1" needle; circular
+  `canvas.ellipse` stays a circle. A second save keeps the circle.
 - draw.io SysML Sequence Diagram leftover keeps an interior Character
   space after `<b>sd</b>` for LibreOffice. Official Sidebar
   `<p><b>sd</b>  Interaction1</p>` collapses to one U+0020. libvisio

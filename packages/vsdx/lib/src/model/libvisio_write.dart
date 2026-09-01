@@ -13556,46 +13556,87 @@ List<VsdxGeometry>? _flattenDashGeometries(
 ) {
   final out = <VsdxGeometry>[];
   var added = false;
+  var sawEllipseMarker = false;
   for (final geometry in sourceGeoms) {
     if (geometry.noShow || geometry.noLine) {
       out.add(geometry);
       continue;
     }
-    final points = _strokedVertices(geometry, shape);
-    if (points == null || points.length < 2) {
+    // mxConnector paints markers with setDashed(false). BPMN Message
+    // Flow is `startArrow=oval` plus dashPattern 8 4; sampling that
+    // Ellipse into MoveTo gaps dropped the circle Draw collects as
+    // tokens.txt Ellipse → svg:ellipse / draw:ellipse. Keep the oval
+    // in place so collectLine LinePattern 1 strokes it solid.
+    if (_geometryIsEllipseOnly(geometry)) {
       out.add(geometry);
+      sawEllipseMarker = true;
       continue;
     }
-    final closed = polylineLooksClosed(points, noFill: geometry.noFill);
-    final segments = _dashPolyline(points, inches, closed: closed);
-    if (segments.isEmpty) {
-      out.add(geometry);
-      continue;
+    if (_appendDashFlattenedGeometry(out, shape, geometry, inches)) {
+      added = true;
     }
-    final dashGeoms = <VsdxGeometry>[];
-    for (final segment in segments) {
-      final commands = polylineCommands(segment, closed: false);
-      if (commands.length < 2) continue;
-      dashGeoms.add(
-        VsdxGeometry(
-          noFill: true,
-          noLine: false,
-          commands: commands,
-        ),
-      );
-    }
-    if (dashGeoms.isEmpty) {
-      out.add(geometry);
-      continue;
-    }
-    if (!geometry.noFill) {
-      out.add(geometry.copyWith(noLine: true));
-    }
-    out.addAll(dashGeoms);
-    added = true;
   }
-  if (!added) return null;
-  return out;
+  if (added) return out;
+  if (!sawEllipseMarker) return null;
+  final retry = <VsdxGeometry>[];
+  var ellipseAdded = false;
+  for (final geometry in sourceGeoms) {
+    if (geometry.noShow || geometry.noLine) {
+      retry.add(geometry);
+      continue;
+    }
+    if (!_geometryIsEllipseOnly(geometry)) {
+      retry.add(geometry);
+      continue;
+    }
+    if (_appendDashFlattenedGeometry(retry, shape, geometry, inches)) {
+      ellipseAdded = true;
+    }
+  }
+  return ellipseAdded ? retry : null;
+}
+
+bool _geometryIsEllipseOnly(VsdxGeometry geometry) =>
+    geometry.commands.length == 1 && geometry.commands.first is EllipseCmd;
+
+bool _appendDashFlattenedGeometry(
+  List<VsdxGeometry> out,
+  VsdxShape shape,
+  VsdxGeometry geometry,
+  List<double> inches,
+) {
+  final points = _strokedVertices(geometry, shape);
+  if (points == null || points.length < 2) {
+    out.add(geometry);
+    return false;
+  }
+  final closed = polylineLooksClosed(points, noFill: geometry.noFill);
+  final segments = _dashPolyline(points, inches, closed: closed);
+  if (segments.isEmpty) {
+    out.add(geometry);
+    return false;
+  }
+  final dashGeoms = <VsdxGeometry>[];
+  for (final segment in segments) {
+    final commands = polylineCommands(segment, closed: false);
+    if (commands.length < 2) continue;
+    dashGeoms.add(
+      VsdxGeometry(
+        noFill: true,
+        noLine: false,
+        commands: commands,
+      ),
+    );
+  }
+  if (dashGeoms.isEmpty) {
+    out.add(geometry);
+    return false;
+  }
+  if (!geometry.noFill) {
+    out.add(geometry.copyWith(noLine: true));
+  }
+  out.addAll(dashGeoms);
+  return true;
 }
 
 /// Resample [points] into dash/gap strokes. Even [pattern] slots are ink.

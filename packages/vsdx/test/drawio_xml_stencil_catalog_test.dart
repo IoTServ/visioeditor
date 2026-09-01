@@ -13855,6 +13855,91 @@ void main() {
   );
 
   test(
+    'BPMN Message Flow leftover keeps the oval start Ellipse for LibreOffice',
+    () {
+      EllipseCmd? ovalOf(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          if (geometry.noShow || geometry.noLine) continue;
+          for (final command in geometry.commands.whereType<EllipseCmd>()) {
+            return command;
+          }
+        }
+        return null;
+      }
+
+      void expectCircle(EllipseCmd? oval, {required String reason}) {
+        expect(oval, isNotNull, reason: reason);
+        final rx = (oval!.aX - oval.cx).abs();
+        final ry = (oval.bY - oval.cy).abs();
+        expect(
+          rx / math.max(ry, 1e-12),
+          closeTo(1, 0.2),
+          reason: 'eh=0 cells clamp targetHeight to 0.25 and used to '
+              'stretch startSize=4 into a 1" needle; mxMarker oval is '
+              'canvas.ellipse(size,size)',
+        );
+        expect(
+          rx,
+          inInclusiveRange(0.008, 0.06),
+          reason: '4px on the 160-wide rail is ~0.019in after catalog scale',
+        );
+      }
+
+      final flow = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / BPMN / BPMN 2.0  General',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Message Flow')
+          .build(1, 3, 3);
+      expectCircle(
+        ovalOf(flow),
+        reason: 'Sidebar startArrow=oval;startFill=0 leftover-bakes an '
+            'EllipseCmd marker. tokens.txt Ellipse is svg:ellipse',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(flow.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expectCircle(
+        ovalOf(leftover),
+        reason: 'veDashPattern MoveTo gaps must not sample the oval; '
+            'mxConnector setDashed(false) before markers so Draw keeps '
+            'a solid circle on the dashed rail',
+      );
+
+      doc = parser.parse(writer.emptyDocument());
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(leftover.copyWith(id: id)),
+      );
+      final leftover2 = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expectCircle(
+        ovalOf(leftover2),
+        reason: 'a second save must keep the circle',
+      );
+    },
+  );
+
+  test(
     'BPMN Send leftover strokes envelope with white for LibreOffice',
     () {
       const paletteStroke = VsdxColor(0xFF6C8EBF);
