@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io BPMN Send leftover strokes the envelope with white for
+  LibreOffice. Official `mxShapeBpmn2Task` case `send` does
+  `setStrokeColor(STYLE_FILLCOLOR)` then `setFillColor(STYLE_STROKECOLOR)`
+  before `mxShapeBpmn2SendMarker`. `Graph.replaceDefaultColor` maps
+  defaultVertex `fillColor=default` to white before paint. Capture left
+  the keyword so decoder inherit `LineColor` (`tokens.txt` → `svg:stroke`)
+  painted the outline the palette. Capture now leftover-bakes `#ffffff`.
+  A second save keeps the white envelope and V-fold.
 - draw.io Infographic Circular Callout leftover fills inner disks with
   white for LibreOffice. Official
   `mxShapeInfographicCircularCallout2.paintVertexShape` fills the body

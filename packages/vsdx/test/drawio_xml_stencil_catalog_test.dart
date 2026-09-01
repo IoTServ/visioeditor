@@ -13843,6 +13843,102 @@ void main() {
   );
 
   test(
+    'BPMN Send leftover strokes envelope with white for LibreOffice',
+    () {
+      const paletteStroke = VsdxColor(0xFF6C8EBF);
+
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isBlackEnvelope(VsdxShape shape) {
+        return shape.fill.hasFill &&
+            shape.fill.foreground == VsdxColor.black &&
+            shape.line.hasLine;
+      }
+
+      final send = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / BPMN / BPMN 2.0  Tasks',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Send')
+          .build(1, 3, 3);
+      final envelopes = descendants(send).where(isBlackEnvelope).toList();
+      expect(
+        envelopes,
+        isNotEmpty,
+        reason: 'mxShapeBpmn2Task case send setFillColor(strokeColor) then '
+            'mxShapeBpmn2SendMarker paints the envelope rect',
+      );
+      for (final envelope in envelopes) {
+        expect(
+          envelope.line.color,
+          VsdxColor.white,
+          reason: 'setStrokeColor(STYLE_FILLCOLOR) before the marker. '
+              'Graph.replaceDefaultColor maps defaultVertex fillColor=default '
+              'to white. Capture left the keyword so decoder inherit '
+              'LineColor (tokens.txt → svg:stroke) painted the outline '
+              'the palette',
+        );
+        expect(
+          envelope.line.color,
+          isNot(paletteStroke),
+          reason: 'the envelope must not ride kStencilPrimary LineColor',
+        );
+      }
+      expect(
+        descendants(send).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.color == VsdxColor.white &&
+              shape.geometries.any(
+                (geometry) =>
+                    geometry.commands.whereType<LineTo>().length >= 2,
+              ),
+        ),
+        isTrue,
+        reason: 'the marker V-fold strokes with the same white LineColor',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(send.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverEnvelopes =
+          descendants(leftover).where(isBlackEnvelope).toList();
+      expect(leftoverEnvelopes, isNotEmpty);
+      for (final envelope in leftoverEnvelopes) {
+        expect(envelope.line.color, VsdxColor.white);
+      }
+      expect(
+        descendants(leftover).any(
+          (shape) =>
+              !shape.fill.hasFill &&
+              shape.line.hasLine &&
+              shape.line.color == VsdxColor.white,
+        ),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

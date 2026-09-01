@@ -1430,10 +1430,25 @@ class CanvasRecorder {
   // `fill` token. After fillcolor=none that token became none and
   // collectLine never saw the LineWeight sibling.
   setStrokeColor(value, forceHex) {
-    this.state.strokeColor = isNoneColor(value) ? null : value;
-    const token = (forceHex === true && !isNoneColor(value))
-      ? String(value)
-      : paintToken(value, this.styleFill, this.styleStroke);
+    let paintValue = value;
+    let force = forceHex === true;
+    // Graph.replaceDefaultColor(STYLE_FILLCOLOR, shapeBackgroundColor)
+    // runs in getCellStyle before paint. parseStyle keeps fillColor=default
+    // so inherit `fill` can recolor (AWS Cloud puffs). JS painters then
+    // setStrokeColor(STYLE_FILLCOLOR); leftover strokecolor=default
+    // decoder-inherits LineColor so BPMN Send's envelope outline is the
+    // palette (tokens.txt LineColor → svg:stroke). strokeColor=default
+    // is already hex on paintStyle, so remaining `default` is fillColor.
+    // forceHex: paintToken(#ffffff) would collapse to `fill` and copy
+    // the still-inherit canvas fill instead of white.
+    if (cssColorKey(value) === 'default') {
+      paintValue = '#ffffff';
+      force = true;
+    }
+    this.state.strokeColor = isNoneColor(paintValue) ? null : paintValue;
+    const token = (force && !isNoneColor(paintValue))
+      ? String(paintValue)
+      : paintToken(paintValue, this.styleFill, this.styleStroke);
     if (token === this._strokeToken) return;
     this._strokeToken = token;
     this._emitPaint('strokecolor', token);
