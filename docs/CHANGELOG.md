@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape STYLE_DIRECTION for
+  LibreOffice. Official `mxStencil.computeAspect` swaps sx/sy and
+  shifts origin when the host cell is north/south. leftover include-shape
+  used host-box scales only, so a 10×20 tile in an 80×40 include stayed
+  landscape and Draw collectGeometry painted the unrotated box.
+  leftover now matches NestedStencil. A second save keeps the inverse
+  box.
 - draw.io leftover mxStencil include-shape aspect=fixed for LibreOffice.
   Official `mxStencil.computeAspect` uses `min(sx,sy)` and centres when
   `aspect="fixed"` (Salesforce icons). leftover include-shape used to

@@ -12577,6 +12577,112 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape direction leftover swaps include box for LibreOffice',
+    () {
+      VsdxShape hostOf(String directionAttr) => decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" $directionAttr'
+            'strokewidth="1">'
+            '<foreground>'
+            '<include-shape name="mxgraph.test.tile" x="10" y="30" w="80" h="40"/>'
+            '</foreground>'
+            '</shape>'
+            '<shape name="tile" w="10" h="20" strokewidth="1">'
+            '<foreground>'
+            '<rect x="0" y="0" w="10" h="20"/>'
+            '<stroke/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+          );
+
+      ({double width, double height}) bbox(VsdxShape shape) {
+        var minX = double.infinity;
+        var minY = double.infinity;
+        var maxX = double.negativeInfinity;
+        var maxY = double.negativeInfinity;
+        void acc(double x, double y) {
+          minX = math.min(minX, x);
+          minY = math.min(minY, y);
+          maxX = math.max(maxX, x);
+          maxY = math.max(maxY, y);
+        }
+
+        for (final geometry in descendantGeometries(shape)) {
+          if (geometry.noLine && geometry.noFill) continue;
+          for (final command in geometry.commands) {
+            switch (command) {
+              case MoveTo(:final x, :final y):
+                acc(x, y);
+              case LineTo(:final x, :final y):
+                acc(x, y);
+              default:
+                break;
+            }
+          }
+        }
+        return (width: maxX - minX, height: maxY - minY);
+      }
+
+      const canvasScale = 1.5 / 100;
+      const includeW = 80 * canvasScale;
+      const includeH = 40 * canvasScale;
+      final east = hostOf('');
+      final south = hostOf('celldirection="south" ');
+      final eastBox = bbox(east);
+      final southBox = bbox(south);
+      expect(
+        eastBox.width,
+        closeTo(includeW, 0.02),
+        reason: 'east / omitted computeAspect is sx=w/w0, sy=h/h0',
+      );
+      expect(
+        eastBox.height,
+        closeTo(includeH, 0.02),
+        reason: '10×20 tile in 80×40 include stays landscape',
+      );
+      expect(
+        southBox.width,
+        closeTo(includeH, 0.02),
+        reason: 'computeAspect north/south swaps sx/sy; leftover is '
+            'h/w0 so Draw collectGeometry paints the portrait box',
+      );
+      expect(
+        southBox.height,
+        closeTo(includeW, 0.02),
+        reason: 'inverse sy=w/h0 maps nested height onto include width',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(south.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverBox = bbox(leftover);
+      expect(
+        leftoverBox.width,
+        closeTo(includeH, 0.02),
+        reason: 'a second save keeps the inverse box',
+      );
+      expect(
+        leftoverBox.height,
+        closeTo(includeW, 0.02),
+        reason: 'a second save keeps computeAspect north/south',
+      );
+    },
+  );
+
+  test(
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {

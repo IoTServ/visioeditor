@@ -852,6 +852,8 @@ class _DrawioXmlShapeDecoder {
       // nested Geometry in that box so Draw collectGeometry paints it.
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
+      // Host `celldirection` north/south follows computeAspect inverse
+      // (sx/sy swap + delta) so include-shape tiles match NestedStencil.
       // foreground fill/stroke disableShadow follows drawNode
       // setShadow(false) onto later siblings (tokens.txt ShdwPattern).
       // `fill` / `stroke` / cell keys (fillColor, strokeColor, fontColor)
@@ -922,37 +924,40 @@ class _DrawioXmlShapeDecoder {
     // not the host canvas width leftover copied above.
     nested._strokeWidth = nestedStrokeWidth;
     nested._strokeWidthFixed = nestedStrokeWidthFixed;
-    // mxStencil.computeAspect: aspect=fixed uses min(sx,sy) and centres
-    // in the include box. leftover used to stretch Salesforce icons
-    // (salesforce.xml aspect="fixed") when the include box is not
-    // nested w0×h0.
-    var overlayScaleX = (w / nestedW) * scaleX;
-    var overlayScaleY = (h / nestedH) * scaleY;
-    var originX = _x(x);
-    var originY = _y(y + h);
-    var rasterSx = w / nestedW;
-    var rasterSy = h / nestedH;
-    var rasterPadX = 0.0;
-    var rasterPadY = 0.0;
+    // mxStencil.computeAspect in parent stencil / canvas pixels. Nested
+    // drawShape uses the host STYLE_DIRECTION (include-shape passes the
+    // host shape). leftover used to skip north/south inverse, so a
+    // 10×20 tile in an 80×40 include stayed landscape; Draw
+    // collectGeometry painted the unrotated box.
+    var x0 = x;
+    var y0 = y;
+    var sx = w / nestedW;
+    var sy = h / nestedH;
+    final inverse = _stencilDirectionInverse;
+    if (inverse) {
+      sy = w / nestedH;
+      sx = h / nestedW;
+      final delta = (w - h) / 2;
+      x0 += delta;
+      y0 -= delta;
+    }
     if ((nestedEl.getAttribute('aspect') ?? '').trim().toLowerCase() ==
         'fixed') {
-      final s = math.min(overlayScaleX.abs(), overlayScaleY.abs());
-      overlayScaleX = s;
-      overlayScaleY = s;
-      final includeW = w * scaleX.abs();
-      final includeH = h * scaleY.abs();
-      originX = _x(x) + (includeW - nestedW * s) / 2;
-      originY = _y(y + h) + (includeH - nestedH * s) / 2;
-      rasterSx = scaleX.abs() > 1e-12 ? s / scaleX.abs() : rasterSx;
-      rasterSy = scaleY.abs() > 1e-12 ? s / scaleY.abs() : rasterSy;
-      rasterPadX = (w - nestedW * rasterSx) / 2;
-      rasterPadY = (h - nestedH * rasterSy) / 2;
+      sy = math.min(sx, sy);
+      sx = sy;
+      if (inverse) {
+        x0 += (h - nestedW * sx) / 2;
+        y0 += (w - nestedH * sy) / 2;
+      } else {
+        x0 += (w - nestedW * sx) / 2;
+        y0 += (h - nestedH * sy) / 2;
+      }
     }
     nested._initOverlayMetrics(
-      originX: originX,
-      originY: originY,
-      overlayScaleX: overlayScaleX,
-      overlayScaleY: overlayScaleY,
+      originX: _x(x0),
+      originY: _y(y0 + nestedH * sy),
+      overlayScaleX: sx * scaleX,
+      overlayScaleY: sy * scaleY,
       canvasScale: _canvasScale,
     );
     nested._paintSections();
@@ -962,12 +967,12 @@ class _DrawioXmlShapeDecoder {
     if (nested._rasterPart != null) {
       _rasterPart = nested._rasterPart;
       _rasterMime = nested._rasterMime;
-      _rasterLeft = x + rasterPadX + (nested._rasterLeft ?? 0) * rasterSx;
-      _rasterTop = y + rasterPadY + (nested._rasterTop ?? 0) * rasterSy;
+      _rasterLeft = x0 + (nested._rasterLeft ?? 0) * sx;
+      _rasterTop = y0 + (nested._rasterTop ?? 0) * sy;
       _rasterBoxW =
-          nested._rasterBoxW == null ? null : nested._rasterBoxW! * rasterSx;
+          nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
       _rasterBoxH =
-          nested._rasterBoxH == null ? null : nested._rasterBoxH! * rasterSy;
+          nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
       _rasterFlipH = nested._rasterFlipH;
       _rasterFlipV = nested._rasterFlipV;
     }
@@ -2310,6 +2315,18 @@ class _DrawioXmlShapeDecoder {
     final rotDeg = double.tryParse(element.getAttribute('cellrotation') ?? '');
     if (rotDeg == null || rotDeg.abs() < 1e-9) return 0;
     return -rotDeg * math.pi / 180;
+  }
+
+  /// mxStencil.computeAspect: STYLE_DIRECTION north/south swaps sx/sy.
+  /// leftover XML uses `celldirection` / `direction=` the same way
+  /// NestedStencil reads `shape.style.direction`.
+  bool get _stencilDirectionInverse {
+    final raw = (element.getAttribute('celldirection') ??
+            element.getAttribute('direction') ??
+            '')
+        .trim()
+        .toLowerCase();
+    return raw == 'north' || raw == 'south';
   }
 }
 
