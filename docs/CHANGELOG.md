@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Mockup Alphanumeric leftover no longer keeps a zero-length
+  Line for LibreOffice. Official sidebar sets `linkText=` empty;
+  `mxShapeMockupAlphanumeric` then `getSizeForString('')` is width 0
+  so move/line land on one point. Draw paints that `tokens.txt` Line
+  as an `svg:stroke` cap on TxtPin. The visible underline is cell
+  `fontStyle=4` / Char Style 0x4. Capture now drops the degenerate
+  stroke. A second save keeps the alphabet and Char underline.
 - draw.io Floorplan kitchen chairs now follow `direction` in LibreOffice.
   Official `mxShape.paint` calls `updateTransform` (`getShapeRotation`
   plus north/west/south) before `stencil.drawShape`. NestedStencil

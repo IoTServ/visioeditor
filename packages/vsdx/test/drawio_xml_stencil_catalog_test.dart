@@ -12875,6 +12875,93 @@ void main() {
   );
 
   test(
+    'Mockup Alphanumeric leftover has Char underline without a degenerate stroke for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool isDegenerateStroke(VsdxGeometry geometry) {
+        if (geometry.commands.length != 2) return false;
+        final start = geometry.commands.first;
+        final end = geometry.commands.last;
+        if (start is! MoveTo || end is! LineTo) return false;
+        return (start.x - end.x).abs() < 1e-6 &&
+            (start.y - end.y).abs() < 1e-6;
+      }
+
+      bool hasDegenerateStroke(VsdxShape shape) {
+        if (shape.geometries.any(isDegenerateStroke)) return true;
+        return shape.children.any(hasDegenerateStroke);
+      }
+
+      final alnum = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Mockup / Mockup Text',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Alphanumeric')
+          .build(1, 3, 3);
+      const alphabet =
+          '0-9 A B C D E F G H I J K L M N O P Q R S T U V X Y Z';
+      final run = runContaining(alnum, alphabet);
+      expect(
+        run,
+        isNotNull,
+        reason: 'sidebar cell value is the alphabet; tokens.txt Character is '
+            'collectText',
+      );
+      expect(
+        run!.charStyle.underline,
+        isTrue,
+        reason: 'fontStyle=4 is Char Style 0x4 that readCharIX maps to '
+            'style:text-underline-type',
+      );
+      expect(
+        hasDegenerateStroke(alnum),
+        isFalse,
+        reason: 'sidebar linkText= is empty so getSizeForString width is 0; '
+            'the painter move/line land on one point. tokens.txt Line is '
+            'svg:stroke; leftover must not keep that cap on TxtPin',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(alnum.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        runContaining(leftover, alphabet)!.charStyle.underline,
+        isTrue,
+        reason: 'a second save must keep Char underline',
+      );
+      expect(
+        hasDegenerateStroke(leftover),
+        isFalse,
+        reason: 'a second save must not freeze the zero-length Line',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

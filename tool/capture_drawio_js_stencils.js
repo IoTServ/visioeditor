@@ -729,6 +729,36 @@ class CanvasRecorder {
     this._setLiveMappedEllipse(p.x, p.y, sw, sh);
     this.operations.push(`<ellipse x="${number(p.x)}" y="${number(p.y)}" w="${number(sw)}" h="${number(sh)}"/>`);
   }
+  _pathExtent() {
+    const pts = [];
+    for (const ring of this._liveRings || []) {
+      if (ring) pts.push(...ring);
+    }
+    if (this._liveRing) pts.push(...this._liveRing);
+    if (!pts.length) return 0;
+    let minX = pts[0].x;
+    let maxX = pts[0].x;
+    let minY = pts[0].y;
+    let maxY = pts[0].y;
+    for (const p of pts) {
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return Math.hypot(maxX - minX, maxY - minY);
+  }
+
+  _dropOpenPath() {
+    if (!this.pathOpen) return;
+    let i = this.operations.length - 1;
+    while (i >= 0 && this.operations[i] !== '<path>') i--;
+    if (i >= 0) this.operations.splice(i);
+    this.pathOpen = false;
+    this._liveRing = [];
+    this._liveRings = [];
+  }
+
   fill() {
     if (this._paintMxGradientAlphaBands(false)) return;
     this.finishPath();
@@ -736,12 +766,25 @@ class CanvasRecorder {
     this.operations.push('<fill/>');
   }
   stroke() {
+    // Mockup Alphanumeric sidebar sets linkText= (empty). Painter
+    // getSizeForString('') is width 0, so move/line land on one point.
+    // That leftover Line sits on TxtPin and Draw paints a cap
+    // (tokens.txt Line is svg:stroke). The visible underline is cell
+    // fontStyle=4 / Char Style 0x4. Drop the degenerate stroke.
+    if (this.pathOpen && this._pathExtent() < 1e-6) {
+      this._dropOpenPath();
+      return;
+    }
     this.finishPath();
     if (isNoneColor(this.state.strokeColor)) return;
     this.operations.push('<stroke/>');
   }
   fillAndStroke() {
     if (this._paintMxGradientAlphaBands(true)) return;
+    if (this.pathOpen && this._pathExtent() < 1e-6) {
+      this._dropOpenPath();
+      return;
+    }
     this.finishPath();
     const noFill = isNoneColor(this.state.fillColor);
     const noStroke = isNoneColor(this.state.strokeColor);
