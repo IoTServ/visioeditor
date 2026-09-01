@@ -11671,6 +11671,32 @@ List<List<Offset2D>> _strokedSubpaths(VsdxGeometry geometry, VsdxShape shape) {
   return subpaths;
 }
 
+/// `true` when leftover writes RelCubBezTo / ArcTo / Ellipse rather than
+/// a LineTo polyline. Sampling those into vertices invents kinks Draw
+/// never miter-joins (`tokens.txt` RelCubBezTo → cubic stroke).
+bool _geometryHasLibvisioCurveRows(VsdxGeometry geometry) {
+  for (final command in geometry.commands) {
+    switch (command) {
+      case CubBezTo() ||
+            RelCubBezTo() ||
+            QuadBezTo() ||
+            RelQuadBezTo() ||
+            ArcTo() ||
+            RelArcTo() ||
+            EllipticalArcTo() ||
+            RelEllipticalArcTo() ||
+            EllipseCmd() ||
+            NurbsTo() ||
+            SplineStart() ||
+            SplineKnot():
+        return true;
+      default:
+        break;
+    }
+  }
+  return false;
+}
+
 bool _geometryHasInfiniteLine(VsdxGeometry geometry) {
   for (final command in geometry.commands) {
     if (command is InfiniteLineCmd) return true;
@@ -12155,6 +12181,7 @@ bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
   if (shape.line.roundingInches > 1e-12) return false;
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
+    if (_geometryHasLibvisioCurveRows(geometry)) continue;
     for (final points in _strokedSubpaths(geometry, shape)) {
       if (points.length < 3) continue;
       final closed = polylineLooksClosed(points, noFill: geometry.noFill);
@@ -12174,6 +12201,11 @@ bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
   if (shape.line.miterLimit <= 4.0 + 1e-6) return false;
   for (final geometry in shape.geometries) {
     if (geometry.noShow || geometry.noLine) continue;
+    // CubBezTo leftover is RelCubBezTo. Sampling coils / roundrects into
+    // LineTo invents kinks whose miter ratio exceeds Draw's ODF default 4,
+    // so leftover filled one ribbon blob (Electrical Transformer;
+    // tokens.txt LineColor → svg:stroke). Authored polylines still bake.
+    if (_geometryHasLibvisioCurveRows(geometry)) continue;
     for (final points in _strokedSubpaths(geometry, shape)) {
       if (points.length < 3) continue;
       final closed = polylineLooksClosed(points, noFill: geometry.noFill);

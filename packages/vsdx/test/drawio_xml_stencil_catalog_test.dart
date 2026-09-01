@@ -14285,6 +14285,77 @@ void main() {
   );
 
   test(
+    'Electrical Transformer leftover keeps RelCubBezTo coils for LibreOffice',
+    () {
+      int cubCount(VsdxShape shape) {
+        var n = 0;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is CubBezTo || command is RelCubBezTo) n++;
+          }
+        }
+        for (final child in shape.children) {
+          n += cubCount(child);
+        }
+        return n;
+      }
+
+      final xfmr = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Electrical / Electrical / Inductors',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Transformer')
+          .build(1, 3, 3);
+      expect(
+        cubCount(xfmr),
+        16,
+        reason: 'official mxShape coils are CubBezTo semicircles',
+      );
+      expect(
+        xfmr.line.hasLine,
+        isTrue,
+        reason: 'coils are <stroke/>; collectLine LinePattern is svg:stroke',
+      );
+      expect(
+        shapeNeedsLibvisioStrokeRibbon(xfmr),
+        isFalse,
+        reason: 'sampling CubBezTo coils into LineTo invented kinks whose '
+            'miter exceeded Draw\'s ODF default 4, so leftover filled one '
+            '268-point ribbon blob. RelCubBezTo is a tokens.txt row; Draw '
+            'strokes the cubic',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(xfmr.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(leftover.line.hasLine, isTrue);
+      expect(
+        cubCount(leftover),
+        16,
+        reason: 'a second save must keep RelCubBezTo coils, not a fill ribbon',
+      );
+      expect(
+        leftover.geometries.any((geometry) => geometry.noFill && !geometry.noLine),
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

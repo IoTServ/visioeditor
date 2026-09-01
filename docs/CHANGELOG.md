@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Electrical Transformer leftover keeps CubBezTo coils as
+  RelCubBezTo strokes for LibreOffice. Sampling those semicircles into
+  LineTo invented kinks whose miter ratio exceeded Draw's ODF default 4,
+  so leftover filled one ribbon blob (`tokens.txt` LineColor →
+  `svg:stroke`). Curve rows now skip the polyline miter test; Draw
+  strokes RelCubBezTo. A second save keeps the coils.
 - draw.io Electrical Capacitor 2 leftover keeps the curved plate stroke
   for LibreOffice. Official mxStencil `capacitors.xml` paints four
   `MoveTo` rails plus an `<arc>` (`<stroke/>`). leftover concatenated
