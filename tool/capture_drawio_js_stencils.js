@@ -6743,7 +6743,12 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   shape.scale = 1;
   shape.bounds = {x, y, width, height};
   shape.direction = style.direction || null;
-  shape.rotation = Number(style.rotation) || 0;
+  // Nested vertex-cells (Floorplan chairs rotation=180) still bake
+  // STYLE_ROTATION through map(). Root createVertexTemplateEntry
+  // leftover-bakes Visio Angle instead so the path stays in the XForm.
+  shape.rotation = opts.bakeStyleRotation === false
+    ? 0
+    : (Number(style.rotation) || 0);
   shape.flipH = style.flipH == 1;
   shape.flipV = style.flipV == 1;
   shape.image = style.image || null;
@@ -8536,6 +8541,17 @@ function mxVertexLabelRotation(style) {
   return Number.isFinite(rot) ? rot : 0;
 }
 
+// createVertexTemplateEntry STYLE_ROTATION leftover-bakes Visio Angle
+// (tokens.txt Angle is draw:rotate). NestedStencil.drawShape never
+// called updateTransform, so SysML Activity Partition stayed a pair of
+// horizontal lines. JS painters (Mockup Vertical Ruler) did rotate and
+// the path spilled past the 350×30 XForm. Paint unrotated local geometry
+// and emit cellrotation so collectXFormData rotates the leftover.
+function leftoverCellRotationDeg(style) {
+  const rot = Number(style && style.rotation);
+  return Number.isFinite(rot) && rot !== 0 ? rot : 0;
+}
+
 function isNoLabelStyle(style) {
   return !!(style && (style.noLabel == 1 || style.noLabel === '1' ||
     style.noLabel === true));
@@ -8652,7 +8668,7 @@ function paintCurvedTextLeftover(canvas, x, y, w, h, label, style) {
   return painted;
 }
 
-function paintTemplateLabel(entry, style, width, height, canvas, shape) {
+function paintTemplateLabel(entry, style, width, height, canvas, shape, opts) {
   const htmlOn = isHtmlCellStyle(style);
   const label = cellLabel(entry && entry.value, htmlOn);
   if (!label) return;
@@ -8665,7 +8681,12 @@ function paintTemplateLabel(entry, style, width, height, canvas, shape) {
   const align = String((style && style.align) || 'center');
   const valign = String((style && style.verticalAlign) || 'middle');
   const box = mxVertexInnerLabelBox(shape, style, 0, 0, width, height);
-  const rotation = mxVertexLabelRotation(style);
+  // Parent leftover Angle already rotates Text children. Baking the
+  // same STYLE_ROTATION into TxtAngle would double-rotate Partition
+  // Name / ruler "1" once collectXFormData applies draw:rotate.
+  const rotation = opts && opts.leftoverStyleRotation
+    ? 0
+    : mxVertexLabelRotation(style);
   if (htmlOn && paintHtmlStructuredLabel(
     canvas, box.x, box.y, box.w, box.h, label, align, valign, rotation,
   )) {
@@ -9085,6 +9106,7 @@ function renderEntry(entry) {
   let height;
   let shape = null;
   let style = null;
+  let leftoverRot = 0;
   if (entry.kind === 'vertex') {
     if (typeof entry.style !== 'string') { renderStats.noStyle++; return null; }
     style = parseStyle(entry.style, namedStyles.defaultVertex);
@@ -9106,6 +9128,7 @@ function renderEntry(entry) {
       style: entry.style,
       geometry: {x: 0, y: 0, width, height},
     };
+    leftoverRot = leftoverCellRotationDeg(style);
     if (ctor) {
       if (typeof ctor.prototype.paintVertexShape !== 'function') {
         renderStats.noPainter++;
@@ -9116,6 +9139,7 @@ function renderEntry(entry) {
       }
       shape = paintRegistered(style, width, height, canvas, 0, 0, {
         cell: labelCell,
+        bakeStyleRotation: leftoverRot === 0,
       });
     } else {
       // Sidebar templates often use shape=mxgraph.flowchart.terminator
@@ -9128,6 +9152,7 @@ function renderEntry(entry) {
           allowStencil: true,
           fallbackRect: style.rounded == 1,
           cell: labelCell,
+          bakeStyleRotation: leftoverRot === 0,
         },
       );
       if (!shape) {
@@ -9141,7 +9166,9 @@ function renderEntry(entry) {
     // createVertexTemplateEntry's 4th arg is the cell value (P&ID TI/##,
     // AWS group titles, Basic Button). paintVertexShape never draws it;
     // LibreOffice's text collector only sees Text children.
-    paintTemplateLabel(entry, style, width, height, canvas, shape);
+    paintTemplateLabel(entry, style, width, height, canvas, shape, {
+      leftoverStyleRotation: leftoverRot !== 0,
+    });
   } else if (entry.kind === 'data' && entry.data) {
     ({width, height} = entrySize(entry));
     pinCanvasInheritColors(canvas, entry, style);
@@ -9214,6 +9241,7 @@ function renderEntry(entry) {
   return {
     width,
     height,
+    rotation: leftoverRot,
     body: connections + stencilLabelBoundsXml(shape, style, width, height) +
       `<foreground>${canvas.operations.join('')}</foreground>`,
     ...entryPaintColors(entry, style),
@@ -9238,7 +9266,9 @@ for (const family of captured) {
       const name = count === 1 ? base : `${base} (${count})`;
       const fillAttr = rendered.fill ? ` fill="${xmlEscape(rendered.fill)}"` : '';
       const strokeAttr = rendered.stroke ? ` stroke="${xmlEscape(rendered.stroke)}"` : '';
-      shapes.push(`<shape aspect="variable" h="${number(rendered.height)}" name="${xmlEscape(name)}" strokewidth="inherit" w="${number(rendered.width)}"${fillAttr}${strokeAttr}>${rendered.body}</shape>`);
+      const rot = Number(rendered.rotation) || 0;
+      const rotAttr = rot !== 0 ? ` cellrotation="${number(rot)}"` : '';
+      shapes.push(`<shape aspect="variable" h="${number(rendered.height)}" name="${xmlEscape(name)}" strokewidth="inherit" w="${number(rendered.width)}"${fillAttr}${strokeAttr}${rotAttr}>${rendered.body}</shape>`);
       renderedEntries++;
     }
     if (shapes.length) {

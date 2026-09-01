@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io STYLE_ROTATION now leftover-bakes Visio Angle for LibreOffice.
+  Official sidebar Vertical Ruler and SysML Activity Partition set
+  `rotation=-90`. NestedStencil never called `updateTransform`, so
+  leftover geometry stayed unrotated, while JS painters canvas-rotated
+  a 350×30 path past the XForm (`tokens.txt` Angle is `draw:rotate`).
+  Capture now paints local geometry and leftover-bakes `Angle`. A
+  second save keeps it.
 - draw.io UML 2.5 Constraint now keeps `<<keyword>>` in LibreOffice.
   Official sidebar authors the stereotype as html=0 raw `<<keyword>>`.
   Catalog `cellLabel` stripped `<[^>]+>` so leftover Character was `>`

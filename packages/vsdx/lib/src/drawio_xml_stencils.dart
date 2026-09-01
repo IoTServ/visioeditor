@@ -429,6 +429,7 @@ class _DrawioXmlShapeDecoder {
       pinY: cy,
       width: targetWidth,
       height: targetHeight,
+      angleRad: _stencilCellRotationRad(),
       geometries: List<VsdxGeometry>.unmodifiable(_geometries),
       connectionPoints: _connectionPoints(),
       children: children,
@@ -1779,6 +1780,14 @@ class _DrawioXmlShapeDecoder {
 
   double _x(double source) => source * scaleX;
   double _y(double source) => (sourceHeight - source) * scaleY;
+
+  /// Capture `cellrotation` is mxGraph STYLE_ROTATION degrees. Visio
+  /// Angle / libvisio collectXFormData is CCW radians (`draw:rotate`).
+  double _stencilCellRotationRad() {
+    final rotDeg = double.tryParse(element.getAttribute('cellrotation') ?? '');
+    if (rotDeg == null || rotDeg.abs() < 1e-9) return 0;
+    return -rotDeg * math.pi / 180;
+  }
 }
 
 class _DrawioStencilLabel {

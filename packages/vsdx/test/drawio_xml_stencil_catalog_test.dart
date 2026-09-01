@@ -2973,15 +2973,22 @@ void main() {
       final partitionGlyph = glyphShape(partition, 'Partition Name');
       expect(partitionGlyph, isNotNull);
       expect(
-        partitionGlyph!.richText.textBlock.angleRad,
+        partition.angleRad,
         closeTo(3.141592653589793 / 2, 0.05),
         reason:
-            'rotation=-90 must reach TxtAngle that librevenge:rotate paints',
+            'rotation=-90 leftover-bakes Visio Angle that collectXFormData '
+            'maps to draw:rotate; NestedStencil never called updateTransform',
+      );
+      expect(
+        partitionGlyph!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'parent Angle already rotates Text children; TxtAngle '
+            'would double-rotate Partition Name',
       );
       expect(
         partitionGlyph.richText.textBlock.textDirection,
         0,
-        reason: 'STYLE_ROTATION is TxtAngle, not TextDirection=1',
+        reason: 'STYLE_ROTATION is Angle, not TextDirection=1',
       );
 
       final button = dynamic
@@ -2994,6 +3001,7 @@ void main() {
         lessThan(0.01),
         reason: 'unrotated cell labels stay TxtAngle 0',
       );
+      expect(button.angleRad.abs(), lessThan(0.01));
 
       final cabinet = dynamic
           .singleWhere(
@@ -3039,9 +3047,9 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        glyphShape(leftover, 'Partition Name')!.richText.textBlock.angleRad,
+        leftover.angleRad,
         closeTo(3.141592653589793 / 2, 0.05),
-        reason: 'a second save must keep TxtAngle',
+        reason: 'a second save must keep Visio Angle',
       );
     },
   );
@@ -12561,6 +12569,88 @@ void main() {
         allText(leftover),
         contains('<<keyword>>'),
         reason: 'a second save must keep the <<keyword>> Character run',
+      );
+    },
+  );
+
+  test(
+    'mxGraph STYLE_ROTATION leftover-bakes Visio Angle for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      double geoMaxY(VsdxShape shape) {
+        var maxY = 0.0;
+        for (final child in descendants(shape)) {
+          for (final geo in child.geometries) {
+            for (final command in geo.commands) {
+              switch (command) {
+                case MoveTo(:final y):
+                  if (y > maxY) maxY = y;
+                case LineTo(:final y):
+                  if (y > maxY) maxY = y;
+                default:
+                  break;
+              }
+            }
+          }
+        }
+        return maxY;
+      }
+
+      final ruler = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Mockup / Mockup Misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Vertical Ruler')
+          .build(1, 3, 3);
+      expect(
+        ruler.angleRad,
+        closeTo(3.141592653589793 / 2, 0.05),
+        reason: 'sidebar rotation=-90 leftover-bakes collectXFormData Angle '
+            '(tokens.txt Angle is draw:rotate)',
+      );
+      expect(
+        geoMaxY(ruler),
+        lessThan(ruler.height + 0.05),
+        reason: 'JS painters used to canvas-rotate into a 350×30 XForm so '
+            'ticks spilled to Y≈1.58; unrotated local geometry stays in box',
+      );
+      expect(
+        descendants(ruler).map((shape) => shape.text).toList(),
+        containsAll(<String>['2', '3', '1']),
+        reason: 'ruler2 ticks stay Character; parent Angle stands them up',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(ruler.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.angleRad,
+        closeTo(3.141592653589793 / 2, 0.05),
+        reason: 'a second save must keep Visio Angle',
+      );
+      expect(
+        descendants(leftover).map((shape) => shape.text).toList(),
+        containsAll(<String>['2', '3', '1']),
+        reason: 'a second save must keep the unit-tick Character runs',
       );
     },
   );
