@@ -151,6 +151,16 @@ function xmlEscape(value) {
     .replaceAll('\n', '&#10;');
 }
 
+// leftover trimXmlWhitespace only strips whole-string U+0020/09/0A/0D.
+// Draw ODF still drops a U+0020 at the start of a text:p, so SysML
+// Object Node `mxCell('...\n type name\n...')` loses the indent.
+// Bake line-edge ASCII spaces as U+00A0 like Chevron / Range input.
+function bakeLineEdgeAsciiSpaces(str) {
+  return String(str)
+    .replace(/(^|\n)( +)/g, (_, brk, sp) => brk + '\u00a0'.repeat(sp.length))
+    .replace(/( +)(\n|$)/g, (_, sp, brk) => '\u00a0'.repeat(sp.length) + brk);
+}
+
 // HTML elements mxText foreignObject paints. UML `<<keyword>>` is a
 // stereotype (UML 2.5 Constraint html=0), not a tag; `<keyword>` is
 // not an HTML element. tokens.txt Character is collectText.
@@ -938,19 +948,15 @@ class CanvasRecorder {
       }
     }
     // leftover trimXmlWhitespace also drops U+0020. Official Sidebar
-    // `mxCell('Example range ')` (Bootstrap Range input (2)) and
-    // `mxCell('Home ')` (Tabs with description) lose that Character
-    // space on save; collectText (tokens.txt Character) is fo:content.
-    // Bake trailing / leading ASCII spaces as U+00A0 like Chevron.
-    if (s.charAt(0) === ' ' || s.charAt(s.length - 1) === ' ') {
-      s = s.replace(/^ +/, (m) => '\u00a0'.repeat(m.length))
-        .replace(/ +$/, (m) => '\u00a0'.repeat(m.length));
-      if (htmlRuns && htmlRuns.length) {
-        htmlRuns[0].str = String(htmlRuns[0].str)
-          .replace(/^ +/, (m) => '\u00a0'.repeat(m.length));
-        const last = htmlRuns[htmlRuns.length - 1];
-        last.str = String(last.str)
-          .replace(/ +$/, (m) => '\u00a0'.repeat(m.length));
+    // `mxCell('Example range ')` (Bootstrap Range input (2)),
+    // `mxCell('Home ')` (Tabs with description), and SysML Object Node
+    // `'\n type name'` (space after a newline) lose that Character
+    // on save; collectText (tokens.txt Character) is fo:content.
+    // Bake line-edge ASCII spaces as U+00A0 like Chevron.
+    s = bakeLineEdgeAsciiSpaces(s);
+    if (htmlRuns && htmlRuns.length) {
+      for (const run of htmlRuns) {
+        run.str = bakeLineEdgeAsciiSpaces(run.str);
       }
     }
     const attrs = [

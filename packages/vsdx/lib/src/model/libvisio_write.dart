@@ -400,7 +400,10 @@
 /// that gap over ~0.25 em (same Size as the body) and writes Letterspace
 /// 0, so Draw keeps the extra advance without stretching glyphs. Negative
 /// tracking still folds into FontScale with 0.55×Size — spacers cannot
-/// condense. Page `PageColor` is not a token either
+/// condense. ASCII U+0020 at line edges (after `\n`, or before `\n` /
+/// the string ends) is rewritten to U+00A0 so Draw's `text:p` keeps
+/// SysML Object Node indents; leftover `trimXmlWhitespace` only strips
+/// whole-string edges. Page `PageColor` is not a token either
 /// (`readPageSheetProperties` only stores size, scale, and ShdwOffset*) —
 /// a save prepends a locked full-page plate so Draw paints the sheet.
 /// `Reflection*` cells are likewise missing from `tokens.txt`, so a filled
@@ -907,9 +910,10 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                             bakeDefaultTabStopForLibvisioWrite(
                                               bakeHorzAlignFullForLibvisioWrite(
                                                 bakeLetterspaceForLibvisioWrite(
-                                                  bakeMixedScriptFontForLibvisioWrite(
-                                                    bakeLangIdRtlForLibvisioWrite(
-                                                      bakeDoubleStrikethroughForLibvisioWrite(
+                                                  bakeLineEdgeSpacesForLibvisioWrite(
+                                                    bakeMixedScriptFontForLibvisioWrite(
+                                                      bakeLangIdRtlForLibvisioWrite(
+                                                        bakeDoubleStrikethroughForLibvisioWrite(
                                                         bakeOverlineForLibvisioWrite(
                                                           bakeMixedHighlightForLibvisioWrite(
                                                             bakeLooseEdgeLabelForLibvisioWrite(
@@ -929,6 +933,7 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                                             ),
                                                           ),
                                                         ),
+                                                      ),
                                                       ),
                                                     ),
                                                   ),
@@ -6610,6 +6615,104 @@ VsdxShape bakeLetterspaceShapeForLibvisioWrite(VsdxShape shape) {
     next = next.copyWith(children: children);
   }
   return next;
+}
+
+/// Rewrite ASCII U+0020 at line edges to U+00A0.
+///
+/// leftover `trimXmlWhitespace` only strips whole-string U+0020/09/0A/0D.
+/// Draw ODF still drops a U+0020 at the start of a `text:p`, so SysML
+/// Object Node `'\n type name'` loses the indent while canvas / SVG
+/// paint that space. Capture bakes the same Character as Chevron /
+/// Range input; a save does too so user-authored `\n ` survives Draw.
+String textForLibvisioWrite(String text) {
+  if (text.isEmpty || !text.contains(' ')) return text;
+  return text
+      .replaceAllMapped(
+        RegExp(r'(^|\n)( +)'),
+        (match) => '${match[1]}${'\u00a0' * match[2]!.length}',
+      )
+      .replaceAllMapped(
+        RegExp(r'( +)(\n|$)'),
+        (match) => '${'\u00a0' * match[1]!.length}${match[2]}',
+      );
+}
+
+bool shapeNeedsLibvisioLineEdgeSpaceBake(VsdxShape shape) {
+  if (shape.text != null &&
+      textForLibvisioWrite(shape.text!) != shape.text) {
+    return true;
+  }
+  for (final run in shape.richText.runs) {
+    if (textForLibvisioWrite(run.text) != run.text) return true;
+  }
+  return false;
+}
+
+VsdxShape bakeLineEdgeSpaceShapeForLibvisioWrite(VsdxShape shape) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      bakeLineEdgeSpaceShapeForLibvisioWrite(child),
+  ];
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  var next = shape;
+  if (shapeNeedsLibvisioLineEdgeSpaceBake(shape)) {
+    if (shape.richText.runs.isNotEmpty) {
+      final runs = <VsdxTextRun>[
+        for (final run in shape.richText.runs)
+          run.copyWith(text: textForLibvisioWrite(run.text)),
+      ];
+      next = shape.copyWith(
+        text: shape.text == null
+            ? null
+            : VsdxRichText(runs: runs, textBlock: shape.richText.textBlock)
+                .plainText,
+        richText: shape.richText.copyWith(runs: runs),
+      );
+    } else if (shape.text != null) {
+      next = shape.copyWith(text: textForLibvisioWrite(shape.text!));
+    }
+  }
+  if (childrenChanged) {
+    next = next.copyWith(children: children);
+  }
+  return next;
+}
+
+/// Bake line-edge ASCII spaces so Draw keeps Character indents.
+VsdxDocument bakeLineEdgeSpacesForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    final shapes = <VsdxShape>[
+      for (final shape in page.shapes)
+        bakeLineEdgeSpaceShapeForLibvisioWrite(shape),
+    ];
+    var same = shapes.length == page.shapes.length;
+    if (same) {
+      for (var i = 0; i < shapes.length; i++) {
+        if (!identical(shapes[i], page.shapes[i])) {
+          same = false;
+          break;
+        }
+      }
+    }
+    if (same) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  return pagesChanged ? document.copyWith(pages: pages) : document;
 }
 
 /// Insert NBSP spacers so Draw keeps Character Letterspace tracking.

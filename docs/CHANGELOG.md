@@ -583,6 +583,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SysML Object Node leftover keeps an inner-line Character space
+  for LibreOffice. Official Sidebar
+  `mxCell('object node name:\n type name\n[state, state ...]')` indents
+  the type with U+0020 after a newline. leftover `trimXmlWhitespace`
+  keeps that, but Draw ODF drops a `text:p` leading space so
+  `collectText` (`tokens.txt` Character) lost the indent. Capture and
+  leftover write now leftover-bake U+00A0 like Chevron / Range input /
+  Use Case. A second save keeps the shift.
 - draw.io P&ID Basket Reel leftover keeps the dashed CubBezTo strainer
   mesh as strokes for LibreOffice. leftover flattened `veDashPattern`
   into CubBezTo-sampled LineTo dashes, then a miter above Draw's ODF

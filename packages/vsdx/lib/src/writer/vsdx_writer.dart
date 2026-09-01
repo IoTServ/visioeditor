@@ -5898,7 +5898,7 @@ class VsdxWriter {
 
   /// Emit one rich-text run: tabs → `<tp/>` + U+0009, fields → `<fld IX>`.
   void _appendRunText(List<XmlNode> out, VsdxTextRun run) {
-    final text = run.text;
+    final text = textForLibvisioWrite(run.text);
     final spans = [...run.fieldSpans]
       ..sort((a, b) => a.start.compareTo(b.start));
     var i = 0;

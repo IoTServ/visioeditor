@@ -14456,6 +14456,77 @@ void main() {
   );
 
   test(
+    'SysML Object Node leftover keeps inner-line Character nbsp for LibreOffice',
+    () {
+      const nbsp = '\u00a0';
+
+      VsdxShape? objectLabel(VsdxShape shape) {
+        final t = shape.text ?? '';
+        if (t.contains('object node name')) return shape;
+        for (final child in shape.children) {
+          final nested = objectLabel(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final node = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Sysml / SysML / Activities',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Object Node')
+          .build(1, 3, 3);
+      final inMemory = objectLabel(node)!;
+      expect(
+        inMemory.text,
+        equals('object node name:\n${nbsp}type name\n[state, state ...]'),
+        reason: 'Sidebar mxCell(\'object node name:\\n type name\\n[state, '
+            'state ...]\') with html=1. leftover trimXmlWhitespace keeps '
+            'inner U+0020 but Draw ODF drops a text:p leading space so '
+            'collectText (tokens.txt Character) lost the indent. Capture '
+            'leftover-bakes U+00A0 like Chevron / Range input / Use Case',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(node.copyWith(id: id)),
+      );
+      final leftoverBytes = writer.write(
+        originalBytes: writer.emptyDocument(),
+        edited: doc,
+      );
+      final leftoverDoc = parser.parse(leftoverBytes);
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        objectLabel(leftover)!.text,
+        equals('object node name:\n${nbsp}type name\n[state, state ...]'),
+        reason: 'a second save must keep the inner-line Character U+00A0',
+      );
+
+      final twice = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: leftoverDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        objectLabel(twice)!.text,
+        equals('object node name:\n${nbsp}type name\n[state, state ...]'),
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
