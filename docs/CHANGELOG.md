@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io General isometric / elbow / orthogonal edge leftovers keep their
+  routed polylines for LibreOffice. Sidebar `isometricEdgeStyle`,
+  `elbowEdgeStyle` and `orthogonalEdgeStyle` go through
+  `mxGraphView.updatePoints` → `mxStyleRegistry` (`tokens.txt`
+  RelLineTo / RelQuadBezTo → `svg:d`). Capture's `mxEdgeStyle` Proxy
+  swallowed `IsometricConnector` and never applied the router, so Draw
+  collected the template-box diagonal. Capture now loads official
+  `mxEdgeStyle.js` / `mxStyleRegistry.js` and leftover-bakes the zigzag.
+  A second save keeps the route.
 - draw.io General Isometric Square leftover keeps the 30° diamond for
   LibreOffice. Official `IsoRectangleShape` uses
   `tan(mxUtils.toRadians(30))`. Capture's `mxUtils` Proxy returned

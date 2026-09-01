@@ -5584,6 +5584,21 @@ mxRectangle.fromRectangle = function(rect) {
 mxRectangle.prototype.clone = function() {
   return mxRectangle.fromRectangle(this);
 };
+// mxRectangle.js getCenterX/Y / setRect. Official mxCellState extends
+// mxRectangle so mxEdgeStyle.OrthConnector / SideToSide can call
+// getRoutingCenter* on 1×1 terminal boxes leftover-baked as RelLineTo.
+mxRectangle.prototype.getCenterX = function() {
+  return this.x + this.width / 2;
+};
+mxRectangle.prototype.getCenterY = function() {
+  return this.y + this.height / 2;
+};
+mxRectangle.prototype.setRect = function(x, y, w, h) {
+  this.x = x;
+  this.y = y;
+  this.width = w;
+  this.height = h;
+};
 mxRectangle.prototype.add = function(rect) {
   if (rect == null) return;
   const minX = Math.min(this.x, rect.x);
@@ -6109,11 +6124,25 @@ const mxUtilsBase = {
   parseColorList(value) {
     return String(value || '').split(/[\s,]+/).filter(Boolean);
   },
-  clone(value) { return {...value}; },
+  clone(value) {
+    if (value && typeof value.clone === 'function') return value.clone();
+    return {...value};
+  },
   bind(scope, fn) { return fn.bind(scope); },
   isNode() { return false; },
   indexOf(arr, item) { return arr.indexOf(item); },
   mod(n, m) { return ((n % m) + m) % m; },
+  // mxUtils.js contains. SideToSide / TopToBottom skip a waypoint that
+  // already sits inside a 0×0 terminal box so leftover collectGeometry
+  // does not collapse the elbow onto the start RelMoveTo.
+  contains(bounds, x, y) {
+    if (bounds == null) return false;
+    return bounds.x <= x && bounds.x + bounds.width >= x &&
+      bounds.y <= y && bounds.y + bounds.height >= y;
+  },
+  getPortConstraints(terminal, edge, source, defaultValue) {
+    return defaultValue;
+  },
   // mxUtils.js toRadians / toDegree. The Proxy fallback is () => null, so
   // Math.tan(mxUtils.toRadians(30)) was tan(0). IsoRectangleShape then
   // painted a collapsed horizontal line (all Y = 0.25 m) instead of the
@@ -6264,8 +6293,27 @@ const shapeContext = {
   console,
   mxEvent: {addListener() {}, removeListener() {}, consume() {}, addGestureListeners() {}},
   mxPerimeter: new Proxy({}, {get: () => function() { return null; }}),
-  mxEdgeStyle: new Proxy({}, {get: () => function() {}}),
-  mxStyleRegistry: {putValue() {}, getValue() { return null; }},
+  // Real object (Proxy get must fall through). A swallow-all Proxy made
+  // Shapes.js `mxEdgeStyle.IsometricConnector = …` invisible, so
+  // isometric / elbow / orthogonal templates painted a diagonal
+  // LineTo leftover collectGeometry mapped to svg:d.
+  mxEdgeStyle: new Proxy({}, {
+    get(target, prop) {
+      if (prop in target) return target[prop];
+      return undefined;
+    },
+  }),
+  mxStyleRegistry: {
+    values: Object.create(null),
+    putValue(name, obj) { this.values[name] = obj; },
+    getValue(name) { return this.values[name]; },
+    getName(value) {
+      for (const key of Object.keys(this.values)) {
+        if (this.values[key] === value) return key;
+      }
+      return null;
+    },
+  },
   mxResources: {get: (key) => String(key)},
   mxObjectIdentity: {get: (obj) => String(obj)},
   mxGraph: function() {},
@@ -6349,6 +6397,23 @@ loadJs('mxgraph/src/shape/mxMarker.js', path.join(webapp, 'mxgraph/src/shape/mxM
 // never reached VisioDocument::parse.
 loadOfficialCtor('mxPolyline.js', 'mxPolyline');
 loadOfficialCtor('mxConnector.js', 'mxConnector');
+// Official mxGraphView.updatePoints looks up STYLE_EDGE in
+// mxStyleRegistry (elbow / orthogonal / segment / entity relation).
+// Shapes.js then putValue('isometricEdgeStyle', IsometricConnector).
+// Capture never applied those functions, so leftover Geometry was a
+// single RelLineTo and Draw collected a diagonal instead of the route.
+loadJs(
+  'mxgraph/src/view/mxCellState.js',
+  path.join(webapp, 'mxgraph/src/view/mxCellState.js'),
+);
+loadJs(
+  'mxgraph/src/view/mxEdgeStyle.js',
+  path.join(webapp, 'mxgraph/src/view/mxEdgeStyle.js'),
+);
+loadJs(
+  'mxgraph/src/view/mxStyleRegistry.js',
+  path.join(webapp, 'mxgraph/src/view/mxStyleRegistry.js'),
+);
 // Official mxDoubleEllipse.getLabelBounds insets STYLE_MARGIN (ER
 // Multivalue Attribute margin=3). The capture stub only painted the
 // inner ellipse, so leftover TxtWidth stayed the outer 100×40 cell
@@ -9209,6 +9274,90 @@ function edgeWaypointOrigin(x, y, cell) {
   return cell && cell.parent ? {x, y} : {x: 0, y: 0};
 }
 
+// mxGraphView.getRoutingCenterX/Y + transformControlPoint. Template
+// edges have no source/target cell states, so isometric / elbow /
+// orthogonal routers use 1×1 boxes at the terminals (same as Draw's
+// leftover RelLineTo when there is no glue).
+function edgeStyleView() {
+  return {
+    scale: 1,
+    graph: {
+      gridSize: 10,
+      getCellGeometry() { return null; },
+    },
+    transformControlPoint(state, pt) {
+      if (pt == null) return null;
+      return new mxPoint(pt.x, pt.y);
+    },
+    getRoutingCenterX(state) {
+      if (state == null) return 0;
+      const f = state.style != null
+        ? parseFloat(state.style[mxConstants.STYLE_ROUTING_CENTER_X]) || 0
+        : 0;
+      const cx = typeof state.getCenterX === 'function'
+        ? state.getCenterX()
+        : state.x + (Number(state.width) || 0) / 2;
+      return cx + f * (Number(state.width) || 0);
+    },
+    getRoutingCenterY(state) {
+      if (state == null) return 0;
+      const f = state.style != null
+        ? parseFloat(state.style[mxConstants.STYLE_ROUTING_CENTER_Y]) || 0
+        : 0;
+      const cy = typeof state.getCenterY === 'function'
+        ? state.getCenterY()
+        : state.y + (Number(state.height) || 0) / 2;
+      return cy + f * (Number(state.height) || 0);
+    },
+  };
+}
+
+// mxGraphView.updatePoints: result starts with the source terminal, the
+// STYLE_EDGE function appends waypoints, then the target terminal is
+// pushed. leftover collectGeometry (tokens.txt RelLineTo → svg:d) must
+// see that polyline, not the template-box diagonal.
+function applyRegisteredEdgeStyle(style, pts) {
+  if (!pts || pts.length < 2) return pts;
+  const name = style && style.edgeStyle;
+  if (name == null || name === '' || name === 'none' ||
+      style.noEdgeStyle == 1 || style.noEdgeStyle === '1') {
+    return pts;
+  }
+  const fn = typeof name === 'function'
+    ? name
+    : (shapeContext.mxStyleRegistry &&
+       typeof shapeContext.mxStyleRegistry.getValue === 'function' &&
+       shapeContext.mxStyleRegistry.getValue(name));
+  if (typeof fn !== 'function') return pts;
+  const start = pts[0];
+  const end = pts[pts.length - 1];
+  const hints = pts.length > 2
+    ? pts.slice(1, -1).map((pt) => new mxPoint(pt.x, pt.y))
+    : null;
+  const state = {
+    style,
+    view: edgeStyleView(),
+    absolutePoints: [new mxPoint(start.x, start.y), new mxPoint(end.x, end.y)],
+  };
+  const result = [new mxPoint(start.x, start.y)];
+  try {
+    fn(state, null, null, hints, result);
+  } catch (error) {
+    return pts;
+  }
+  result.push(new mxPoint(end.x, end.y));
+  const cleaned = [];
+  for (const pt of result) {
+    if (pt == null) continue;
+    const prev = cleaned[cleaned.length - 1];
+    if (prev && Math.abs(prev.x - pt.x) < 1e-6 && Math.abs(prev.y - pt.y) < 1e-6) {
+      continue;
+    }
+    cleaned.push(mxPts(pt.x, pt.y));
+  }
+  return cleaned.length >= 2 ? cleaned : pts;
+}
+
 // Official mxGraph edges with target="id" connect to that vertex, not to
 // the template's (width, height/2) corner. Relative geometry has no
 // width/height, so the old fallback baked a diagonal leftover Line
@@ -9256,7 +9405,7 @@ function edgePoints(style, width, height, x, y, geometry, cell) {
     pts.push(mxPts(origin.x + p.x, origin.y + p.y));
   }
   pts.push(mxPts(ex, ey));
-  return pts;
+  return applyRegisteredEdgeStyle(style, pts);
 }
 
 function vertexPaintIsVisible(style) {

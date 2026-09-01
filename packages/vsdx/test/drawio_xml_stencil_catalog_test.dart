@@ -14661,6 +14661,171 @@ void main() {
   );
 
   test(
+    'isometricEdgeStyle leftover keeps the 30° zigzag for LibreOffice',
+    () {
+      Stencil stencil(String name) => dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      VsdxShape leftoverOf(VsdxShape root) {
+        const writer = VsdxWriter();
+        const parser = DocumentParser();
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(root.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      List<Object> pathCommands(VsdxShape shape) => [
+            for (final geometry in descendantGeometries(shape))
+              ...geometry.commands,
+          ];
+
+      bool hasIsometricBend(VsdxShape shape) {
+        final commands = pathCommands(shape);
+        if (commands.length <= 2) return false;
+        return commands.any(
+          (command) => command is QuadBezTo || command is RelQuadBezTo,
+        );
+      }
+
+      final edge1 = stencil('Isometric Edge 1').build(1, 3, 3);
+      final edge2 = stencil('Isometric Edge 2').build(2, 3, 3);
+      expect(
+        hasIsometricBend(edge1),
+        isTrue,
+        reason: 'Sidebar isometricEdgeStyle uses mxEdgeStyle.IsometricConnector '
+            'rotated by toRadians(-30). Capture used to paint the 50×100 '
+            'template as one RelLineTo diagonal; leftover collectGeometry '
+            'must keep the 30° zigzag Draw paints as svg:d',
+      );
+      expect(
+        hasIsometricBend(edge2),
+        isTrue,
+        reason: 'elbow=vertical flips the isoH/isoV order so Edge 2 is not '
+            'the same polyline as Edge 1',
+      );
+      expect(
+        pathCommands(edge1).toString(),
+        isNot(equals(pathCommands(edge2).toString())),
+        reason: 'horizontal vs vertical isometric elbows must differ',
+      );
+
+      final leftover1 = leftoverOf(edge1);
+      final leftover2 = leftoverOf(edge2);
+      expect(
+        hasIsometricBend(leftover1),
+        isTrue,
+        reason: 'a second save must keep the isometric RelQuadBezTo zig',
+      );
+      expect(
+        hasIsometricBend(leftover2),
+        isTrue,
+        reason: 'a second save must keep the vertical isometric zig',
+      );
+    },
+  );
+
+  test(
+    'elbowEdgeStyle leftover keeps horizontal vs vertical elbows for LibreOffice',
+    () {
+      Stencil stencil(String name) => dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / General / misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == name);
+
+      VsdxShape leftoverOf(VsdxShape root) {
+        const writer = VsdxWriter();
+        const parser = DocumentParser();
+        var doc = parser.parse(writer.emptyDocument());
+        final id = doc.pages.first.nextFreeShapeId();
+        doc = doc.replacePage(
+          0,
+          doc.pages.first.addShape(root.copyWith(id: id)),
+        );
+        return parser
+            .parse(
+              writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            )
+            .pages
+            .first
+            .findShapeById(id)!;
+      }
+
+      LineTo? firstLine(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands) {
+            if (command is LineTo) return command;
+          }
+        }
+        return null;
+      }
+
+      final horizontal = stencil('Horizontal Elbow').build(1, 3, 3);
+      final vertical = stencil('Vertical Elbow').build(2, 3, 3);
+      final filled = stencil('Filled Edge').build(3, 3, 3);
+      final hFirst = firstLine(horizontal)!;
+      final vFirst = firstLine(vertical)!;
+      expect(
+        descendantGeometries(horizontal).first.commands.length,
+        greaterThan(2),
+        reason: 'Sidebar elbowEdgeStyle=horizontal is mxEdgeStyle.SideToSide; '
+            'leftover collectGeometry RelLineTo must keep the elbow, not the '
+            'template-box diagonal Draw collected as svg:d',
+      );
+      expect(
+        hFirst.y,
+        closeTo(0, 0.05),
+        reason: 'horizontal elbow first leaves along X',
+      );
+      expect(
+        vFirst.x,
+        closeTo(0, 0.05),
+        reason: 'vertical elbow first leaves along Y',
+      );
+      expect(
+        descendantGeometries(filled).first.commands.length,
+        greaterThan(2),
+        reason: 'Filled Edge orthogonalEdgeStyle leftover is a 3-segment '
+            'RelLineTo so Draw can stroke the inner fill band',
+      );
+
+      final leftoverH = leftoverOf(horizontal);
+      final leftoverV = leftoverOf(vertical);
+      final leftoverF = leftoverOf(filled);
+      expect(
+        firstLine(leftoverH)!.y,
+        closeTo(0, 0.05),
+        reason: 'a second save must keep the horizontal elbow',
+      );
+      expect(
+        firstLine(leftoverV)!.x,
+        closeTo(0, 0.05),
+        reason: 'a second save must keep the vertical elbow',
+      );
+      expect(
+        descendantGeometries(leftoverF).first.commands.length,
+        greaterThan(2),
+        reason: 'a second save must keep the orthogonal RelLineTo',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
