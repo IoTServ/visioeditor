@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape strokewidth inherit for
+  LibreOffice. Official `mxStencil.drawShape` maps `inherit` to the host
+  cell `STYLE_STROKEWIDTH` (default 1) in graph pixels, not nested
+  `minScale`. leftover used to restore a null width after include-shape
+  `_adoptPaint` and bake Visio's 0.01" default, so Draw collectLine
+  missed 1×catalog-scale hairlines (`tokens.txt` LineWeight; weblogos).
+  leftover now keeps 1 canvas pixel like NestedStencil. A second save
+  keeps LineWeight.
 - draw.io leftover mxStencil text align-shape FlipX/Y for LibreOffice.
   Official `mxStencil.drawNode` `align-shape="0"` subtracts
   `shape.rotation` from canvas.text, or adds it when exactly one of

@@ -859,6 +859,8 @@ class _DrawioXmlShapeDecoder {
       // nested Geometry in that box so Draw collectGeometry paints it.
       // Nested `<text>` is remapped into host stencil space so TxtPin /
       // Char size follow nested minScale (not the catalog 1.5" scale).
+      // Nested `strokewidth="inherit"` follows drawShape (host cell
+      // STYLE_STROKEWIDTH, default 1 canvas pixel, not nested minScale).
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -930,9 +932,18 @@ class _DrawioXmlShapeDecoder {
     final nestedStrokeWidthFixed = nested._strokeWidthFixed;
     nested._adoptPaint(this);
     // mxStencil.drawShape setStrokeWidth from the nested stencil attr,
-    // not the host canvas width leftover copied above.
-    nested._strokeWidth = nestedStrokeWidth;
-    nested._strokeWidthFixed = nestedStrokeWidthFixed;
+    // not the host canvas width leftover copied above. inherit uses
+    // the host cell STYLE_STROKEWIDTH (default 1) in canvas pixels —
+    // NestedStencil does not multiply by nested minScale. leftover
+    // used to restore null and bake Visio's 0.01" default, so Draw
+    // collectLine missed 1×catalog-scale hairlines (weblogos inherit).
+    if (nestedStrokeWidth == null) {
+      nested._strokeWidth = 1;
+      nested._strokeWidthFixed = true;
+    } else {
+      nested._strokeWidth = nestedStrokeWidth;
+      nested._strokeWidthFixed = nestedStrokeWidthFixed;
+    }
     // mxStencil.computeAspect in parent stencil / canvas pixels. Nested
     // drawShape uses the host STYLE_DIRECTION (include-shape passes the
     // host shape). leftover used to skip north/south inverse, so a

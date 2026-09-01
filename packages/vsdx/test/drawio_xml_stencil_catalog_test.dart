@@ -12469,6 +12469,80 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape inherit leftover keeps canvas-pixel LineWeight for LibreOffice',
+    () {
+      VsdxShape hostOf(String nestedAttr) => decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" strokewidth="1">'
+            '<foreground>'
+            '<include-shape name="mxgraph.test.dot" x="10" y="10" w="80" h="80"/>'
+            '</foreground>'
+            '</shape>'
+            '<shape name="dot" w="10" h="10" $nestedAttr>'
+            '<foreground>'
+            '<ellipse x="0" y="0" w="10" h="10"/>'
+            '<stroke/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+          );
+
+      double lineWeight(VsdxShape shape) {
+        var best = 0.0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            best = math.max(best, next.line.weightInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return best;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const nestedMinScale = (80 / 10) * canvasScale;
+      final inherit = hostOf('strokewidth="inherit"');
+      final numeric = hostOf('strokewidth="1"');
+      expect(
+        lineWeight(inherit),
+        closeTo(canvasScale, 1e-6),
+        reason: 'mxStencil.drawShape inherit is STYLE_STROKEWIDTH (default 1) '
+            'in canvas pixels, not nested minScale. leftover must not bake '
+            'Visio 0.01" or 8× fatten the weblogos hairline',
+      );
+      expect(
+        lineWeight(numeric),
+        closeTo(nestedMinScale, 1e-6),
+        reason: 'numeric nested strokewidth still uses nested minScale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(inherit.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        lineWeight(leftover),
+        closeTo(canvasScale, 1e-6),
+        reason: 'a second save keeps inherit LineWeight',
+      );
+    },
+  );
+
+  test(
     'mxStencil foreground disableShadow leftover drops later ShdwPattern for LibreOffice',
     () {
       final shape = decodeDrawioMxStencilXml(
