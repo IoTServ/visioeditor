@@ -151,6 +151,12 @@ function xmlEscape(value) {
     .replaceAll('\n', '&#10;');
 }
 
+// HTML elements mxText foreignObject paints. UML `<<keyword>>` is a
+// stereotype (UML 2.5 Constraint html=0), not a tag; `<keyword>` is
+// not an HTML element. tokens.txt Character is collectText.
+const kHtmlMarkupTagRe =
+  /<\/?(?:a|b|i|u|em|strong|font|br|p|div|span|sup|sub|h[1-6]|table|tbody|thead|tfoot|tr|td|th|ul|ol|li|hr|s|strike|del|caption|pre|code|small|big|tt|center|blockquote|img)\b/i;
+
 function number(value) {
   return Number.isFinite(Number(value)) ? String(Number(value)) : '0';
 }
@@ -781,7 +787,9 @@ class CanvasRecorder {
     }
     const p = this.map(x, y);
     const rot = (Number(rotation) || 0) + this.rotTheta;
-    const htmlOn = format === 'html' || /<[a-zA-Z][\s\S]*>/.test(s);
+    // mxText STYLE_HTML. `/<[a-zA-Z]/` treated UML `<<keyword>>` as
+    // markup; leftover Character became `>` (html=0 Constraint).
+    const htmlOn = format === 'html' || kHtmlMarkupTagRe.test(s);
     // CSS text-wrap/white-space nowrap on html=1 (SAP Diagram Title)
     // must win over cell whiteSpace=wrap. collectTextBlock has no wrap
     // token; veWordWrap bake expands TxtWidth when wrap stays off.
@@ -6980,7 +6988,11 @@ function cellLabel(value, keepHtml = false, cell = null) {
   const stripped = source
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<\/(p|div|tr|h[1-6]|li)>/gi, '\n')
-    .replace(/<[^>]+>/g, ' ')
+    // `<[^>]+>` ate UML `<<keyword>>` (html=0 Constraint) down to `>`.
+    .replace(
+      /<\/?(?:a|b|i|u|em|strong|font|br|p|div|span|sup|sub|h[1-6]|table|tbody|thead|tfoot|tr|td|th|ul|ol|li|hr|s|strike|del|caption|pre|code|small|big|tt|center|blockquote|img)(?:\s[^>]*)?\/?>/gi,
+      ' ',
+    )
     .replace(/&nbsp;/g, '\u00A0')
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
@@ -7626,9 +7638,10 @@ function parseHtmlLabel(html, base) {
   // HTML: a `<` that is not a tag / comment / doctype is text.
   // `([^<]+)` alone lets /g skip `<< Prev` so leftover Character lost
   // the chevrons (Mockup Pagination; tokens.txt Character is collectText).
+  // `(?<!<)` keeps UML `<<keyword>>` from becoming a `<keyword>` tag.
   // `&lt;&lt;import&gt;&gt;` is still one text run then decodeHtmlEntities.
   const tokenRe =
-    /<!--[\s\S]*?-->|<(\/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+|<)/g;
+    /<!--[\s\S]*?-->|(?<!<)<(\/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+|<)/g;
   let match;
   while ((match = tokenRe.exec(html))) {
     if (match[0].startsWith('<!--')) continue;

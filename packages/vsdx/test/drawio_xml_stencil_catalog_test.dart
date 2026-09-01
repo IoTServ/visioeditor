@@ -12515,6 +12515,57 @@ void main() {
   );
 
   test(
+    'mxText leftover-bakes UML <<keyword>> stereotype for LibreOffice',
+    () {
+      String allText(VsdxShape shape) {
+        final parts = <String>[
+          if ((shape.text ?? '').isNotEmpty) shape.text!,
+        ];
+        for (final child in shape.children) {
+          final nested = allText(child);
+          if (nested.isNotEmpty) parts.add(nested);
+        }
+        return parts.join('\n');
+      }
+
+      final constraint = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / UML25 / uml 2.5',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Constraint')
+          .build(1, 3, 3);
+      expect(
+        allText(constraint),
+        contains('<<keyword>>'),
+        reason: 'html=0 Constraint authors raw <<keyword>>; '
+            'tokens.txt Character is collectText',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(constraint.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        allText(leftover),
+        contains('<<keyword>>'),
+        reason: 'a second save must keep the <<keyword>> Character run',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

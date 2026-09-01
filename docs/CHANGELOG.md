@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io UML 2.5 Constraint now keeps `<<keyword>>` in LibreOffice.
+  Official sidebar authors the stereotype as html=0 raw `<<keyword>>`.
+  Catalog `cellLabel` stripped `<[^>]+>` so leftover Character was `>`
+  (`tokens.txt` Character is collectText). Capture now leftover-bakes
+  the chevrons instead of treating `<keyword>` as HTML. A second save
+  keeps them.
 - draw.io Mockup Pagination now keeps `<< Prev` chevrons in LibreOffice.
   Official sidebar text is `html=1` `<< Prev 1 2 3 4 5 6 7 8 9 10 Next >>`.
   Catalog HTML capture skipped stray `<` that are not tags, so leftover
