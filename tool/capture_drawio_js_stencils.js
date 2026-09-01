@@ -5455,7 +5455,23 @@ class NestedStencil {
           attrNum(node, 'w') * sx, attrNum(node, 'h') * sy,
         );
       }
-    }     else if (name === 'fillstroke' || name === 'fillstrokecolor') canvas.fillAndStroke();
+    }     else if (name === 'fillstroke') canvas.fillAndStroke();
+    else if (name === 'fillstrokecolor') {
+      // Official mxStencil.drawNode has no case. IBM Cloud XML uses
+      // `<fillstrokecolor color="currentColor"/>` after stroking the
+      // frame; treating it as fillAndStroke filled that pending rect.
+      const color = node.attrs.color;
+      if (color && String(color).toLowerCase() !== 'currentcolor') {
+        canvas.setFillColor(
+          mxStencilColor(color, shape, node.attrs.default),
+          mxStencilForceHex(color),
+        );
+        canvas.setStrokeColor(
+          mxStencilColor(color, shape, node.attrs.default),
+          mxStencilForceHex(color),
+        );
+      }
+    }
     else if (name === 'fill') canvas.fill();
     else if (name === 'stroke') canvas.stroke();
     else if (name === 'fillcolor') {
@@ -5517,7 +5533,7 @@ class NestedStencil {
       if (node.attrs.family != null) canvas.setFontFamily(node.attrs.family);
     }
     if (disableShadow &&
-        (name === 'fillstroke' || name === 'fillstrokecolor' ||
+        (name === 'fillstroke' ||
          name === 'fill' || name === 'stroke')) {
       canvas.setShadow(false);
     }

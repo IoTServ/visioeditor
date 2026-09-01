@@ -10755,6 +10755,146 @@ void main() {
   );
 
   test(
+    'mxStencil fillstrokecolor does not fill the pending frame for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasFilledGeometry(VsdxShape shape) => shape.geometries.any(
+            (geometry) => !geometry.noShow && !geometry.noFill,
+          );
+
+      bool fillsTheFrame(VsdxShape shape) {
+        for (final geometry in shape.geometries) {
+          if (geometry.noShow || geometry.noFill) continue;
+          final box = geometryLocalBounds(
+            geometry,
+            width: shape.width,
+            height: shape.height,
+          );
+          if (box == null) continue;
+          final w = (box.maxX - box.minX).abs();
+          final h = (box.maxY - box.minY).abs();
+          if (w > shape.width * 0.9 && h > shape.height * 0.9) {
+            return true;
+          }
+        }
+        return false;
+      }
+
+      final synthetic = decodeDrawioMxStencilXml(
+        '<shape name="Watson" w="32" h="32" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="32" h="32"/>'
+        '<stroke/>'
+        '<fillstrokecolor color="currentColor"/>'
+        '<path>'
+        '<move x="6" y="17"/>'
+        '<line x="14" y="17"/>'
+        '<line x="14" y="19"/>'
+        '<line x="6" y="19"/>'
+        '<close/>'
+        '</path>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 442,
+      );
+      expect(
+        fillsTheFrame(synthetic),
+        isFalse,
+        reason: 'official mxStencil.drawNode has no fillstrokecolor case, '
+            'so the pending 32×32 rect stays stroke-only. Treating the tag '
+            'as fillstroke filled that frame; leftover then kept a solid '
+            'FillForegnd plate that Draw painted over the glyph',
+      );
+      expect(
+        descendants(synthetic).any(hasFilledGeometry),
+        isTrue,
+        reason: 'the later fillstroke still paints the icon bar',
+      );
+
+      final hex = decodeDrawioMxStencilXml(
+        '<shape name="Hex" w="32" h="32" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="32" h="32"/>'
+        '<stroke/>'
+        '<fillstrokecolor color="#ff0000"/>'
+        '<path>'
+        '<move x="6" y="17"/>'
+        '<line x="14" y="17"/>'
+        '<line x="14" y="19"/>'
+        '<line x="6" y="19"/>'
+        '<close/>'
+        '</path>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 443,
+      );
+      expect(
+        fillsTheFrame(hex),
+        isFalse,
+        reason: 'hex fillstrokecolor sets fill+stroke without painting',
+      );
+      expect(
+        descendants(hex).any(
+          (child) =>
+              child.fill.foreground == const VsdxColor(0xFFFF0000) &&
+              hasFilledGeometry(child),
+        ),
+        isTrue,
+        reason: 'later fillstroke uses the fillstrokecolor hex',
+      );
+
+      final watson = migrated
+          .singleWhere((group) => group.name == 'Draw.io / IBM Cloud')
+          .stencils
+          .singleWhere((entry) => entry.name == 'ibm-watson--discovery')
+          .build(444, 3, 3);
+      expect(
+        fillsTheFrame(watson),
+        isFalse,
+        reason: 'IBM watson frame is stroke-only; Draw must not fill the cell',
+      );
+      expect(
+        descendants(watson).where(hasFilledGeometry),
+        isNotEmpty,
+        reason: 'icon bars / ellipses still fillstroke',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(watson.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        fillsTheFrame(leftover),
+        isFalse,
+        reason: 'a second save must keep the watson frame stroke-only',
+      );
+      expect(
+        descendants(leftover).where(hasFilledGeometry),
+        isNotEmpty,
+      );
+    },
+  );
+
+  test(
     'IBM VPC Floating IP SVG-in-PNG stays ForeignData for LibreOffice',
     () {
       Stencil stencil(String groupName, String shapeName) => dynamic

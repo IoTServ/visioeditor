@@ -547,8 +547,18 @@ class _DrawioXmlShapeDecoder {
         _finish(fill: false, stroke: true);
         break;
       case 'fillstroke':
-      case 'fillstrokecolor':
         _finish(fill: true, stroke: true);
+        break;
+      case 'fillstrokecolor':
+        // IBM Cloud `ibm-watson--discovery` writes
+        // `<fillstrokecolor color="currentColor"/>` after stroking the
+        // 32×32 frame. Official `mxStencil.drawNode` has no case (falls
+        // through), so draw.io never paints here. Treating the tag as
+        // fillstroke filled that pending rect; leftover then kept a
+        // solid FillForegnd plate that Draw painted over the glyph.
+        // Hex `color` still sets fill and stroke like fillcolor+strokecolor
+        // without painting. `currentColor` / omitted stays inherit.
+        _applyMxFillStrokeColor(node);
         break;
       case 'fontsize':
         final size = _number(node, 'size', fallback: _fontSize);
@@ -679,6 +689,8 @@ class _DrawioXmlShapeDecoder {
       // Inherit fill (Networks2 hub shadow) and inherit stroke
       // (Cortana fillstroke) capture that Trans on the parent at
       // _finish; hex fillcolor already bakes a sibling.
+      // `fillstrokecolor` is not fillstroke: official drawNode skips
+      // it, so IBM watson's pending 32×32 frame stays stroke-only.
       // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
       // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
@@ -848,6 +860,15 @@ class _DrawioXmlShapeDecoder {
     _decodePathNode(node, commands);
     if (commands.isEmpty) return;
     _pending = commands;
+  }
+
+  /// IBM Cloud `fillstrokecolor color`. Official drawNode skips the
+  /// tag; a hex still pins both channels so a later fillstroke uses it.
+  void _applyMxFillStrokeColor(XmlElement node) {
+    final raw = (node.getAttribute('color') ?? '').trim();
+    if (raw.isEmpty || raw.toLowerCase() == 'currentcolor') return;
+    _applyMxFill(raw, fallback: node.getAttribute('default'));
+    _applyMxStroke(raw, fallback: node.getAttribute('default'));
   }
 
   void _applyMxFill(String? raw, {String? fallback}) {
@@ -1596,8 +1617,8 @@ class _DrawioXmlShapeDecoder {
     final cx = _x(cxSrc);
     final cy = _y(cySrc);
     final span = math.max(width.abs(), height.abs());
-    final circular = span > 1e-9 &&
-        (width.abs() - height.abs()).abs() <= 0.15 * span;
+    final circular =
+        span > 1e-9 && (width.abs() - height.abs()).abs() <= 0.15 * span;
     if (circular) {
       // mxMarker oval is canvas.ellipse(size, size): a circle in source
       // pixels. Edge templates with eh=0 capture as h=1, then

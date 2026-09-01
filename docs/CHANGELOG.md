@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io IBM watson leftover keeps fillstrokecolor as a colour token
+  for LibreOffice. Official ibm_cloud.xml `ibm-watson--discovery` writes
+  `<fillstrokecolor color="currentColor"/>` after stroking the 32×32
+  frame. `mxStencil.drawNode` has no case (falls through). leftover used
+  to treat the tag as fillstroke, so Draw filled that pending rect and
+  painted a solid `#DAE8FC` plate over the glyph. leftover now skips
+  currentColor (inherit) and only pins hex fill+stroke for a later
+  fillstroke. A second save keeps the frame stroke-only.
 - draw.io mixed CubBezTo round-join leftover writes LineCap round
   for LibreOffice. Official Cisco PC / Government Building (and
   Jump-in Arrow 1) mix `<linejoin join="round"/>` LineTo with
