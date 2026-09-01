@@ -1265,8 +1265,16 @@ class _DrawioXmlShapeDecoder {
     // A second inherit-fill (AWS Cloud puffs, Citrix server blobs)
     // would punch overlaps. One compound path + one fill stays on the
     // parent so OpenAI swirl holes still punch.
-    final extraInheritFill =
-        doFill && !bakeFill && _geometries.any((geometry) => !geometry.noFill);
+    // Hex fillcolor siblings paint on top of the parent. AWS4b
+    // productIcon fills white (strokeColor) then inherit fillColor
+    // for the top square; attaching that square to the parent hid it
+    // under the white child in Draw (group children paint after the
+    // parent). A later inherit fill after a hex sibling stays a
+    // sibling so paint order matches mxSvgCanvas2D.
+    final extraInheritFill = doFill &&
+        !bakeFill &&
+        (_geometries.any((geometry) => !geometry.noFill) ||
+            _coloredParts.any((part) => part.fill.hasFill));
     // collectLine is shape-level. A later inherit stroke whose cap /
     // join / miter differs from the first (Electronic Info Flow: save
     // linecap=round stroke, restore, linecap=butt fillstroke) must be a

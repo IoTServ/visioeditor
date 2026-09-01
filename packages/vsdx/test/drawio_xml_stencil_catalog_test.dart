@@ -12239,6 +12239,138 @@ void main() {
   );
 
   test(
+    'AWS4b productIcon inherit fill stays above white strokeColor for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool isFill(VsdxShape shape, String hex) {
+        final want = VsdxColor.tryParse(hex);
+        return want != null &&
+            shape.fill.pattern == 1 &&
+            shape.fill.foreground == want;
+      }
+
+      double geoHeight(VsdxShape shape) {
+        var minY = double.infinity;
+        var maxY = -double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            final y = command is MoveTo
+                ? command.y
+                : command is LineTo
+                    ? command.y
+                    : null;
+            if (y == null) continue;
+            minY = math.min(minY, y);
+            maxY = math.max(maxY, y);
+          }
+        }
+        return maxY - minY;
+      }
+
+      final athena = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / AWS4b / AWS18 / Analytics',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Unnamed Shape')
+          .build(449, 3, 3);
+      expect(
+        descendants(athena).any(
+          (shape) => (shape.text ?? '').contains('Amazon Athena'),
+        ),
+        isTrue,
+        reason: 'AWS4b productIcon cell value reaches collectText',
+      );
+      expect(
+        descendants(athena)
+            .firstWhere(
+              (shape) => (shape.text ?? '').contains('Amazon Athena'),
+            )
+            .richText
+            .textBlock
+            .verticalAlign,
+        VsdxVertAlign.bottom,
+        reason: 'verticalAlign=bottom is collectTextBlock VerticalAlign that '
+            'leftover Draw maps to draw:textarea-vertical-align',
+      );
+      expect(
+        athena.fill.hasFill,
+        isFalse,
+        reason: 'mxShapeAws4ProductIcon fills strokeColor white then inherit '
+            'fillColor for the top square; attaching that square to the '
+            'parent hid it under the white child (tokens.txt FillForegnd '
+            'is svg:fill; group children paint after the parent)',
+      );
+      final white = athena.children.where((s) => isFill(s, '#FFFFFF')).toList();
+      final dark = athena.children.where((s) => isFill(s, '#232F3E')).toList();
+      expect(white, isNotEmpty, reason: 'first fill is strokeColor #ffffff');
+      expect(dark, isNotEmpty, reason: 'second fill is fillColor #232F3E');
+      final whiteFull = white.firstWhere(
+        (shape) => geoHeight(shape) > athena.height * 0.9,
+      );
+      final darkSquare = dark.firstWhere(
+        (shape) =>
+            geoHeight(shape) < athena.height * 0.85 &&
+            geoHeight(shape) > athena.height * 0.5,
+      );
+      expect(
+        athena.children.indexOf(whiteFull),
+        lessThan(athena.children.indexOf(darkSquare)),
+        reason: 'Draw paints later group children on top, matching '
+            'mxSvgCanvas2D fill order',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(athena.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverDark = leftover.children
+          .where((s) => isFill(s, '#232F3E'))
+          .toList();
+      final leftoverWhite = leftover.children
+          .where((s) => isFill(s, '#FFFFFF'))
+          .toList();
+      expect(leftoverDark, isNotEmpty);
+      expect(leftoverWhite, isNotEmpty);
+      expect(
+        leftover.children.indexOf(
+          leftoverWhite.firstWhere(
+            (shape) => geoHeight(shape) > leftover.height * 0.9,
+          ),
+        ),
+        lessThan(
+          leftover.children.indexOf(
+            leftoverDark.firstWhere(
+              (shape) =>
+                  geoHeight(shape) < leftover.height * 0.85 &&
+                  geoHeight(shape) > leftover.height * 0.5,
+            ),
+          ),
+        ),
+        reason: 'a second save must keep the fillColor square above white',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

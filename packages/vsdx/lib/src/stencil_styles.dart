@@ -678,8 +678,16 @@ VsdxShape applyStencilStyle(
 }) {
   if (colors == null) return shape;
 
-  // Text / invisible decoration: leave alone.
-  if (!shape.is1D && !shape.fill.hasFill && !shape.line.hasLine) {
+  // Text / invisible decoration: leave alone. A group hit-box with
+  // leftover siblings still has no fill/line (AWS Cloud puffs after
+  // hex highlights; AWS4b productIcon inherit square after the white
+  // plate). Skip only when there are no children to recolor — otherwise
+  // null-foreground inherit fills never get palette FillForegnd
+  // (tokens.txt FillForegnd is svg:fill).
+  if (!shape.is1D &&
+      !shape.fill.hasFill &&
+      !shape.line.hasLine &&
+      shape.children.isEmpty) {
     return shape;
   }
 

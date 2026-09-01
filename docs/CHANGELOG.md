@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io AWS4b `productIcon` now keeps the brand square in LibreOffice.
+  Official `mxAWS4.js` fills `strokeColor` white then inherit
+  `fillColor` for the top square. Catalog decode attached that square
+  to the parent, so the white hex child painted over it (`tokens.txt`
+  FillForegnd is `svg:fill`; group children paint after the parent).
+  Decode now leftover-bakes a later inherit fill as a sibling after a
+  hex fill. A no-fill group still runs `applyStencilStyle` on children
+  so AWS Cloud inherit puffs keep palette FillForegnd. A second save
+  keeps the `#232F3E` square above white.
 - draw.io Cisco Safe `compositeIcon` now stays opaque in LibreOffice.
   Official `mxCiscoSafe.js` paints 50% `bgDotColor` dots then
   `setAlpha(parseFloat(omitted opacity))` (`NaN`). Catalog capture
