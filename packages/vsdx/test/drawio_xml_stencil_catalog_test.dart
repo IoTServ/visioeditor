@@ -14107,6 +14107,157 @@ void main() {
   );
 
   test(
+    'ArchiMate Access leftover keeps QuadBezTo elbows for LibreOffice',
+    () {
+      bool hasQuad(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands) {
+            if (command is QuadBezTo || command is RelQuadBezTo) return true;
+          }
+        }
+        return false;
+      }
+
+      final access = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / ArchiMate / archiMate21',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Access')
+          .build(1, 3, 3);
+      expect(
+        hasQuad(access),
+        isTrue,
+        reason: 'elbowEdgeStyle rounded corners leftover-bake QuadBezTo. '
+            'tokens.txt RelQuadBezTo is svg:d Q',
+      );
+      expect(access.line.customDashPattern, isNotNull);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(access.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasQuad(leftover),
+        isTrue,
+        reason: 'veDashPattern must not sample the elbow into MoveTo gaps; '
+            'collectRelQuadBezTo plus LinePattern 2–23 dashes it',
+      );
+      expect(
+        leftover.line.pattern,
+        inInclusiveRange(2, 23),
+        reason: 'libvisio _lineProperties treats 0xfe as solid',
+      );
+      expect(leftover.line.hasLine, isTrue);
+
+      doc = parser.parse(writer.emptyDocument());
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(leftover.copyWith(id: id)),
+      );
+      final leftover2 = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasQuad(leftover2),
+        isTrue,
+        reason: 'a second save must keep the quadratic elbow',
+      );
+    },
+  );
+
+  test(
+    'ArchiMate Aggregation leftover keeps QuadBezTo elbows for LibreOffice',
+    () {
+      bool hasQuad(VsdxShape shape) {
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands) {
+            if (command is QuadBezTo || command is RelQuadBezTo) return true;
+          }
+        }
+        return false;
+      }
+
+      bool isFilledRibbon(VsdxShape shape) {
+        return shape.fill.hasFill &&
+            !shape.line.hasLine &&
+            shape.geometries.any(
+              (geometry) => !geometry.noFill && geometry.noLine,
+            );
+      }
+
+      final aggregation = dynamic
+          .singleWhere(
+            (group) =>
+                group.name ==
+                'Draw.io JS / ArchiMate3 / Archimate 3.2 / Relationships',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Aggregation')
+          .build(1, 3, 3);
+      expect(hasQuad(aggregation), isTrue);
+      expect(
+        shapeNeedsLibvisioStrokeRibbon(aggregation),
+        isFalse,
+        reason: 'a veMiterLimit ribbon used to sample RelQuadBezTo into '
+            'LineTo (tokens.txt RelQuadBezTo → svg:d Q)',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(aggregation.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(hasQuad(leftover), isTrue);
+      expect(leftover.line.hasLine, isTrue);
+      expect(isFilledRibbon(leftover), isFalse);
+
+      doc = parser.parse(writer.emptyDocument());
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(leftover.copyWith(id: id)),
+      );
+      final leftover2 = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasQuad(leftover2),
+        isTrue,
+        reason: 'a second save must keep the quadratic elbow',
+      );
+    },
+  );
+
+  test(
     'BPMN Send leftover strokes envelope with white for LibreOffice',
     () {
       const paletteStroke = VsdxColor(0xFF6C8EBF);
@@ -14682,7 +14833,7 @@ void main() {
       expect(
         leftoverMesh.line.hasLine,
         isTrue,
-        reason: 'dash flatten must keep collectLine LinePattern, not a fill '
+        reason: 'dash leftover must keep collectLine LinePattern, not a fill '
             'ribbon (tokens.txt LineColor → svg:stroke)',
       );
       expect(leftoverMesh.fill.hasFill, isFalse);
@@ -14694,9 +14845,16 @@ void main() {
         isTrue,
       );
       expect(
-        leftoverMesh.geometries.length,
-        greaterThan(8),
-        reason: 'veDashPattern leftover is MoveTo/LineTo ink pieces',
+        hasCubFamily(leftoverMesh),
+        isTrue,
+        reason: 'CubBezTo mesh stays RelCubBezTo; LinePattern 2–23 dashes it '
+            '(tokens.txt RelCubBezTo → svg:d C). Sampling into MoveTo '
+            'gaps used to drop the curve',
+      );
+      expect(
+        leftoverMesh.line.pattern,
+        inInclusiveRange(2, 23),
+        reason: 'libvisio _lineProperties treats 0xfe as solid',
       );
       expect(
         shapeNeedsLibvisioStrokeRibbon(leftoverMesh),
@@ -14716,6 +14874,11 @@ void main() {
           .findShapeById(id)!;
       expect(twice.children.first.line.hasLine, isTrue);
       expect(isFilledRibbon(twice.children.first), isFalse);
+      expect(
+        hasCubFamily(twice.children.first),
+        isTrue,
+        reason: 'a second save must keep RelCubBezTo',
+      );
     },
   );
 

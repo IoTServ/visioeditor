@@ -11849,6 +11849,18 @@ bool _geometryHasInfiniteLine(VsdxGeometry geometry) {
   return false;
 }
 
+/// Quad/Cub/Arc rails that leftover must keep as Rel* rows. Ellipse-only
+/// markers are excluded so a dashed connector can still flatten its LineTo
+/// rail (BPMN Message Flow startArrow=oval).
+bool _shapeHasNonEllipseCurveStroke(VsdxShape shape) {
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    if (_geometryIsEllipseOnly(geometry)) continue;
+    if (_geometryHasLibvisioCurveRows(geometry)) return true;
+  }
+  return false;
+}
+
 bool _shapePaintsFill(VsdxShape shape, List<VsdxGeometry> geometries) {
   if (!shape.fill.hasFill) return false;
   for (final geometry in geometries) {
@@ -12401,6 +12413,9 @@ bool shapeNeedsLibvisioMiterSpikeBake(VsdxShape shape) {
   final custom = shape.line.customDashPattern;
   if (custom != null && custom.isNotEmpty) return false;
   if (_shapePaintsFill(shape, shape.geometries)) return false;
+  // A filled ribbon samples RelQuadBezTo into LineTo (ArchiMate
+  // Aggregation elbow). tokens.txt RelQuadBezTo is svg:d Q.
+  if (_shapeHasNonEllipseCurveStroke(shape)) return false;
   return _shapeHasLibvisioMiterSpikeCorners(shape);
 }
 
@@ -12430,6 +12445,7 @@ bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
   if (_looksLikeLibvisioFlattenedDashStrokes(shape)) return false;
   if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
+  if (_shapeHasNonEllipseCurveStroke(shape)) return false;
   if (!shape.line.hasGradient &&
       shape.line.transparency <= 1e-9 &&
       !shapeNeedsLibvisioMiterSpikeBake(shape)) {
@@ -13487,10 +13503,12 @@ List<VsdxUserCell> userCellsForLibvisioWrite(VsdxShape shape) {
       ),
     );
   }
-  // Ellipse-only strokes cannot flatten without dropping collectEllipse.
-  // Snap onto LinePattern 2–23 so `_lineProperties` dashes the oval
-  // (P&ID drum, BPMN eventNonint). veDashPattern 0xfe would be solid.
-  if (_geometriesAreEllipseOnlyStrokes(sourceGeoms)) {
+  // Curve / ellipse-only strokes cannot flatten without dropping
+  // collectRelQuadBezTo / collectEllipse. Snap onto LinePattern 2–23
+  // so `_lineProperties` dashes the native row (ArchiMate Access,
+  // P&ID drum, BPMN eventNonint). veDashPattern 0xfe would be solid.
+  if (_geometriesAreEllipseOnlyStrokes(sourceGeoms) ||
+      _geometriesHaveNonEllipseCurveStrokes(sourceGeoms)) {
     final custom = sourceLine.customDashPattern;
     if (custom != null && custom.isNotEmpty) {
       return (
@@ -13574,6 +13592,7 @@ List<VsdxGeometry>? _flattenDashGeometries(
 ) {
   final out = <VsdxGeometry>[];
   var added = false;
+  var sawCurveStroke = false;
   for (final geometry in sourceGeoms) {
     if (geometry.noShow || geometry.noLine) {
       out.add(geometry);
@@ -13588,10 +13607,21 @@ List<VsdxGeometry>? _flattenDashGeometries(
       out.add(geometry);
       continue;
     }
+    // RelQuadBezTo / RelCubBezTo are tokens. Sampling an elbow
+    // (ArchiMate Access) or strainer mesh into LineTo gaps dropped
+    // the curve Draw collects as svg:d Q/C. Keep the rail and snap
+    // LinePattern 2–23 instead of mixing a solid curve with dashed
+    // LineTo siblings.
+    if (_geometryHasLibvisioCurveRows(geometry)) {
+      out.add(geometry);
+      sawCurveStroke = true;
+      continue;
+    }
     if (_appendDashFlattenedGeometry(out, shape, geometry, inches)) {
       added = true;
     }
   }
+  if (sawCurveStroke) return null;
   if (!added) return null;
   return out;
 }
@@ -13607,6 +13637,15 @@ bool _geometriesAreEllipseOnlyStrokes(List<VsdxGeometry> geometries) {
     saw = true;
   }
   return saw;
+}
+
+bool _geometriesHaveNonEllipseCurveStrokes(List<VsdxGeometry> geometries) {
+  for (final geometry in geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    if (_geometryIsEllipseOnly(geometry)) continue;
+    if (_geometryHasLibvisioCurveRows(geometry)) return true;
+  }
+  return false;
 }
 
 bool _appendDashFlattenedGeometry(

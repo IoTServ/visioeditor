@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io ArchiMate Access / Aggregation leftover keeps quadratic
+  elbows for LibreOffice. Official `elbowEdgeStyle` with `rounded`
+  leftover-bakes `QuadBezTo` (`tokens.txt` RelQuadBezTo → `svg:d` Q).
+  leftover `veDashPattern` sampled Access into MoveTo gaps, and a
+  `veMiterLimit` ribbon sampled Aggregation into a filled LineTo
+  silhouette. Curve rails now stay RelQuadBezTo; dashed Access snaps
+  onto LinePattern 2–23. P&ID Basket Reel CubBezTo mesh uses the same
+  LinePattern dash instead of sampled gaps. A second save keeps the
+  curve.
 - draw.io dashed ellipses leftover keep `Ellipse` for LibreOffice.
   P&ID rotary-drum `<ellipse/>` after `dashpattern="2 2"` and BPMN
   `eventNonint` (`setDashed(true)` then `ellipse`) are ellipse-only
