@@ -13405,20 +13405,102 @@ void main() {
         .readPartXml('/visio/pages/page1.xml')!
         .toXmlString();
     expect(xml.contains('N="ColorTrans" V="0.7"'), isFalse);
-    final hex = (expected.value & 0xFFFFFF)
+    final overFill = colourForLibvisioAlpha(
+      VsdxTheme.office.resolve(slot)!,
+      trans,
+      backdrop: const VsdxColor(0xFFFF0000),
+    );
+    final hex = (overFill.value & 0xFFFFFF)
         .toRadixString(16)
         .padLeft(6, '0')
         .toUpperCase();
     expect(
       xml.contains('N="Color" V="#$hex"'),
       isTrue,
-      reason: 'theme ColorTrans must freeze into hex Color, not THEMEVAL; '
-          'expected=#$hex',
+      reason: 'theme ColorTrans must freeze into hex Color over FillForegnd, '
+          'not THEMEVAL or toward-white; expected=#$hex',
     );
     final after = parser.parse(saved).pages.first.findShapeById(1)!;
-    expect(after.richText.runs.single.charStyle.color?.value, expected.value);
+    expect(after.richText.runs.single.charStyle.color?.value, overFill.value);
     expect(after.richText.runs.single.charStyle.themeColorIndex, isNull);
     expect(after.richText.runs.single.charStyle.transparency, closeTo(0, 1e-9));
+  });
+
+  test('Character ColorTrans leftover composites over overlapping fill', () {
+    const teal = VsdxColor(0xFF009688);
+    const card = VsdxColor(0xFFDAE8FC);
+    const white = VsdxColor(0xFFFFFFFF);
+    VsdxShape label(int id, double pinY, String text) =>
+        VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: 1,
+          pinY: pinY,
+          width: 2,
+          height: 0.2,
+          fill: const VsdxFill(pattern: 0),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          text: text,
+          richText: VsdxRichText(
+            runs: <VsdxTextRun>[
+              VsdxTextRun(
+                text: text,
+                charStyle: const VsdxCharStyle(
+                  color: white,
+                  transparency: 0.3,
+                  fontSizeInches: 0.15,
+                ),
+              ),
+            ],
+          ),
+        );
+    final group = VsdxShapeFactory.rectangle(
+      id: 1,
+      pinX: 4.25,
+      pinY: 5.5,
+      width: 2,
+      height: 2,
+      fill: const VsdxFill(foreground: card, pattern: 1),
+      line: const VsdxLine(pattern: 0),
+    ).copyWith(
+      children: <VsdxShape>[
+        VsdxShapeFactory.rectangle(
+          id: 2,
+          pinX: 1,
+          pinY: 1.8,
+          width: 2,
+          height: 0.4,
+          fill: const VsdxFill(foreground: teal, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ),
+        label(3, 1.85, '2017'),
+        label(4, 0.15, 'CANCEL'),
+      ],
+    );
+    final blank = writer.emptyDocument();
+    var doc = parser.parse(blank);
+    doc = doc.replacePage(0, doc.pages.first.addShape(group));
+    final leftover = parser
+        .parse(writer.write(originalBytes: blank, edited: doc))
+        .pages
+        .first
+        .findShapeById(1)!;
+    VsdxTextRun runOf(String text) => leftover.children
+        .firstWhere((child) => child.text == text)
+        .richText
+        .runs
+        .single;
+    expect(
+      runOf('2017').charStyle.color?.value,
+      colourForLibvisioAlpha(white, 0.3, backdrop: teal).value,
+    );
+    expect(
+      runOf('CANCEL').charStyle.color?.value,
+      colourForLibvisioAlpha(white, 0.3, backdrop: card).value,
+      reason: 'CANCEL sits on the card fill, not the teal header',
+    );
+    expect(runOf('2017').charStyle.transparency, closeTo(0, 1e-9));
+    expect(runOf('CANCEL').charStyle.transparency, closeTo(0, 1e-9));
   });
 
   test('theme-only FillForegndTrans freezes RGB for LibreOffice', () {

@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io GMDL Date picker leftover composites Char ColorTrans over the
+  teal header for LibreOffice. Official `mxText.apply` writes
+  `textOpacity` onto `this.opacity` and `configureCanvas` calls
+  `setAlpha(opacity/100)`, but `readCharIX` never stores ColorTrans and
+  `xmlStringToColour` zeros `Colour.a`. leftover used to blend toward
+  white, so Date picker (portrait) `2017` (`textOpacity=70`, white on
+  `#009688`) and iOS Top bar `CARRIER` (`textOpacity=50` on `#cccccc`)
+  became opaque white / paler grey that `collectCharIX` maps to
+  `fo:color`. A save now overlays the run onto own FillForegnd /
+  TextBkgnd, else the top overlapping sibling, else page colour.
+  A second save keeps the composited RGB.
 - draw.io Jump-in Arrow leftover fillets LineTo elbows beside RelCubBezTo
   for LibreOffice. Official `arrows.xml` Jump-in Arrow 1/2 is
   `<linejoin join="round"/>` + `<arc>` + `<fillstroke/>`.

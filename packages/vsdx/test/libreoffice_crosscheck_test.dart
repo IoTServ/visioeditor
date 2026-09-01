@@ -10729,11 +10729,12 @@ void main() {
           final expected = colourForLibvisioAlpha(
             VsdxTheme.office.resolve(ThemeSlot.accent6)!,
             0.7,
+            backdrop: const VsdxColor(0xFFFF0000),
           );
           expect(
             source.richText.runs.single.charStyle.color?.value,
             expected.value,
-            reason: 'theme ColorTrans must freeze into Color',
+            reason: 'theme ColorTrans must freeze into Color over FillForegnd',
           );
           expect(source.richText.runs.single.charStyle.themeColorIndex, isNull);
           expect(
@@ -10757,8 +10758,7 @@ void main() {
             await File('$prefix.png').readAsBytes(),
           )!;
           final page = parser.parse(entry.value).pages.first;
-          // H holes stay the red fill, so a window mean is red-dominated.
-          // Keep only green-tinted stroke pixels (faded mint ≈ 212,228).
+          // H composites accent6 over the red fill (ColorTrans is not a token).
           ({double r, double g, int n}) glyphMean() {
             final left = (3.85 / page.widthInches * rendered.width).round();
             final right = (4.65 / page.widthInches * rendered.width).round();
@@ -10782,7 +10782,11 @@ void main() {
                   continue;
                 }
                 final pixel = rendered.getPixel(x, y);
-                if (pixel.g > 80 && pixel.g > pixel.r * 0.6) {
+                if (pixel.g > 15 &&
+                    pixel.g < 140 &&
+                    pixel.r > 150 &&
+                    pixel.r < 250 &&
+                    pixel.g < pixel.r * 0.55) {
                   sumR += pixel.r;
                   sumG += pixel.g;
                   count++;
@@ -10796,21 +10800,21 @@ void main() {
           final glyph = glyphMean();
           expect(
             glyph.n,
-            greaterThan(400),
+            greaterThan(200),
             reason: 'LibreOffice must paint the H, not only the red fill; '
                 'glyphN=${glyph.n} glyphR=${glyph.r} glyphG=${glyph.g}',
           );
           expect(
             glyph.r,
             greaterThan(160),
-            reason: 'LibreOffice must paint the faded Office accent6 glyph, '
+            reason: 'LibreOffice must paint accent6 composited over red, '
                 'not opaque THEMEVAL green; '
                 'glyphR=${glyph.r} glyphG=${glyph.g}',
           );
           expect(
             glyph.g,
-            greaterThan(glyph.r),
-            reason: 'the faded accent6 blend must stay green-tinted; '
+            lessThan(glyph.r),
+            reason: 'the overlay must stay red-dominated, not mint-on-white; '
                 'glyphR=${glyph.r} glyphG=${glyph.g}',
           );
         }

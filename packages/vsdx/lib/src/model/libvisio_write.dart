@@ -197,14 +197,18 @@
 /// uses that limit (Draw would otherwise bevel every ratio>4 elbow) and
 /// drops the User row. Sketch jiggle copies that limit onto the plates
 /// so the same ribbon keeps the spike; other bake plates stay skipped.
-/// The Rounding cell stays 0 so Visio does not restroke. Character ColorTrans,
-/// filled-shape LineColorTrans that cannot become a sibling ribbon, and
-/// ShdwForegndTrans are not tokens —
-/// `xmlStringToColour` also forces Colour.a = 0 — so a save premultiplies
-/// those into RGB toward white and writes Trans=0. Theme-only Character
-/// Color (canvas `_colourOrTheme`) is resolved through the document
-/// theme, then Office, into that same blend — `ColorTrans` is not a
-/// token, so leaving THEMEVAL() would paint the slot fully opaque.
+/// The Rounding cell stays 0 so Visio does not restroke. Character ColorTrans
+/// is not a token (`readCharIX` has no case) and `xmlStringToColour` zeros
+/// Colour.a, so a save composites the run over the fill Draw already
+/// painted behind it (own FillForegnd / TextBkgnd, else the top overlapping
+/// sibling, else page colour / white) and writes ColorTrans=0 — blending
+/// toward white used to wash GMDL Date picker `2017` (`textOpacity=70` on
+/// `#009688`) into opaque white. Filled-shape LineColorTrans that cannot
+/// become a sibling ribbon, and ShdwForegndTrans, still premultiply toward
+/// white. Theme-only Character Color (canvas `_colourOrTheme`) is resolved
+/// through the document theme, then Office, into that same overlay —
+/// `ColorTrans` is not a token, so leaving THEMEVAL() would paint the slot
+/// fully opaque.
 /// Theme-bound colours with no transparency still keep THEMEVAL(), but
 /// a save caches the resolved RGB in `V=` — libvisio's
 /// `VSDFillStyle::override` applies that `V` after the theme, and
@@ -907,6 +911,7 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                   bakePageShadowForLibvisioWrite(
                                     bakeShadowForLibvisioWrite(
                                       bakeCurvedTextForLibvisioWrite(
+                                        bakeCharColorTransForLibvisioWrite(
                                         bakeShapeOpacityForLibvisioWrite(
                                           bakeSolidLineSpacingForLibvisioWrite(
                                             bakeDefaultTabStopForLibvisioWrite(
@@ -943,6 +948,7 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
                                               ),
                                             ),
                                           ),
+                                        ),
                                         ),
                                       ),
                                     ),
@@ -8557,6 +8563,293 @@ VsdxDocument bakeShapeOpacityForLibvisioWrite(VsdxDocument document) {
   return document.copyWith(pages: pages);
 }
 
+typedef _LibvisioAabb = ({double minX, double minY, double maxX, double maxY});
+
+class _CharColorTransFill {
+  const _CharColorTransFill(this.aabb, this.color);
+  final _LibvisioAabb aabb;
+  final VsdxColor color;
+}
+
+Offset2D _localPointToParent(VsdxShape shape, double x, double y) {
+  var dx = x - shape.effectiveLocPinX;
+  var dy = y - shape.effectiveLocPinY;
+  if (shape.flipX) dx = -dx;
+  if (shape.flipY) dy = -dy;
+  if (shape.angleRad.abs() > 1e-12) {
+    final cosA = math.cos(shape.angleRad);
+    final sinA = math.sin(shape.angleRad);
+    final rx = dx * cosA - dy * sinA;
+    final ry = dx * sinA + dy * cosA;
+    dx = rx;
+    dy = ry;
+  }
+  return Offset2D(shape.pinX + dx, shape.pinY + dy);
+}
+
+_LibvisioAabb _localAabbToParent(
+  VsdxShape shape,
+  double minX,
+  double minY,
+  double maxX,
+  double maxY,
+) {
+  final pts = <Offset2D>[
+    _localPointToParent(shape, minX, minY),
+    _localPointToParent(shape, maxX, minY),
+    _localPointToParent(shape, maxX, maxY),
+    _localPointToParent(shape, minX, maxY),
+  ];
+  var outMinX = pts.first.x;
+  var outMinY = pts.first.y;
+  var outMaxX = pts.first.x;
+  var outMaxY = pts.first.y;
+  for (final p in pts) {
+    if (p.x < outMinX) outMinX = p.x;
+    if (p.x > outMaxX) outMaxX = p.x;
+    if (p.y < outMinY) outMinY = p.y;
+    if (p.y > outMaxY) outMaxY = p.y;
+  }
+  return (minX: outMinX, minY: outMinY, maxX: outMaxX, maxY: outMaxY);
+}
+
+bool _aabbOverlaps(_LibvisioAabb a, _LibvisioAabb b) =>
+    a.minX < b.maxX - 1e-9 &&
+    b.minX < a.maxX - 1e-9 &&
+    a.minY < b.maxY - 1e-9 &&
+    b.minY < a.maxY - 1e-9;
+
+_LibvisioAabb _shapeXformAabbInParent(VsdxShape shape) => _localAabbToParent(
+      shape,
+      0,
+      0,
+      shape.width.abs(),
+      shape.height.abs(),
+    );
+
+VsdxColor _pageCharBackdrop(VsdxPage page) {
+  final c = page.backgroundColor;
+  if (c == null || c.alpha == 0) return VsdxColor.white;
+  final rgb = VsdxColor.argb(0xFF, c.red, c.green, c.blue);
+  if (c.alpha >= 254) return rgb;
+  return colourForLibvisioAlpha(rgb, 1 - c.alpha / 255.0);
+}
+
+bool _richTextNeedsColorTransBake(VsdxRichText rich) {
+  if (rich.textBlock.hideText) return false;
+  for (final run in rich.runs) {
+    if (run.charStyle.transparency > 1e-9) return true;
+  }
+  return false;
+}
+
+bool _shapeTreeNeedsCharColorTransBake(VsdxShape shape) {
+  if (_richTextNeedsColorTransBake(shape.richText)) return true;
+  for (final child in shape.children) {
+    if (_shapeTreeNeedsCharColorTransBake(child)) return true;
+  }
+  return false;
+}
+
+VsdxColor _backdropFromPainted(
+  List<_CharColorTransFill> painted,
+  _LibvisioAabb query,
+  VsdxColor fallback,
+) {
+  var color = fallback;
+  for (final layer in painted) {
+    if (_aabbOverlaps(layer.aabb, query)) color = layer.color;
+  }
+  return color;
+}
+
+VsdxColor? _shapeOwnFillRgbForCharBackdrop(
+  VsdxShape shape,
+  VsdxTheme theme,
+  VsdxColor behind,
+) {
+  if (_isLibvisioBakePlate(shape)) return null;
+  if (!_shapePaintsFill(shape, shape.geometries)) return null;
+  final fg = _fillRgbForLibvisioWrite(
+    shape.fill,
+    theme,
+    fillMatrix: shape.quickStyleFillMatrix,
+  );
+  return colourForLibvisioAlpha(
+    fg,
+    shape.fill.foregroundTransparency,
+    backdrop: behind,
+  );
+}
+
+_LibvisioAabb? _shapePaintedFillAabbInParent(VsdxShape shape) {
+  double? minX;
+  double? minY;
+  double? maxX;
+  double? maxY;
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noFill) continue;
+    final box = geometryLocalBounds(
+      geometry,
+      width: shape.width,
+      height: shape.height,
+    );
+    if (box == null) continue;
+    minX = minX == null ? box.minX : math.min(minX, box.minX);
+    minY = minY == null ? box.minY : math.min(minY, box.minY);
+    maxX = maxX == null ? box.maxX : math.max(maxX, box.maxX);
+    maxY = maxY == null ? box.maxY : math.max(maxY, box.maxY);
+  }
+  if (minX == null || minY == null || maxX == null || maxY == null) {
+    return null;
+  }
+  return _localAabbToParent(shape, minX, minY, maxX, maxY);
+}
+
+_CharColorTransFill? _shapeFillLayerInParent(
+  VsdxShape shape,
+  VsdxTheme theme,
+  VsdxColor behind,
+) {
+  final color = _shapeOwnFillRgbForCharBackdrop(shape, theme, behind);
+  if (color == null) return null;
+  final aabb = _shapePaintedFillAabbInParent(shape) ??
+      _shapeXformAabbInParent(shape);
+  return _CharColorTransFill(aabb, color);
+}
+
+VsdxCharStyle _charStyleColorTransOver(
+  VsdxCharStyle style,
+  VsdxTheme theme,
+  VsdxColor backdrop,
+) {
+  if (style.transparency <= 1e-9) return style;
+  final color = _charRgbForLibvisioWrite(style, theme);
+  if (color == null && style.themeColorIndex != null) return style;
+  final fg = color ?? const VsdxColor(0xFF000000);
+  return style.copyWith(
+    color: colourForLibvisioAlpha(
+      fg,
+      style.transparency,
+      backdrop: backdrop,
+    ),
+    transparency: 0,
+    clearThemeColorIndex: true,
+  );
+}
+
+VsdxRichText _richTextWithBakedCharColorTrans(
+  VsdxRichText rich,
+  VsdxTheme theme,
+  VsdxColor backdrop,
+) {
+  var changed = false;
+  final runs = <VsdxTextRun>[];
+  for (final run in rich.runs) {
+    final style = _charStyleColorTransOver(run.charStyle, theme, backdrop);
+    if (!identical(style, run.charStyle)) {
+      changed = true;
+      runs.add(run.copyWith(charStyle: style));
+    } else {
+      runs.add(run);
+    }
+  }
+  if (!changed) return rich;
+  return rich.copyWith(runs: runs);
+}
+
+VsdxShape _bakeCharColorTransShape(
+  VsdxShape shape,
+  VsdxTheme theme,
+  VsdxColor behind,
+) {
+  final ownFill = _shapeOwnFillRgbForCharBackdrop(shape, theme, behind);
+  var backdrop = ownFill ?? behind;
+  final bkgnd = shape.richText.textBlock.backgroundColor;
+  if (bkgnd != null) {
+    backdrop = colourForLibvisioAlpha(
+      bkgnd,
+      shape.richText.textBlock.backgroundTransparency,
+      backdrop: backdrop,
+    );
+  }
+  var next = shape;
+  if (_richTextNeedsColorTransBake(shape.richText)) {
+    next = shape.copyWith(
+      richText: _richTextWithBakedCharColorTrans(
+        shape.richText,
+        theme,
+        backdrop,
+      ),
+    );
+  }
+  if (shape.children.isEmpty) return next;
+  final childBehind = ownFill ?? behind;
+  final painted = <_CharColorTransFill>[];
+  final children = <VsdxShape>[];
+  var changed = !identical(next, shape);
+  for (final child in shape.children) {
+    final resolved = _backdropFromPainted(
+      painted,
+      _shapeXformAabbInParent(child),
+      childBehind,
+    );
+    final baked = _bakeCharColorTransShape(child, theme, resolved);
+    children.add(baked);
+    changed |= !identical(baked, child);
+    final layer = _shapeFillLayerInParent(child, theme, resolved);
+    if (layer != null) painted.add(layer);
+  }
+  if (!changed) return shape;
+  return next.copyWith(children: children);
+}
+
+/// Composite Character ColorTrans over the fill Draw already painted.
+///
+/// LibreOffice only calls `VisioDocument::parse`. `readCharIX` never stores
+/// ColorTrans and `xmlStringToColour` zeros `Colour.a`, so Draw paints
+/// `fo:color` fully opaque. Canvas / SVG already multiply the glyph over
+/// whatever fill sits behind it. A save freezes that overlay into Color
+/// and writes ColorTrans=0. Own FillForegnd / TextBkgnd win; otherwise the
+/// top overlapping sibling in z-order; otherwise page colour / white.
+/// Theme-only Color resolves through the document theme, then Office.
+VsdxDocument bakeCharColorTransForLibvisioWrite(VsdxDocument document) {
+  if (document.pages.isEmpty) return document;
+  final theme = document.theme;
+  final pages = <VsdxPage>[];
+  var pagesChanged = false;
+  for (final page in document.pages) {
+    if (!page.shapes.any(_shapeTreeNeedsCharColorTransBake)) {
+      pages.add(page);
+      continue;
+    }
+    final pageBehind = _pageCharBackdrop(page);
+    final painted = <_CharColorTransFill>[];
+    final shapes = <VsdxShape>[];
+    var changed = false;
+    for (final shape in page.shapes) {
+      final resolved = _backdropFromPainted(
+        painted,
+        _shapeXformAabbInParent(shape),
+        pageBehind,
+      );
+      final baked = _bakeCharColorTransShape(shape, theme, resolved);
+      shapes.add(baked);
+      changed |= !identical(baked, shape);
+      final layer = _shapeFillLayerInParent(shape, theme, resolved);
+      if (layer != null) painted.add(layer);
+    }
+    if (!changed) {
+      pages.add(page);
+    } else {
+      pages.add(page.copyWith(shapes: shapes));
+      pagesChanged = true;
+    }
+  }
+  if (!pagesChanged) return document;
+  return document.copyWith(pages: pages);
+}
+
 /// SoftEdgesSize Draw will collect for this picture (0 = do not bake).
 ///
 /// Canvas / SVG feather the visible Img* window, clipped to the Foreign
@@ -14261,17 +14554,14 @@ VsdxColor _colourOver(VsdxColor dst, VsdxColor src, double srcTransparency) {
 
 /// RGB Draw will paint when libvisio strips alpha (`xmlStringToColour`
 /// always stores Colour.a = 0, and ColorTrans / LineColorTrans /
-/// ShdwForegndTrans are not tokens). Blends [foreground] toward white.
-VsdxColor colourForLibvisioAlpha(VsdxColor foreground, double transparency) {
-  final t = transparency.clamp(0.0, 1.0);
-  if (t <= 1e-9) return foreground;
-  int mix(int channel) => (channel * (1 - t) + 255 * t).round().clamp(0, 255);
-  return VsdxColor.argb(
-    0xFF,
-    mix(foreground.red),
-    mix(foreground.green),
-    mix(foreground.blue),
-  );
+/// ShdwForegndTrans are not tokens). Blends [foreground] over [backdrop]
+/// (opaque white when omitted — the page default).
+VsdxColor colourForLibvisioAlpha(
+  VsdxColor foreground,
+  double transparency, {
+  VsdxColor backdrop = VsdxColor.white,
+}) {
+  return _colourOver(backdrop, foreground, transparency);
 }
 
 /// RGB canvas `_colourOrTheme` would paint for a character run.
@@ -14290,7 +14580,9 @@ VsdxColor? _charRgbForLibvisioWrite(
 /// Theme-only Color still has to freeze into this RGB blend because
 /// `readCharIX` never stores ColorTrans — Draw would otherwise paint
 /// THEMEVAL() fully opaque, while canvas already multiplies
-/// `_colourOrTheme` by (1 − ColorTrans).
+/// `_colourOrTheme` over the fill behind the run. Callers without a
+/// painted backdrop blend toward white; [bakeCharColorTransForLibvisioWrite]
+/// composites over FillForegnd / overlapping siblings first.
 VsdxColor? charColorForLibvisioWrite(
   VsdxCharStyle style, [
   VsdxTheme theme = VsdxTheme.empty,

@@ -3303,8 +3303,92 @@ void main() {
         colourForLibvisioAlpha(
           const VsdxColor(0xFFCCCCCC),
           0.5,
+          backdrop: const VsdxColor(0xFFCCCCCC),
         ).value,
-        reason: 'a second save must keep the RGB Draw paints as fo:color',
+        reason: 'a second save must keep the RGB Draw paints as fo:color '
+            '(composited over the #cccccc bar, not toward white)',
+      );
+    },
+  );
+
+  test(
+    'GMDL Date picker leftover composites ColorTrans over the teal header for LibreOffice',
+    () {
+      VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first;
+          }
+          final nested = glyphRun(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final picker = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Gmdl / GMDL / Pickers',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Date picker (portrait)')
+          .build(109, 3, 3);
+      final year = glyphRun(picker, '2017');
+      expect(year, isNotNull);
+      expect(
+        year!.charStyle.transparency,
+        closeTo(0.3, 1e-6),
+        reason: 'textOpacity=70 is Char ColorTrans that collectCharIX cannot '
+            'read; a save bakes it over the #009688 header',
+      );
+      expect(
+        year.charStyle.color?.value,
+        0xFFFFFFFF,
+        reason: 'in-memory Color stays white until the ColorTrans bake',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(picker.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      final leftoverYear = glyphRun(leftover, '2017')!;
+      final expected = colourForLibvisioAlpha(
+        const VsdxColor(0xFFFFFFFF),
+        0.3,
+        backdrop: const VsdxColor(0xFF009688),
+      );
+      expect(
+        leftoverYear.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'ColorTrans is not a token; leftover writes 0',
+      );
+      expect(
+        leftoverYear.charStyle.color?.value,
+        expected.value,
+        reason: 'white 70% over #009688 is the fo:color Draw paints; toward '
+            'white used to stay #FFFFFF',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      expect(
+        glyphRun(second.pages.first.findShapeById(id)!, '2017')!
+            .charStyle
+            .color
+            ?.value,
+        expected.value,
+        reason: 'a second save must keep the teal-composited RGB',
       );
     },
   );
