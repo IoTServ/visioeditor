@@ -14021,6 +14021,61 @@ void main() {
   );
 
   test(
+    'SysML Use Case leftover keeps leading Character newline for LibreOffice',
+    () {
+      const nbsp = '\u00a0';
+
+      VsdxShape? extPoints(VsdxShape shape) {
+        final t = shape.text ?? '';
+        if (t.contains('extension points')) return shape;
+        for (final child in shape.children) {
+          final nested = extPoints(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final useCase = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / UseCases',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Use Case (2)')
+          .build(1, 3, 3);
+      final inMemory = extPoints(useCase)!;
+      expect(
+        inMemory.text,
+        equals('${nbsp}\nextension points\np1, p2'),
+        reason: 'Sidebar mxCell(\\nextension points\\np1, p2) with html=1. '
+            'mxText.replaceLinefeeds turns the leading newline into <br/>. '
+            'leftover trimXmlWhitespace drops U+000A so collectText '
+            '(tokens.txt Character) lost the blank first line under '
+            'UseCaseName. Capture leftover-bakes U+00A0 like Chevron list',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(useCase.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        extPoints(leftover)!.text,
+        equals('${nbsp}\nextension points\np1, p2'),
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

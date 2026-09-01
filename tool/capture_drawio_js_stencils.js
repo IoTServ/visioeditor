@@ -926,6 +926,17 @@ class CanvasRecorder {
       s = htmlRuns.map((run) => run.str).join('');
     }
     if (!s) return;
+    // mxText.replaceLinefeeds turns a leading \n into <br/> (SysML
+    // Use Case (2) `mxCell('\nextension points\np1, p2')`). leftover
+    // readShapeText / trimXmlWhitespace drops U+000A so collectText
+    // loses the blank first line (tokens.txt Character). Prefix NBSP
+    // like Chevron list so a second save keeps the shift.
+    if (s.charAt(0) === '\n') {
+      s = `\u00a0${s}`;
+      if (htmlRuns && htmlRuns.length) {
+        htmlRuns[0].str = `\u00a0${htmlRuns[0].str}`;
+      }
+    }
     const attrs = [
       `x="${number(p.x)}"`,
       `y="${number(p.y)}"`,

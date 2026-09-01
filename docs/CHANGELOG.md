@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SysML Use Case leftover keeps a leading Character newline for
+  LibreOffice. Official Sidebar `mxCell('\nextension points\np1, p2')`
+  with `html=1` and `mxText.replaceLinefeeds` paints a leading `<br/>`
+  under `UseCaseName`. leftover `readShapeText` / `trimXmlWhitespace`
+  drops U+000A so `collectText` (`tokens.txt` Character) lost the blank
+  first line. Capture now leftover-bakes U+00A0 like Chevron list. A
+  second save keeps the shift.
 - draw.io BPMN Service leftover fills gears with white for LibreOffice.
   Official `mxShapeBpmn2Task` case `service` does
   `setFillColor(STYLE_FILLCOLOR)` before `mxgraph.bpmn.service_task`.
