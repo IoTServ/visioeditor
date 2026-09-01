@@ -13576,8 +13576,16 @@ void main() {
     expect(leftover.fill.hasFill, isTrue);
     expect(leftover.fill.foregroundTransparency, closeTo(0.2, 1e-6));
     expect(leftover.fill.foreground?.value, 0xFF009688);
+    int filledRibbonGeos(VsdxShape shape) {
+      var n = shape.geometries.where((g) => !g.noFill && g.noLine).length;
+      for (final child in shape.children) {
+        n += filledRibbonGeos(child);
+      }
+      return n;
+    }
+
     expect(
-      leftover.geometries.where((g) => !g.noFill && g.noLine).length,
+      filledRibbonGeos(leftover),
       greaterThan(1),
       reason: 'each dash must be a FillForegndTrans ribbon, not one solid bar',
     );

@@ -3661,6 +3661,152 @@ void main() {
   );
 
   test(
+    'AWS open-arrow leftover splits overlapping stroke ribbons for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool leftoverFillsOverlap(VsdxShape shape) {
+        if (shape.keepsLibvisioEvenoddHoles) return false;
+        final filled = [
+          for (final geometry in shape.geometries)
+            if (!geometry.noFill && !geometry.noShow) geometry,
+        ];
+        for (var i = 0; i < filled.length; i++) {
+          for (var j = i + 1; j < filled.length; j++) {
+            final a = geometryLocalBounds(
+              filled[i],
+              width: shape.width,
+              height: shape.height,
+            );
+            final b = geometryLocalBounds(
+              filled[j],
+              width: shape.width,
+              height: shape.height,
+            );
+            if (a == null || b == null) continue;
+            final x0 = a.minX > b.minX ? a.minX : b.minX;
+            final x1 = a.maxX < b.maxX ? a.maxX : b.maxX;
+            final y0 = a.minY > b.minY ? a.minY : b.minY;
+            final y1 = a.maxY < b.maxY ? a.maxY : b.maxY;
+            if (x1 <= x0 + 1e-9 || y1 <= y0 + 1e-9) continue;
+            final overlap = (x1 - x0) * (y1 - y0);
+            final aa = (a.maxX - a.minX).abs() * (a.maxY - a.minY).abs();
+            final ab = (b.maxX - b.minX).abs() * (b.maxY - b.minY).abs();
+            final smaller = aa < ab ? aa : ab;
+            if (smaller > 0 && overlap / smaller >= 0.05) return true;
+          }
+        }
+        return false;
+      }
+
+      final arrow = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / AWS4 / AWS / Arrows',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Open (thin, left) (2)')
+          .build(112, 3, 3);
+      expect(
+        arrow.geometries.where((g) => g.noFill && !g.noLine).length,
+        greaterThanOrEqualTo(2),
+        reason: 'mxStencil open arrow is two stroked polylines',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(arrow.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        descendants(leftover).any((child) => child.isLibvisioFillSplitChild),
+        isTrue,
+        reason: 'collectGeometry evenodd would punch the chevron out of the '
+            'shaft once leftover ribbons both strokes on one shape',
+      );
+      expect(
+        descendants(leftover).any(leftoverFillsOverlap),
+        isFalse,
+        reason: 'each leftover ribbon must be its own shape',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      expect(
+        descendants(second.pages.first.findShapeById(id)!)
+            .any((child) => child.isLibvisioFillSplitChild),
+        isTrue,
+        reason: 'a second save must keep the split chevron sibling',
+      );
+    },
+  );
+
+  test(
+    'Cisco ONS15500 leftover splits overlapping stroke ribbons for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      final chassis = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Cisco / Misc')
+          .stencils
+          .singleWhere((entry) => entry.name == 'ONS15500')
+          .build(113, 3, 3);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(chassis.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        descendants(leftover).any((child) => child.isLibvisioFillSplitChild),
+        isTrue,
+        reason: 'Sheet.3 leftover ribbons two overlapping subpaths; Draw '
+            'evenodd would punch the inner loop',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      expect(
+        descendants(second.pages.first.findShapeById(id)!)
+            .any((child) => child.isLibvisioFillSplitChild),
+        isTrue,
+        reason: 'a second save must keep the split inner ribbon',
+      );
+    },
+  );
+
+  test(
     'mxGraph inherit colors freeze parent hex for LibreOffice',
     () {
       VsdxTextRun? glyphRun(VsdxShape shape, String text) {

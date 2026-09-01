@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io AWS open-arrow leftover splits overlapping stroke ribbons
+  for LibreOffice. Official AWS4 `Open (thin, left) (2)` is two
+  unfilled polylines whose leftover miter ribbon
+  (`User.veMiterLimit` 10; `_lineProperties` never emits
+  `svg:stroke-miterlimit`) concatenates both `NoFill=0` Geometry
+  sections into one `svg:fill-rule=evenodd` path, so Draw punched the
+  chevron out of the shaft. leftover now moves overlapping ribbon
+  blobs onto `User.veLibvisioFillSplit` children after the in-place
+  ribbon (Cisco ONS15500, Fluid Power ISO, GMDL dashed underlines
+  the same way). First-aid / no-entry still keep evenodd holes. A
+  second save keeps the split siblings.
 - draw.io GMDL text field leftover ribbons dashed LineColorTrans
   for LibreOffice. Official GMDL Single-line text field (normal) (3)
   is `veDashPattern` plus LineColorTrans 0.2 (`tokens.txt` has no

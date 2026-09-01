@@ -75,7 +75,11 @@
 /// that same fill PNG. Nested icon glyphs (cloud tiles, EIP squares)
 /// are the opposite missing paint: a save strokes those interiors so
 /// Draw does not punch the body, while first-aid / no-entry cut-outs
-/// keep `User.veLibvisioEvenoddHole`. For an
+/// keep `User.veLibvisioEvenoddHole`. In-place miter / LineColorTrans
+/// ribbons (AWS open arrows, Fluid Power ISO, GMDL dashed underlines)
+/// that leave several overlapping `NoFill=0` Geometry sections on one
+/// shape are the same punch: leftover splits those blobs onto children
+/// so Draw fills each independently. For an
 /// unfilled stroke with a line gradient or LineColorTrans, a filled ribbon
 /// whose FillPattern 25–40 / FillForegndTrans libvisio *does* collect —
 /// including solid CubBezTo / RelQuadBezTo rails (Android Quickscroll)
@@ -705,10 +709,15 @@ bool stencilKeepsLibvisioEvenoddHoles(String stencilName) {
 VsdxShape strokeNestedFillsOnShapeForLibvisio(
   VsdxShape shape, {
   bool keepHoles = false,
+  int Function()? nextId,
 }) {
   final children = <VsdxShape>[
     for (final child in shape.children)
-      strokeNestedFillsOnShapeForLibvisio(child, keepHoles: keepHoles),
+      strokeNestedFillsOnShapeForLibvisio(
+        child,
+        keepHoles: keepHoles,
+        nextId: nextId,
+      ),
   ];
   var next = shape;
   var childrenChanged = children.length != shape.children.length;
@@ -732,7 +741,7 @@ VsdxShape strokeNestedFillsOnShapeForLibvisio(
     if (!identical(geos, next.geometries)) {
       next = next.copyWith(geometries: geos);
     }
-    next = splitOverlappingFillsOnShapeForLibvisio(next);
+    next = splitOverlappingFillsOnShapeForLibvisio(next, nextId: nextId);
   }
   return next;
 }
@@ -776,8 +785,16 @@ bool _libvisioFillsOverlap(
 /// `collectGeometry` / `_fillAndShadowProperties`. Each child is a separate
 /// shape Draw fills independently. First-aid / no-entry cut-outs skip this
 /// via [VsdxShape.keepsLibvisioEvenoddHoles].
-VsdxShape splitOverlappingFillsOnShapeForLibvisio(VsdxShape shape) {
-  if (shape.is1D || shape.hasImage) return shape;
+VsdxShape splitOverlappingFillsOnShapeForLibvisio(
+  VsdxShape shape, {
+  int Function()? nextId,
+}) {
+  if (shape.hasImage) return shape;
+  if (shape.keepsLibvisioEvenoddHoles) return shape;
+  if (_isLibvisioBakePlate(shape)) return shape;
+  // A 1-D leftover that still has a stroke is a connector; do not explode
+  // its Geometry. In-place ribbons already dropped LinePattern.
+  if (shape.is1D && shape.line.hasLine) return shape;
   final filled = <int>[
     for (var i = 0; i < shape.geometries.length; i++)
       if (!shape.geometries[i].noFill && !shape.geometries[i].noShow) i,
@@ -821,11 +838,12 @@ VsdxShape splitOverlappingFillsOnShapeForLibvisio(VsdxShape shape) {
     for (var i = 0; i < shape.geometries.length; i++)
       if (!overlapping.contains(i) || i == keep) shape.geometries[i],
   ];
-  var nextId = _maxDescendantShapeId(shape) + 1;
+  var fallbackId = _maxDescendantShapeId(shape);
+  int allocId() => nextId != null ? nextId() : ++fallbackId;
   final extras = <VsdxShape>[];
   for (final i in overlapping) {
     if (i == keep) continue;
-    final id = nextId++;
+    final id = allocId();
     extras.add(
       VsdxShape(
         id: id,
@@ -865,8 +883,13 @@ VsdxShape splitOverlappingFillsOnShapeForLibvisio(VsdxShape shape) {
 
 /// Stroke nested fills Draw would evenodd-punch (`svg:fill-rule=evenodd`).
 VsdxPage bakeNestedFillsForLibvisioWrite(VsdxPage page) {
+  var nextId = _maxShapeId(page.shapes) + 1;
   final shapes = <VsdxShape>[
-    for (final shape in page.shapes) strokeNestedFillsOnShapeForLibvisio(shape),
+    for (final shape in page.shapes)
+      strokeNestedFillsOnShapeForLibvisio(
+        shape,
+        nextId: () => nextId++,
+      ),
   ];
   var same = shapes.length == page.shapes.length;
   if (same) {
@@ -879,6 +902,142 @@ VsdxPage bakeNestedFillsForLibvisioWrite(VsdxPage page) {
   }
   if (same) return page;
   return page.copyWith(shapes: shapes);
+}
+
+VsdxShape _applyLibvisioWriteGeometryAndSplit(
+  VsdxShape shape, {
+  required int Function() nextId,
+  required VsdxTheme theme,
+}) {
+  final children = <VsdxShape>[
+    for (final child in shape.children)
+      _applyLibvisioWriteGeometryAndSplit(
+        child,
+        nextId: nextId,
+        theme: theme,
+      ),
+  ];
+  var next = shape;
+  var childrenChanged = children.length != shape.children.length;
+  if (!childrenChanged) {
+    for (var i = 0; i < children.length; i++) {
+      if (!identical(children[i], shape.children[i])) {
+        childrenChanged = true;
+        break;
+      }
+    }
+  }
+  if (childrenChanged) next = next.copyWith(children: children);
+  if (!_isLibvisioBakePlate(next) && !next.hasImage) {
+    var working = next;
+    var geometries = next.geometries;
+    var line = next.line;
+    void applyDash(
+      ({List<VsdxGeometry> geometries, VsdxLine line})? baked,
+    ) {
+      if (baked == null) return;
+      geometries = baked.geometries;
+      line = baked.line;
+      working = working.copyWith(geometries: geometries, line: line);
+    }
+
+    // Flatten only when the ribbon needs the gaps. Opaque custom dashes
+    // stay stroked until libvisioShapeWrite so leftover can drop
+    // User.veDashPattern there.
+    if (next.line.transparency > 1e-9 || next.line.hasGradient) {
+      applyDash(
+        bakeCustomDashForLibvisio(
+          working,
+          geometries: geometries,
+          line: line,
+        ),
+      );
+      applyDash(
+        bakeFlowDashForLibvisio(
+          working,
+          geometries: geometries,
+          line: line,
+        ),
+      );
+      applyDash(
+        bakeLinePatternDashForLibvisio(
+          working,
+          geometries: geometries,
+          line: line,
+        ),
+      );
+    }
+    final ribbon = bakeStrokeRibbonForLibvisio(
+      shape: working,
+      geometries: geometries,
+      line: line,
+      theme: theme,
+    );
+    if (ribbon != null) {
+      next = next.copyWith(
+        geometries: ribbon.geometries,
+        line: ribbon.line.copyWith(miterLimit: 4.0),
+        fill: ribbon.fill,
+        userCells: <VsdxUserCell>[
+          for (final cell in next.userCells)
+            if (cell.name != VsdxShape.userDashPattern &&
+                cell.name != VsdxShape.userMiterLimit)
+              cell,
+        ],
+      );
+    }
+  }
+  return splitOverlappingFillsOnShapeForLibvisio(next, nextId: nextId);
+}
+
+/// Apply in-place ribbons then split overlapping fills Draw would evenodd-punch.
+///
+/// `libvisioShapeWrite` expands unfilled miter / LineColorTrans strokes into
+/// several `NoFill=0` Geometry sections on one shape. `collectGeometry`
+/// concatenates those into one `svg:fill-rule=evenodd` path, so AWS open
+/// arrows and Fluid Power ISO leftovers punched self-holes. Nested-fill
+/// split runs before that ribbon, so leftover must split again afterwards.
+VsdxPage bakeInPlaceStrokeRibbonFillsPageForLibvisioWrite(
+  VsdxPage page, {
+  VsdxTheme theme = VsdxTheme.empty,
+}) {
+  var nextId = _maxShapeId(page.shapes) + 1;
+  final shapes = <VsdxShape>[
+    for (final shape in page.shapes)
+      _applyLibvisioWriteGeometryAndSplit(
+        shape,
+        nextId: () => nextId++,
+        theme: theme,
+      ),
+  ];
+  var same = shapes.length == page.shapes.length;
+  if (same) {
+    for (var i = 0; i < shapes.length; i++) {
+      if (!identical(shapes[i], page.shapes[i])) {
+        same = false;
+        break;
+      }
+    }
+  }
+  if (same) return page;
+  return page.copyWith(shapes: shapes);
+}
+
+VsdxDocument bakeInPlaceStrokeRibbonFillsForLibvisioWrite(
+  VsdxDocument document,
+) {
+  if (document.pages.isEmpty) return document;
+  final pages = <VsdxPage>[];
+  var changed = false;
+  for (final page in document.pages) {
+    final next = bakeInPlaceStrokeRibbonFillsPageForLibvisioWrite(
+      page,
+      theme: document.theme,
+    );
+    changed |= !identical(next, page);
+    pages.add(next);
+  }
+  return changed ? document.copyWith(pages: pages) : document;
 }
 
 /// Rewrite hops and image adjustments the VSDX token map cannot collect.
@@ -897,7 +1056,8 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
     pages.add(next);
   }
   final hopped = pagesChanged ? document.copyWith(pages: pages) : document;
-  return bakeHatchTransForLibvisioWrite(
+  return bakeInPlaceStrokeRibbonFillsForLibvisioWrite(
+    bakeHatchTransForLibvisioWrite(
     bakeThemeRgbCacheForLibvisioWrite(
       bakePageColorForLibvisioWrite(
         bakeCoveredForLibvisioWrite(
@@ -972,6 +1132,7 @@ VsdxDocument documentForLibvisioWrite(VsdxDocument document) {
           ),
         ),
       ),
+    ),
     ),
   );
 }

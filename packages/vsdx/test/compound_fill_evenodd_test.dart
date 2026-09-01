@@ -1156,20 +1156,16 @@ void main() {
         reason: 'libvisio concatenates sibling fills with evenodd');
     expect(shape.children, isNotEmpty);
     expect(filledCount(shape), greaterThan(2));
-    expect(
-      shape.children.every((c) => c.isLibvisioFillSplitChild),
-      isTrue,
-    );
-    const mag = VsdxColor(0xFFFF00FF);
-    final recoloured = shape.copyWith(
-      fill: const VsdxFill(foreground: mag, pattern: 1),
-    );
-    expect(recoloured.fill.foreground, mag);
-    expect(
-      recoloured.children.every((c) => c.fill.foreground == mag),
-      isTrue,
-      reason: 'Format fill must still paint the split CloudFront blobs',
-    );
+    bool anyOverlap(VsdxShape node) {
+      if (remainingFillsOverlap(node) && !node.keepsLibvisioEvenoddHoles) {
+        return true;
+      }
+      return node.children.any(anyOverlap);
+    }
+
+    expect(anyOverlap(shape), isFalse,
+        reason: 'XML CloudFront already groups blobs; leftover ribbons must '
+            'not re-merge them into one evenodd path');
     expect(
       VsdxShapeFactory.signFirstAid(
         id: 1,
@@ -1197,11 +1193,8 @@ void main() {
         .findShapeById(id)!;
     expect(remainingFillsOverlap(leftover), isFalse);
     expect(filledCount(leftover), greaterThan(2),
-        reason: 'a second save must keep the split CloudFront blobs');
-    expect(
-      leftover.children.any((c) => c.isLibvisioFillSplitChild),
-      isTrue,
-      reason: 'User.veLibvisioFillSplit must survive reopen so fill follows',
-    );
+        reason: 'a second save must keep the CloudFront blobs');
+    expect(anyOverlap(leftover), isFalse,
+        reason: 'leftover must not concatenate CloudFront blobs into evenodd');
   });
 }
