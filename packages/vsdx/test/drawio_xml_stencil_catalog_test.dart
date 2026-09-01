@@ -13033,6 +13033,86 @@ void main() {
   );
 
   test(
+    'SysML Abstract Definition leftover has no trailing Character newline for LibreOffice',
+    () {
+      VsdxShape? nameShape(VsdxShape shape) {
+        if ((shape.text ?? '').contains('Name') ||
+            shape.richText.runs.any((run) => run.text.contains('Name'))) {
+          return shape;
+        }
+        for (final child in shape.children) {
+          final nested = nameShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final abstract = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Blocks',
+          )
+          .stencils
+          .where((entry) => entry.name.startsWith('Abstract Definition'))
+          .map((entry) => entry.build(1, 3, 3))
+          .firstWhere((shape) {
+            final named = nameShape(shape);
+            if (named == null) return false;
+            final t = named.text ?? '';
+            return !t.contains('abstract') &&
+                !named.richText.runs.any((run) => run.text.contains('abstract'));
+          });
+      final inMemory = nameShape(abstract)!;
+      expect(
+        inMemory.text,
+        equals('Name'),
+        reason: 'html </p> must not leftover-bake a trailing Character '
+            r'\n; tokens.txt Character is collectText and mxText '
+            'foreignObject has no extra paragraph after the last block',
+      );
+      expect(
+        inMemory.richText.runs.any((run) => run.text == '\n'),
+        isFalse,
+        reason: 'a leftover newline run is a second paragraph our SVG paints',
+      );
+      expect(
+        inMemory.richText.runs.first.charStyle.style.bold,
+        isTrue,
+      );
+      expect(
+        inMemory.richText.runs.first.charStyle.style.italic,
+        isTrue,
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(abstract.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverName = nameShape(leftover)!;
+      expect(
+        leftoverName.text,
+        equals('Name'),
+        reason: 'a second save must keep a single Character paragraph',
+      );
+      expect(
+        leftoverName.richText.runs.any((run) => run.text == '\n'),
+        isFalse,
+        reason: 'a second save must not freeze the </p> newline',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

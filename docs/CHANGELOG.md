@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SysML Abstract Definition leftover no longer keeps a trailing
+  Character newline for LibreOffice. Official sidebar is html=1
+  `<p>…Name…</p>`; `parseHtmlLabel` treated `</p>` as a leftover `\n`
+  run (`tokens.txt` Character is collectText). Our SVG painted a second
+  paragraph while mxText foreignObject has none after the last block.
+  Capture now drops a standalone trailing `\n`. A second save keeps a
+  single Name paragraph.
 - VSDX parse now keeps a leading Character U+00A0 for LibreOffice.
   Dart `String.trim` treats NBSP as whitespace, so Infographic Chevron
   list leftover `shape.text` dropped the sidebar `&nbsp;- Lorem` indent

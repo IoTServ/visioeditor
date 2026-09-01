@@ -7857,6 +7857,15 @@ function parseHtmlLabel(html, base) {
       }
     }
   }
+  // mxText foreignObject does not insert a text newline after the last
+  // </p>/</div>/</li>. parseHtmlLabel used to leftover-bake a trailing
+  // `\n` Character run (SysML Abstract Definition `<p>Name</p>`).
+  // tokens.txt Character is collectText; our SVG paints that extra
+  // paragraph while Draw often collapses it. A standalone trailing `\n`
+  // from </p> is dropped; `\n` fused onto a <br> run stays.
+  while (runs.length && String(runs[runs.length - 1].str) === '\n') {
+    runs.pop();
+  }
   return runs;
 }
 
