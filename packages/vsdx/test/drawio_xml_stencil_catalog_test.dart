@@ -13113,6 +13113,92 @@ void main() {
   );
 
   test(
+    'Atlassian Comment leftover keeps unhighlighted mention sentence for LibreOffice',
+    () {
+      VsdxShape? mentionedShape(VsdxShape shape) {
+        if ((shape.text ?? '').contains("You've mentioned") ||
+            shape.richText.runs
+                .any((run) => run.text.contains("You've mentioned"))) {
+          return shape;
+        }
+        for (final child in shape.children) {
+          final nested = mentionedShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool hasHighlightPlate(VsdxShape shape) {
+        if (isLibvisioHighlightPlate(shape)) return true;
+        return shape.children.any(hasHighlightPlate);
+      }
+
+      final comment = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Atlassian / Atlassian',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Comment')
+          .build(1, 4, 4);
+      final inMemory = mentionedShape(comment);
+      expect(
+        inMemory,
+        isNotNull,
+        reason: 'sidebar html=1 authors the mention inside a longer sentence',
+      );
+      expect(
+        inMemory!.richText.textBlock.hideText,
+        isFalse,
+        reason: 'in-memory Character still paints the unhighlighted remainder',
+      );
+      expect(
+        inMemory.text,
+        contains('Confluence'),
+        reason: 'the sentence after @Jesse Byler is leftover Character',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(comment.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverBody = mentionedShape(leftover)!;
+      expect(
+        leftoverBody.richText.textBlock.hideText,
+        isFalse,
+        reason: 'HideText is a token; hiding the whole source would drop '
+            'the unhighlighted sentence while chip plates keep @Jesse',
+      );
+      expect(
+        leftoverBody.text,
+        contains("You've mentioned"),
+        reason: 'a second save must keep the unhighlighted leftover Character',
+      );
+      expect(
+        leftoverBody.text,
+        contains('Confluence'),
+        reason: 'a second save must keep the sentence after the chip',
+      );
+      expect(
+        hasHighlightPlate(leftover),
+        isTrue,
+        reason: 'readCharIX skips Highlight, so the chip still leftover-bakes '
+            'FillForegnd plates Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

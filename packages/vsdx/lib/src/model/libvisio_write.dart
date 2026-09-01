@@ -5616,7 +5616,13 @@ VsdxDocument bakeSolidLineSpacingForLibvisioWrite(VsdxDocument document) {
 /// becomes TextBkgnd. Mixed colours cannot share that cell, so a save
 /// inserts locked FillForegnd siblings that carry each highlighted run
 /// using the same nowrap advance curved-text uses, then hides the source
-/// label so Draw paints those glyphs above the body fill. Explicit
+/// label so Draw paints those glyphs above the body fill — but only when
+/// every visible glyph is on a plate. Atlassian Comment leftover
+/// (`You've mentioned… @Jesse Byler …Confluence`) has unhighlighted
+/// Character around the chip; `HideText` is a token, so a full-source
+/// hide dropped that sentence from fodg and left only the chip plates.
+/// Unhighlighted remainder stays on the source; plates are FillForegnd
+/// only. Explicit
 /// newlines stack the same way canvas / SVG already wrap those markers.
 /// Word Wrap on also wraps to TxtWidth with the same word/space units.
 /// Tab fields use `visioTabFieldStart` (libvisio `_fillTabSet`).
@@ -5639,6 +5645,17 @@ bool shapeNeedsLibvisioMixedHighlightBake(VsdxShape shape) {
     if (run.charStyle.highlight != null) sawHighlight = true;
   }
   return sawHighlight;
+}
+
+/// `true` when mixed Highlight sits inside leftover Character that Draw
+/// must still collect. Hiding the whole source would drop that remainder
+/// (`tokens.txt` HideText).
+bool _mixedHighlightHasUnhighlightedGlyphs(VsdxShape shape) {
+  for (final run in shape.richText.runs) {
+    if (run.text.trim().isEmpty) continue;
+    if (run.charStyle.highlight == null) return true;
+  }
+  return false;
 }
 
 typedef _HighlightSeg = ({
@@ -5872,6 +5889,7 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
   ];
   final totalH = lineHeights.fold<double>(0, (a, b) => a + b);
   final firstH = lineHeights.first;
+  final keepSourceGlyphs = _mixedHighlightHasUnhighlightedGlyphs(source);
   var midY = switch (block.verticalAlign) {
     VsdxVertAlign.top => originY + th - block.marginTopInches - firstH / 2,
     VsdxVertAlign.bottom =>
@@ -5924,22 +5942,24 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
         final pw = math.max(s.width, lineH) * 1.2;
         final ph = lineH * 1.5;
         final style = s.style.copyWith(clearHighlight: true);
-        out.add(
-          VsdxShapeFactory.rectangle(
-            id: id,
-            pinX: page.x,
-            pinY: page.y,
-            width: pw,
-            height: ph,
-            name: '$kLibvisioHighlightShapeNamePrefix$plate.${source.id}',
-            fill: VsdxFill(foreground: color, pattern: 1),
-            line: const VsdxLine(pattern: 0),
-          ).copyWith(
-            locPinXInches: pw / 2,
-            locPinYInches: ph / 2,
-            angleRad: source.angleRad + block.angleRad,
-            locked: true,
-            layerMemberIds: source.layerMemberIds,
+        var plateShape = VsdxShapeFactory.rectangle(
+          id: id,
+          pinX: page.x,
+          pinY: page.y,
+          width: pw,
+          height: ph,
+          name: '$kLibvisioHighlightShapeNamePrefix$plate.${source.id}',
+          fill: VsdxFill(foreground: color, pattern: 1),
+          line: const VsdxLine(pattern: 0),
+        ).copyWith(
+          locPinXInches: pw / 2,
+          locPinYInches: ph / 2,
+          angleRad: source.angleRad + block.angleRad,
+          locked: true,
+          layerMemberIds: source.layerMemberIds,
+        );
+        if (!keepSourceGlyphs) {
+          plateShape = plateShape.copyWith(
             text: s.text,
             richText: VsdxRichText(
               runs: <VsdxTextRun>[
@@ -5963,8 +5983,9 @@ List<VsdxShape> _mixedHighlightPlatesForLibvisioWrite(
                 marginBottomInches: 0,
               ),
             ),
-          ),
-        );
+          );
+        }
+        out.add(plateShape);
         plate++;
       }
     }
@@ -6050,8 +6071,14 @@ List<VsdxShape> _bakeMixedHighlightTree(
         continue;
       }
       // Body fill first, then glyph plates so Draw does not cover the
-      // markers. Hide the source label — Highlight is not a token.
-      out.add(_sourceForLibvisioMixedHighlightWrite(next));
+      // markers. Hide the source label only when every glyph moved onto
+      // a plate — Highlight is not a token, but HideText is, and would
+      // drop unhighlighted leftover Character (Atlassian Comment).
+      out.add(
+        _mixedHighlightHasUnhighlightedGlyphs(next)
+            ? next
+            : _sourceForLibvisioMixedHighlightWrite(next),
+      );
       out.addAll(plates);
       changed = true;
       continue;

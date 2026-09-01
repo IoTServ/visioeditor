@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- Atlassian Comment leftover keeps the unhighlighted mention sentence
+  for LibreOffice. Mixed Character Highlight leftover-bakes FillForegnd
+  plates because `readCharIX` skips Highlight, then used `HideText` on
+  the whole source (`tokens.txt` HideText). Official html=1 is
+  `You've mentioned… @Jesse Byler …Confluence`; fodg kept only the chip
+  plates. Unhighlighted remainder now stays on the source; plates are
+  fill-only. All-highlighted mixed markers still hide the source.
 - draw.io SysML Abstract Definition leftover no longer keeps a trailing
   Character newline for LibreOffice. Official sidebar is html=1
   `<p>…Name…</p>`; `parseHtmlLabel` treated `</p>` as a leftover `\n`
