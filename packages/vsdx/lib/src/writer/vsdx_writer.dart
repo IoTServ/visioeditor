@@ -5810,17 +5810,7 @@ class VsdxWriter {
     }
     textEl.children.clear();
     final runs = _effectiveTextRuns(edited);
-    for (var i = 0; i < runs.length; i++) {
-      textEl.children.add(XmlElement(
-        XmlName('pp'),
-        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-      ));
-      textEl.children.add(XmlElement(
-        XmlName('cp'),
-        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-      ));
-      _appendRunText(textEl.children, runs[i]);
-    }
+    _appendMarkedTextRuns(textEl.children, runs);
     // Keep Character / Paragraph sections in sync when content is rewritten.
     _patchTextStyleSections(el, runs);
     return true;
@@ -5896,9 +5886,46 @@ class VsdxWriter {
     return false;
   }
 
+  /// `<pp>`/`<cp>` plus Character text. Track paragraph starts across
+  /// runs so a same-line span (`<b>sd</b> Interaction1`) does not
+  /// leftover-bake its leading U+0020; libvisio only splits `text:p`
+  /// on U+000A.
+  void _appendMarkedTextRuns(
+    List<XmlNode> out,
+    List<VsdxTextRun> runs, {
+    String? firstPlainOverride,
+  }) {
+    var atParagraphStart = true;
+    for (var i = 0; i < runs.length; i++) {
+      out.add(XmlElement(
+        XmlName('pp'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+      ));
+      out.add(XmlElement(
+        XmlName('cp'),
+        <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
+      ));
+      final run = (firstPlainOverride != null && i == 0)
+          ? runs[i].copyWith(text: firstPlainOverride)
+          : runs[i];
+      _appendRunText(out, run, atParagraphStart: atParagraphStart);
+      atParagraphStart = textForLibvisioWrite(
+        run.text,
+        atParagraphStart: atParagraphStart,
+      ).endsWith('\n');
+    }
+  }
+
   /// Emit one rich-text run: tabs → `<tp/>` + U+0009, fields → `<fld IX>`.
-  void _appendRunText(List<XmlNode> out, VsdxTextRun run) {
-    final text = textForLibvisioWrite(run.text);
+  void _appendRunText(
+    List<XmlNode> out,
+    VsdxTextRun run, {
+    bool atParagraphStart = true,
+  }) {
+    final text = textForLibvisioWrite(
+      run.text,
+      atParagraphStart: atParagraphStart,
+    );
     final spans = [...run.fieldSpans]
       ..sort((a, b) => a.start.compareTo(b.start));
     var i = 0;
@@ -7457,20 +7484,11 @@ class VsdxWriter {
     if (!hasMarker) {
       // Upgrade bare <Text>hello</Text> to pp/cp so Character rows apply.
       textEl.children.clear();
-      for (var i = 0; i < runs.length; i++) {
-        textEl.children.add(XmlElement(
-          XmlName('pp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        textEl.children.add(XmlElement(
-          XmlName('cp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        _appendRunText(
-          textEl.children,
-          runs[i].copyWith(text: i == 0 ? plain : runs[i].text),
-        );
-      }
+      _appendMarkedTextRuns(
+        textEl.children,
+        runs,
+        firstPlainOverride: plain,
+      );
     }
     return true;
   }
@@ -7957,17 +7975,7 @@ class VsdxWriter {
     // Always emit <pp>/<cp> markers (Edraw / Visio do even for a single run).
     if (textRuns.isNotEmpty) {
       final textEl = XmlElement(XmlName('Text'));
-      for (var i = 0; i < textRuns.length; i++) {
-        textEl.children.add(XmlElement(
-          XmlName('pp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        textEl.children.add(XmlElement(
-          XmlName('cp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        _appendRunText(textEl.children, textRuns[i]);
-      }
+      _appendMarkedTextRuns(textEl.children, textRuns);
       if (textEl.children.isNotEmpty) children.add(textEl);
     }
     final isGroup = s.children.isNotEmpty;
@@ -8571,17 +8579,7 @@ class VsdxWriter {
         children.add(_buildLineGradientSection(write.line.gradient!));
       }
       final textEl = XmlElement(XmlName('Text'));
-      for (var i = 0; i < pictureRuns.length; i++) {
-        textEl.children.add(XmlElement(
-          XmlName('pp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        textEl.children.add(XmlElement(
-          XmlName('cp'),
-          <XmlAttribute>[XmlAttribute(XmlName('IX'), i.toString())],
-        ));
-        _appendRunText(textEl.children, pictureRuns[i]);
-      }
+      _appendMarkedTextRuns(textEl.children, pictureRuns);
       pictureText = textEl;
     } else {
       if (s.richText.tabSets.isNotEmpty) {

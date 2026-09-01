@@ -156,11 +156,25 @@ function xmlEscape(value) {
 // Object Node `mxCell('...\n type name\n...')` loses the indent, and
 // collapses `>>  View All` (Carousel) to one space. Bake line-edge
 // ASCII spaces and doubled runs as U+00A0 like Chevron / Range input.
-function bakeLineEdgeAsciiSpaces(str) {
+function bakeLineEdgeAsciiSpaces(str, atParagraphStart = true) {
+  // libvisio collectText only closes a text:p on U+000A. A leading
+  // U+0020 on a later html run that continues the same line
+  // (`<b>sd</b> Interaction1`) is interior; Draw keeps it. Baking
+  // `^ +` per run leftover Character U+00A0 (Sequence Diagram).
+  const leading = atParagraphStart ? /(^|\n)( +)/g : /(\n)( +)/g;
   return String(str)
-    .replace(/(^|\n)( +)/g, (_, brk, sp) => brk + '\u00a0'.repeat(sp.length))
+    .replace(leading, (_, brk, sp) => brk + '\u00a0'.repeat(sp.length))
     .replace(/( +)(\n|$)/g, (_, sp, brk) => '\u00a0'.repeat(sp.length) + brk)
     .replace(/ {2,}/g, (m) => '\u00a0'.repeat(m.length));
+}
+
+function bakeLineEdgeAsciiSpaceRuns(runs) {
+  if (!runs || !runs.length) return;
+  let atStart = true;
+  for (const run of runs) {
+    run.str = bakeLineEdgeAsciiSpaces(run.str, atStart);
+    atStart = String(run.str).endsWith('\n');
+  }
 }
 
 // HTML elements mxText foreignObject paints. UML `<<keyword>>` is a
@@ -957,9 +971,7 @@ class CanvasRecorder {
     // Bake line-edge ASCII spaces as U+00A0 like Chevron.
     s = bakeLineEdgeAsciiSpaces(s);
     if (htmlRuns && htmlRuns.length) {
-      for (const run of htmlRuns) {
-        run.str = bakeLineEdgeAsciiSpaces(run.str);
-      }
+      bakeLineEdgeAsciiSpaceRuns(htmlRuns);
     }
     const attrs = [
       `x="${number(p.x)}"`,

@@ -1112,11 +1112,11 @@ class _DrawioXmlShapeDecoder {
   /// `str=` label stays a single collectCharIX run.
   List<_DrawioStencilLabelRun> _decodeTextRuns(XmlElement node) {
     final parentOpacity = _number(node, 'textopacity', fallback: 100);
-    final runs = <_DrawioStencilLabelRun>[
+    final raw = <_DrawioStencilLabelRun>[
       for (final el in node.childElements)
         if (el.name.local == 'run')
           _DrawioStencilLabelRun(
-            text: textForLibvisioWrite(el.getAttribute('str') ?? ''),
+            text: el.getAttribute('str') ?? '',
             fontSize: _number(el, 'fontsize', fallback: _fontSize),
             fontStyle: _number(
               el,
@@ -1144,7 +1144,7 @@ class _DrawioXmlShapeDecoder {
             highlight: _mxGraphPaintColor(el.getAttribute('highlight')),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
-    if (runs.isNotEmpty) return runs;
+    if (raw.isNotEmpty) return _bakeDrawioLabelRuns(raw);
     final str = textForLibvisioWrite(node.getAttribute('str') ?? '');
     if (str.isEmpty) return const <_DrawioStencilLabelRun>[];
     return <_DrawioStencilLabelRun>[
@@ -1157,6 +1157,43 @@ class _DrawioXmlShapeDecoder {
         textOpacity: parentOpacity,
       ),
     ];
+  }
+
+  List<_DrawioStencilLabelRun> _bakeDrawioLabelRuns(
+    List<_DrawioStencilLabelRun> runs,
+  ) {
+    var atParagraphStart = true;
+    final out = <_DrawioStencilLabelRun>[];
+    for (final run in runs) {
+      final text = textForLibvisioWrite(
+        run.text,
+        atParagraphStart: atParagraphStart,
+      );
+      atParagraphStart = text.endsWith('\n');
+      out.add(
+        text == run.text
+            ? run
+            : _DrawioStencilLabelRun(
+                text: text,
+                fontSize: run.fontSize,
+                fontStyle: run.fontStyle,
+                fontFamily: run.fontFamily,
+                color: run.color,
+                textOpacity: run.textOpacity,
+                position: run.position,
+                align: run.align,
+                marginLeft: run.marginLeft,
+                marginRight: run.marginRight,
+                marginTop: run.marginTop,
+                marginBottom: run.marginBottom,
+                bullet: run.bullet,
+                textPosAfterBullet: run.textPosAfterBullet,
+                lineHeight: run.lineHeight,
+                highlight: run.highlight,
+              ),
+      );
+    }
+    return List<_DrawioStencilLabelRun>.unmodifiable(out);
   }
 
   /// mxShape.configureCanvas setShadow + mxSvgCanvas2D.createShadow.

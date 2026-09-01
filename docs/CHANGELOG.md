@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io SysML Sequence Diagram leftover keeps an interior Character
+  space after `<b>sd</b>` for LibreOffice. Official Sidebar
+  `<p><b>sd</b>  Interaction1</p>` collapses to one U+0020. libvisio
+  `collectText` only closes `text:p` on U+000A (`tokens.txt`
+  Character). Capture baked `^ +` on each html run so the roman span
+  became U+00A0 and Draw would not wrap. Same-line runs now keep
+  U+0020; Object Node / Range input / Carousel still leftover-bake
+  line-edge and doubled spaces. A second save keeps the space.
 - draw.io General Filled Edge leftover keeps a dark casing plus a white
   inner band for LibreOffice. Official `FilledEdge.paintEdgeShape`
   strokes `this.stroke` then `fillColor` at `strokeWidth-2`. Capture

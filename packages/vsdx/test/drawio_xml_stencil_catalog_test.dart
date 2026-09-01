@@ -13500,7 +13500,19 @@ void main() {
         reason: 'html </p> fused onto the roman run must not leftover-bake '
             r'a trailing Character \n; tokens.txt Character is collectText '
             'and mxText foreignObject has no extra paragraph after the '
-            'last block',
+            'last block. libvisio collectText only splits text:p on '
+            r'U+000A, so the space after <b>sd</b> stays U+0020 on the '
+            'same line instead of a leftover-baked U+00A0',
+      );
+      expect(
+        inMemory.richText.runs.map((run) => run.text).join(),
+        equals('sd Interaction1'),
+      );
+      expect(
+        inMemory.richText.runs.any((run) => run.text.contains('\u00a0')),
+        isFalse,
+        reason: 'Draw keeps an interior U+0020; leftover-baking it as '
+            'U+00A0 blocked wrapping after sd',
       );
       expect(
         inMemory.richText.runs.any((run) => run.text.endsWith('\n')),

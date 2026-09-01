@@ -6629,11 +6629,20 @@ VsdxShape bakeLetterspaceShapeForLibvisioWrite(VsdxShape shape) {
 /// ODF default whitespace collapse keeps one space. Capture and a
 /// save leftover-bake those edges and doubled runs to U+00A0 like
 /// Chevron / Range input so user-authored `\n ` / `  ` survives Draw.
-String textForLibvisioWrite(String text) {
+String textForLibvisioWrite(
+  String text, {
+  bool atParagraphStart = true,
+}) {
   if (text.isEmpty || !text.contains(' ')) return text;
+  // libvisio only closes a text:p on U+000A (`collectText` in
+  // VSDContentCollector). A leading U+0020 on a later Character run
+  // that continues the same line (`<b>sd</b> Interaction1`) is interior
+  // to that paragraph; Draw keeps it. Baking `^ +` per run made SysML
+  // Sequence Diagram leftover Character U+00A0 and blocked wrapping.
+  final leading = atParagraphStart ? r'^|\n' : r'\n';
   return text
       .replaceAllMapped(
-        RegExp(r'(^|\n)( +)'),
+        RegExp('($leading)( +)'),
         (match) => '${match[1]}${'\u00a0' * match[2]!.length}',
       )
       .replaceAllMapped(
@@ -6646,13 +6655,33 @@ String textForLibvisioWrite(String text) {
       );
 }
 
+/// Bake [textForLibvisioWrite] across Character runs. A run that does
+/// not end in `\\n` keeps the next run on the same Draw `text:p`.
+List<VsdxTextRun> bakeLineEdgeSpaceRunsForLibvisioWrite(
+  List<VsdxTextRun> runs,
+) {
+  var atParagraphStart = true;
+  final out = <VsdxTextRun>[];
+  for (final run in runs) {
+    final text = textForLibvisioWrite(
+      run.text,
+      atParagraphStart: atParagraphStart,
+    );
+    out.add(text == run.text ? run : run.copyWith(text: text));
+    atParagraphStart = text.endsWith('\n');
+  }
+  return out;
+}
+
 bool shapeNeedsLibvisioLineEdgeSpaceBake(VsdxShape shape) {
   if (shape.text != null &&
       textForLibvisioWrite(shape.text!) != shape.text) {
     return true;
   }
-  for (final run in shape.richText.runs) {
-    if (textForLibvisioWrite(run.text) != run.text) return true;
+  if (shape.richText.runs.isEmpty) return false;
+  final baked = bakeLineEdgeSpaceRunsForLibvisioWrite(shape.richText.runs);
+  for (var i = 0; i < baked.length; i++) {
+    if (baked[i].text != shape.richText.runs[i].text) return true;
   }
   return false;
 }
@@ -6674,10 +6703,7 @@ VsdxShape bakeLineEdgeSpaceShapeForLibvisioWrite(VsdxShape shape) {
   var next = shape;
   if (shapeNeedsLibvisioLineEdgeSpaceBake(shape)) {
     if (shape.richText.runs.isNotEmpty) {
-      final runs = <VsdxTextRun>[
-        for (final run in shape.richText.runs)
-          run.copyWith(text: textForLibvisioWrite(run.text)),
-      ];
+      final runs = bakeLineEdgeSpaceRunsForLibvisioWrite(shape.richText.runs);
       next = shape.copyWith(
         text: shape.text == null
             ? null
