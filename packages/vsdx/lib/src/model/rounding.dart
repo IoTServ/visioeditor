@@ -168,13 +168,16 @@ FilletPath? filletPolylinePath(
   return (start: start, segments: segments, closed: true);
 }
 
-/// Bake Visio `Rounding` into a pure Move/Line/Polyline geometry.
+/// Bake Visio `Rounding` / leftover joins into Geometry Draw will stroke.
 ///
 /// libvisio applies `computeRounding` while importing VDX/VSD, but its VSDX
-/// parser does not consume the `Rounding` cell. Legacy imports therefore need
-/// explicit `RelQuadBezTo` rows in their synthesised VSDX or LibreOffice
-/// reopens the same outline with sharp corners. Curved and multi-contour
-/// geometries are returned unchanged.
+/// parser does not consume the `Rounding` cell. `_lineProperties` also maps
+/// join from `LineCap` only (`tokens.txt` has no LineJoin), so leftover
+/// round / arcs / bevel joins become RelQuadBezTo / LineTo chamfers.
+/// `VSDContentCollector` fillets only L→L (and L→Z after M→L) corners and
+/// leaves CubBezTo rails native; leftover does the same for mixed
+/// LineTo+curve paths (Jump-in Arrow 1). NURBS / ellipse-only sections
+/// stay unchanged.
 VsdxGeometry bakePolylineRounding(
   VsdxGeometry geometry, {
   required double width,
@@ -191,13 +194,31 @@ VsdxGeometry bakePolylineRounding(
   for (final command in geometry.commands) {
     switch (command) {
       case MoveTo(:final x, :final y):
-        if (started && points.isNotEmpty) return geometry;
+        if (started && points.isNotEmpty) {
+          return _bakeMixedPathRounding(
+            geometry,
+            width: width,
+            height: height,
+            radius: radius,
+            chamfer: chamfer,
+            miterLimit: miterLimit,
+          );
+        }
         points
           ..clear()
           ..add(Offset2D(x, y));
         started = true;
       case RelMoveTo(:final fx, :final fy):
-        if (started && points.isNotEmpty) return geometry;
+        if (started && points.isNotEmpty) {
+          return _bakeMixedPathRounding(
+            geometry,
+            width: width,
+            height: height,
+            radius: radius,
+            chamfer: chamfer,
+            miterLimit: miterLimit,
+          );
+        }
         points
           ..clear()
           ..add(Offset2D(fx * width, fy * height));
@@ -239,7 +260,14 @@ VsdxGeometry bakePolylineRounding(
           y * (relative ? height : 1.0),
         ));
       default:
-        return geometry;
+        return _bakeMixedPathRounding(
+          geometry,
+          width: width,
+          height: height,
+          radius: radius,
+          chamfer: chamfer,
+          miterLimit: miterLimit,
+        );
     }
   }
   if (points.length < 3) return geometry;
@@ -261,9 +289,24 @@ VsdxGeometry bakePolylineRounding(
     miterLimit: miterLimit,
   );
   if (fillet == null) return geometry;
-
   return geometry.copyWith(
-    commands: <VsdxPathCommand>[
+    commands: _commandsFromFilletPath(
+      fillet,
+      width: width,
+      height: height,
+    ),
+    commandFormulas: const <Map<String, String>>[],
+    rowIndices: const <int>[],
+    deletedRowIndices: const <int>{},
+  );
+}
+
+List<VsdxPathCommand> _commandsFromFilletPath(
+  FilletPath fillet, {
+  required double width,
+  required double height,
+}) =>
+    <VsdxPathCommand>[
       MoveTo(fillet.start.x, fillet.start.y),
       for (final segment in fillet.segments)
         if (segment.control case final control?)
@@ -275,11 +318,361 @@ VsdxGeometry bakePolylineRounding(
           )
         else
           LineTo(segment.end.x, segment.end.y),
-    ],
+    ];
+
+VsdxPathCommand _filletCornerCommand(
+  _FilletCorner corner, {
+  required double width,
+  required double height,
+  required bool chamfer,
+}) {
+  if (chamfer) return LineTo(corner.end.x, corner.end.y);
+  return RelQuadBezTo(
+    fx: corner.end.x / width,
+    fy: corner.end.y / height,
+    fx1: corner.control.x / width,
+    fy1: corner.control.y / height,
+  );
+}
+
+/// `computeRounding` only fillets L→L. CubBezTo / RelCubBezTo stay native.
+VsdxGeometry _bakeMixedPathRounding(
+  VsdxGeometry geometry, {
+  required double width,
+  required double height,
+  required double radius,
+  required bool chamfer,
+  double? miterLimit,
+}) {
+  final subpaths = _mixedSubpathsForRounding(
+    geometry,
+    width: width,
+    height: height,
+  );
+  if (subpaths == null || subpaths.isEmpty) return geometry;
+  final out = <VsdxPathCommand>[];
+  var changed = false;
+  for (final subpath in subpaths) {
+    final baked = _filletMixedSubpath(
+      subpath,
+      geometry: geometry,
+      width: width,
+      height: height,
+      radius: radius,
+      chamfer: chamfer,
+      miterLimit: miterLimit,
+    );
+    if (!identical(baked, subpath.original)) changed = true;
+    out.addAll(baked);
+  }
+  if (!changed) return geometry;
+  return geometry.copyWith(
+    commands: out,
     commandFormulas: const <Map<String, String>>[],
     rowIndices: const <int>[],
     deletedRowIndices: const <int>{},
   );
+}
+
+List<_MixedSubpath>? _mixedSubpathsForRounding(
+  VsdxGeometry geometry, {
+  required double width,
+  required double height,
+}) {
+  final subpaths = <_MixedSubpath>[];
+  Offset2D? start;
+  var segs = <_MixedSeg>[];
+  var original = <VsdxPathCommand>[];
+
+  void flush() {
+    if (start != null && segs.isNotEmpty) {
+      subpaths.add(
+        _MixedSubpath(start: start!, segs: segs, original: original),
+      );
+    }
+    start = null;
+    segs = <_MixedSeg>[];
+    original = <VsdxPathCommand>[];
+  }
+
+  void ensureStart() {
+    if (start != null) return;
+    start = const Offset2D(0, 0);
+    original.add(const MoveTo(0, 0));
+  }
+
+  for (final command in geometry.commands) {
+    switch (command) {
+      case MoveTo(:final x, :final y):
+        flush();
+        start = Offset2D(x, y);
+        original.add(command);
+      case RelMoveTo(:final fx, :final fy):
+        flush();
+        start = Offset2D(fx * width, fy * height);
+        original.add(command);
+      case LineTo(:final x, :final y):
+        ensureStart();
+        segs.add(_MixedSeg(end: Offset2D(x, y), linear: true));
+        original.add(command);
+      case RelLineTo(:final fx, :final fy):
+        ensureStart();
+        segs.add(
+          _MixedSeg(end: Offset2D(fx * width, fy * height), linear: true),
+        );
+        original.add(command);
+      case PolylineTo(
+          :final x,
+          :final y,
+          :final vertices,
+          :final relative,
+          :final vertsRelative,
+          :final vertsYRelative,
+        ):
+        ensureStart();
+        original.add(command);
+        final vertexScaleX = vertsRelative ? width : 1.0;
+        final vertexScaleY = vertsYRelative ? height : 1.0;
+        for (final vertex in vertices) {
+          segs.add(
+            _MixedSeg(
+              end: Offset2D(
+                vertex.x * vertexScaleX,
+                vertex.y * vertexScaleY,
+              ),
+              linear: true,
+            ),
+          );
+        }
+        segs.add(
+          _MixedSeg(
+            end: Offset2D(
+              x * (relative ? width : 1.0),
+              y * (relative ? height : 1.0),
+            ),
+            linear: true,
+          ),
+        );
+      case CubBezTo() ||
+            RelCubBezTo() ||
+            QuadBezTo() ||
+            RelQuadBezTo() ||
+            ArcTo() ||
+            RelArcTo() ||
+            EllipticalArcTo() ||
+            RelEllipticalArcTo():
+        final end = _roundingCommandEnd(
+          command,
+          width: width,
+          height: height,
+        );
+        if (end == null) return null;
+        ensureStart();
+        segs.add(_MixedSeg(end: end, linear: false, command: command));
+        original.add(command);
+      default:
+        return null;
+    }
+  }
+  flush();
+  return subpaths;
+}
+
+Offset2D? _roundingCommandEnd(
+  VsdxPathCommand command, {
+  required double width,
+  required double height,
+}) {
+  switch (command) {
+    case MoveTo(:final x, :final y) ||
+          LineTo(:final x, :final y) ||
+          ArcTo(:final x, :final y) ||
+          CubBezTo(:final x, :final y) ||
+          QuadBezTo(:final x, :final y) ||
+          EllipticalArcTo(:final x, :final y):
+      return Offset2D(x, y);
+    case RelMoveTo(:final fx, :final fy) ||
+          RelLineTo(:final fx, :final fy) ||
+          RelArcTo(:final fx, :final fy) ||
+          RelCubBezTo(:final fx, :final fy) ||
+          RelQuadBezTo(:final fx, :final fy) ||
+          RelEllipticalArcTo(:final fx, :final fy):
+      return Offset2D(fx * width, fy * height);
+    case PolylineTo(:final x, :final y, :final relative):
+      return Offset2D(
+        x * (relative ? width : 1.0),
+        y * (relative ? height : 1.0),
+      );
+    default:
+      return null;
+  }
+}
+
+List<VsdxPathCommand> _filletMixedSubpath(
+  _MixedSubpath subpath, {
+  required VsdxGeometry geometry,
+  required double width,
+  required double height,
+  required double radius,
+  required bool chamfer,
+  double? miterLimit,
+}) {
+  final hasCurve = subpath.segs.any((seg) => !seg.linear);
+  if (!hasCurve) {
+    final points = <Offset2D>[
+      subpath.start,
+      for (final seg in subpath.segs) seg.end,
+    ];
+    if (points.length < 3) return subpath.original;
+    var closed = false;
+    final first = points.first;
+    final last = points.last;
+    if ((first.x - last.x).abs() < 1e-9 && (first.y - last.y).abs() < 1e-9) {
+      closed = true;
+      points.removeLast();
+    } else {
+      closed = polylineLooksClosed(points, noFill: geometry.noFill);
+    }
+    final fillet = filletPolylinePath(
+      points,
+      radius,
+      closed: closed,
+      chamfer: chamfer,
+      miterLimit: miterLimit,
+    );
+    if (fillet == null) return subpath.original;
+    return _commandsFromFilletPath(
+      fillet,
+      width: width,
+      height: height,
+    );
+  }
+
+  final segs = List<_MixedSeg>.from(subpath.segs);
+  final points = <Offset2D>[subpath.start, for (final seg in segs) seg.end];
+  if (points.length < 3) return subpath.original;
+  var closed = false;
+  var didPop = false;
+  var poppedLinear = false;
+  VsdxPathCommand? poppedCurve;
+  final first = points.first;
+  final last = points.last;
+  if ((first.x - last.x).abs() < 1e-9 && (first.y - last.y).abs() < 1e-9) {
+    closed = true;
+    didPop = true;
+    poppedLinear = segs.last.linear;
+    poppedCurve = segs.last.command;
+    segs.removeLast();
+    points.removeLast();
+  }
+  final n = points.length;
+  if (n < 3) return subpath.original;
+
+  bool incomingLinear(int i) {
+    if (i == 0) return closed && poppedLinear;
+    return segs[i - 1].linear;
+  }
+
+  bool outgoingLinear(int i) {
+    if (i >= segs.length) return closed && poppedLinear;
+    return segs[i].linear;
+  }
+
+  final corners = <_FilletCorner?>[
+    for (var i = 0; i < n; i++)
+      (!closed && (i == 0 || i == n - 1)) ||
+              !incomingLinear(i) ||
+              !outgoingLinear(i)
+          ? null
+          : _filletCorner(
+              points[(i - 1 + n) % n],
+              points[i],
+              points[(i + 1) % n],
+              radius,
+            ),
+  ];
+  if (chamfer && miterLimit != null) {
+    for (var i = 0; i < n; i++) {
+      if (corners[i] == null) continue;
+      if (strokeMiterRatio(
+            points[(i - 1 + n) % n],
+            points[i],
+            points[(i + 1) % n],
+          ) <=
+          miterLimit) {
+        corners[i] = null;
+      }
+    }
+  }
+  if (corners.every((corner) => corner == null)) return subpath.original;
+
+  VsdxPathCommand arrivalAt(int i) {
+    if (i == 0) {
+      if (didPop && !poppedLinear && poppedCurve != null) {
+        return poppedCurve;
+      }
+      return LineTo(points.first.x, points.first.y);
+    }
+    final seg = segs[i - 1];
+    if (!seg.linear && seg.command != null) return seg.command!;
+    return LineTo(points[i].x, points[i].y);
+  }
+
+  void emitVertex(List<VsdxPathCommand> out, int i) {
+    final corner = corners[i];
+    if (corner == null) {
+      out.add(arrivalAt(i));
+      return;
+    }
+    out
+      ..add(LineTo(corner.start.x, corner.start.y))
+      ..add(
+        _filletCornerCommand(
+          corner,
+          width: width,
+          height: height,
+          chamfer: chamfer,
+        ),
+      );
+  }
+
+  final out = <VsdxPathCommand>[];
+  if (!closed) {
+    out.add(MoveTo(points.first.x, points.first.y));
+    for (var i = 1; i < n - 1; i++) {
+      emitVertex(out, i);
+    }
+    out.add(arrivalAt(n - 1));
+    return out;
+  }
+  final start = corners.first?.end ?? points.first;
+  out.add(MoveTo(start.x, start.y));
+  for (var step = 1; step <= n; step++) {
+    emitVertex(out, step % n);
+  }
+  return out;
+}
+
+class _MixedSeg {
+  const _MixedSeg({
+    required this.end,
+    required this.linear,
+    this.command,
+  });
+  final Offset2D end;
+  final bool linear;
+  final VsdxPathCommand? command;
+}
+
+class _MixedSubpath {
+  const _MixedSubpath({
+    required this.start,
+    required this.segs,
+    required this.original,
+  });
+  final Offset2D start;
+  final List<_MixedSeg> segs;
+  final List<VsdxPathCommand> original;
 }
 
 /// SVG / canvas miter length ÷ stroke width at [cur].

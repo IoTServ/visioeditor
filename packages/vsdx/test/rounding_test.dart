@@ -276,7 +276,8 @@ void main() {
     );
   });
 
-  test('bakePolylineRounding leaves already-curved geometry unchanged', () {
+  test('bakePolylineRounding leaves open curve-to-line paths without a LineTo elbow unchanged',
+      () {
     const geometry = VsdxGeometry(commands: <VsdxPathCommand>[
       MoveTo(0, 0),
       QuadBezTo(x: 1, y: 1, x1: 1, y1: 0),
@@ -290,6 +291,36 @@ void main() {
         radius: 0.08,
       ),
       same(geometry),
+    );
+  });
+
+  test('bakePolylineRounding fillets LineTo elbows beside CubBezTo', () {
+    const geometry = VsdxGeometry(
+      commands: <VsdxPathCommand>[
+        MoveTo(0, 1),
+        LineTo(0.25, 1),
+        CubBezTo(x: 0.75, y: 1, x1: 0.4, y1: 0.7, x2: 0.6, y2: 0.7),
+        LineTo(1, 1),
+        LineTo(0.5, 0),
+        LineTo(0, 1),
+      ],
+    );
+    final baked = bakePolylineRounding(
+      geometry,
+      width: 1,
+      height: 1,
+      radius: 0.08,
+    );
+    expect(identical(baked, geometry), isFalse);
+    expect(
+      baked.commands.whereType<CubBezTo>(),
+      hasLength(1),
+      reason: 'VSDContentCollector computeRounding leaves C rails native',
+    );
+    expect(
+      baked.commands.whereType<RelQuadBezTo>(),
+      hasLength(3),
+      reason: 'L→L corners at the start, arrowhead bar, and tip become Q',
     );
   });
 }

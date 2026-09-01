@@ -9086,11 +9086,16 @@ class VsdxWriter {
       ]));
     }
     if (rows.isEmpty) return null;
+    // Row IX is sequential when Rounding invents RelQuadBezTo, but the
+    // Geometry section IX still names the same contour (VSD IX=2 must not
+    // collapse to 1 or master inheritance misses the hole). Fresh stencils
+    // keep ix=0 and use the caller sequence.
+    final sectionIx = useSourceIx || g.ix != 0 ? g.ix : ix;
     return XmlElement(
       XmlName('Section'),
       <XmlAttribute>[
         XmlAttribute(XmlName('N'), 'Geometry'),
-        XmlAttribute(XmlName('IX'), (useSourceIx ? g.ix : ix).toString()),
+        XmlAttribute(XmlName('IX'), sectionIx.toString()),
       ],
       rows,
     );

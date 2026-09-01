@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io Jump-in Arrow leftover fillets LineTo elbows beside RelCubBezTo
+  for LibreOffice. Official `arrows.xml` Jump-in Arrow 1/2 is
+  `<linejoin join="round"/>` + `<arc>` + `<fillstroke/>`.
+  `_lineProperties` maps join from LineCap only (`tokens.txt` has no
+  LineJoin), so Draw would miter the arrowhead V. leftover used to skip
+  Rounding bake on any CubBezTo rail; it now matches
+  `VSDContentCollector` `computeRounding` (L→L only, C stays native)
+  and leftover-bakes those corners as RelQuadBezTo (`tokens.txt`
+  RelQuadBezTo → `svg:d` Q). A second save keeps the jump and the
+  fillets.
 - draw.io Android Spinner leftover ribbons the open caret stroke for
   LibreOffice. Official `android.xml` Spinner is `<path>` +
   `<fillstroke/>` of an open caret (`tokens.txt` LineColor →

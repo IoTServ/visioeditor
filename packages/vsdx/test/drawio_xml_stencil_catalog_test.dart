@@ -2245,6 +2245,90 @@ void main() {
     );
   });
 
+  test(
+    'Jump-in Arrow leftover fillets LineTo elbows beside RelCubBezTo for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      bool hasJoin(VsdxShape shape, VsdxLineJoin join) => descendants(shape).any(
+            (child) => child.line.hasLine && child.line.join == join,
+          );
+
+      int countType<T extends VsdxPathCommand>(VsdxShape shape) {
+        var n = 0;
+        for (final child in descendants(shape)) {
+          for (final geometry in child.geometries) {
+            n += geometry.commands.whereType<T>().length;
+          }
+        }
+        return n;
+      }
+
+      final arrow = migrated
+          .singleWhere((group) => group.name == 'Draw.io / Arrows')
+          .stencils
+          .singleWhere((entry) => entry.name == 'Jump-in Arrow 1')
+          .build(97, 3, 3);
+      expect(
+        hasJoin(arrow, VsdxLineJoin.round),
+        isTrue,
+        reason: 'arrows.xml Jump-in Arrow 1 is linejoin=round fillstroke',
+      );
+      expect(
+        countType<CubBezTo>(arrow),
+        greaterThan(0),
+        reason: 'SVG <arc> leftover-decodes as CubBezTo',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(arrow.copyWith(id: id)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(
+        countType<RelCubBezTo>(leftover),
+        greaterThan(0),
+        reason: 'tokens.txt RelCubBezTo → svg:d C; leftover must keep the jump',
+      );
+      expect(
+        countType<RelQuadBezTo>(leftover),
+        greaterThanOrEqualTo(3),
+        reason: '_lineProperties maps join from LineCap, so Draw would miter '
+            'the arrowhead V. leftover bakes L→L corners as RelQuadBezTo '
+            '(computeRounding only fillets L→L beside C)',
+      );
+
+      final second = parser.parse(
+        writer.write(
+          originalBytes: writer.emptyDocument(),
+          edited: leftoverDoc,
+        ),
+      );
+      expect(
+        countType<RelQuadBezTo>(second.pages.first.findShapeById(id)!),
+        greaterThanOrEqualTo(3),
+        reason: 'a second save must keep the baked LineTo elbow fillets',
+      );
+      expect(
+        countType<RelCubBezTo>(second.pages.first.findShapeById(id)!),
+        greaterThan(0),
+        reason: 'a second save must keep the jump cubics',
+      );
+    },
+  );
+
   test('mxStencil default miterlimit is 10 for LibreOffice', () {
     bool hasMiter10(VsdxShape shape) {
       if (shape.line.hasLine &&
