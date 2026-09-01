@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SysML Sequence Diagram leftover has no trailing Character
+  newline for LibreOffice. Official sidebar is html=1
+  `<p><b>sd</b> Interaction1</p>`; parseHtmlLabel fused `</p>`'s `\n`
+  onto the roman run (`tokens.txt` Character is collectText). Our SVG
+  painted a second paragraph while mxText foreignObject has none after
+  the last block. Capture now strips trailing `\n` from the last run.
+  A second save keeps `sd` bold and one line.
 - draw.io SysML Required Interface leftover keeps floating stems for
   LibreOffice. Official `insertEdge` pins the card as source with
   `exitX=0` and template-local `targetPoint (0,0)/(0,60)`. Capture

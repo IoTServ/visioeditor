@@ -13469,6 +13469,81 @@ void main() {
   );
 
   test(
+    'SysML Sequence Diagram leftover has no trailing Character newline for LibreOffice',
+    () {
+      VsdxShape? titleShape(VsdxShape shape) {
+        if ((shape.text ?? '').contains('Interaction1') ||
+            shape.richText.runs.any(
+              (run) => run.text.contains('Interaction1'),
+            )) {
+          return shape;
+        }
+        for (final child in shape.children) {
+          final nested = titleShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final diagram = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Sysml / SysML / Interactions',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Sequence Diagram')
+          .build(1, 3, 3);
+      final inMemory = titleShape(diagram)!;
+      expect(
+        inMemory.text,
+        equals('sd Interaction1'),
+        reason: 'html </p> fused onto the roman run must not leftover-bake '
+            r'a trailing Character \n; tokens.txt Character is collectText '
+            'and mxText foreignObject has no extra paragraph after the '
+            'last block',
+      );
+      expect(
+        inMemory.richText.runs.any((run) => run.text.endsWith('\n')),
+        isFalse,
+        reason: 'sameHtmlStyle joined </p> onto Interaction1 so a '
+            'standalone-run pop missed it',
+      );
+      expect(
+        inMemory.richText.runs.first.charStyle.style.bold,
+        isTrue,
+        reason: 'html <b>sd</b> leftover-bakes collectCharIX Style.bold',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(diagram.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverTitle = titleShape(leftover)!;
+      expect(leftoverTitle.text, equals('sd Interaction1'));
+      expect(
+        leftoverTitle.richText.runs.any((run) => run.text.endsWith('\n')),
+        isFalse,
+        reason: 'a second save must keep one Character line',
+      );
+      expect(
+        leftoverTitle.richText.runs.first.charStyle.style.bold,
+        isTrue,
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

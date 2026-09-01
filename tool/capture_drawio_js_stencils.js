@@ -7869,10 +7869,25 @@ function parseHtmlLabel(html, base) {
   // </p>/</div>/</li>. parseHtmlLabel used to leftover-bake a trailing
   // `\n` Character run (SysML Abstract Definition `<p>Name</p>`).
   // tokens.txt Character is collectText; our SVG paints that extra
-  // paragraph while Draw often collapses it. A standalone trailing `\n`
-  // from </p> is dropped; `\n` fused onto a <br> run stays.
-  while (runs.length && String(runs[runs.length - 1].str) === '\n') {
-    runs.pop();
+  // paragraph while Draw often collapses it.
+  // sameHtmlStyle fuses </p>'s `\n` onto the last sibling run
+  // (`<b>sd</b>  Interaction1</p>` → " Interaction1\n"). Drop that
+  // too; a mid-label `\n` from <br> or </li> stays.
+  while (runs.length) {
+    const last = runs[runs.length - 1];
+    const s = String(last.str);
+    if (s === '\n') {
+      runs.pop();
+      continue;
+    }
+    if (s.endsWith('\n')) {
+      last.str = s.replace(/\n+$/, '');
+      if (!last.str) {
+        runs.pop();
+        continue;
+      }
+    }
+    break;
   }
   return runs;
 }
