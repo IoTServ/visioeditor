@@ -12371,6 +12371,74 @@ void main() {
   );
 
   test(
+    'mxMockup ruler2 leftover-bakes unit ticks for LibreOffice',
+    () {
+      Iterable<VsdxShape> descendants(VsdxShape shape) sync* {
+        yield shape;
+        for (final child in shape.children) {
+          yield* descendants(child);
+        }
+      }
+
+      VsdxColor? glyphColor(VsdxShape shape, String text) {
+        for (final child in descendants(shape)) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first.charStyle.color;
+          }
+        }
+        return null;
+      }
+
+      final ruler = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Mockup / Mockup Misc',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Horizontal Ruler')
+          .build(1, 3, 3);
+      const tickGrey = VsdxColor(0xFF999999);
+      expect(
+        descendants(ruler).map((shape) => shape.text).toList(),
+        containsAll(<String>['2', '3', '1']),
+        reason: 'mxShapeMockupRuler2.foreground uses graph.getLabel for '
+            'unit ticks (dx=100 → i=20/30 → "2"/"3"); the cell value '
+            '"1" is mxText. tokens.txt Character is collectText',
+      );
+      expect(glyphColor(ruler, '2'), tickGrey);
+      expect(glyphColor(ruler, '3'), tickGrey);
+      expect(
+        glyphColor(ruler, '1'),
+        tickGrey,
+        reason: 'fontColor=#999999 is collectCharIX fo:color',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(ruler.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        descendants(leftover).map((shape) => shape.text).toList(),
+        containsAll(<String>['2', '3', '1']),
+        reason: 'a second save must keep the unit tick Character runs',
+      );
+      expect(glyphColor(leftover, '2'), tickGrey);
+      expect(glyphColor(leftover, '3'), tickGrey);
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Mockup Horizontal Ruler now keeps unit ticks in LibreOffice.
+  Official `mxMockupMisc.js` `ruler2` reads `graph.getLabel(cell)` for
+  the scale (`dx=100` → `"2"` / `"3"` at 350px). Catalog capture stubbed
+  `getLabel` as empty and omitted the template cell, so leftover
+  Character had only the `"1"` label (`tokens.txt` Character is
+  collectText). Capture now leftover-bakes the ticks at `fontColor`
+  `#999999`. A second save keeps them.
 - draw.io AWS4b `productIcon` now keeps the brand square in LibreOffice.
   Official `mxAWS4.js` fills `strokeColor` white then inherit
   `fillColor` for the top square. Catalog decode attached that square

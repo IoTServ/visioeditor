@@ -6608,6 +6608,11 @@ function recordingCanvas() {
         const value = target[prop];
         return typeof value === 'function' ? value.bind(target) : value;
       }
+      // CurvedTextShape.paintForeground treats root+getBaseUrl as
+      // mxSvgCanvas2D and calls createElement('g').setAttribute.
+      // A string-trap Proxy made both look defined, so a non-empty
+      // convertValueToString threw and dropped the shape.
+      if (prop === 'root' || prop === 'getBaseUrl') return undefined;
       if (typeof prop === 'string') return function() {};
       return undefined;
     },
@@ -6751,7 +6756,18 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
     style,
     view: {
       graph: {
-        getLabel() { return ''; },
+        // mxGraph.getLabel → convertValueToString. Mockup ruler2
+        // paints unit ticks from the cell value (`'1'` → 2, 3).
+        // Returning '' made isNaN skip c.text so leftover Draw had
+        // only the bar (tokens.txt has no tick token; Character is
+        // collectText). CurvedTextShape calls convertValueToString
+        // itself; a non-empty result duplicates paintCurvedTextLeftover.
+        getLabel(cell) {
+          if (cell == null) return '';
+          return cellDisplaySource(
+            cell.value != null ? cell.value : '',
+          );
+        },
         isCellCollapsed() { return false; },
         isCellConnected() { return false; },
         isSwimlane() { return false; },
@@ -6763,9 +6779,11 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
         isTable() { return false; },
         isTableCell() { return false; },
         getCellGeometry() { return null; },
-        convertValueToString(cell) {
-          if (cell == null) return '';
-          return String(cell.value != null ? cell.value : '');
+        convertValueToString() {
+          // CurvedTextShape.paintForeground calls this, not getLabel.
+          // A non-empty result paints a centred blob (no SVG root) that
+          // would duplicate paintCurvedTextLeftover glyph TxtAngles.
+          return '';
         },
         cellRenderer: mxCellRenderer,
         getModel() { return {getChildCount() { return 0; }, getChildAt() { return null; }}; },
@@ -9063,6 +9081,13 @@ function renderEntry(entry) {
     width = Math.max(1, Number(entry.width) || 100);
     height = Math.max(1, Number(entry.height) || 100);
     if (!style.shape) style = {...style, shape: mxConstants.SHAPE_RECTANGLE};
+    // mxShapeMockupRuler2.foreground reads graph.getLabel(cell) for unit
+    // ticks. createVertexTemplateEntry's 4th arg is that cell value.
+    const labelCell = {
+      value: entry.value,
+      style: entry.style,
+      geometry: {x: 0, y: 0, width, height},
+    };
     if (ctor) {
       if (typeof ctor.prototype.paintVertexShape !== 'function') {
         renderStats.noPainter++;
@@ -9071,7 +9096,9 @@ function renderEntry(entry) {
         }
         return null;
       }
-      shape = paintRegistered(style, width, height, canvas);
+      shape = paintRegistered(style, width, height, canvas, 0, 0, {
+        cell: labelCell,
+      });
     } else {
       // Sidebar templates often use shape=mxgraph.flowchart.terminator
       // (and office/aws XML stencils). LibreOffice only calls
@@ -9079,7 +9106,11 @@ function renderEntry(entry) {
       // paintCellTree already uses for composite cells.
       shape = paintRegistered(
         style, width, height, canvas, 0, 0,
-        {allowStencil: true, fallbackRect: style.rounded == 1},
+        {
+          allowStencil: true,
+          fallbackRect: style.rounded == 1,
+          cell: labelCell,
+        },
       );
       if (!shape) {
         renderStats.unregistered++;
