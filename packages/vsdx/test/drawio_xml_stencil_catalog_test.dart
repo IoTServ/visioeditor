@@ -13260,6 +13260,117 @@ void main() {
   );
 
   test(
+    'mxGraph Lollipop Notation leftover keeps the oval at the junction for LibreOffice',
+    () {
+      List<EllipseCmd> ellipsesOf(VsdxShape shape) => descendantGeometries(shape)
+          .expand((geometry) => geometry.commands)
+          .whereType<EllipseCmd>()
+          .toList();
+
+      final group = dynamic.singleWhere(
+        (g) => g.name == 'Draw.io JS / UML / uml',
+      );
+      final lollipop = group.stencils
+          .singleWhere((entry) => entry.name == 'Lollipop Notation')
+          .build(1, 3, 3);
+      final candy = ellipsesOf(lollipop);
+      expect(
+        candy,
+        isNotEmpty,
+        reason: 'endArrow=oval leftover-bakes the hollow circle',
+      );
+      expect(
+        candy.first.cx,
+        closeTo(lollipop.width / 2, 0.08),
+        reason: 'Graph.view connects oval/halfCircle to the '
+            'centerPerimeter hub at 20px; relative edges used to '
+            'fallback to (width, height/2) so the circle sat on the '
+            'right edge (tokens.txt Ellipse is svg:path)',
+      );
+      expect(
+        lollipop.geometries.any(
+          (geometry) => geometry.commands.any(
+            (cmd) =>
+                cmd is LineTo &&
+                cmd.x < 0.05 &&
+                (cmd.y - lollipop.height).abs() < 0.05,
+          ),
+        ),
+        isFalse,
+        reason: 'a missing target terminal used to leftover-bake '
+            'MoveTo(40,5) LineTo(0,0); Draw paints that slash as '
+            'svg:stroke',
+      );
+
+      final required = group.stencils
+          .singleWhere((entry) => entry.name == 'Required Interface (2)')
+          .build(2, 3, 3);
+      final hubX = required.geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<MoveTo>()
+          .map((cmd) => cmd.x)
+          .reduce(math.min);
+      expect(
+        hubX,
+        lessThan(0.6),
+        reason: 'endArrow=halfCircle leftover-bakes on the 10×10 hub, '
+            'not a degenerate quad parked at sourcePoint x=25',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(lollipop.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverCandy = ellipsesOf(leftover);
+      expect(
+        leftoverCandy,
+        isNotEmpty,
+        reason: 'a second save must keep the oval Ellipse',
+      );
+      expect(
+        leftoverCandy.first.cx,
+        closeTo(lollipop.width / 2, 0.08),
+        reason: 'leftover collectGeometry must keep the junction oval',
+      );
+
+      doc = parser.parse(writer.emptyDocument());
+      final requiredId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(required.copyWith(id: requiredId)),
+      );
+      final leftoverRequired = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(requiredId)!;
+      final leftoverHubX = leftoverRequired.geometries
+          .expand((geometry) => geometry.commands)
+          .whereType<MoveTo>()
+          .map((cmd) => cmd.x)
+          .reduce(math.min);
+      expect(
+        leftoverHubX,
+        lessThan(0.6),
+        reason: 'a second save must keep the halfCircle on the hub',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

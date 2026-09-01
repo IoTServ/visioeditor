@@ -6252,15 +6252,23 @@ function graphSetAttributeForCell(cell, attributeName, attributeValue) {
 function Cell(value, geometry, style) {
   this.value = value; this.geometry = geometry; this.style = style;
   this.children = []; this.edges = [];
+  this.source = null;
+  this.target = null;
 }
 Cell.prototype.insert = function(cell) {
   cell.parent = this;
   this.children.push(cell);
   return cell;
 };
-Cell.prototype.insertEdge = function(cell) {
-  this.edges.push(cell);
-  return cell;
+// mxCell.insertEdge(edge, isOutgoing): isOutgoing true pins this as
+// source. LibreOffice leftover is collectGeometry — capture must bake
+// the same terminals Graph.view uses, not the template box corners.
+Cell.prototype.insertEdge = function(edge, isOutgoing) {
+  if (!edge) return edge;
+  if (isOutgoing) edge.source = this;
+  else edge.target = this;
+  if (!this.edges.includes(edge)) this.edges.push(edge);
+  return edge;
 };
 Cell.prototype.clone = function() {
   const copy = new Cell(
@@ -8877,6 +8885,16 @@ function cellsFromMxGraphXml(xml) {
     if (node.attrs.edge === '1') cell.edge = true;
     converted[node.attrs.id] = cell;
   }
+  for (const node of nodes) {
+    const cell = converted[node.attrs.id];
+    if (!cell) continue;
+    if (node.attrs.source && converted[node.attrs.source]) {
+      cell.source = converted[node.attrs.source];
+    }
+    if (node.attrs.target && converted[node.attrs.target]) {
+      cell.target = converted[node.attrs.target];
+    }
+  }
   const tops = [];
   for (const node of nodes) {
     const isVertex = node.attrs.vertex === '1';
@@ -8897,20 +8915,107 @@ function mxPts(x, y) {
   return new shapeContext.mxPoint(x, y);
 }
 
-function edgePoints(style, width, height, x, y, geometry) {
-  if (geometry && (geometry.sourcePoint || geometry.targetPoint ||
-      (geometry.points && geometry.points.length))) {
-    const pts = [];
-    const start = geometry.sourcePoint || {x: 0, y: height / 2};
-    pts.push(mxPts(x + start.x, y + start.y));
-    for (const p of geometry.points || []) {
-      pts.push(mxPts(x + p.x, y + p.y));
-    }
-    const end = geometry.targetPoint || {x: width, y: height / 2};
-    pts.push(mxPts(x + end.x, y + end.y));
-    return pts;
+function cellIsEdge(cell) {
+  return !!(cell && (cell.edge ||
+    (typeof cell.style === 'string' && /(?:^|;)edge=1(?:;|$)/.test(cell.style))));
+}
+
+// Graph.view.getPerimeterPoint: centerPerimeter (UML Lollipop junction)
+// stays at the box centre; ellipse/rect otherwise meet the rim so the
+// leftover Line does not cross the terminal Fill (Start state).
+function terminalPerimeterPoint(terminal, otherX, otherY) {
+  const L = terminal && terminal._layout;
+  if (!L) return null;
+  const cx = L.x + L.w / 2;
+  const cy = L.y + L.h / 2;
+  const parsed = parseStyle(terminal.style, namedStyles.defaultVertex);
+  if (String(parsed.perimeter || '') === 'centerPerimeter') {
+    return mxPts(cx, cy);
   }
-  return [mxPts(x, y + height / 2), mxPts(x + width, y + height / 2)];
+  const dx = otherX - cx;
+  const dy = otherY - cy;
+  const len = Math.hypot(dx, dy) || 1;
+  const nx = dx / len;
+  const ny = dy / len;
+  const shape = String(parsed.shape || '');
+  const ellipse = shape === 'ellipse' || shape === mxConstants.SHAPE_ELLIPSE ||
+    (typeof terminal.style === 'string' && /(^|;)ellipse(;|$)/.test(terminal.style));
+  if (ellipse) {
+    const rx = Math.max(L.w / 2, 1e-9);
+    const ry = Math.max(L.h / 2, 1e-9);
+    const t = 1 / Math.hypot(nx / rx, ny / ry);
+    return mxPts(cx + t * nx, cy + t * ny);
+  }
+  const hw = Math.max(L.w / 2, 1e-9);
+  const hh = Math.max(L.h / 2, 1e-9);
+  const sx = hw / Math.abs(nx || 1e-9);
+  const sy = hh / Math.abs(ny || 1e-9);
+  const t = Math.min(sx, sy);
+  return mxPts(cx + t * nx, cy + t * ny);
+}
+
+function floatingEdgePoint(geometry, isSource, x, y, width, height) {
+  const named = geometry && (isSource ? geometry.sourcePoint : geometry.targetPoint);
+  if (named) return {x: x + named.x, y: y + named.y};
+  return {
+    x: isSource ? x : x + width,
+    y: y + height / 2,
+  };
+}
+
+// Official mxGraph edges with target="id" connect to that vertex, not to
+// the template's (width, height/2) corner. Relative geometry has no
+// width/height, so the old fallback baked a diagonal leftover Line
+// (UML Lollipop Notation (40,5)→(0,0)) that Draw paints as svg:stroke.
+function edgePoints(style, width, height, x, y, geometry, cell) {
+  const startTerm = cell && cell.source && cell.source.vertex ? cell.source : null;
+  const endTerm = cell && cell.target && cell.target.vertex ? cell.target : null;
+  const startFloat = floatingEdgePoint(geometry, true, x, y, width, height);
+  const endFloat = floatingEdgePoint(geometry, false, x, y, width, height);
+  let sx = startTerm && startTerm._layout
+    ? startTerm._layout.x + startTerm._layout.w / 2
+    : startFloat.x;
+  let sy = startTerm && startTerm._layout
+    ? startTerm._layout.y + startTerm._layout.h / 2
+    : startFloat.y;
+  let ex = endTerm && endTerm._layout
+    ? endTerm._layout.x + endTerm._layout.w / 2
+    : endFloat.x;
+  let ey = endTerm && endTerm._layout
+    ? endTerm._layout.y + endTerm._layout.h / 2
+    : endFloat.y;
+  if (startTerm && startTerm._layout) {
+    const p = terminalPerimeterPoint(startTerm, ex, ey);
+    if (p) {
+      sx = p.x;
+      sy = p.y;
+    }
+  }
+  if (endTerm && endTerm._layout) {
+    const p = terminalPerimeterPoint(endTerm, sx, sy);
+    if (p) {
+      ex = p.x;
+      ey = p.y;
+    }
+  }
+  const pts = [mxPts(sx, sy)];
+  for (const p of (geometry && geometry.points) || []) {
+    pts.push(mxPts(x + p.x, y + p.y));
+  }
+  pts.push(mxPts(ex, ey));
+  return pts;
+}
+
+function vertexPaintIsVisible(style) {
+  if (style && style.image) return true;
+  const shape = String((style && style.shape) || '');
+  if (shape && shape !== 'ellipse' && shape !== 'rectangle' &&
+      shape !== mxConstants.SHAPE_ELLIPSE &&
+      shape !== mxConstants.SHAPE_RECTANGLE) {
+    return true;
+  }
+  return !isNoneColor(style && style.fillColor) ||
+    !isNoneColor(style && style.strokeColor);
 }
 
 function paintArrowHead(canvas, type, fill, tipX, tipY, fromX, fromY) {
@@ -8960,8 +9065,8 @@ function paintConnectorLine(style, pts, canvas) {
   canvas.finish();
 }
 
-function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null) {
-  const pts = edgePoints(style, width, height, x, y, geometry);
+function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null, cell = null) {
+  const pts = edgePoints(style, width, height, x, y, geometry, cell);
   const name = style && style.shape;
   // defaultEdge is shape=connector. Fall back to official mxConnector so
   // mxMarker factories (ERoneToMany, classic, oval, …) paint.
@@ -9087,34 +9192,80 @@ function applyStackLayout(cell, style) {
   }
 }
 
+function layoutCellTree(cell, parentX, parentY, parentW, parentH, inherited, seen) {
+  if (!cell || seen.has(cell)) return;
+  seen.add(cell);
+  if (!cell.geometry) {
+    for (const child of cell.children || []) {
+      layoutCellTree(child, parentX, parentY, parentW, parentH, inherited, seen);
+    }
+    return;
+  }
+  const isEdge = cellIsEdge(cell);
+  const parsed = parseStyle(
+    cell.style,
+    isEdge ? namedStyles.defaultEdge : namedStyles.defaultVertex,
+  );
+  const resolved = resolveInheritedStyle(parsed, inherited);
+  const cellStyle = resolved.style;
+  applyStackLayout(cell, cellStyle);
+  const origin = cellOrigin(
+    cell.geometry, parentX, parentY, parentW, parentH, isEdge,
+  );
+  const cellWidth = Math.max(1, Number(cell.geometry.width) || parentW);
+  const cellHeight = Math.max(1, Number(cell.geometry.height) || parentH);
+  cell._layout = {
+    x: origin.x,
+    y: origin.y,
+    w: cellWidth,
+    h: cellHeight,
+    style: cellStyle,
+    inherited: resolved.inherited,
+  };
+  const next = [...(cell.children || [])];
+  for (const edge of cell.edges || []) {
+    if (!next.includes(edge) && !edge.parent && !seen.has(edge)) next.push(edge);
+  }
+  for (const child of next) {
+    layoutCellTree(
+      child, origin.x, origin.y, cellWidth, cellHeight, resolved.inherited, seen,
+    );
+  }
+}
+
 function paintCellTree(cells, canvas, width, height) {
+  const layoutSeen = new Set();
+  for (const cell of cells || []) {
+    layoutCellTree(cell, 0, 0, width, height, {}, layoutSeen);
+  }
   let painted = false;
   const seen = new Set();
   const visit = (cell, parentX, parentY, parentW, parentH, inherited = {}) => {
     if (!cell || seen.has(cell)) return;
     seen.add(cell);
     if (cell.geometry) {
-      const isEdge = !!(cell.edge || (typeof cell.style === 'string' && /(?:^|;)edge=1(?:;|$)/.test(cell.style)));
-      const parsed = parseStyle(
+      const isEdge = cellIsEdge(cell);
+      const cellStyle = (cell._layout && cell._layout.style) || parseStyle(
         cell.style,
         isEdge ? namedStyles.defaultEdge : namedStyles.defaultVertex,
       );
-      const resolved = resolveInheritedStyle(parsed, inherited);
-      const cellStyle = resolved.style;
-      applyStackLayout(cell, cellStyle);
-      const origin = cellOrigin(
-        cell.geometry, parentX, parentY, parentW, parentH, isEdge,
-      );
+      const origin = cell._layout
+        ? {x: cell._layout.x, y: cell._layout.y}
+        : cellOrigin(cell.geometry, parentX, parentY, parentW, parentH, isEdge);
       const x = origin.x;
       const y = origin.y;
-      const cellWidth = Math.max(1, Number(cell.geometry.width) || parentW);
-      const cellHeight = Math.max(1, Number(cell.geometry.height) || parentH);
+      const cellWidth = cell._layout
+        ? cell._layout.w
+        : Math.max(1, Number(cell.geometry.width) || parentW);
+      const cellHeight = cell._layout
+        ? cell._layout.h
+        : Math.max(1, Number(cell.geometry.height) || parentH);
       let result = null;
       if (isEdge) {
-        if (paintEdge(cellStyle, cellWidth, cellHeight, canvas, x, y, cell.geometry)) {
+        if (paintEdge(cellStyle, cellWidth, cellHeight, canvas, x, y, cell.geometry, cell)) {
           painted = true;
         }
-      } else {
+      } else if (vertexPaintIsVisible(cellStyle)) {
         result = paintRegistered(
           cellStyle, cellWidth, cellHeight, canvas, x, y,
           {fallbackRect: true, allowStencil: true, cell},
@@ -9155,7 +9306,12 @@ function paintCellTree(cells, canvas, width, height) {
           next.push(edge);
         }
       }
-      for (const child of next) visit(child, x, y, cellWidth, cellHeight, resolved.inherited);
+      for (const child of next) {
+        visit(
+          child, x, y, cellWidth, cellHeight,
+          (cell._layout && cell._layout.inherited) || inherited,
+        );
+      }
     } else {
       for (const child of cell.children || []) {
         visit(child, parentX, parentY, parentW, parentH, inherited);

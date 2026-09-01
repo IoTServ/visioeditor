@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io UML Lollipop leftover keeps the oval at the junction for
+  LibreOffice. Official `createVertexTemplateFromData` edges use
+  `target="id"` plus `perimeter=centerPerimeter`; capture used the
+  relative Geometry box so `endArrow=oval` sat on the right edge and a
+  slash `Line` `(40,5)→(0,0)` reached Draw (`tokens.txt` Line is
+  `svg:stroke`). Capture now leftover-bakes Graph.view terminals. A
+  second save keeps the circle and both stems.
 - draw.io Crossbar leftover keeps both dimension ticks for LibreOffice.
   Official `CrossbarShape.redrawPath` strokes the left tick, right tick
   and midline, then `mxActor.fillAndStroke`. Capture emits a `<path>`
