@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io Floorplan kitchen chairs now follow `direction` in LibreOffice.
+  Official `mxShape.paint` calls `updateTransform` (`getShapeRotation`
+  plus north/west/south) before `stencil.drawShape`. NestedStencil
+  skipped that rotate, so Kitchen table `direction=north/west/south`
+  chairs stayed the default 40×52 silhouette (`tokens.txt` has no
+  direction; leftover is collectGeometry). Capture now leftover-bakes
+  the rotated paths. A second save keeps them.
 - draw.io Mockup Color Picker now keeps `indicatorColor` white in
   LibreOffice. Official `mxMockupForms.js` fills `chosenColor` then
   `indicatorColor=#ffffff`. Catalog capture collapsed that white to

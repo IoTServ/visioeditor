@@ -6738,6 +6738,23 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
         return stencilGetLabelMargins(this.stencil, this.style, rect);
       };
       ghost.getLabelBounds = mxShape.prototype.getLabelBounds;
+      ghost.getRotation = mxShape.prototype.getRotation;
+      ghost.getShapeRotation = mxShape.prototype.getShapeRotation;
+      ghost.updateTransform = mxShape.prototype.updateTransform;
+      // Nested vertex-cells still canvas-bake STYLE_ROTATION. Root
+      // createVertexTemplateEntry leftover-bakes Visio Angle instead.
+      ghost.rotation = opts.bakeStyleRotation === false
+        ? 0
+        : (Number(style.rotation) || 0);
+      ghost.flipH = style.flipH == 1;
+      ghost.flipV = style.flipV == 1;
+      // mxShape.apply swaps flipH/flipV when direction is north/south.
+      if (ghost.direction === mxConstants.DIRECTION_NORTH ||
+          ghost.direction === mxConstants.DIRECTION_SOUTH) {
+        const tmp = ghost.flipH;
+        ghost.flipH = ghost.flipV;
+        ghost.flipV = tmp;
+      }
       // mxShape.configureCanvas always setFillColor / setDashed from the
       // cell. NestedStencil used to skip those when the style omitted
       // dashed=1 / none fill, so the previous vertex-cells sibling leaked
@@ -6761,7 +6778,20 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
       if (style.linejoin) canvas.setLineJoin(style.linejoin);
       if (style.miterlimit) canvas.setMiterLimit(style.miterlimit);
       if (style.shadow == 1) canvas.setShadow(true);
-      stencil.drawShape(canvas, ghost, x, y, width, height);
+      // mxShape.paint: updateTransform then stencil.drawShape.
+      // NestedStencil used to skip rotate(getShapeRotation()), so
+      // Floorplan kitchen chairs with direction=west/north/south stayed
+      // unrotated. Stencils invert north/south via computeAspect, not
+      // isPaintBoundsInverted. tokens.txt has no direction; leftover is
+      // collectGeometry. STYLE_ROTATION still leftover-bakes Angle when
+      // bakeStyleRotation is false (ghost.rotation stays 0).
+      canvas.save();
+      try {
+        ghost.updateTransform(canvas, x, y, width, height);
+        stencil.drawShape(canvas, ghost, x, y, width, height);
+      } finally {
+        canvas.restore();
+      }
       canvas.finish();
       return ghost;
     }

@@ -12726,6 +12726,155 @@ void main() {
   );
 
   test(
+    'mxStencil STYLE_DIRECTION leftover-bakes kitchen chairs for LibreOffice',
+    () {
+      ({double minX, double minY, double maxX, double maxY}) bbox(
+        VsdxShape shape,
+      ) {
+        var minX = double.infinity;
+        var minY = double.infinity;
+        var maxX = double.negativeInfinity;
+        var maxY = double.negativeInfinity;
+        void acc(double x, double y) {
+          minX = math.min(minX, x);
+          minY = math.min(minY, y);
+          maxX = math.max(maxX, x);
+          maxY = math.max(maxY, y);
+        }
+
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            switch (command) {
+              case MoveTo(:final x, :final y):
+                acc(x, y);
+              case LineTo(:final x, :final y):
+                acc(x, y);
+              case CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2):
+                acc(x, y);
+                acc(x1, y1);
+                acc(x2, y2);
+              case RelCubBezTo(
+                  :final fx,
+                  :final fy,
+                  :final fx1,
+                  :final fy1,
+                  :final fx2,
+                  :final fy2,
+                ):
+                acc(fx * shape.width, fy * shape.height);
+                acc(fx1 * shape.width, fy1 * shape.height);
+                acc(fx2 * shape.width, fy2 * shape.height);
+              default:
+                break;
+            }
+          }
+        }
+        return (minX: minX, minY: minY, maxX: maxX, maxY: maxY);
+      }
+
+      bool isChair(VsdxShape shape) =>
+          shape.geometries.fold<int>(
+            0,
+            (n, geometry) => n + geometry.commands.length,
+          ) >
+          10;
+
+      final table = dynamic
+          .singleWhere(
+            (group) => group.name == 'Draw.io JS / Floorplan / floorplans',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Kitchen table')
+          .build(1, 3, 3);
+      final chairs = <VsdxShape>[
+        table,
+        ...table.children,
+      ].where(isChair).toList();
+      expect(chairs, hasLength(4));
+      final boxes = chairs.map(bbox).toList();
+      ({double minX, double minY, double maxX, double maxY}) pick(
+        double Function(({double minX, double minY, double maxX, double maxY}) b)
+            key,
+      ) {
+        return boxes.reduce((a, b) => key(a) <= key(b) ? a : b);
+      }
+
+      ({double minX, double minY, double maxX, double maxY}) pickMax(
+        double Function(({double minX, double minY, double maxX, double maxY}) b)
+            key,
+      ) {
+        return boxes.reduce((a, b) => key(a) >= key(b) ? a : b);
+      }
+
+      final top = pickMax((b) => b.minY);
+      final bottom = pick((b) => b.maxY);
+      final left = pick((b) => b.minX);
+      final right = pickMax((b) => b.maxX);
+      expect(
+        top.maxY - top.minY,
+        greaterThan(top.maxX - top.minX),
+        reason: 'default chair above the table stays portrait; NestedStencil '
+            'used to skip mxShape.paint updateTransform so direction=north '
+            'siblings stayed the same 40×52 silhouette (tokens.txt has no '
+            'direction; leftover is collectGeometry)',
+      );
+      expect(
+        bottom.maxY - bottom.minY,
+        greaterThan(bottom.maxX - bottom.minX),
+        reason: 'direction=west is getShapeRotation +180 and stays portrait',
+      );
+      expect(
+        left.maxX - left.minX,
+        greaterThan(left.maxY - left.minY),
+        reason: 'direction=north leftover-bakes a landscape chair on the left',
+      );
+      expect(
+        right.maxX - right.minX,
+        greaterThan(right.maxY - right.minY),
+        reason: 'direction=south leftover-bakes a landscape chair on the right',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(table.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverChairs = <VsdxShape>[
+        leftover,
+        ...leftover.children,
+      ].where(isChair).toList();
+      expect(leftoverChairs, hasLength(4));
+      final leftoverBoxes = leftoverChairs.map(bbox).toList();
+      final leftoverLeft = leftoverBoxes.reduce(
+        (a, b) => a.minX <= b.minX ? a : b,
+      );
+      final leftoverTop = leftoverBoxes.reduce(
+        (a, b) => a.minY >= b.minY ? a : b,
+      );
+      expect(
+        leftoverLeft.maxX - leftoverLeft.minX,
+        greaterThan(leftoverLeft.maxY - leftoverLeft.minY),
+        reason: 'a second save must keep the north chair landscape',
+      );
+      expect(
+        leftoverTop.maxY - leftoverTop.minY,
+        greaterThan(leftoverTop.maxX - leftoverTop.minX),
+        reason: 'a second save must keep the default chair portrait',
+      );
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic
