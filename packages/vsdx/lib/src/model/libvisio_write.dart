@@ -11487,12 +11487,19 @@ LibvisioShapeWrite libvisioShapeWrite(
     line = line.copyWith(color: color);
   }
 
-  final ribbon = bakeStrokeRibbonForLibvisio(
-    shape: working,
-    geometries: geometries,
-    line: line,
-    theme: theme,
-  );
+  // Custom / flow dash already flattened to MoveTo/LineTo. Sampling
+  // CubBezTo into those dashes invents kinks whose miter exceeds Draw's
+  // ODF default 4, so a later ribbon filled each dash (P&ID Basket Reel;
+  // tokens.txt LineColor → svg:stroke). AWS Group dashed roundrects stay
+  // 2-point strokes and never hit that path.
+  final ribbon = (dashed == null && flowed == null)
+      ? bakeStrokeRibbonForLibvisio(
+          shape: working,
+          geometries: geometries,
+          line: line,
+          theme: theme,
+        )
+      : null;
   if (ribbon != null) {
     geometries = ribbon.geometries;
     line = ribbon.line;
@@ -12191,7 +12198,26 @@ bool shapeNeedsLibvisioRoundCapMiterFlatten(VsdxShape shape) {
   return false;
 }
 
+/// `true` when Geometry is already a custom/flow dash flatten: many short
+/// unfilled MoveTo/LineTo strokes. Sampling CubBezTo into those dashes
+/// invents kinks whose miter exceeds Draw's ODF default 4, so a later
+/// ribbon filled each dash (P&ID Basket Reel; tokens.txt LineColor →
+/// svg:stroke). A first save skips ribbon after [bakeCustomDashForLibvisio];
+/// this keeps a second save from filling the leftover mesh.
+bool _looksLikeLibvisioFlattenedDashStrokes(VsdxShape shape) {
+  var stroked = 0;
+  var short = 0;
+  for (final geometry in shape.geometries) {
+    if (geometry.noShow || geometry.noLine) continue;
+    if (!geometry.noFill) return false;
+    stroked++;
+    if (geometry.commands.length <= 4) short++;
+  }
+  return stroked >= 8 && short >= stroked * 0.75;
+}
+
 bool _shapeHasLibvisioMiterSpikeCorners(VsdxShape shape) {
+  if (_looksLikeLibvisioFlattenedDashStrokes(shape)) return false;
   if (shape.line.cap == LineCap.round &&
       !shapeNeedsLibvisioRoundCapMiterFlatten(shape)) {
     return false;
@@ -12263,6 +12289,7 @@ VsdxFill _opaqueFillFromLine(
 /// show an opaque stroke). A `veMiterLimit` above 4 on an unfilled solid
 /// polyline uses the same ribbon so Draw does not bevel ratio>4 elbows.
 bool shapeNeedsLibvisioStrokeRibbon(VsdxShape shape) {
+  if (_looksLikeLibvisioFlattenedDashStrokes(shape)) return false;
   if (_openArrowheadsBlockStrokeBake(shape)) return false;
   if (!shape.line.hasLine) return false;
   if (!shape.line.hasGradient &&

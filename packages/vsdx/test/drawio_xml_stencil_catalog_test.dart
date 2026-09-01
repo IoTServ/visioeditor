@@ -14356,6 +14356,106 @@ void main() {
   );
 
   test(
+    'P&ID Basket Reel leftover keeps dashed CubBezTo mesh strokes for LibreOffice',
+    () {
+      bool hasCubFamily(VsdxShape shape) {
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is CubBezTo || command is RelCubBezTo) return true;
+          }
+        }
+        return shape.children.any(hasCubFamily);
+      }
+
+      bool isFilledRibbon(VsdxShape shape) {
+        return shape.fill.hasFill &&
+            !shape.line.hasLine &&
+            shape.geometries.any(
+              (geometry) => !geometry.noFill && geometry.noLine,
+            );
+      }
+
+      final basket = migrated
+          .singleWhere((group) => group.name == 'Draw.io / P&ID / Misc')
+          .stencils
+          .singleWhere(
+            (entry) =>
+                entry.name ==
+                'Screening Device, Sieve, Strainer (Basket Reel)',
+          )
+          .build(1, 3, 3);
+      expect(basket.children, isNotEmpty);
+      final mesh = basket.children.first;
+      expect(
+        hasCubFamily(mesh),
+        isTrue,
+        reason: 'mxStencil strainer mesh is CubBezTo under a custom dash',
+      );
+      expect(mesh.line.hasLine, isTrue);
+      expect(mesh.line.customDashPattern, isNotNull);
+      expect(
+        mesh.geometries.any((geometry) => geometry.noFill && !geometry.noLine),
+        isTrue,
+      );
+      expect(isFilledRibbon(mesh), isFalse);
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(basket.copyWith(id: id)),
+      );
+      final leftoverBytes = writer.write(
+        originalBytes: writer.emptyDocument(),
+        edited: doc,
+      );
+      final leftoverDoc = parser.parse(leftoverBytes);
+      final leftover = leftoverDoc.pages.first.findShapeById(id)!;
+      expect(leftover.children, isNotEmpty);
+      final leftoverMesh = leftover.children.first;
+      expect(
+        leftoverMesh.line.hasLine,
+        isTrue,
+        reason: 'dash flatten must keep collectLine LinePattern, not a fill '
+            'ribbon (tokens.txt LineColor → svg:stroke)',
+      );
+      expect(leftoverMesh.fill.hasFill, isFalse);
+      expect(isFilledRibbon(leftoverMesh), isFalse);
+      expect(
+        leftoverMesh.geometries.every(
+          (geometry) => geometry.noFill && !geometry.noLine,
+        ),
+        isTrue,
+      );
+      expect(
+        leftoverMesh.geometries.length,
+        greaterThan(8),
+        reason: 'veDashPattern leftover is MoveTo/LineTo ink pieces',
+      );
+      expect(
+        shapeNeedsLibvisioStrokeRibbon(leftoverMesh),
+        isFalse,
+        reason: 'CubBezTo-sampled dash kinks must not ribbon on a second save',
+      );
+
+      final twice = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: leftoverDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(twice.children.first.line.hasLine, isTrue);
+      expect(isFilledRibbon(twice.children.first), isFalse);
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

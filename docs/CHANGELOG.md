@@ -583,6 +583,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io P&ID Basket Reel leftover keeps the dashed CubBezTo strainer
+  mesh as strokes for LibreOffice. leftover flattened `veDashPattern`
+  into CubBezTo-sampled LineTo dashes, then a miter above Draw's ODF
+  default 4 filled each dash as a ribbon blob (`tokens.txt` LineColor →
+  `svg:stroke`). Custom-dash flatten now skips that ribbon, and a
+  second save does not refill the leftover mesh.
 - draw.io Electrical Transformer leftover keeps CubBezTo coils as
   RelCubBezTo strokes for LibreOffice. Sampling those semicircles into
   LineTo invented kinks whose miter ratio exceeded Draw's ODF default 4,
