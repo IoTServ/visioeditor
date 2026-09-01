@@ -13615,6 +13615,85 @@ void main() {
   );
 
   test(
+    'SysML Activity Final leftover fills the inner disk with stroke for LibreOffice',
+    () {
+      const paletteBlue = VsdxColor(0xFFDAE8FC);
+
+      VsdxShape? innerDisk(VsdxShape shape) {
+        for (final child in shape.children) {
+          if (child.fill.hasFill &&
+              child.geometries.any(
+                (geometry) =>
+                    geometry.commands.whereType<EllipseCmd>().isNotEmpty,
+              )) {
+            return child;
+          }
+        }
+        return null;
+      }
+
+      final bullseye = dynamic
+          .singleWhere(
+            (group) =>
+                group.name == 'Draw.io JS / Sysml / SysML / Activities',
+          )
+          .stencils
+          .singleWhere((entry) => entry.name == 'Activity Final')
+          .build(1, 3, 3);
+      expect(
+        bullseye.geometries.any(
+          (geometry) => geometry.commands.whereType<EllipseCmd>().isNotEmpty,
+        ),
+        isTrue,
+        reason: 'the outer ellipse is the Activity Final ring',
+      );
+      expect(
+        bullseye.fill.foreground,
+        paletteBlue,
+        reason: 'applyStencilStyle pins the outer FillForegnd',
+      );
+      final inner = innerDisk(bullseye);
+      expect(inner, isNotNull, reason: 'the inner disk is a leftover sibling');
+      expect(
+        inner!.fill.foreground,
+        VsdxColor.black,
+        reason: 'mxShapeSysMLActivityFinal.paintVertexShape does '
+            'setFillColor(STYLE_STROKECOLOR). Graph.replaceDefaultColor '
+            'maps defaultVertex strokeColor=default to '
+            'shapeForegroundColor before paint. Capture used to leave '
+            'the keyword so decoder inherit FillForegnd (tokens.txt → '
+            'svg:fill) painted the inner disk the outer palette',
+      );
+      expect(
+        inner.fill.foreground,
+        isNot(paletteBlue),
+        reason: 'the bullseye inner disk must not ride the outer fill',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(bullseye.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverInner = innerDisk(leftover);
+      expect(leftoverInner, isNotNull);
+      expect(leftoverInner!.fill.foreground, VsdxColor.black);
+      expect(leftoverInner.fill.foreground, isNot(paletteBlue));
+      expect(leftover.fill.foreground, paletteBlue);
+    },
+  );
+
+  test(
     'mxStackLayout fill leftover-bakes full-width list items for LibreOffice',
     () {
       final list = dynamic

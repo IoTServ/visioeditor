@@ -272,6 +272,24 @@ function stylePaintColor(value, fallback) {
   return isNoneColor(value) ? null : value;
 }
 
+// Graph.replaceDefaultColor(STYLE_STROKECOLOR, shapeForegroundColor)
+// runs in getCellStyle before paint. parseStyle keeps the keyword so
+// fillPaintToken can emit inherit `fill` (AWS Cloud puff siblings).
+// JS painters then mxUtils.getValue(STYLE_STROKECOLOR) and
+// setFillColor; leftover fillcolor=default decoder-inherits FillForegnd
+// (tokens.txt → svg:fill) so SysML Activity Final's inner disk is the
+// outer palette, not the bullseye. Clone strokeColor to the resolved
+// hex on the shape that paintVertexShape reads. Do not rewrite
+// fillColor=default (that would bake #ffffff instead of inherit fill).
+function styleWithResolvedStrokeDefault(style, stroke) {
+  if (style == null || typeof style !== 'object') return style;
+  if (cssColorKey(style.strokeColor) !== 'default') return style;
+  const resolved = (stroke == null || isNoneColor(stroke))
+    ? '#000000'
+    : stroke;
+  return {...style, strokeColor: resolved};
+}
+
 class CanvasRecorder {
   constructor() {
     this.tx = 0;
@@ -6896,7 +6914,8 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   if (!ctor) return null;
   if (typeof ctor.prototype.paintVertexShape !== 'function') return null;
   const shape = new ctor(null, fill, stroke, 1);
-  shape.style = style;
+  const paintStyle = styleWithResolvedStrokeDefault(style, stroke);
+  shape.style = paintStyle;
   shape.fill = fill;
   shape.gradient = stylePaintColor(style.gradientColor, null);
   shape.gradientDirection = style.gradientDirection || mxConstants.DIRECTION_SOUTH;
@@ -6938,7 +6957,7 @@ function paintRegistered(style, width, height, canvas, x = 0, y = 0, opts = {}) 
   }
   shape.state = {
     cell: opts.cell || null,
-    style,
+    style: paintStyle,
     view: {
       graph: {
         // mxGraph.getLabel → convertValueToString. Mockup ruler2
@@ -9165,9 +9184,9 @@ function paintEdge(style, width, height, canvas, x = 0, y = 0, geometry = null, 
   const ctor = (name && registry[name]) || shapeContext.mxConnector;
   if (ctor && typeof ctor.prototype.paintEdgeShape === 'function') {
     const shape = new ctor(null, style.fillColor || '#ffffff', style.strokeColor || '#000000', 1);
-    shape.style = style;
     shape.fill = stylePaintColor(style.fillColor, '#ffffff');
     shape.stroke = stylePaintColor(style.strokeColor, '#000000');
+    shape.style = styleWithResolvedStrokeDefault(style, shape.stroke);
     shape.strokewidth = Number(style.strokeWidth) || 1;
     shape.isDashed = style.dashed == 1;
     shape.isRounded = style.rounded == 1;

@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 ### Fixed
+- draw.io SysML Activity Final leftover fills the inner disk with stroke
+  for LibreOffice. Official `mxShapeSysMLActivityFinal.paintVertexShape`
+  does `setFillColor(STYLE_STROKECOLOR)` after the outer
+  `fillAndStroke`. `Graph.replaceDefaultColor` maps defaultVertex
+  `strokeColor=default` to `shapeForegroundColor` before paint. Capture
+  left the keyword so decoder inherit `FillForegnd` (`tokens.txt` →
+  `svg:fill`) painted the inner disk the outer palette. Capture now
+  leftover-bakes the resolved stroke hex. A second save keeps the
+  bullseye.
 - draw.io AWS 3D Elastic MapReduce leftover has no origin Line cap for
   LibreOffice. Official `mxAws3dElasticMapReduce.foreground` leaves
   `moveTo(0,0)/lineTo(0,0)/arcTo(0,0)` after fill(); mxSvgCanvas2D
