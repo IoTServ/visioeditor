@@ -16633,6 +16633,129 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D sketch omitted leftover bakes FillPattern hatch off for LibreOffice',
+    () {
+      bool isHatch(VsdxFill fill) => fill.pattern >= 2 && fill.pattern <= 24;
+
+      ({int sketched, int plain}) sketchCounts(VsdxShape shape) {
+        var sketched = 0;
+        var plain = 0;
+        void walk(VsdxShape next) {
+          final paints = next.line.hasLine || next.fill.hasFill;
+          if (paints) {
+            if (next.sketchEffect || isHatch(next.fill)) {
+              sketched++;
+            } else {
+              plain++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (sketched: sketched, plain: plain);
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<sketch/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 507,
+      );
+      expect(
+        sketchCounts(omitted),
+        (sketched: 0, plain: 1),
+        reason: 'omitted sketch enabled is off like NestedStencil === \'1\'; '
+            'leftover enabled != \'0\' hatched FillPattern so Draw painted '
+            'draw:fill=hatch (`tokens.txt` FillPattern)',
+      );
+      expect(omitted.sketchEffect, isFalse);
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<sketch enabled="1" jiggle="4"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<sketch/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        sketchCounts(laterHost),
+        (sketched: 1, plain: 1),
+        reason: 'later omitted sketch leftover-bakes a sibling so Draw does '
+            'not hatch the second rail',
+      );
+      expect(laterHost.sketchEffect, isTrue);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<sketch enabled="1" jiggle="4"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<sketch/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        sketchCounts(includeHost),
+        (sketched: 1, plain: 2),
+        reason: 'include-shape shares the canvas; nested omitted sketch '
+            'turns hatch off for later host inherit fillstroke',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        leftover.sketchEffect || isHatch(leftover.fill),
+        isTrue,
+        reason: 'a second save keeps the first FillPattern hatch Draw paints',
+      );
+      expect(
+        leftover.children.any(
+          (child) => child.fill.hasFill && !isHatch(child.fill),
+        ),
+        isTrue,
+        reason: 'a second save keeps the later unhatched rail Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

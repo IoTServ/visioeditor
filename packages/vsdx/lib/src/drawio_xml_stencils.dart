@@ -979,7 +979,12 @@ class _DrawioXmlShapeDecoder {
         _strokeAlpha = _alphaValue(node);
         break;
       case 'sketch':
-        _sketchEnabled = node.getAttribute('enabled') != '0';
+        // NestedStencil setSketch always writes enabled="1". leftover
+        // `enabled != '0'` treated omitted as on, so Draw leftover-baked
+        // FillPattern 2–24 hatch mxRoughCanvas2D never painted
+        // (`tokens.txt` FillPattern → draw:fill=hatch). Same === '1'
+        // as leftover `<shadow>` / NestedStencil setShadow.
+        _sketchEnabled = node.getAttribute('enabled') == '1';
         final fill = node.getAttribute('fill');
         if (fill != null && fill.isNotEmpty) _sketchFill = fill;
         final gap = double.tryParse(node.getAttribute('gap') ?? '');
@@ -1149,6 +1154,9 @@ class _DrawioXmlShapeDecoder {
       // setShadow onto ShdwPattern that `_fillAndShadowProperties`
       // maps to ODF draw:shadow. Omitted enabled is off (`=== '1'`),
       // same as NestedStencil and leftover dashed.
+      // `sketch` follows Graph mxRoughCanvas2D / NestedStencil
+      // setSketch onto leftover FillPattern 2–24 hatch. Omitted
+      // enabled is off (`=== '1'`), same as leftover shadow.
       // `shadowcolor` / `shadowalpha` / `shadowoffset` follow
       // mxXmlCanvas2D setShadowColor / setShadowAlpha / setShadowOffset
       // onto ShdwForegnd / ShapeShdwOffset* (`tokens.txt`). A later

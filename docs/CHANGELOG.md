@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D sketch omitted leftover FillPattern
+  hatch off for LibreOffice. NestedStencil `setSketch` always writes
+  `enabled="1"`; Graph wraps mxRoughCanvas2D only when `sketch==1`.
+  leftover `enabled != '0'` treated omitted as on, so Draw leftover
+  write hatched a rail (`tokens.txt` FillPattern → `draw:fill=hatch`).
+  leftover now snaps omitted to off, include-shape copies that overlay,
+  and a later omitted sketch leftover-bakes a sibling. A second save
+  keeps both.
 - draw.io leftover mxXmlCanvas2D fontsize omitted leftover Char Size
   floor for LibreOffice. Official `setFontSize(Number(null)*minScale)`
   is 0; NestedStencil `attrNum` fallback is 0; `mxSvgCanvas2D.text`
