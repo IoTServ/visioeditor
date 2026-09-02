@@ -12667,6 +12667,90 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape image leftover keeps host and nested ForeignData for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        final found = <VsdxShape>[];
+        void walk(VsdxShape next) {
+          if (next.hasImage) found.add(next);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return found;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="0" y="0" w="100" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="0" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 458,
+      );
+      const canvasScale = 1.5 / 100;
+      final images = imageShapes(host);
+      expect(
+        images,
+        hasLength(2),
+        reason: 'mxStencil.drawNode canvas.image then include-shape '
+            'nested canvas.image; leftover used one slot and Draw '
+            'collectForeignDataType missed the first PNG',
+      );
+      final widths = images.map((s) => s.effectiveImgWidth).toList()..sort();
+      expect(
+        widths[0],
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'nested include-shape leftover is w*sx in the 80×40 box',
+      );
+      expect(
+        widths[1],
+        closeTo(100 * canvasScale, 0.02),
+        reason: 'host canvas.image leftover is the 100-wide band',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverImages = imageShapes(leftover);
+      expect(
+        leftoverImages,
+        hasLength(2),
+        reason: 'a second save keeps both ForeignData parts',
+      );
+      final leftoverWidths =
+          leftoverImages.map((s) => s.effectiveImgWidth).toList()..sort();
+      expect(leftoverWidths[0], closeTo(80 * canvasScale, 0.02));
+      expect(leftoverWidths[1], closeTo(100 * canvasScale, 0.02));
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

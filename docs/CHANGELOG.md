@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape stacked images for LibreOffice.
+  Official `mxStencil.drawNode` may `canvas.image` on the host and again
+  inside include-shape. leftover used one ForeignData slot, so Draw
+  collectForeignDataType dropped the first PNG (`tokens.txt` ImgWidth).
+  leftover now appends each leftover-inch box as its own ForeignData
+  child. A second save keeps both parts.
 - draw.io leftover mxStencil include-shape image canvas box and flipH for
   LibreOffice. Official `mxStencil.drawNode` image is
   `canvas.image(x, y, w×sx, h×sy, …, flipH, flipV)` in canvas pixels.
