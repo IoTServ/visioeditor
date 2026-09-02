@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D rotate leftover inches for
+  LibreOffice. Official `mxXmlCanvas2D.rotate` is `mxSvgCanvas2D`'s
+  SVG transform (`theta` / `flipH` / `flipV` around `cx,cy` after
+  translate+scale); JS capture bakes that into coordinates and never
+  emits the node. leftover ignored it, so later inherit fill
+  extraInheritFill siblings sat unrotated (`tokens.txt` PinX / Angle;
+  collectGeometry has no canvas, and Angle is shape-level). leftover
+  now bakes leftover inches, include-shape copies leftover-inch
+  rotation onto the nested overlay, and FlipX stays off the host so
+  applyXForm does not mirror earlier Geometry. A second save keeps
+  both rails.
 - draw.io leftover mxXmlCanvas2D translate / scale leftover inches for
   LibreOffice. Official `mxXmlCanvas2D.translate` / `scale` are
   `addOp` `(x + dx) * state.scale` (and `getStrokeWidth` /

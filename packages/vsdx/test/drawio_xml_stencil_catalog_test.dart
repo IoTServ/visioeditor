@@ -15678,6 +15678,141 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D rotate leftover bakes PinX for LibreOffice',
+    () {
+      double minMoveX(VsdxShape shape) {
+        var min = double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is MoveTo) min = math.min(min, command.x);
+          }
+        }
+        return min;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="R" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 485,
+      );
+      expect(
+        minMoveX(host),
+        closeTo(0, 0.02),
+        reason: 'mxSvgCanvas2D.rotate(90) maps (20,0) to (0,20); leftover '
+            'must bake leftover inches so Draw collectGeometry does not '
+            'keep the unrotated Pin (`tokens.txt` PinX / Angle)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(laterHost),
+        closeTo(20 * canvasScale, 0.02),
+        reason: 'first inherit fill keeps collectGeometry unrotated',
+      );
+      expect(
+        laterHost.children.any((child) => minMoveX(child).abs() < 0.05),
+        isTrue,
+        reason: 'later rotate leftover-bakes an extraInheritFill sibling '
+            'so Draw does not evenodd two overlapping rails',
+      );
+
+      final flipped = decodeDrawioMxStencilXml(
+        '<shape name="F" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="0" cx="25" cy="0" flipH="1" flipV="0"/>'
+        '<rect x="10" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(flipped),
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'mxSvgCanvas2D flipH around cx=25 maps (10,0) to (40,0); '
+            'leftover MoveTo is 40×catalog not the unflipped 10',
+      );
+      expect(
+        flipped.flipX,
+        isFalse,
+        reason: 'canvas rotate flipH is not STYLE_FLIPH; leftover FlipX on '
+            'the host would applyXForm-mirror earlier Geometry',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<fill/>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        minMoveX(includeHost),
+        closeTo(0, 0.02),
+        reason: 'the first host inherit fill at x=0 stays unrotated',
+      );
+      expect(
+        includeHost.children.any((child) => minMoveX(child).abs() < 0.05),
+        isTrue,
+        reason: 'include-shape shares leftover-inch rotation; nested '
+            '(20,0) maps to (0,20)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        minMoveX(leftover),
+        closeTo(20 * canvasScale, 0.02),
+        reason: 'a second save keeps the first inherit Pin Draw paints',
+      );
+      expect(
+        leftover.children.any((child) => minMoveX(child).abs() < 0.05),
+        isTrue,
+        reason: 'a second save keeps the later rotated Pin Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

@@ -216,6 +216,11 @@ class _MxPaintState {
     required this.canvasDx,
     required this.canvasDy,
     required this.canvasUserScale,
+    required this.rotThetaDeg,
+    required this.rotFlipH,
+    required this.rotFlipV,
+    required this.rotCxLeftover,
+    required this.rotCyLeftover,
   });
 
   final double fontSize;
@@ -265,6 +270,14 @@ class _MxPaintState {
   final double canvasDx;
   final double canvasDy;
   final double canvasUserScale;
+  // mxXmlCanvas2D.rotate leftover inches. collectXFormData Angle is
+  // shape-level, so leftover bakes mxSvgCanvas2D's SVG transform into
+  // vertices (`tokens.txt` PinX / Angle).
+  final double rotThetaDeg;
+  final bool rotFlipH;
+  final bool rotFlipV;
+  final double rotCxLeftover;
+  final double rotCyLeftover;
 }
 
 class _DrawioXmlShapeDecoder {
@@ -309,6 +322,14 @@ class _DrawioXmlShapeDecoder {
   double _canvasDx = 0;
   double _canvasDy = 0;
   double _canvasUserScale = 1;
+  // mxXmlCanvas2D `<rotate>` / mxSvgCanvas2D.rotate. leftover bakes the
+  // SVG transform into leftover inches; Angle on the parent would spin
+  // earlier unrotated Geometry too (`tokens.txt` Angle is shape-level).
+  double _rotThetaDeg = 0;
+  bool _rotFlipH = false;
+  bool _rotFlipV = false;
+  double _rotCxLeftover = 0;
+  double _rotCyLeftover = 0;
 
   final List<VsdxGeometry> _geometries = <VsdxGeometry>[];
   final List<_DrawioStencilLabel> _labels = <_DrawioStencilLabel>[];
@@ -755,6 +776,14 @@ class _DrawioXmlShapeDecoder {
         // LineWeight / PinX).
         _applyMxCanvasScale(_number(node, 'scale', fallback: 1));
         break;
+      case 'rotate':
+        // mxXmlCanvas2D.rotate. leftover used to ignore the node, so
+        // later inherit fill extraInheritFill siblings sat unrotated
+        // (`tokens.txt` PinX; collectGeometry has no canvas). Angle is
+        // shape-level, so leftover bakes mxSvgCanvas2D's SVG transform
+        // into leftover inches.
+        _applyMxCanvasRotate(node);
+        break;
       case 'dashed':
         // mxStencil.drawNode: setDashed(dashed == '1'). Omitted / "true"
         // stay solid like official (NestedStencil uses === '1').
@@ -1081,6 +1110,11 @@ class _DrawioXmlShapeDecoder {
       // Width). include-shape bakes the host transform into the overlay
       // origin / minScale and resets nested dx/scale so nested
       // `_x`/`_y` do not apply them twice.
+      // `rotate` follows mxXmlCanvas2D onto leftover inches
+      // (`mxSvgCanvas2D.rotate` SVG transform). leftover used to ignore
+      // it, so Draw collectGeometry kept the unrotated Pin (`tokens.txt`
+      // PinX / Angle). include-shape copies leftover-inch rotation so
+      // nested `_x`/`_y` apply the host transform once.
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -1196,14 +1230,15 @@ class _DrawioXmlShapeDecoder {
       }
     }
     nested._initOverlayMetrics(
-      originX: _x(x0),
-      originY: _y(y0 + nestedH * sy),
+      originX: _leftoverUnrotated(x0, y0 + nestedH * sy).x,
+      originY: _leftoverUnrotated(x0, y0 + nestedH * sy).y,
       overlayScaleX: sx * scaleX * _canvasUserScale,
       overlayScaleY: sy * scaleY * _canvasUserScale,
       canvasScale: _canvasScale * _canvasUserScale,
     );
-    // Host `_x`/`_y` already applied canvas dx/scale. Nested overlay
+    // Host leftover already applied canvas dx/scale. Nested overlay
     // minScale includes userScale so nested `_x`/`_y` stay identity.
+    // leftover-inch rotation stays (shared canvas; Angle is shape-level).
     nested._canvasDx = 0;
     nested._canvasDy = 0;
     nested._canvasUserScale = 1;
@@ -1423,6 +1458,13 @@ class _DrawioXmlShapeDecoder {
       canvasDx: destDx,
       canvasDy: destDy,
       canvasUserScale: destUser,
+      // leftover-inch rotation is already in the host leftover space
+      // nested overlay uses.
+      rotThetaDeg: source.rotThetaDeg,
+      rotFlipH: source.rotFlipH,
+      rotFlipV: source.rotFlipV,
+      rotCxLeftover: source.rotCxLeftover,
+      rotCyLeftover: source.rotCyLeftover,
     );
   }
 
@@ -1522,6 +1564,11 @@ class _DrawioXmlShapeDecoder {
     _canvasDx = other._canvasDx;
     _canvasDy = other._canvasDy;
     _canvasUserScale = other._canvasUserScale;
+    _rotThetaDeg = other._rotThetaDeg;
+    _rotFlipH = other._rotFlipH;
+    _rotFlipV = other._rotFlipV;
+    _rotCxLeftover = other._rotCxLeftover;
+    _rotCyLeftover = other._rotCyLeftover;
   }
 
   /// Visio Image Properties are Y-up from the shape origin. mxStencil
@@ -1535,16 +1582,16 @@ class _DrawioXmlShapeDecoder {
       final height = boxH * scaleY.abs() * _canvasUserScale;
       if (width <= 1e-9 || height <= 1e-9) return null;
       return (
-        offsetX: _x(raster.left ?? 0),
-        offsetY: _y((raster.top ?? 0) + boxH),
+        offsetX: _x(raster.left ?? 0, (raster.top ?? 0) + boxH),
+        offsetY: _y(raster.left ?? 0, (raster.top ?? 0) + boxH),
         width: width,
         height: height,
       );
     }
     if (targetWidth <= 1e-9 || targetHeight <= 1e-9) return null;
     return (
-      offsetX: _x(0),
-      offsetY: _y(sourceHeight),
+      offsetX: _x(0, sourceHeight),
+      offsetY: _y(0, sourceHeight),
       width: targetWidth,
       height: targetHeight,
     );
@@ -1556,12 +1603,13 @@ class _DrawioXmlShapeDecoder {
     ({double offsetX, double offsetY, double width, double height}) box,
     _DrawioRaster source,
   ) {
-    final left = _sourceXFromLeftover(box.offsetX);
+    final src = _sourceFromLeftover(box.offsetX, box.offsetY);
+    final left = src.x;
     final xUnit = scaleX.abs() * _canvasUserScale;
     final yUnit = scaleY.abs() * _canvasUserScale;
     final boxW = xUnit < 1e-12 ? box.width : box.width / xUnit;
     final boxH = yUnit < 1e-12 ? box.height : box.height / yUnit;
-    final bottomSrc = _sourceYFromLeftover(box.offsetY);
+    final bottomSrc = src.y;
     return _DrawioRaster(
       part: source.part,
       mime: source.mime,
@@ -1620,6 +1668,11 @@ class _DrawioXmlShapeDecoder {
         canvasDx: _canvasDx,
         canvasDy: _canvasDy,
         canvasUserScale: _canvasUserScale,
+        rotThetaDeg: _rotThetaDeg,
+        rotFlipH: _rotFlipH,
+        rotFlipV: _rotFlipV,
+        rotCxLeftover: _rotCxLeftover,
+        rotCyLeftover: _rotCyLeftover,
       );
 
   void _restorePaint(_MxPaintState saved) {
@@ -1668,6 +1721,11 @@ class _DrawioXmlShapeDecoder {
     _canvasDx = saved.canvasDx;
     _canvasDy = saved.canvasDy;
     _canvasUserScale = saved.canvasUserScale;
+    _rotThetaDeg = saved.rotThetaDeg;
+    _rotFlipH = saved.rotFlipH;
+    _rotFlipV = saved.rotFlipV;
+    _rotCxLeftover = saved.rotCxLeftover;
+    _rotCyLeftover = saved.rotCyLeftover;
   }
 
   void _resetPen() {
@@ -2219,6 +2277,28 @@ class _DrawioXmlShapeDecoder {
     if (_shadow != null) _rebuildEnabledShadow();
   }
 
+  void _applyMxCanvasRotate(XmlElement node) {
+    final theta = _number(node, 'theta');
+    final flipH = node.getAttribute('flipH') == '1';
+    final flipV = node.getAttribute('flipV') == '1';
+    if (theta.abs() < 1e-12 && !flipH && !flipV) return;
+    // mxSvgCanvas2D.rotate: cx += dx; cy += dy; cx *= scale. leftover
+    // stores that centre in leftover inches so include-shape nested
+    // overlay (already leftover inches) can reuse it.
+    final centre = _leftoverUnrotated(
+      _number(node, 'cx'),
+      _number(node, 'cy'),
+    );
+    _rotThetaDeg = theta;
+    _rotFlipH = flipH;
+    _rotFlipV = flipV;
+    _rotCxLeftover = centre.x;
+    _rotCyLeftover = centre.y;
+  }
+
+  bool get _hasCanvasRotate =>
+      _rotThetaDeg.abs() > 1e-9 || _rotFlipH || _rotFlipV;
+
   VsdxShadow _shadowFromCanvas() {
     var offsetX = _shadowDx * scaleX * _canvasUserScale;
     var offsetY = -_shadowDy * scaleY * _canvasUserScale;
@@ -2641,7 +2721,8 @@ class _DrawioXmlShapeDecoder {
       commands.addAll(
         _mxAddPoints(
           pts: [
-            for (final point in pts) (x: _x(point.x), y: _y(point.y)),
+            for (final point in pts)
+              (x: _x(point.x, point.y), y: _y(point.x, point.y)),
           ],
           close: close,
           arcSize: leftoverArc,
@@ -2737,12 +2818,12 @@ class _DrawioXmlShapeDecoder {
         _subX = _penX;
         _subY = _penY;
         _hasSub = true;
-        commands.add(MoveTo(_x(_penX), _y(_penY)));
+        commands.add(MoveTo(_x(_penX, _penY), _y(_penX, _penY)));
         break;
       case 'line':
         _penX = _number(command, 'x');
         _penY = _number(command, 'y');
-        commands.add(LineTo(_x(_penX), _y(_penY)));
+        commands.add(LineTo(_x(_penX, _penY), _y(_penX, _penY)));
         break;
       case 'curve':
         final x1 = _number(command, 'x1');
@@ -2752,12 +2833,12 @@ class _DrawioXmlShapeDecoder {
         _penX = _number(command, 'x3');
         _penY = _number(command, 'y3');
         commands.add(CubBezTo(
-          x: _x(_penX),
-          y: _y(_penY),
-          x1: _x(x1),
-          y1: _y(y1),
-          x2: _x(x2),
-          y2: _y(y2),
+          x: _x(_penX, _penY),
+          y: _y(_penX, _penY),
+          x1: _x(x1, y1),
+          y1: _y(x1, y1),
+          x2: _x(x2, y2),
+          y2: _y(x2, y2),
         ));
         break;
       case 'quad':
@@ -2766,10 +2847,10 @@ class _DrawioXmlShapeDecoder {
         _penX = _number(command, 'x2');
         _penY = _number(command, 'y2');
         commands.add(QuadBezTo(
-          x: _x(_penX),
-          y: _y(_penY),
-          x1: _x(x1),
-          y1: _y(y1),
+          x: _x(_penX, _penY),
+          y: _y(_penX, _penY),
+          x1: _x(x1, y1),
+          y1: _y(x1, y1),
         ));
         break;
       case 'arc':
@@ -2781,10 +2862,10 @@ class _DrawioXmlShapeDecoder {
         // x-axis-rotation when include-shape sx≠sy. Compute the ellipse
         // in leftover inches (canvas pixels × overlay scale) so
         // collectGeometry RelCubBezTo matches NestedStencil.
-        final startLX = _x(_penX);
-        final startLY = _y(_penY);
-        final endLX = _x(endX);
-        final endLY = _y(endY);
+        final startLX = _x(_penX, _penY);
+        final startLY = _y(_penX, _penY);
+        final endLX = _x(endX, endY);
+        final endLY = _y(endX, endY);
         final rxL = _number(command, 'rx').abs() * scaleX.abs();
         final ryL = _number(command, 'ry').abs() * scaleY.abs();
         // Canvas Y-down φ; leftover `_y` is Y-up.
@@ -2819,7 +2900,7 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'close':
         if (_hasSub && (_penX != _subX || _penY != _subY)) {
-          commands.add(LineTo(_x(_subX), _y(_subY)));
+          commands.add(LineTo(_x(_subX, _subY), _y(_subX, _subY)));
         }
         _penX = _subX;
         _penY = _subY;
@@ -2846,11 +2927,11 @@ class _DrawioXmlShapeDecoder {
     final right = left + width;
     final bottom = top + height;
     return <VsdxPathCommand>[
-      MoveTo(_x(left), _y(top)),
-      LineTo(_x(right), _y(top)),
-      LineTo(_x(right), _y(bottom)),
-      LineTo(_x(left), _y(bottom)),
-      LineTo(_x(left), _y(top)),
+      MoveTo(_x(left, top), _y(left, top)),
+      LineTo(_x(right, top), _y(right, top)),
+      LineTo(_x(right, bottom), _y(right, bottom)),
+      LineTo(_x(left, bottom), _y(left, bottom)),
+      LineTo(_x(left, top), _y(left, top)),
     ];
   }
 
@@ -2884,42 +2965,42 @@ class _DrawioXmlShapeDecoder {
     final kX = radiusX * kappa;
     final kY = radiusY * kappa;
     return <VsdxPathCommand>[
-      MoveTo(_x(left + radiusX), _y(top)),
-      LineTo(_x(right - radiusX), _y(top)),
+      MoveTo(_x(left + radiusX, top), _y(left + radiusX, top)),
+      LineTo(_x(right - radiusX, top), _y(right - radiusX, top)),
       CubBezTo(
-        x: _x(right),
-        y: _y(top + radiusY),
-        x1: _x(right - radiusX + kX),
-        y1: _y(top),
-        x2: _x(right),
-        y2: _y(top + radiusY - kY),
+        x: _x(right, top + radiusY),
+        y: _y(right, top + radiusY),
+        x1: _x(right - radiusX + kX, top),
+        y1: _y(right - radiusX + kX, top),
+        x2: _x(right, top + radiusY - kY),
+        y2: _y(right, top + radiusY - kY),
       ),
-      LineTo(_x(right), _y(bottom - radiusY)),
+      LineTo(_x(right, bottom - radiusY), _y(right, bottom - radiusY)),
       CubBezTo(
-        x: _x(right - radiusX),
-        y: _y(bottom),
-        x1: _x(right),
-        y1: _y(bottom - radiusY + kY),
-        x2: _x(right - radiusX + kX),
-        y2: _y(bottom),
+        x: _x(right - radiusX, bottom),
+        y: _y(right - radiusX, bottom),
+        x1: _x(right, bottom - radiusY + kY),
+        y1: _y(right, bottom - radiusY + kY),
+        x2: _x(right - radiusX + kX, bottom),
+        y2: _y(right - radiusX + kX, bottom),
       ),
-      LineTo(_x(left + radiusX), _y(bottom)),
+      LineTo(_x(left + radiusX, bottom), _y(left + radiusX, bottom)),
       CubBezTo(
-        x: _x(left),
-        y: _y(bottom - radiusY),
-        x1: _x(left + radiusX - kX),
-        y1: _y(bottom),
-        x2: _x(left),
-        y2: _y(bottom - radiusY + kY),
+        x: _x(left, bottom - radiusY),
+        y: _y(left, bottom - radiusY),
+        x1: _x(left + radiusX - kX, bottom),
+        y1: _y(left + radiusX - kX, bottom),
+        x2: _x(left, bottom - radiusY + kY),
+        y2: _y(left, bottom - radiusY + kY),
       ),
-      LineTo(_x(left), _y(top + radiusY)),
+      LineTo(_x(left, top + radiusY), _y(left, top + radiusY)),
       CubBezTo(
-        x: _x(left + radiusX),
-        y: _y(top),
-        x1: _x(left),
-        y1: _y(top + radiusY - kY),
-        x2: _x(left + radiusX - kX),
-        y2: _y(top),
+        x: _x(left + radiusX, top),
+        y: _y(left + radiusX, top),
+        x1: _x(left, top + radiusY - kY),
+        y1: _y(left, top + radiusY - kY),
+        x2: _x(left + radiusX - kX, top),
+        y2: _y(left + radiusX - kX, top),
       ),
     ];
   }
@@ -2934,8 +3015,8 @@ class _DrawioXmlShapeDecoder {
     }
     final cxSrc = left + width / 2;
     final cySrc = top + height / 2;
-    final cx = _x(cxSrc);
-    final cy = _y(cySrc);
+    final cx = _x(cxSrc, cySrc);
+    final cy = _y(cxSrc, cySrc);
     // mxStencil.drawNode canvas.ellipse(w*sx, h*sy). leftover A/B
     // vertices follow independent `_x`/`_y` so collectEllipse rx/ry
     // match the include box. A min(scaleX,scaleY) circle used to hide
@@ -2945,10 +3026,10 @@ class _DrawioXmlShapeDecoder {
       EllipseCmd(
         cx: cx,
         cy: cy,
-        aX: _x(left + width),
-        aY: _y(cySrc),
-        bX: _x(cxSrc),
-        bY: _y(top),
+        aX: _x(left + width, cySrc),
+        aY: _y(left + width, cySrc),
+        bX: _x(cxSrc, top),
+        bY: _y(cxSrc, top),
       ),
     ];
   }
@@ -2969,8 +3050,10 @@ class _DrawioXmlShapeDecoder {
     return VsdxRichText(
       runs: const <VsdxTextRun>[],
       textBlock: VsdxTextBlock(
-        pinXInches: _x(_number(node, 'x') + boxW / 2),
-        pinYInches: _y(_number(node, 'y') + boxH / 2),
+        pinXInches:
+            _x(_number(node, 'x') + boxW / 2, _number(node, 'y') + boxH / 2),
+        pinYInches:
+            _y(_number(node, 'x') + boxW / 2, _number(node, 'y') + boxH / 2),
         locPinXInches: width / 2,
         locPinYInches: height / 2,
         widthInches: width,
@@ -3242,11 +3325,11 @@ class _DrawioXmlShapeDecoder {
     late final double pinX;
     late final double pinY;
     if (hasBox) {
-      pinX = _x(label.x + label.boxWidth / 2);
-      pinY = _y(label.y + label.boxHeight / 2);
+      pinX = _x(label.x + label.boxWidth / 2, label.y + label.boxHeight / 2);
+      pinY = _y(label.x + label.boxWidth / 2, label.y + label.boxHeight / 2);
     } else {
-      final x = _x(label.x);
-      final y = _y(label.y);
+      final x = _x(label.x, label.y);
+      final y = _y(label.x, label.y);
       pinX = switch (label.align) {
         'left' => x + width / 2,
         'right' => x - width / 2,
@@ -3380,19 +3463,86 @@ class _DrawioXmlShapeDecoder {
     );
   }
 
-  double _x(double source) =>
-      _originX + (source + _canvasDx) * _canvasUserScale * scaleX;
-  double _y(double source) =>
-      _originY +
-      (sourceHeight - (source + _canvasDy) * _canvasUserScale) * scaleY;
+  ({double x, double y}) _leftoverUnrotated(double sourceX, double sourceY) => (
+        x: _originX + (sourceX + _canvasDx) * _canvasUserScale * scaleX,
+        y: _originY +
+            (sourceHeight - (sourceY + _canvasDy) * _canvasUserScale) * scaleY,
+      );
 
-  double _sourceXFromLeftover(double leftoverX) {
+  ({double x, double y}) _leftoverOf(double sourceX, double sourceY) {
+    final p = _leftoverUnrotated(sourceX, sourceY);
+    if (!_hasCanvasRotate) return p;
+    return _mxSvgRotateLeftover(p.x, p.y);
+  }
+
+  /// mxSvgCanvas2D.rotate in leftover Y-up. SVG +theta is clockwise in
+  /// Y-down, which is clockwise on the page → math −theta in Y-up.
+  ({double x, double y}) _mxSvgRotateLeftover(double x, double y) {
+    var theta = _rotThetaDeg;
+    final cx = _rotCxLeftover;
+    final cy = _rotCyLeftover;
+    if (_rotFlipH && _rotFlipV) {
+      theta += 180;
+    } else if (_rotFlipH != _rotFlipV) {
+      if (_rotFlipH) x = 2 * cx - x;
+      if (_rotFlipV) y = 2 * cy - y;
+    }
+    if (_rotFlipH ? !_rotFlipV : _rotFlipV) {
+      theta = -theta;
+    }
+    if (theta.abs() < 1e-12) return (x: x, y: y);
+    final rad = -theta * math.pi / 180;
+    final cos = math.cos(rad);
+    final sin = math.sin(rad);
+    final dx = x - cx;
+    final dy = y - cy;
+    return (x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos);
+  }
+
+  ({double x, double y}) _unrotateLeftover(double x, double y) {
+    if (!_hasCanvasRotate) return (x: x, y: y);
+    var theta = _rotThetaDeg;
+    final cx = _rotCxLeftover;
+    final cy = _rotCyLeftover;
+    if (_rotFlipH ? !_rotFlipV : _rotFlipV) {
+      theta = -theta;
+    }
+    if (_rotFlipH && _rotFlipV) {
+      theta += 180;
+    }
+    if (theta.abs() > 1e-12) {
+      final rad = theta * math.pi / 180;
+      final cos = math.cos(rad);
+      final sin = math.sin(rad);
+      final dx = x - cx;
+      final dy = y - cy;
+      x = cx + dx * cos - dy * sin;
+      y = cy + dx * sin + dy * cos;
+    }
+    if (_rotFlipH && !_rotFlipV) x = 2 * cx - x;
+    if (_rotFlipV && !_rotFlipH) y = 2 * cy - y;
+    return (x: x, y: y);
+  }
+
+  double _x(double sourceX, double sourceY) => _leftoverOf(sourceX, sourceY).x;
+  double _y(double sourceX, double sourceY) => _leftoverOf(sourceX, sourceY).y;
+
+  ({double x, double y}) _sourceFromLeftover(
+      double leftoverX, double leftoverY) {
+    final u = _unrotateLeftover(leftoverX, leftoverY);
+    return (
+      x: _sourceXFromUnrotatedLeftover(u.x),
+      y: _sourceYFromUnrotatedLeftover(u.y),
+    );
+  }
+
+  double _sourceXFromUnrotatedLeftover(double leftoverX) {
     final denom = scaleX * _canvasUserScale;
     if (denom.abs() < 1e-12) return 0;
     return (leftoverX - _originX) / denom - _canvasDx;
   }
 
-  double _sourceYFromLeftover(double leftoverY) {
+  double _sourceYFromUnrotatedLeftover(double leftoverY) {
     if (scaleY.abs() < 1e-12 || _canvasUserScale.abs() < 1e-12) {
       return sourceHeight;
     }
@@ -3407,10 +3557,10 @@ class _DrawioXmlShapeDecoder {
     _DrawioStencilLabel label, {
     required _DrawioXmlShapeDecoder parent,
   }) {
-    final leftoverX = _x(label.x);
-    final leftoverY = _y(label.y);
-    final parentX = parent._sourceXFromLeftover(leftoverX);
-    final parentY = parent._sourceYFromLeftover(leftoverY);
+    final leftover = _leftoverOf(label.x, label.y);
+    final parentSrc = parent._sourceFromLeftover(leftover.x, leftover.y);
+    final parentX = parentSrc.x;
+    final parentY = parentSrc.y;
     final parentScaleX = parent.scaleX;
     final parentScaleY = parent.scaleY;
     final scaleXRatio = parentScaleX.abs() < 1e-12
