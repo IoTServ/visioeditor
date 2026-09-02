@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil later sketch FillPattern hatch sibling
+  for LibreOffice. Official NestedStencil `<sketch>` is `canvas.setSketch`;
+  include-shape nested sketch stays on the shared canvas for later host
+  paint. leftover used one collectFill FillPattern captured at the first
+  inherit paint, so Draw `_fillAndShadowProperties` hatched the later
+  rail (`User.veSketch*` is not a token; leftover write maps hachure
+  onto FillPattern 2–24). leftover now bakes a sibling when leftover
+  sketch differs. A second save keeps both rails.
 - draw.io leftover mxStencil later shadow ShdwPattern sibling for
   LibreOffice. Official `mxStencil.drawNode` `<shadow>` is
   `canvas.setShadow`; include-shape nested shadow stays on the shared

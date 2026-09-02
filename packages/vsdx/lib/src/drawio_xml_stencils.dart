@@ -2028,12 +2028,22 @@ class _DrawioXmlShapeDecoder {
     final bakeShadow = (doFill || doStroke) &&
         _capturedParentShadow &&
         !_shadowsEqual(_shadow, _parentShadow);
+    // collectFillAndShadow is shape-level. A later `<sketch>` (or
+    // include-shape nested setSketch that stays on the shared canvas)
+    // must be a sibling so leftover can hatch only that rail.
+    // `User.veSketch*` is not a token; leftover write maps hachure onto
+    // FillPattern 2–24 (`draw:fill=hatch`). leftover used to concatenate
+    // onto the parent, so Draw hatched the first rail too.
+    final bakeSketch = (doFill || doStroke) &&
+        _capturedParentSketch &&
+        !_sketchesEqual(_currentSketch, _parentSketch);
     final inheritFillSibling = extraInheritFill ||
         ((bakeLineStyle ||
                 bakeWeight ||
                 bakeDashState ||
                 bakeStrokeTrans ||
-                bakeShadow) &&
+                bakeShadow ||
+                bakeSketch) &&
             doFill &&
             !bakeFill);
     if (bakeFill ||
@@ -2044,7 +2054,8 @@ class _DrawioXmlShapeDecoder {
         bakeLineStyle ||
         bakeWeight ||
         bakeStrokeTrans ||
-        bakeShadow) {
+        bakeShadow ||
+        bakeSketch) {
       final partFill = inheritFillSibling
           ? VsdxFill(
               pattern: 1,
@@ -2122,7 +2133,9 @@ class _DrawioXmlShapeDecoder {
       _capturedParentShadow = true;
       _parentShadow = _shadow;
     }
-    if (!_capturedParentSketch) {
+    if (!_capturedParentSketch && (doFill || doStroke)) {
+      // First inherit paint owns collectFill FillPattern. Later `<sketch>`
+      // belongs on siblings so leftover can hatch only that rail.
       _capturedParentSketch = true;
       _parentSketch = _currentSketch;
     }
@@ -3459,6 +3472,22 @@ String? _mxFontFamily(String? raw) {
     'helvetica' => 'Helvetica',
     _ => token,
   };
+}
+
+bool _sketchesEqual(_DrawioSketchState a, _DrawioSketchState b) {
+  if (a.enabled != b.enabled) return false;
+  if (!a.enabled) return true;
+  bool same(double? left, double? right) {
+    if (left == null && right == null) return true;
+    if (left == null || right == null) return false;
+    return (left - right).abs() < 1e-9;
+  }
+
+  return a.fill == b.fill &&
+      same(a.gap, b.gap) &&
+      same(a.angle, b.angle) &&
+      same(a.weight, b.weight) &&
+      same(a.jiggle, b.jiggle);
 }
 
 bool _shadowsEqual(VsdxShadow? a, VsdxShadow? b) {

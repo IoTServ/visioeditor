@@ -14096,6 +14096,130 @@ void main() {
   );
 
   test(
+    'mxStencil later sketch leftover bakes FillPattern hatch sibling for LibreOffice',
+    () {
+      bool isHatch(VsdxFill fill) => fill.pattern >= 2 && fill.pattern <= 24;
+
+      ({int sketched, int plain}) sketchCounts(VsdxShape shape) {
+        var sketched = 0;
+        var plain = 0;
+        void walk(VsdxShape next) {
+          final paints = next.line.hasLine || next.fill.hasFill;
+          if (paints) {
+            if (next.sketchEffect) {
+              sketched++;
+            } else {
+              plain++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (sketched: sketched, plain: plain);
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<sketch enabled="1" jiggle="4"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 474,
+      );
+      expect(
+        sketchCounts(host),
+        (sketched: 1, plain: 1),
+        reason: 'libvisio collectFill is shape-level; leftover must bake the '
+            'later sketch inherit fillstroke as a sibling so Draw does not '
+            'hatch both rails',
+      );
+      expect(host.sketchEffect, isFalse);
+
+      final offHost = decodeDrawioMxStencilXml(
+        '<shape name="Off" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<sketch enabled="1" jiggle="4"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<sketch enabled="0"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        sketchCounts(offHost),
+        (sketched: 1, plain: 1),
+        reason: 'later sketch enabled="0" must not keep veSketch on the '
+            'second inherit fillstroke',
+      );
+      expect(offHost.sketchEffect, isTrue);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<sketch enabled="1" jiggle="4"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        sketchCounts(includeHost),
+        (sketched: 2, plain: 1),
+        reason: 'include-shape shares the canvas; nested setSketch stays for '
+            'later host inherit fillstroke, which must not reuse the first '
+            'collectFill FillPattern',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.sketchEffect || isHatch(leftover.fill),
+        isFalse,
+        reason: 'a second save keeps the first inherit stroke unhatched',
+      );
+      expect(
+        leftover.children.any((child) => isHatch(child.fill)),
+        isTrue,
+        reason: 'User.veSketch is not a token; leftover maps the later '
+            'hachure onto FillPattern 2–24 Draw paints as draw:fill=hatch',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
