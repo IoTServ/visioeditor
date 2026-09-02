@@ -16,44 +16,26 @@ class StencilColors {
 }
 
 /// draw.io default palette slots.
-const StencilColors kStencilPrimary =
-    StencilColors('#DAE8FC', '#6C8EBF');
-const StencilColors kStencilSuccess =
-    StencilColors('#D5E8D4', '#82B366');
-const StencilColors kStencilWarning =
-    StencilColors('#FFF2CC', '#D6B656');
-const StencilColors kStencilAccent =
-    StencilColors('#FFE6CC', '#D79B00');
-const StencilColors kStencilDanger =
-    StencilColors('#F8CECC', '#B85450');
-const StencilColors kStencilNeutral =
-    StencilColors('#F5F5F5', '#666666');
-const StencilColors kStencilSecondary =
-    StencilColors('#E1D5E7', '#9673A6');
-const StencilColors kStencilContainer =
-    StencilColors('#F5F5F5', '#6C8EBF');
-const StencilColors kStencilTeal =
-    StencilColors('#D5F5F0', '#2E8B7A');
-const StencilColors kStencilPink =
-    StencilColors('#FCE4EC', '#C2185B');
-const StencilColors kStencilSky =
-    StencilColors('#E3F2FD', '#5B9BD5');
+const StencilColors kStencilPrimary = StencilColors('#DAE8FC', '#6C8EBF');
+const StencilColors kStencilSuccess = StencilColors('#D5E8D4', '#82B366');
+const StencilColors kStencilWarning = StencilColors('#FFF2CC', '#D6B656');
+const StencilColors kStencilAccent = StencilColors('#FFE6CC', '#D79B00');
+const StencilColors kStencilDanger = StencilColors('#F8CECC', '#B85450');
+const StencilColors kStencilNeutral = StencilColors('#F5F5F5', '#666666');
+const StencilColors kStencilSecondary = StencilColors('#E1D5E7', '#9673A6');
+const StencilColors kStencilContainer = StencilColors('#F5F5F5', '#6C8EBF');
+const StencilColors kStencilTeal = StencilColors('#D5F5F0', '#2E8B7A');
+const StencilColors kStencilPink = StencilColors('#FCE4EC', '#C2185B');
+const StencilColors kStencilSky = StencilColors('#E3F2FD', '#5B9BD5');
 
 /// Soft brand-ish colours for cloud / vendor libraries.
-const StencilColors kStencilAws =
-    StencilColors('#FFF8E7', '#D9822B');
-const StencilColors kStencilAzure =
-    StencilColors('#E3F2FD', '#1565C0');
-const StencilColors kStencilGcp =
-    StencilColors('#E8F0FE', '#1A73E8');
-const StencilColors kStencilCisco =
-    StencilColors('#E0F7FA', '#049FD9');
-const StencilColors kStencilAlibaba =
-    StencilColors('#FFF3E0', '#FF6A00');
-const StencilColors kStencilIbm =
-    StencilColors('#EDF5FF', '#0F62FE');
-const StencilColors kStencilOracle =
-    StencilColors('#FCE8E6', '#C74634');
+const StencilColors kStencilAws = StencilColors('#FFF8E7', '#D9822B');
+const StencilColors kStencilAzure = StencilColors('#E3F2FD', '#1565C0');
+const StencilColors kStencilGcp = StencilColors('#E8F0FE', '#1A73E8');
+const StencilColors kStencilCisco = StencilColors('#E0F7FA', '#049FD9');
+const StencilColors kStencilAlibaba = StencilColors('#FFF3E0', '#FF6A00');
+const StencilColors kStencilIbm = StencilColors('#EDF5FF', '#0F62FE');
+const StencilColors kStencilOracle = StencilColors('#FCE8E6', '#C74634');
 
 /// Group → default colours. Unknown groups fall back to [kStencilPrimary].
 const Map<String, StencilColors> kStencilGroupColors = <String, StencilColors>{
@@ -666,6 +648,13 @@ StencilColors? resolveStencilColors({
   return kStencilPrimary;
 }
 
+bool _userFlag(VsdxShape shape, String name) {
+  for (final cell in shape.userCells) {
+    if (cell.name == name) return cell.value == '1';
+  }
+  return false;
+}
+
 /// Apply fill/stroke to a freshly built shape. Skips text boxes (no fill & no
 /// line). Preserves arrowheads and dash patterns on 1D / connector-like shapes.
 /// Walks children so extra inherit-fill siblings (AWS Cloud puffs) receive
@@ -707,26 +696,41 @@ VsdxShape applyStencilStyle(
     return identical(line, shape.line) ? shape : shape.copyWith(line: line);
   }
 
-  if (fillColor != null && fill.hasFill) {
-    final fg = fill.foreground;
-    // Factory white and unresolved theme slots take the palette. Authored
-    // hex (C4 Person #083F75) must stay so collectFill does not wash it.
-    // Child inherit-fill siblings have a null foreground; white child
-    // highlights must not be washed (AWS white glyphs).
-    if (fg == null || (isRoot && fg == VsdxColor.white)) {
-      fill = fill.withSolidForeground(fillColor);
+  if (fill.hasFill) {
+    if (_userFlag(shape, VsdxShape.userMxFillFromStroke) && lineColor != null) {
+      // mxStencil.parseColor('stroke') is shape.stroke. leftover inherit
+      // fillcolor=stroke must take the palette LineColor, not FillForegnd
+      // (`tokens.txt` FillForegnd → svg:fill).
+      fill = fill.withSolidForeground(lineColor);
+    } else if (fillColor != null) {
+      final fg = fill.foreground;
+      // Factory white and unresolved theme slots take the palette. Authored
+      // hex (C4 Person #083F75) must stay so collectFill does not wash it.
+      // Child inherit-fill siblings have a null foreground; white child
+      // highlights must not be washed (AWS white glyphs).
+      if (fg == null || (isRoot && fg == VsdxColor.white)) {
+        fill = fill.withSolidForeground(fillColor);
+      }
     }
   }
-  if (lineColor != null && line.hasLine) {
-    final c = line.color;
-    if (c == null || (isRoot && c == VsdxColor.black)) {
-      line = line.withSolidColor(lineColor);
-      // mxStencil <strokewidth> already froze LineWeight in stencil
-      // units. Overwriting it with the palette default would drop the
-      // checkmark / IEC rail that libvisio collectLine collects.
+  if (line.hasLine) {
+    if (_userFlag(shape, VsdxShape.userMxStrokeFromFill) && fillColor != null) {
+      line = line.withSolidColor(fillColor);
       if ((line.weightInches - VsdxLine.defaultLine.weightInches).abs() <
           1e-9) {
         line = line.copyWith(weightInches: lineWeightInches);
+      }
+    } else if (lineColor != null) {
+      final c = line.color;
+      if (c == null || (isRoot && c == VsdxColor.black)) {
+        line = line.withSolidColor(lineColor);
+        // mxStencil <strokewidth> already froze LineWeight in stencil
+        // units. Overwriting it with the palette default would drop the
+        // checkmark / IEC rail that libvisio collectLine collects.
+        if ((line.weightInches - VsdxLine.defaultLine.weightInches).abs() <
+            1e-9) {
+          line = line.copyWith(weightInches: lineWeightInches);
+        }
       }
     }
   }

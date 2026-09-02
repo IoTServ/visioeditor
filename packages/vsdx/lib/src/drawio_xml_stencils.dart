@@ -178,6 +178,8 @@ class _MxPaintState {
     required this.fillIsNone,
     required this.strokeColor,
     required this.strokeIsNone,
+    required this.fillFollowsStroke,
+    required this.strokeFollowsFill,
     required this.overallAlpha,
     required this.fillAlpha,
     required this.strokeAlpha,
@@ -208,6 +210,8 @@ class _MxPaintState {
   final bool fillIsNone;
   final VsdxColor? strokeColor;
   final bool strokeIsNone;
+  final bool fillFollowsStroke;
+  final bool strokeFollowsFill;
   final double overallAlpha;
   final double fillAlpha;
   final double strokeAlpha;
@@ -282,6 +286,11 @@ class _DrawioXmlShapeDecoder {
       _mxGraphPaintColor(element.getAttribute('stroke'));
   bool _fillIsNone = false;
   bool _strokeIsNone = false;
+  bool _fillFollowsStroke = false;
+  bool _strokeFollowsFill = false;
+  bool _capturedParentFill = false;
+  bool _parentFillFollowsStroke = false;
+  bool _parentStrokeFollowsFill = false;
   double _overallAlpha = 1;
   double _fillAlpha = 1;
   double _strokeAlpha = 1;
@@ -580,7 +589,7 @@ class _DrawioXmlShapeDecoder {
     final hostBox =
         hostRasterEntry == null ? null : _rasterLeftoverBox(hostRasterEntry);
     final hostPart = hostRasterEntry?.part;
-    return _withSketchUserCells(
+    final host = _withSketchUserCells(
       _withLineUserCells(VsdxShape(
         id: id,
         name: 'Sheet.$id',
@@ -625,6 +634,17 @@ class _DrawioXmlShapeDecoder {
         richText: _stencilLabelRichText(),
       )),
       _parentSketch,
+    );
+    return _withMxColorSourceUserCells(
+      host,
+      fillFromStroke: inheritFill &&
+          _parentFillFollowsStroke &&
+          parentFill.hasFill &&
+          parentFill.foreground == null,
+      strokeFromFill: inheritLine &&
+          _parentStrokeFollowsFill &&
+          parentLine.hasLine &&
+          parentLine.color == null,
     );
   }
 
@@ -1194,6 +1214,8 @@ class _DrawioXmlShapeDecoder {
       fillIsNone: source.fillIsNone,
       strokeColor: source.strokeColor,
       strokeIsNone: source.strokeIsNone,
+      fillFollowsStroke: source.fillFollowsStroke,
+      strokeFollowsFill: source.strokeFollowsFill,
       overallAlpha: source.overallAlpha,
       fillAlpha: source.fillAlpha,
       strokeAlpha: source.strokeAlpha,
@@ -1258,6 +1280,8 @@ class _DrawioXmlShapeDecoder {
     _fillIsNone = other._fillIsNone;
     _strokeColor = other._strokeColor;
     _strokeIsNone = other._strokeIsNone;
+    _fillFollowsStroke = other._fillFollowsStroke;
+    _strokeFollowsFill = other._strokeFollowsFill;
     _overallAlpha = other._overallAlpha;
     _fillAlpha = other._fillAlpha;
     _strokeAlpha = other._strokeAlpha;
@@ -1341,6 +1365,8 @@ class _DrawioXmlShapeDecoder {
         fillIsNone: _fillIsNone,
         strokeColor: _strokeColor,
         strokeIsNone: _strokeIsNone,
+        fillFollowsStroke: _fillFollowsStroke,
+        strokeFollowsFill: _strokeFollowsFill,
         overallAlpha: _overallAlpha,
         fillAlpha: _fillAlpha,
         strokeAlpha: _strokeAlpha,
@@ -1374,6 +1400,8 @@ class _DrawioXmlShapeDecoder {
     _fillIsNone = saved.fillIsNone;
     _strokeColor = saved.strokeColor;
     _strokeIsNone = saved.strokeIsNone;
+    _fillFollowsStroke = saved.fillFollowsStroke;
+    _strokeFollowsFill = saved.strokeFollowsFill;
     _overallAlpha = saved.overallAlpha;
     _fillAlpha = saved.fillAlpha;
     _strokeAlpha = saved.strokeAlpha;
@@ -1434,6 +1462,7 @@ class _DrawioXmlShapeDecoder {
 
   void _applyMxFill(String? raw, {String? fallback}) {
     _fillOverride = null;
+    _fillFollowsStroke = false;
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'fill' || lower == 'default') {
@@ -1447,8 +1476,13 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     if (lower == 'stroke') {
+      // mxStencil.parseColor('stroke') is shape.stroke. Catalog leftover
+      // has no cell style, so inherit LineColor stays null and a User
+      // row lets applyStencilStyle pin palette stroke. A prior hex
+      // `<strokecolor>` is the shared-canvas colour leftover bakes.
       _fillColor = _strokeColor;
       _fillIsNone = _strokeIsNone;
+      _fillFollowsStroke = _strokeColor == null && !_strokeIsNone;
       return;
     }
     final parsed = _mxGraphPaintColor(token);
@@ -1492,6 +1526,7 @@ class _DrawioXmlShapeDecoder {
         : _number(node, 'alpha2', fallback: 1);
     _fillColor = start;
     _fillIsNone = false;
+    _fillFollowsStroke = false;
     final packedStops = _parseMxGradientStops(node.getAttribute('stops'));
     if (packedStops.length >= 2) {
       final pattern = _mxFillPatternForDirection(dir);
@@ -1589,6 +1624,7 @@ class _DrawioXmlShapeDecoder {
   void _applyMxStroke(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
+    _strokeFollowsFill = false;
     if (token.isEmpty || lower == 'stroke' || lower == 'default') {
       _strokeColor = null;
       _strokeIsNone = false;
@@ -1600,8 +1636,12 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     if (lower == 'fill') {
+      // mxStencil.parseColor('fill') is shape.fill. Inherit FillForegnd
+      // stays null so applyStencilStyle can pin palette fill onto
+      // collectLine LineColor (`tokens.txt`).
       _strokeColor = _fillColor;
       _strokeIsNone = _fillIsNone;
+      _strokeFollowsFill = _fillColor == null && !_fillIsNone;
       return;
     }
     final parsed = _mxGraphPaintColor(token);
@@ -1951,22 +1991,41 @@ class _DrawioXmlShapeDecoder {
         // a 1.5" wash. Fit only those gradient paints; solid/stroke
         // leftovers stay in host leftover inches (arc / roundrect tests).
         fitBox: fill.pattern >= 25 && fill.pattern <= 40,
+        fillFromStroke:
+            _fillFollowsStroke && fill.hasFill && fill.foreground == null,
+        strokeFromFill: _strokeFollowsFill &&
+            doStroke &&
+            _strokeColor == null &&
+            !_strokeIsNone,
       ));
       if (!_capturedParentShadow && _shadow != null) {
         _parentShadow ??= _shadow;
       }
       return;
     }
-    final bakeFill = doFill && _fillColor != null;
+    // collectFill is shape-level. A later `<fillcolor color="stroke"/>`
+    // (or include-shape nested setFillColor(shape.stroke)) must be a
+    // sibling so `_fillAndShadowProperties` can emit both FillForegnd
+    // values. leftover used to concatenate onto the parent, then
+    // applyStencilStyle washed both rails with palette fill
+    // (`tokens.txt` FillForegnd → svg:fill). Hex fillcolor already
+    // bakes because `_fillColor != null`.
+    final bakeFill = doFill &&
+        (_fillColor != null ||
+            (_capturedParentFill &&
+                _fillFollowsStroke != _parentFillFollowsStroke));
     final bakeStroke = doStroke && _strokeColor != null && !doFill;
     // collectLine is shape-level. A later hex `<strokecolor>` on a
     // fillstroke (doFill blocks bakeStroke) must still be a sibling so
     // `_lineProperties` can emit both LineColors. leftover used to
     // concatenate onto the parent, then build() restored the first
     // inherit LineColor (`tokens.txt` LineColor → svg:stroke-color).
+    // `strokecolor color="fill"` is the same freeze: inherit LineColor
+    // vs inherit FillForegnd are different leftover colours.
     final bakeStrokeColor = doStroke &&
         _capturedParentStrokeColor &&
-        _strokeColor != _parentStrokeColor;
+        (_strokeColor != _parentStrokeColor ||
+            _strokeFollowsFill != _parentStrokeFollowsFill);
     // libvisio collectLine is shape-level. A dash after a solid paint
     // (EIP Detour diagonal) must be a sibling. A shape that is dashed
     // from the first paint (Availability Zone, Dashed Wire) keeps
@@ -2090,6 +2149,12 @@ class _DrawioXmlShapeDecoder {
         // leftover; JS SVG userSpaceOnUse offset discs still
         // tessellate at capture (FillPattern 1), not here.
         fitBox: partFill.pattern >= 25 && partFill.pattern <= 40,
+        fillFromStroke:
+            _fillFollowsStroke && doFill && _fillColor == null && !_fillIsNone,
+        strokeFromFill: _strokeFollowsFill &&
+            doStroke &&
+            _strokeColor == null &&
+            !_strokeIsNone,
       ));
       if (!_capturedParentShadow && _shadow != null) {
         _parentShadow ??= _shadow;
@@ -2102,6 +2167,13 @@ class _DrawioXmlShapeDecoder {
       noLine: !doStroke,
       ix: _geometries.length,
     ));
+    if (doFill && !_capturedParentFill) {
+      // First inherit fill owns collectFill. Later `<fillcolor color="stroke"/>`
+      // (Networks2 antenna, PID Blank2) belongs on a sibling so Draw can
+      // emit both FillForegnd values (`tokens.txt`).
+      _capturedParentFill = true;
+      _parentFillFollowsStroke = _fillFollowsStroke;
+    }
     if (doFill) {
       // restore() pops <alpha> after this fill. Parent FillForegndTrans
       // must be the value collectFillAndShadow saw, not 0.
@@ -2124,6 +2196,7 @@ class _DrawioXmlShapeDecoder {
       // even then so a later hex inner band cannot wash the rail.
       _capturedParentStrokeColor = true;
       _parentStrokeColor = _strokeColor;
+      _parentStrokeFollowsFill = _strokeFollowsFill;
     }
     if (doStroke && !_capturedParentDashState) {
       // First inherit stroke owns collectLine dash. Later `<dashed>` /
@@ -2651,32 +2724,53 @@ class _DrawioXmlShapeDecoder {
         }
       }
     }
-    return _withSketchUserCells(
-      _withLineUserCells(VsdxShape(
-        id: id,
-        name: 'Sheet.$id',
-        pinX: pinX,
-        pinY: pinY,
-        width: width,
-        height: height,
-        locPinXInches: width / 2,
-        locPinYInches: height / 2,
-        fill: part.fill,
-        line: part.line,
-        shadow: shadow,
-        geometries: <VsdxGeometry>[
-          VsdxGeometry(
-            noFill: !part.fill.hasFill,
-            noLine: !part.line.hasLine,
-            commands: commands,
+    return _withMxColorSourceUserCells(
+      _withSketchUserCells(
+        _withLineUserCells(VsdxShape(
+          id: id,
+          name: 'Sheet.$id',
+          pinX: pinX,
+          pinY: pinY,
+          width: width,
+          height: height,
+          locPinXInches: width / 2,
+          locPinYInches: height / 2,
+          fill: part.fill,
+          line: part.line,
+          shadow: shadow,
+          geometries: <VsdxGeometry>[
+            VsdxGeometry(
+              noFill: !part.fill.hasFill,
+              noLine: !part.line.hasLine,
+              commands: commands,
+            ),
+          ],
+          richText: const VsdxRichText(
+            runs: <VsdxTextRun>[],
+            textBlock: VsdxTextBlock(hideText: true),
           ),
-        ],
-        richText: const VsdxRichText(
-          runs: <VsdxTextRun>[],
-          textBlock: VsdxTextBlock(hideText: true),
-        ),
-      )),
-      part.sketch,
+        )),
+        part.sketch,
+      ),
+      fillFromStroke: part.fillFromStroke,
+      strokeFromFill: part.strokeFromFill,
+    );
+  }
+
+  VsdxShape _withMxColorSourceUserCells(
+    VsdxShape shape, {
+    required bool fillFromStroke,
+    required bool strokeFromFill,
+  }) {
+    if (!fillFromStroke && !strokeFromFill) return shape;
+    return shape.copyWith(
+      userCells: <VsdxUserCell>[
+        ...shape.userCells,
+        if (fillFromStroke)
+          const VsdxUserCell(name: VsdxShape.userMxFillFromStroke, value: '1'),
+        if (strokeFromFill)
+          const VsdxUserCell(name: VsdxShape.userMxStrokeFromFill, value: '1'),
+      ],
     );
   }
 
@@ -3139,6 +3233,8 @@ class _DrawioColoredPart {
     this.shadow = VsdxShadow.disabled,
     this.sketch = const _DrawioSketchState(),
     this.fitBox = false,
+    this.fillFromStroke = false,
+    this.strokeFromFill = false,
   });
 
   final List<VsdxPathCommand> commands;
@@ -3151,6 +3247,12 @@ class _DrawioColoredPart {
   /// to the path bbox so libvisio FillPattern 25–40 interpolates across
   /// the painted leftover, not the host card.
   final bool fitBox;
+
+  /// Inherit fill that mxStencil.parseColor maps to shape.stroke.
+  final bool fillFromStroke;
+
+  /// Inherit stroke that mxStencil.parseColor maps to shape.fill.
+  final bool strokeFromFill;
 }
 
 /// Shift leftover-inch vertices so a fitted child's local origin is the

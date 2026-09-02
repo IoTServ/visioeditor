@@ -1028,6 +1028,16 @@ class VsdxShape {
   /// line follow the parent via [copyWith]. Editor-owned.
   static const String userLibvisioFillSplit = 'veLibvisioFillSplit';
 
+  /// mxStencil `fillcolor color="stroke"` while LineColor is still inherit.
+  /// `applyStencilStyle` paints FillForegnd from the palette stroke so
+  /// Draw collectFill does not reuse FillForegnd (`tokens.txt`).
+  static const String userMxFillFromStroke = 'veMxFillFromStroke';
+
+  /// mxStencil `strokecolor color="fill"` while FillForegnd is still inherit.
+  /// `applyStencilStyle` paints LineColor from the palette fill so Draw
+  /// collectLine does not reuse LineColor (`tokens.txt`).
+  static const String userMxStrokeFromFill = 'veMxStrokeFromFill';
+
   /// Media part [userLibvisioSourceImage] names, or `null` when absent.
   String? get libvisioSourceImagePart {
     for (final c in userCells) {

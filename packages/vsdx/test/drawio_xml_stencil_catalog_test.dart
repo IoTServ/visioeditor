@@ -14319,6 +14319,198 @@ void main() {
   );
 
   test(
+    'mxStencil fillcolor stroke leftover bakes FillForegnd sibling for LibreOffice',
+    () {
+      const fillBlue = VsdxColor(0xFFDAE8FC);
+      const strokeBlue = VsdxColor(0xFF6C8EBF);
+      const palette = StencilColors('#DAE8FC', '#6C8EBF');
+
+      bool fromStroke(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxFillFromStroke &&
+                cell.value == '1',
+          );
+
+      bool fromFill(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxStrokeFromFill &&
+                cell.value == '1',
+          );
+
+      List<VsdxColor?> fillColors(VsdxShape shape) {
+        final colors = <VsdxColor?>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) colors.add(next.fill.foreground);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return colors;
+      }
+
+      List<VsdxColor?> lineColors(VsdxShape shape) {
+        final colors = <VsdxColor?>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) colors.add(next.line.color);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return colors;
+      }
+
+      final host = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="S" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<rect x="0" y="0" w="40" h="10"/>'
+          '<fill/>'
+          '<fillcolor color="stroke"/>'
+          '<rect x="0" y="20" w="40" h="10"/>'
+          '<fill/>'
+          '</foreground>'
+          '</shape>',
+          id: 476,
+        ),
+        colors: palette,
+      );
+      expect(
+        fromStroke(host),
+        isFalse,
+        reason: 'the first inherit fill keeps palette FillForegnd',
+      );
+      expect(
+        host.children.any(fromStroke),
+        isTrue,
+        reason: 'libvisio collectFill is shape-level; leftover must bake the '
+            'later fillcolor=stroke inherit fill as a sibling so Draw does '
+            'not wash both rails with palette fill',
+      );
+      expect(
+        fillColors(host),
+        [fillBlue, strokeBlue],
+        reason: 'mxStencil.parseColor(stroke) is shape.stroke; applyStencilStyle '
+            'pins leftover inherit fillcolor=stroke to palette LineColor '
+            '(tokens.txt FillForegnd → svg:fill)',
+      );
+
+      final firstStroke = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="Blank2" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<fillcolor color="stroke"/>'
+          '<rect x="0" y="0" w="40" h="10"/>'
+          '<fillstroke/>'
+          '</foreground>'
+          '</shape>',
+        ),
+        colors: palette,
+      );
+      expect(fromStroke(firstStroke), isTrue);
+      expect(
+        firstStroke.fill.foreground,
+        strokeBlue,
+        reason: 'PID Blank2 fillcolor=stroke fillstroke is shape.stroke, not '
+            'palette fill',
+      );
+
+      final strokeFromFillHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="L" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<rect x="0" y="0" w="40" h="10"/>'
+          '<stroke/>'
+          '<strokecolor color="fill"/>'
+          '<rect x="0" y="20" w="40" h="10"/>'
+          '<stroke/>'
+          '</foreground>'
+          '</shape>',
+        ),
+        colors: palette,
+      );
+      expect(fromFill(strokeFromFillHost), isFalse);
+      expect(
+        strokeFromFillHost.children.any(fromFill),
+        isTrue,
+        reason: 'later strokecolor=fill must not reuse the first collectLine '
+            'LineColor',
+      );
+      expect(
+        lineColors(strokeFromFillHost),
+        [strokeBlue, fillBlue],
+        reason: 'mxStencil.parseColor(fill) is shape.fill; leftover pins '
+            'palette FillForegnd onto collectLine LineColor',
+      );
+
+      final includeHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shapes name="mxgraph.test">'
+          '<shape name="host" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<rect x="0" y="0" w="20" h="10"/>'
+          '<fill/>'
+          '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+          '<rect x="0" y="80" w="20" h="10"/>'
+          '<fill/>'
+          '</foreground>'
+          '</shape>'
+          '<shape name="tile" w="10" h="10" strokewidth="1">'
+          '<foreground>'
+          '<fillcolor color="stroke"/>'
+          '<rect x="0" y="0" w="10" h="10"/>'
+          '<fill/>'
+          '</foreground>'
+          '</shape>'
+          '</shapes>',
+        ),
+        colors: palette,
+      );
+      expect(
+        fillColors(includeHost).where((c) => c == strokeBlue).length,
+        2,
+        reason: 'include-shape shares the canvas; nested setFillColor(stroke) '
+            'stays for later host inherit fill, which must not reuse the '
+            'first collectFill FillForegnd',
+      );
+      expect(
+        fillColors(includeHost).where((c) => c == fillBlue).length,
+        1,
+        reason: 'the first host inherit fill keeps palette fill',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.fill.foreground,
+        fillBlue,
+        reason: 'a second save keeps the first inherit FillForegnd Draw paints',
+      );
+      expect(
+        leftover.children.any((child) => child.fill.foreground == strokeBlue),
+        isTrue,
+        reason: 'a second save keeps the later stroke FillForegnd Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
