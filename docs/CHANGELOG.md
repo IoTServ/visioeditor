@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape nested restore for
+  LibreOffice. Official `mxStencil.drawShape` include-shape shares
+  `canvas.states`; nested restore can pop a host `canvas.save`, then
+  unequal save/restore counts reset the stack to the entry snapshot.
+  leftover used an isolated nested stack, so nested restore was a no-op
+  and later host collectLine kept the pre-include LineColor
+  (`tokens.txt` LineColor). leftover now seeds a converted copy of the
+  host stack; extra nested saves still do not leak. A second save keeps
+  LineColor.
 - draw.io leftover mxStencil fillgradient radial painted box for
   LibreOffice. Official NestedStencil has no `<fillgradient>`;
   mxSvgCanvas2D `createSvgGradient` omits `gradientUnits` (SVG default

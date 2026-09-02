@@ -13487,6 +13487,107 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape nested restore leftover pops host save for LibreOffice',
+    () {
+      Set<int> strokeRgb(VsdxShape shape) {
+        final colors = <int>{};
+        void walk(VsdxShape next) {
+          if (next.line.hasLine && next.line.color != null) {
+            colors.add(next.line.color!.value & 0x00FFFFFF);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return colors;
+      }
+
+      final restoreHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#111111"/>'
+        '<save/>'
+        '<strokecolor color="#ff0000"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '<rect x="0" y="80" w="20" h="20"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<restore/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 469,
+      );
+      expect(
+        strokeRgb(restoreHost),
+        {0x111111},
+        reason: 'mxStencil.drawShape shares canvas.states; nested restore '
+            'pops the host save so leftover collectLine is LineColor #111111, '
+            'not the red that was current at include-shape',
+      );
+
+      final extraSave = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#ff0000"/>'
+        '<save/>'
+        '<strokecolor color="#0000ff"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '<restore/>'
+        '<rect x="0" y="80" w="20" h="20"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<strokecolor color="#00aa00"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        strokeRgb(extraSave),
+        {0x00AA00, 0xFF0000},
+        reason: 'drawShape resets unequal canvas.states to the entry snapshot; '
+            'nested leftover save must not leak so host restore still pops red',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(restoreHost.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        strokeRgb(leftover),
+        {0x111111},
+        reason: 'a second save keeps the restored LineColor Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

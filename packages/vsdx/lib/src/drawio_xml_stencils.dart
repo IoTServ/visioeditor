@@ -924,6 +924,11 @@ class _DrawioXmlShapeDecoder {
       // setStrokeWidth / setFontSize; leftover converts those leftover
       // inches back into host stencil units so a later host stroke
       // collectLine matches NestedStencil.
+      // Nested save/restore shares canvas.states; leftover seeds a
+      // converted copy so nested restore can pop a host save. Unequal
+      // counts reset to the entry snapshot (`drawShape` assigns
+      // `canvas.states = stack`) so leftover never copies nested
+      // leftover saves onto the host (`tokens.txt` LineColor).
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -1052,6 +1057,17 @@ class _DrawioXmlShapeDecoder {
     // so Draw collectLine gaps match NestedStencil.
     nested._scaleAdoptedCanvasDashFrom(this);
     nested._scaleAdoptedCanvasFontFrom(this);
+    // mxStencil.drawShape include-shape shares canvas.states. Nested
+    // restore can pop a host save (current paint), but unequal
+    // save/restore counts reset `canvas.states = stack` to the entry
+    // snapshot — leftover keeps the host stack and only seeds a
+    // converted copy so nested restore can reach those saves.
+    nested._saveStack
+      ..clear()
+      ..addAll([
+        for (final saved in _saveStack)
+          nested._paintStateInUnitsOf(saved, from: this),
+      ]);
     nested._paintSections();
     _geometries.addAll(nested._geometries);
     _coloredParts.addAll(nested._coloredParts);
@@ -1136,6 +1152,66 @@ class _DrawioXmlShapeDecoder {
     }
   }
 
+  /// Map [source] leftover inches (from [from]'s stencil units) into this
+  /// overlay's stencil units. include-shape nested restore pops host
+  /// saves; `_strokeWidth` / `_fontSize` / `_dashPattern` are stencil
+  /// units of the decoder that snapshotted them.
+  _MxPaintState _paintStateInUnitsOf(
+    _MxPaintState source, {
+    required _DrawioXmlShapeDecoder from,
+  }) {
+    final fromMin = math.min(from.scaleX.abs(), from.scaleY.abs());
+    final toMin = math.min(scaleX.abs(), scaleY.abs());
+    final ratio = (fromMin < 1e-12 || toMin < 1e-12) ? 1.0 : fromMin / toMin;
+    double? strokeWidth;
+    final srcWidth = source.strokeWidth;
+    if (srcWidth != null) {
+      final fromScale =
+          source.strokeWidthFixed ? from._canvasScale.abs() : fromMin;
+      final inches =
+          fromScale < 1e-12 ? srcWidth : math.max(0.001, srcWidth * fromScale);
+      strokeWidth = toMin < 1e-12 ? inches : inches / toMin;
+    }
+    final dashes = source.dashPattern;
+    return _MxPaintState(
+      fontSize: source.fontSize * ratio,
+      fontStyle: source.fontStyle,
+      fontFamily: source.fontFamily,
+      fontColor: source.fontColor,
+      fontBackground: source.fontBackground,
+      fontBorder: source.fontBorder,
+      fillColor: source.fillColor,
+      fillOverride: source.fillOverride,
+      fillIsNone: source.fillIsNone,
+      strokeColor: source.strokeColor,
+      strokeIsNone: source.strokeIsNone,
+      overallAlpha: source.overallAlpha,
+      fillAlpha: source.fillAlpha,
+      strokeAlpha: source.strokeAlpha,
+      strokeWidth: strokeWidth,
+      strokeWidthFixed: false,
+      dashed: source.dashed,
+      dashPattern: dashes == null
+          ? null
+          : dashes.isEmpty
+              ? const <double>[]
+              : [for (final value in dashes) value * ratio],
+      lineCap: source.lineCap,
+      lineJoin: source.lineJoin,
+      miterLimit: source.miterLimit,
+      shadow: source.shadow,
+      sketchEnabled: source.sketchEnabled,
+      sketchFill: source.sketchFill,
+      sketchGap: source.sketchGap,
+      sketchAngle: source.sketchAngle,
+      sketchWeight: source.sketchWeight,
+      sketchJiggle: source.sketchJiggle,
+    );
+  }
+
+  /// Host `setDashPattern(n*hostMinScale)` leftover inches, expressed in
+  /// this overlay's stencil units so `_fixedDashPatternValues` does not
+  /// apply nested minScale a second time.
   /// Host `setDashPattern(n*hostMinScale)` leftover inches, expressed in
   /// this overlay's stencil units so `_fixedDashPatternValues` does not
   /// apply nested minScale a second time.
