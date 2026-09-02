@@ -1924,12 +1924,14 @@ class _DrawioXmlShapeDecoder {
         shadow: _shadow ?? VsdxShadow.disabled,
         sketch: _currentSketch,
         // Host leftover already `_x`/`_y`'d vertices. libvisio
-        // `_fillAndShadowProperties` interpolates FillPattern 25–34
-        // across the child's Width/Height, so a small fillgradient
-        // rect on a 1.5" sibling is a corner of a card wash. Fit
-        // linear paints; 35–40 stay on the host XForm so leftover
-        // write can still tessellate offset radials.
-        fitBox: partFill.pattern >= 25 && partFill.pattern <= 34,
+        // `_fillAndShadowProperties` interpolates FillPattern 25–40
+        // across the child's Width/Height. mxSvgCanvas2D
+        // `createSvgGradient` omits gradientUnits (SVG default
+        // objectBoundingBox), so a radial/rectangular wash fills the
+        // current path, not the 1.5" host card. Fit every 25–40
+        // leftover; JS SVG userSpaceOnUse offset discs still
+        // tessellate at capture (FillPattern 1), not here.
+        fitBox: partFill.pattern >= 25 && partFill.pattern <= 40,
       ));
       if (_shadow != null) _parentShadow ??= _shadow;
       return;

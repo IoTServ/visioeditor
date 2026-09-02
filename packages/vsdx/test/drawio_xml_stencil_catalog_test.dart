@@ -12928,6 +12928,92 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient radial leftover fits painted box for LibreOffice',
+    () {
+      VsdxShape? gradientTile(VsdxShape shape) {
+        if (shape.fill.pattern == 40) return shape;
+        for (final child in shape.children) {
+          final nested = gradientTile(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="Disc" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="radial"/>'
+        '<ellipse x="10" y="30" w="80" h="40"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 468,
+      );
+      const canvasScale = 1.5 / 100;
+      final tile = gradientTile(host);
+      expect(
+        tile,
+        isNotNull,
+        reason: 'mxSvgCanvas2D fillgradient radial is FillPattern 40; leftover '
+            'must bake that on the painted ellipse, not drop it',
+      );
+      expect(
+        tile!.width,
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'libvisio _fillAndShadowProperties interpolates FillPattern '
+            '40 across the child Width/Height (svg:cx/cy=0.5); leftover '
+            'must fit the 80-wide ellipse, not the 1.5" host card',
+      );
+      expect(
+        tile.height,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'mxSvgCanvas2D createSvgGradient omits gradientUnits so SVG '
+            'objectBoundingBox is the current path',
+      );
+      expect(
+        tile.fill.foreground,
+        const VsdxColor(0xFF1565C0),
+        reason: 'libvisio radial start-color is FillForegnd (center stop)',
+      );
+      expect(
+        tile.fill.background,
+        const VsdxColor(0xFFBBDEFB),
+        reason: 'libvisio radial end-color is FillBkgnd (outer stop)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final saved = gradientTile(leftover);
+      expect(saved, isNotNull);
+      expect(
+        saved!.width,
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'a second save keeps the painted-box FillPattern 40 XForm',
+      );
+      expect(
+        saved.height,
+        closeTo(40 * canvasScale, 0.02),
+      );
+      expect(saved.fill.pattern, 40);
+      expect(saved.fill.foreground, const VsdxColor(0xFF1565C0));
+      expect(saved.fill.background, const VsdxColor(0xFFBBDEFB));
+    },
+  );
+
+  test(
     'mxStencil include-shape dashpattern leftover keeps shared canvas dashes for LibreOffice',
     () {
       List<double>? firstCustomDash(VsdxShape shape) {

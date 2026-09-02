@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient radial painted box for
+  LibreOffice. Official NestedStencil has no `<fillgradient>`;
+  mxSvgCanvas2D `createSvgGradient` omits `gradientUnits` (SVG default
+  objectBoundingBox) and leftover bakes FillPattern 35–40. A small
+  radial ellipse used to keep the host 1.5" XForm, so Draw
+  `_fillAndShadowProperties` interpolated `draw:style=radial` across
+  the card (`tokens.txt` FillPattern; pattern 40 is `svg:cx/cy=0.5`).
+  leftover now fits 35–40 siblings to the path bbox, matching linear
+  25–34. JS SVG userSpaceOnUse offset discs still tessellate at
+  capture. A second save keeps Width/Height.
 - draw.io leftover mxStencil include-shape canvas setAlpha Char for
   LibreOffice. Official `mxStencil.drawNode` `<alpha>` is
   `canvas.setAlpha`; `mxSvgCanvas2D.text` paints `opacity=state.alpha`.
@@ -628,9 +638,7 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   it and leftover bakes FillPattern 25–34. A band rect used to keep the
   host 1.5" XForm, so Draw `_fillAndShadowProperties` interpolated the
   wash across the card (`tokens.txt` FillPattern). leftover now fits
-  linear siblings to the path bbox. FillPattern 35–40 stay on the host
-  XForm so offset radials can still tessellate. A second save keeps
-  Width/Height.
+  linear siblings to the path bbox. A second save keeps Width/Height.
 - draw.io leftover mxStencil include-shape fillgradient box for LibreOffice.
   Official NestedStencil has no `<fillgradient>`; mxSvgCanvas2D captures
   it and leftover bakes FillPattern 25–40. include-shape nested paints
