@@ -15050,6 +15050,157 @@ void main() {
   );
 
   test(
+    'mxStencil later shadowcolor leftover bakes ShdwForegnd sibling for LibreOffice',
+    () {
+      const gray = VsdxColor(0xFF808080);
+      const red = VsdxColor(0xFFC62828);
+
+      List<VsdxColor?> shadowColors(VsdxShape shape) {
+        final values = <VsdxColor?>[];
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled &&
+              (next.fill.hasFill || next.line.hasLine)) {
+            values.add(next.shadow.color);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<shadowcolor color="#c62828"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 480,
+      );
+      expect(
+        shadowColors(host),
+        [gray, red],
+        reason: 'libvisio collectFillAndShadow is shape-level; leftover '
+            'must bake later mxXmlCanvas2D setShadowColor as a sibling so '
+            'Draw does not reuse ShdwForegnd (tokens.txt → draw:shadow-color)',
+      );
+
+      final offsetHost = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<shadowoffset dx="8" dy="12"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        offsetHost.shadow.offsetXInches,
+        closeTo(2 * 1.5 / 100, 1e-6),
+        reason: 'first inherit fill keeps mxConstants.SHADOW_OFFSET_X',
+      );
+      expect(
+        offsetHost.children.any(
+          (child) =>
+              child.shadow.enabled &&
+              (child.shadow.offsetXInches - 8 * 1.5 / 100).abs() < 1e-6,
+        ),
+        isTrue,
+        reason: 'later setShadowOffset leftover-bakes ShapeShdwOffsetX '
+            'Draw collectFillAndShadow maps to draw:shadow-offset-x',
+      );
+
+      final captureHost = decodeDrawioMxStencilXml(
+        '<shape name="C" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadowcolor color="#c62828"/>'
+        '<shadowalpha alpha="1"/>'
+        '<shadowoffset dx="4" dy="6"/>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(captureHost.shadow.enabled, isTrue);
+      expect(captureHost.shadow.color, red);
+      expect(
+        captureHost.shadow.offsetXInches,
+        closeTo(4 * 1.5 / 100, 1e-6),
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<background>'
+        '<shadowcolor color="#c62828"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</background>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        shadowColors(includeHost).where((c) => c == red).length,
+        2,
+        reason: 'include-shape shares the canvas; nested setShadowColor '
+            'stays for later host inherit fill',
+      );
+      expect(
+        shadowColors(includeHost).where((c) => c == gray).length,
+        1,
+        reason: 'the first host inherit fill keeps mxConstants.SHADOWCOLOR',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.shadow.color,
+        gray,
+        reason: 'a second save keeps the first inherit ShdwForegnd Draw paints',
+      );
+      expect(
+        leftover.children.any((child) => child.shadow.color == red),
+        isTrue,
+        reason: 'a second save keeps the later ShdwForegnd Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

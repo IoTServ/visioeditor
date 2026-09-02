@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil shadowcolor ShdwForegnd sibling for
+  LibreOffice. Official `mxXmlCanvas2D.setShadowColor` /
+  `setShadowAlpha` / `setShadowOffset` stay on the shared canvas;
+  include-shape nested colour stays for later host fills. leftover
+  ignored those nodes, so Draw `collectFillAndShadow` reused
+  `ShdwForegnd` / `ShapeShdwOffset*` (`tokens.txt` →
+  `draw:shadow-color` / `draw:shadow-offset-*`). leftover now rebuilds
+  the enabled shadow and bakes a sibling when leftover colour / offset
+  / alpha differs. A second save keeps both.
 - draw.io leftover mxStencil fontbackgroundcolor=strokeColor TextBkgnd
   for LibreOffice. Official `mxStencil.getColorValue('strokeColor')` is
   `STYLE_STROKECOLOR`; include-shape nested `setFontBackgroundColor`

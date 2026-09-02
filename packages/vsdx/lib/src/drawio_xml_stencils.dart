@@ -164,6 +164,12 @@ const double _kMxMinCharSizeInches = 0.5 / 72.0;
 /// mxAbstractCanvas2D.createState `dashPattern: '3 3'`.
 const List<double> _kMxDefaultDashPattern = <double>[3, 3];
 
+/// mxConstants.SHADOWCOLOR / SHADOW_OPACITY / SHADOW_OFFSET_*.
+const VsdxColor _kMxDefaultShadowColor = VsdxColor(0xFF808080);
+const double _kMxDefaultShadowAlpha = 1;
+const double _kMxDefaultShadowDx = 2;
+const double _kMxDefaultShadowDy = 3;
+
 /// mxAbstractCanvas2D.save/restore paint. Path geometry stays live.
 class _MxPaintState {
   const _MxPaintState({
@@ -197,6 +203,10 @@ class _MxPaintState {
     required this.lineJoin,
     required this.miterLimit,
     required this.shadow,
+    required this.shadowColor,
+    required this.shadowAlpha,
+    required this.shadowDx,
+    required this.shadowDy,
     required this.sketchEnabled,
     required this.sketchFill,
     required this.sketchGap,
@@ -235,6 +245,10 @@ class _MxPaintState {
   final VsdxLineJoin? lineJoin;
   final double? miterLimit;
   final VsdxShadow? shadow;
+  final VsdxColor shadowColor;
+  final double shadowAlpha;
+  final double shadowDx;
+  final double shadowDy;
   final bool sketchEnabled;
   final String? sketchFill;
   final double? sketchGap;
@@ -343,6 +357,10 @@ class _DrawioXmlShapeDecoder {
   VsdxLineJoin? _parentStrokeJoin;
   double? _parentMiterLimit;
   VsdxShadow? _shadow;
+  VsdxColor _shadowColor = _kMxDefaultShadowColor;
+  double _shadowAlpha = _kMxDefaultShadowAlpha;
+  double _shadowDx = _kMxDefaultShadowDx;
+  double _shadowDy = _kMxDefaultShadowDy;
   VsdxShadow? _parentShadow;
   bool _capturedParentShadow = false;
   final List<_MxPaintState> _saveStack = <_MxPaintState>[];
@@ -734,6 +752,25 @@ class _DrawioXmlShapeDecoder {
       case 'shadow':
         _applyMxShadow(node);
         break;
+      case 'shadowcolor':
+        // mxXmlCanvas2D.setShadowColor. leftover used to ignore the
+        // node, so collectFillAndShadow reused ShdwForegnd
+        // (`tokens.txt` ShdwForegnd → draw:shadow-color).
+        _applyMxShadowColor(node.getAttribute('color'));
+        break;
+      case 'shadowalpha':
+        // mxXmlCanvas2D.setShadowAlpha. ShdwForegndTrans is not a
+        // token; leftover write premultiplies RGB that Draw paints.
+        _applyMxShadowAlpha(node.getAttribute('alpha'));
+        break;
+      case 'shadowoffset':
+        // mxXmlCanvas2D.setShadowOffset. ShapeShdwOffsetX/Y are
+        // tokens `_fillAndShadowProperties` maps to draw:shadow-offset-*.
+        _applyMxShadowOffset(
+          node.getAttribute('dx'),
+          node.getAttribute('dy'),
+        );
+        break;
       case 'fill':
         _finish(fill: true, stroke: false);
         if (disableShadow) _shadow = null;
@@ -923,6 +960,12 @@ class _DrawioXmlShapeDecoder {
       // `shadow` follows mxShape.configureCanvas setShadow onto ShdwPattern
       // that `_fillAndShadowProperties` maps to ODF draw:shadow (hard
       // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
+      // `shadowcolor` / `shadowalpha` / `shadowoffset` follow
+      // mxXmlCanvas2D setShadowColor / setShadowAlpha / setShadowOffset
+      // onto ShdwForegnd / ShapeShdwOffset* (`tokens.txt`). A later
+      // inherit paint leftover-bakes a sibling because collectFillAndShadow
+      // is shape-level. ShdwForegndTrans is not a token, so a save
+      // premultiplies RGB.
       // `fontfamily` follows mxStencil.drawNode setFontFamily onto Char.Font
       // that collectCharIX maps to style:font-name.
       // `fontbackgroundcolor` follows mxText.configureCanvas onto TextBkgnd
@@ -1110,6 +1153,7 @@ class _DrawioXmlShapeDecoder {
     // so Draw collectLine gaps match NestedStencil.
     nested._scaleAdoptedCanvasDashFrom(this);
     nested._scaleAdoptedCanvasFontFrom(this);
+    nested._scaleAdoptedCanvasShadowFrom(this);
     // mxStencil.drawShape include-shape shares canvas.states. Nested
     // restore can pop a host save (current paint), but unequal
     // save/restore counts reset `canvas.states = stack` to the entry
@@ -1203,6 +1247,12 @@ class _DrawioXmlShapeDecoder {
     } else {
       _dashPattern = hostDash == null ? null : List<double>.of(hostDash);
     }
+    if (nested.scaleX.abs() > 1e-12 && scaleX.abs() > 1e-12) {
+      _shadowDx = nested._shadowDx * nested.scaleX / scaleX;
+    }
+    if (nested.scaleY.abs() > 1e-12 && scaleY.abs() > 1e-12) {
+      _shadowDy = nested._shadowDy * nested.scaleY / scaleY;
+    }
   }
 
   /// Map [source] leftover inches (from [from]'s stencil units) into this
@@ -1261,6 +1311,14 @@ class _DrawioXmlShapeDecoder {
       lineJoin: source.lineJoin,
       miterLimit: source.miterLimit,
       shadow: source.shadow,
+      shadowColor: source.shadowColor,
+      shadowAlpha: source.shadowAlpha,
+      shadowDx: from.scaleX.abs() < 1e-12 || scaleX.abs() < 1e-12
+          ? source.shadowDx
+          : source.shadowDx * from.scaleX / scaleX,
+      shadowDy: from.scaleY.abs() < 1e-12 || scaleY.abs() < 1e-12
+          ? source.shadowDy
+          : source.shadowDy * from.scaleY / scaleY,
       sketchEnabled: source.sketchEnabled,
       sketchFill: source.sketchFill,
       sketchGap: source.sketchGap,
@@ -1298,6 +1356,18 @@ class _DrawioXmlShapeDecoder {
     _fontSize = _fontSize * hostMin / nestedMin;
   }
 
+  /// Host `setShadowOffset` leftover inches, expressed in this overlay's
+  /// stencil units so `_shadowFromCanvas` does not apply nested scale
+  /// a second time.
+  void _scaleAdoptedCanvasShadowFrom(_DrawioXmlShapeDecoder host) {
+    if (scaleX.abs() > 1e-12 && host.scaleX.abs() > 1e-12) {
+      _shadowDx = _shadowDx * host.scaleX / scaleX;
+    }
+    if (scaleY.abs() > 1e-12 && host.scaleY.abs() > 1e-12) {
+      _shadowDy = _shadowDy * host.scaleY / scaleY;
+    }
+  }
+
   void _adoptPaint(_DrawioXmlShapeDecoder other) {
     _fontSize = other._fontSize;
     _fontStyle = other._fontStyle;
@@ -1331,6 +1401,10 @@ class _DrawioXmlShapeDecoder {
     _lineJoin = other._lineJoin;
     _miterLimit = other._miterLimit;
     _shadow = other._shadow;
+    _shadowColor = other._shadowColor;
+    _shadowAlpha = other._shadowAlpha;
+    _shadowDx = other._shadowDx;
+    _shadowDy = other._shadowDy;
     _sketchEnabled = other._sketchEnabled;
     _sketchFill = other._sketchFill;
     _sketchGap = other._sketchGap;
@@ -1422,6 +1496,10 @@ class _DrawioXmlShapeDecoder {
         lineJoin: _lineJoin,
         miterLimit: _miterLimit,
         shadow: _shadow,
+        shadowColor: _shadowColor,
+        shadowAlpha: _shadowAlpha,
+        shadowDx: _shadowDx,
+        shadowDy: _shadowDy,
         sketchEnabled: _sketchEnabled,
         sketchFill: _sketchFill,
         sketchGap: _sketchGap,
@@ -1463,6 +1541,10 @@ class _DrawioXmlShapeDecoder {
     _lineJoin = saved.lineJoin;
     _miterLimit = saved.miterLimit;
     _shadow = saved.shadow;
+    _shadowColor = saved.shadowColor;
+    _shadowAlpha = saved.shadowAlpha;
+    _shadowDx = saved.shadowDx;
+    _shadowDy = saved.shadowDy;
     _sketchEnabled = saved.sketchEnabled;
     _sketchFill = saved.sketchFill;
     _sketchGap = saved.sketchGap;
@@ -1964,25 +2046,67 @@ class _DrawioXmlShapeDecoder {
       _shadow = null;
       return;
     }
-    final dx = _number(node, 'dx', fallback: 2);
-    final dy = _number(node, 'dy', fallback: 3);
-    final alpha = node.getAttribute('alpha') == null
-        ? 1.0
-        : _number(node, 'alpha', fallback: 1).clamp(0.0, 1.0).toDouble();
-    final color = _mxGraphPaintColor(node.getAttribute('color')) ??
-        const VsdxColor(0xFF808080);
-    var offsetX = dx * scaleX;
-    var offsetY = -dy * scaleY;
+    final colorAttr = node.getAttribute('color');
+    if (colorAttr != null) _applyMxShadowColor(colorAttr, rebuild: false);
+    final dxAttr = node.getAttribute('dx');
+    final dyAttr = node.getAttribute('dy');
+    if (dxAttr != null || dyAttr != null) {
+      _applyMxShadowOffset(dxAttr, dyAttr, rebuild: false);
+    }
+    final alphaAttr = node.getAttribute('alpha');
+    if (alphaAttr != null) _applyMxShadowAlpha(alphaAttr, rebuild: false);
+    _shadow = _shadowFromCanvas();
+  }
+
+  void _applyMxShadowColor(String? raw, {bool rebuild = true}) {
+    final token = (raw ?? '').trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'default' || lower == 'none') {
+      _shadowColor = _kMxDefaultShadowColor;
+    } else {
+      _shadowColor = _mxGraphPaintColor(token) ?? _kMxDefaultShadowColor;
+    }
+    if (rebuild) _rebuildEnabledShadow();
+  }
+
+  void _applyMxShadowAlpha(String? raw, {bool rebuild = true}) {
+    final parsed = double.tryParse((raw ?? '').trim());
+    _shadowAlpha = (parsed == null || !parsed.isFinite)
+        ? _kMxDefaultShadowAlpha
+        : parsed.clamp(0.0, 1.0).toDouble();
+    if (rebuild) _rebuildEnabledShadow();
+  }
+
+  void _applyMxShadowOffset(
+    String? dxRaw,
+    String? dyRaw, {
+    bool rebuild = true,
+  }) {
+    final dx = double.tryParse((dxRaw ?? '').trim());
+    final dy = double.tryParse((dyRaw ?? '').trim());
+    if (dx != null && dx.isFinite) _shadowDx = dx;
+    if (dy != null && dy.isFinite) _shadowDy = dy;
+    if (rebuild) _rebuildEnabledShadow();
+  }
+
+  void _rebuildEnabledShadow() {
+    if (_shadow == null) return;
+    _shadow = _shadowFromCanvas();
+  }
+
+  VsdxShadow _shadowFromCanvas() {
+    var offsetX = _shadowDx * scaleX;
+    var offsetY = -_shadowDy * scaleY;
     if (offsetX.abs() < 1e-9) offsetX = 0.02;
     if (offsetY.abs() < 1e-9) offsetY = -0.03;
-    _shadow = VsdxShadow(
+    return VsdxShadow(
       enabled: true,
       pattern: 1,
-      color: color,
+      color: _shadowColor,
       offsetXInches: offsetX,
       offsetYInches: offsetY,
       blurInches: 0,
-      transparency: (1 - alpha).clamp(0.0, 1.0),
+      transparency: (1 - _shadowAlpha).clamp(0.0, 1.0),
     );
   }
 
@@ -2322,7 +2446,9 @@ class _DrawioXmlShapeDecoder {
     }
     if (!_capturedParentShadow && (doFill || doStroke)) {
       // First inherit paint owns collectFillAndShadow. Later `<shadow>`
-      // belongs on siblings so Draw can emit both ShdwPattern values.
+      // / `<shadowcolor>` / `<shadowoffset>` / `<shadowalpha>` belong
+      // on siblings so Draw can emit both ShdwForegnd / ShdwOffset*
+      // values (`tokens.txt`).
       _capturedParentShadow = true;
       _parentShadow = _shadow;
     }
