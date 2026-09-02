@@ -12843,6 +12843,91 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient leftover fits painted box for LibreOffice',
+    () {
+      VsdxShape? gradientTile(VsdxShape shape) {
+        if (shape.fill.pattern == 28) return shape;
+        for (final child in shape.children) {
+          final nested = gradientTile(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="Band" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="10" y="10" w="80" h="40"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 460,
+      );
+      const canvasScale = 1.5 / 100;
+      final tile = gradientTile(host);
+      expect(
+        tile,
+        isNotNull,
+        reason: 'mxSvgCanvas2D fillgradient south is FillPattern 28; leftover '
+            'must bake that on the painted rect, not drop it',
+      );
+      expect(
+        tile!.width,
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'libvisio _fillAndShadowProperties interpolates FillPattern '
+            '25–34 across the child Width/Height; leftover must fit the '
+            '80-wide band, not the 1.5" host card',
+      );
+      expect(
+        tile.height,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'variable leftover is h * catalog scaleY',
+      );
+      expect(
+        tile.fill.foreground,
+        const VsdxColor(0xFFBBDEFB),
+        reason: 'libvisio linear end-color is FillForegnd (south stop)',
+      );
+      expect(
+        tile.fill.background,
+        const VsdxColor(0xFF1565C0),
+        reason: 'libvisio linear start-color is FillBkgnd (north stop)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final saved = gradientTile(leftover);
+      expect(saved, isNotNull);
+      expect(
+        saved!.width,
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'a second save keeps the painted-box FillPattern 28 XForm',
+      );
+      expect(
+        saved.height,
+        closeTo(40 * canvasScale, 0.02),
+      );
+      expect(saved.fill.pattern, 28);
+      expect(saved.fill.foreground, const VsdxColor(0xFFBBDEFB));
+      expect(saved.fill.background, const VsdxColor(0xFF1565C0));
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

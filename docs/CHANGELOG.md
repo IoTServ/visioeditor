@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient painted box for LibreOffice.
+  Official NestedStencil has no `<fillgradient>`; mxSvgCanvas2D captures
+  it and leftover bakes FillPattern 25–34. A band rect used to keep the
+  host 1.5" XForm, so Draw `_fillAndShadowProperties` interpolated the
+  wash across the card (`tokens.txt` FillPattern). leftover now fits
+  linear siblings to the path bbox. FillPattern 35–40 stay on the host
+  XForm so offset radials can still tessellate. A second save keeps
+  Width/Height.
 - draw.io leftover mxStencil include-shape fillgradient box for LibreOffice.
   Official NestedStencil has no `<fillgradient>`; mxSvgCanvas2D captures
   it and leftover bakes FillPattern 25–40. include-shape nested paints

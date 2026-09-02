@@ -1859,19 +1859,27 @@ class _DrawioXmlShapeDecoder {
         bakeDash ||
         extraInheritFill ||
         bakeLineStyle) {
+      final partFill = inheritFillSibling
+          ? VsdxFill(
+              pattern: 1,
+              foreground: _styleFill,
+              foregroundTransparency: _fillTransparency,
+            )
+          : doFill && (bakeFill || bakeDash)
+              ? _paintFill()
+              : const VsdxFill(pattern: 0);
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
-        fill: inheritFillSibling
-            ? VsdxFill(
-                pattern: 1,
-                foreground: _styleFill,
-                foregroundTransparency: _fillTransparency,
-              )
-            : doFill && (bakeFill || bakeDash)
-                ? _paintFill()
-                : const VsdxFill(pattern: 0),
+        fill: partFill,
         line: _paintLine(stroke: doStroke),
         shadow: _shadow ?? VsdxShadow.disabled,
+        // Host leftover already `_x`/`_y`'d vertices. libvisio
+        // `_fillAndShadowProperties` interpolates FillPattern 25–34
+        // across the child's Width/Height, so a small fillgradient
+        // rect on a 1.5" sibling is a corner of a card wash. Fit
+        // linear paints; 35–40 stay on the host XForm so leftover
+        // write can still tessellate offset radials.
+        fitBox: partFill.pattern >= 25 && partFill.pattern <= 34,
       ));
       if (_shadow != null) _parentShadow ??= _shadow;
       return;
@@ -2876,7 +2884,7 @@ class _DrawioColoredPart {
 
   /// When true, [_DrawioXmlShapeDecoder._coloredShape] pins Width/Height
   /// to the path bbox so libvisio FillPattern 25–40 interpolates across
-  /// the include-shape box, not the host card.
+  /// the painted leftover, not the host card.
   final bool fitBox;
 }
 
