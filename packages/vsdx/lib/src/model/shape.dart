@@ -1038,6 +1038,16 @@ class VsdxShape {
   /// collectLine does not reuse LineColor (`tokens.txt`).
   static const String userMxStrokeFromFill = 'veMxStrokeFromFill';
 
+  /// mxStencil `fontcolor color="stroke"` / `strokeColor` while LineColor is
+  /// still inherit. `applyStencilStyle` paints Char Color from the palette
+  /// stroke so Draw collectCharIX does not reuse fo:color (`tokens.txt`).
+  static const String userMxFontFromStroke = 'veMxFontFromStroke';
+
+  /// mxStencil `fontcolor color="fill"` / `fillColor` while FillForegnd is
+  /// still inherit. `applyStencilStyle` paints Char Color from the palette
+  /// fill so Draw collectCharIX does not reuse fo:color (`tokens.txt`).
+  static const String userMxFontFromFill = 'veMxFontFromFill';
+
   /// Media part [userLibvisioSourceImage] names, or `null` when absent.
   String? get libvisioSourceImagePart {
     for (final c in userCells) {

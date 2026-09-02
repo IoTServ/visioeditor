@@ -14678,6 +14678,148 @@ void main() {
   );
 
   test(
+    'mxStencil fontcolor strokeColor leftover bakes Char Color for LibreOffice',
+    () {
+      const black = VsdxColor(0xFF000000);
+      const fillBlue = VsdxColor(0xFFDAE8FC);
+      const strokeBlue = VsdxColor(0xFF6C8EBF);
+      const palette = StencilColors('#DAE8FC', '#6C8EBF');
+
+      bool fromStroke(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxFontFromStroke &&
+                cell.value == '1',
+          );
+
+      bool fromFill(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxFontFromFill &&
+                cell.value == '1',
+          );
+
+      VsdxShape? glyph(VsdxShape shape, String text) {
+        if (shape.text == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyph(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxColor? fontOf(VsdxShape shape, String text) {
+        final match = glyph(shape, text);
+        if (match == null || match.richText.runs.isEmpty) return null;
+        return match.richText.runs.first.charStyle.color;
+      }
+
+      final host = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="T" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="10" y="10" str="A"/>'
+          '<fontcolor color="strokeColor"/>'
+          '<text x="10" y="40" str="B"/>'
+          '</foreground>'
+          '</shape>',
+          id: 478,
+        ),
+        colors: palette,
+      );
+      expect(fromStroke(glyph(host, 'A')!), isFalse);
+      expect(
+        fromStroke(glyph(host, 'B')!),
+        isTrue,
+        reason: 'libvisio collectCharIX is shape-level; leftover inherit '
+            'fontcolor=strokeColor must mark the later glyph so Draw does '
+            'not keep default Char black on both',
+      );
+      expect(fontOf(host, 'A'), black);
+      expect(
+        fontOf(host, 'B'),
+        strokeBlue,
+        reason: 'mxStencil.getColorValue(strokeColor) is STYLE_STROKECOLOR; '
+            'applyStencilStyle pins leftover inherit font to palette '
+            'LineColor (tokens.txt Color → fo:color)',
+      );
+
+      final fillHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="F" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="10" y="10" str="A"/>'
+          '<fontcolor color="fillColor"/>'
+          '<text x="10" y="40" str="B"/>'
+          '</foreground>'
+          '</shape>',
+        ),
+        colors: palette,
+      );
+      expect(fromFill(glyph(fillHost, 'B')!), isTrue);
+      expect(fontOf(fillHost, 'B'), fillBlue);
+
+      final includeHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shapes name="mxgraph.test">'
+          '<shape name="host" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="50" y="10" str="H1"/>'
+          '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+          '<text x="50" y="90" str="H2"/>'
+          '</foreground>'
+          '</shape>'
+          '<shape name="tile" w="10" h="10" strokewidth="1">'
+          '<foreground>'
+          '<fontcolor color="strokeColor"/>'
+          '<text x="5" y="5" str="N"/>'
+          '</foreground>'
+          '</shape>'
+          '</shapes>',
+        ),
+        colors: palette,
+      );
+      expect(fontOf(includeHost, 'H1'), black);
+      expect(
+        fontOf(includeHost, 'N'),
+        strokeBlue,
+        reason: 'include-shape nested setFontColor(strokeColor) leftover-bakes '
+            'Char Color from palette stroke',
+      );
+      expect(
+        fontOf(includeHost, 'H2'),
+        strokeBlue,
+        reason: 'include-shape shares the canvas; nested setFontColor stays '
+            'for later host text',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        fontOf(leftover, 'A'),
+        black,
+        reason: 'a second save keeps the first inherit Char Color Draw paints',
+      );
+      expect(
+        fontOf(leftover, 'B'),
+        strokeBlue,
+        reason: 'a second save keeps the later stroke Char Color Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

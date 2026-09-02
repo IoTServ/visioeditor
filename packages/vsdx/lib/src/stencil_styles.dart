@@ -6,6 +6,7 @@ library;
 
 import 'model/shape.dart';
 import 'model/line.dart';
+import 'model/rich_text.dart';
 import 'utils/color.dart';
 
 /// A fill + stroke pair (hex `#RRGGBB` or `#AARRGGBB`).
@@ -676,7 +677,9 @@ VsdxShape applyStencilStyle(
   if (!shape.is1D &&
       !shape.fill.hasFill &&
       !shape.line.hasLine &&
-      shape.children.isEmpty) {
+      shape.children.isEmpty &&
+      !_userFlag(shape, VsdxShape.userMxFontFromStroke) &&
+      !_userFlag(shape, VsdxShape.userMxFontFromFill)) {
     return shape;
   }
 
@@ -734,9 +737,32 @@ VsdxShape applyStencilStyle(
       }
     }
   }
+  VsdxRichText? richText;
+  if (shape.richText.runs.isNotEmpty) {
+    final pin = _userFlag(shape, VsdxShape.userMxFontFromStroke)
+        ? lineColor
+        : _userFlag(shape, VsdxShape.userMxFontFromFill)
+            ? fillColor
+            : null;
+    if (pin != null) {
+      // mxStencil.getColorValue('strokeColor') is STYLE_STROKECOLOR.
+      // leftover inherit fontcolor=stroke must take the palette LineColor,
+      // not default Char black (`tokens.txt` Color → fo:color).
+      richText = shape.richText.copyWith(
+        runs: [
+          for (final run in shape.richText.runs)
+            run.charStyle.color == null
+                ? run.copyWith(charStyle: run.charStyle.withSolidColor(pin))
+                : run,
+        ],
+      );
+    }
+  }
   var next = shape;
-  if (!identical(fill, shape.fill) || !identical(line, shape.line)) {
-    next = shape.copyWith(fill: fill, line: line);
+  if (!identical(fill, shape.fill) ||
+      !identical(line, shape.line) ||
+      richText != null) {
+    next = shape.copyWith(fill: fill, line: line, richText: richText);
   }
   if (next.children.isEmpty) return next;
   final children = <VsdxShape>[
