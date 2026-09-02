@@ -17500,6 +17500,108 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fontfamily CSS stack leftover bakes Char.Font for LibreOffice',
+    () {
+      String? glyphFont(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text) &&
+            shape.richText.runs.isNotEmpty) {
+          return shape.richText.runs.first.charStyle.fontFamily;
+        }
+        for (final child in shape.children) {
+          final nested = glyphFont(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="Helvetica"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontfamily/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 497,
+      );
+      expect(glyphFont(omitted, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(omitted, 'CD'),
+        'Helvetica',
+        reason: 'omitted family is a no-op; leftover keeps the previous '
+            'Char.Font Draw collectCharIX maps to style:font-name',
+      );
+
+      final stack = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="Helvetica"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontfamily family="\'open sans\', arial, sans-serif"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphFont(stack, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(stack, 'CD'),
+        'Arial',
+        reason: 'mxXmlCanvas2D.setFontFamily is CSS font-family; leftover '
+            'first-token froze "open sans" so Draw collectCharIX missed '
+            'Arial (`tokens.txt` Font)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="Helvetica"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="\'open sans\', arial, sans-serif"/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(glyphFont(includeHost, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(includeHost, 'CD'),
+        'Arial',
+        reason: 'include-shape nested CSS stack leftover-bakes Arial so '
+            'Draw does not paint the tile with host Helvetica',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final stackId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(stack.copyWith(id: stackId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(stackId)!;
+      expect(glyphFont(leftover, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(leftover, 'CD'),
+        'Arial',
+        reason: 'a second save keeps leftover Char.Font Arial Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

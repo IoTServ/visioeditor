@@ -914,7 +914,15 @@ class _DrawioXmlShapeDecoder {
         _fontStyle = _number(node, 'style').round();
         break;
       case 'fontfamily':
-        _fontFamily = _mxFontFamily(node.getAttribute('family'));
+        // mxXmlCanvas2D.setFontFamily is CSS font-family. leftover
+        // first-token froze "open sans" so Draw collectCharIX missed
+        // Arial (`tokens.txt` Font → style:font-name). Walk the stack
+        // like NestedStencil htmlFontFamily; omitted family is a no-op.
+        final raw = node.getAttribute('family');
+        if (raw != null) {
+          final mapped = _mxFontFamily(raw);
+          if (mapped != null) _fontFamily = mapped;
+        }
         break;
       case 'fillcolor':
         _applyMxFill(
@@ -1103,8 +1111,10 @@ class _DrawioXmlShapeDecoder {
       // inherit paint leftover-bakes a sibling because collectFillAndShadow
       // is shape-level. ShdwForegndTrans is not a token, so a save
       // premultiplies RGB.
-      // `fontfamily` follows mxStencil.drawNode setFontFamily onto Char.Font
-      // that collectCharIX maps to style:font-name.
+      // `fontfamily` follows mxStencil.drawNode / mxXmlCanvas2D
+      // setFontFamily onto Char.Font that collectCharIX maps to
+      // style:font-name. CSS stacks skip webfonts so `"open sans", arial`
+      // freezes Arial (`tokens.txt` Font).
       // `fontbackgroundcolor` follows mxText.configureCanvas onto TextBkgnd
       // that collectTextBlock maps to fo:background-color.
       // `fontbordercolor` follows mxText.configureCanvas /
@@ -4943,13 +4953,21 @@ VsdxHorzAlign _mxHorzAlign(String? raw) => switch ((raw ?? '').toLowerCase()) {
       _ => VsdxHorzAlign.left,
     };
 
-/// mxStencil.drawNode fontfamily: strip CSS quotes, first family, map
-/// generic CSS faces onto Visio/libvisio names collectCharIX emits as
+/// mxXmlCanvas2D.setFontFamily / mxStencil.drawNode fontfamily.
+/// CSS stacks walk like NestedStencil htmlFontFamily so webfonts
+/// such as "open sans" do not freeze Char.Font; named and generic
+/// faces map onto Visio/libvisio names collectCharIX emits as
 /// style:font-name.
 String? _mxFontFamily(String? raw) {
   var token = (raw ?? '').trim();
   if (token.isEmpty) return null;
-  token = token.split(',').first.trim();
+  // mxXmlCanvas2D.setFontFamily handles CSS font-family stacks.
+  // leftover first comma token froze webfonts such as "open sans"
+  // so Draw collectCharIX missed Arial (`tokens.txt` Font). Walk
+  // like NestedStencil htmlFontFamily / leftover HTML parser.
+  final stacked = _mxHtmlCssFontFamily(token);
+  if (stacked != null) return stacked;
+  if (token.contains(',')) return null;
   if (token.length >= 2 &&
       ((token.startsWith("'") && token.endsWith("'")) ||
           (token.startsWith('"') && token.endsWith('"')))) {
