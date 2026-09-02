@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape canvas setAlpha Char for
+  LibreOffice. Official `mxStencil.drawNode` `<alpha>` is
+  `canvas.setAlpha`; `mxSvgCanvas2D.text` paints `opacity=state.alpha`.
+  leftover used STYLE_TEXT_OPACITY alone, so include-shape nested glyphs
+  stayed opaque (`tokens.txt` has no ColorTrans). leftover now multiplies
+  canvas alpha into Char transparency; fillalpha/strokealpha stay
+  dedicated fill/stroke Trans. A second save bakes fo:color RGB.
 - draw.io leftover mxStencil include-shape nested sketch for
   LibreOffice. Official `mxStencil.drawNode` include-shape shares the
   canvas; leftover `<sketch>` is mxSvgCanvas2D (NestedStencil has no

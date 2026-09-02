@@ -822,8 +822,9 @@ class _DrawioXmlShapeDecoder {
             color: runs.first.color,
             background: _fontBackground,
             border: _fontBorder,
-            // mxText.apply STYLE_TEXT_OPACITY percent. Char ColorTrans
-            // is not a libvisio token; a save bakes it into Color RGB.
+            // mxText.apply STYLE_TEXT_OPACITY percent, times canvas
+            // setAlpha (`<alpha>`). ColorTrans is not a token; a save
+            // bakes RGB that collectCharIX maps to fo:color.
             textOpacity: runs.first.textOpacity,
             runs: runs,
           ));
@@ -881,8 +882,11 @@ class _DrawioXmlShapeDecoder {
       // leftover bakes a locked NoFill sibling Draw collectLine paints
       // (`tokens.txt` has no label border).
       // `text` `textopacity` follows mxText.apply STYLE_TEXT_OPACITY onto
-      // Char.transparency; ColorTrans is not a token, so a save bakes RGB
-      // that collectCharIX maps to fo:color (xmlStringToColour zeros alpha).
+      // Char.transparency, multiplied by canvas setAlpha (`<alpha>` /
+      // mxSvgCanvas2D.text `opacity=state.alpha`). fillalpha/strokealpha
+      // stay dedicated FillForegndTrans / LineColorTrans. ColorTrans is
+      // not a token, so a save bakes RGB that collectCharIX maps to
+      // fo:color (xmlStringToColour zeros alpha).
       // `text` `run` children follow mxText html=1 <b>/<font> onto extra
       // Character rows collectCharIX maps to fo:font-weight / fo:color /
       // fo:font-size, and html `<ul><li>` onto collectParaIX Bullet /
@@ -1493,6 +1497,10 @@ class _DrawioXmlShapeDecoder {
   double _alphaValue(XmlElement node) =>
       _number(node, 'alpha', fallback: 1).clamp(0.0, 1.0).toDouble();
 
+  /// STYLE_TEXT_OPACITY percent × canvas setAlpha (`<alpha>`).
+  double _opacityPercentWithCanvasAlpha(double percent) =>
+      (percent * _overallAlpha.clamp(0.0, 1.0)).clamp(0.0, 100.0);
+
   void _applyMxStroke(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
@@ -1622,8 +1630,14 @@ class _DrawioXmlShapeDecoder {
 
   /// mxText html=1: `<run>` children are extra Character rows. A bare
   /// `str=` label stays a single collectCharIX run.
+  ///
+  /// mxSvgCanvas2D.text sets `opacity=state.alpha`. leftover
+  /// `textopacity` is STYLE_TEXT_OPACITY percent; canvas `<alpha>` must
+  /// still multiply so include-shape nested glyphs keep host setAlpha
+  /// (`tokens.txt` has no ColorTrans). fillalpha/strokealpha do not.
   List<_DrawioStencilLabelRun> _decodeTextRuns(XmlElement node) {
-    final parentOpacity = _number(node, 'textopacity', fallback: 100);
+    final parentRaw = _number(node, 'textopacity', fallback: 100);
+    final parentOpacity = _opacityPercentWithCanvasAlpha(parentRaw);
     final raw = <_DrawioStencilLabelRun>[
       for (final el in node.childElements)
         if (el.name.local == 'run')
@@ -1638,10 +1652,10 @@ class _DrawioXmlShapeDecoder {
             fontFamily:
                 _mxFontFamily(el.getAttribute('fontfamily')) ?? _fontFamily,
             color: _mxRunFontColor(el.getAttribute('fontcolor')),
-            textOpacity: _number(
-              el,
-              'textopacity',
-              fallback: parentOpacity,
+            textOpacity: _opacityPercentWithCanvasAlpha(
+              el.getAttribute('textopacity') == null
+                  ? parentRaw
+                  : _number(el, 'textopacity'),
             ),
             position:
                 el.getAttribute('pos') == null ? 0 : _number(el, 'pos').round(),

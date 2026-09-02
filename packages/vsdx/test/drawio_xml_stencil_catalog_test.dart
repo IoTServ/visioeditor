@@ -13308,6 +13308,99 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape canvas alpha leftover fades nested Char for LibreOffice',
+    () {
+      VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text && child.richText.runs.isNotEmpty) {
+            return child.richText.runs.first;
+          }
+          final nested = glyphRun(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<alpha alpha="0.4"/>'
+        '<fontcolor color="#000000"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '<text x="50" y="90" str="B" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<text x="5" y="5" str="A" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 467,
+      );
+      expect(
+        glyphRun(host, 'A')!.charStyle.transparency,
+        closeTo(0.6, 1e-6),
+        reason: 'mxSvgCanvas2D.text opacity is state.alpha; leftover must '
+            'fold canvas setAlpha into Char ColorTrans',
+      );
+      expect(
+        glyphRun(host, 'B')!.charStyle.transparency,
+        closeTo(0.6, 1e-6),
+        reason: 'include-shape shares the canvas; later host text keeps '
+            'nested/host setAlpha',
+      );
+
+      final fillOnly = decodeDrawioMxStencilXml(
+        '<shape name="FillA" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillalpha alpha="0.4"/>'
+        '<fontcolor color="#000000"/>'
+        '<text x="50" y="50" str="C" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphRun(fillOnly, 'C')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'fillalpha is FillForegndTrans, not setAlpha; glyphs stay '
+            'opaque like NestedStencil setFillAlpha',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverA = glyphRun(leftover, 'A')!;
+      expect(
+        leftoverA.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'ColorTrans is not a token; the bake writes 0',
+      );
+      expect(
+        leftoverA.charStyle.color?.value,
+        colourForLibvisioAlpha(
+          const VsdxColor(0xFF000000),
+          0.6,
+        ).value,
+        reason: 'a second save keeps the RGB Draw paints as fo:color',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
