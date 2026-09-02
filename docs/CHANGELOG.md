@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D rotate TxtAngle / ForeignData Angle for
+  LibreOffice. Official `mxSvgCanvas2D.text` adds `state.rotation` to
+  the glyph (`tokens.txt` TxtAngle → `_flushText` librevenge:rotate)
+  and `canvas.image` puts `s.transform` on the PNG (`tokens.txt` Angle
+  → `collectForeignDataType`). leftover already baked Geometry vertices
+  but left TxtAngle / Img* axis-aligned, so later inherit glyphs sat
+  upright on the unrotated pin. leftover now snapshots leftover-inch
+  Pin / TxtAngle / Img* at emit, include-shape copies that overlay, and
+  a rotated PNG stays a ForeignData child so host Angle does not
+  applyXForm Geometry. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D rotate leftover inches for
   LibreOffice. Official `mxXmlCanvas2D.rotate` is `mxSvgCanvas2D`'s
   SVG transform (`theta` / `flipH` / `flipV` around `cx,cy` after

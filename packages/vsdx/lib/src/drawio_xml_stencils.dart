@@ -553,12 +553,15 @@ class _DrawioXmlShapeDecoder {
     for (final label in _labels) {
       children.add(_labelShape(id: nextId++, label: label));
     }
-    // One unflipped bitmap stays on the host (IBM Floating IP Img*).
-    // flipH/flipV and a second canvas.image become ForeignData children:
-    // leftover FlipX on the host would applyXForm-mirror Geometry, and
-    // a single slot dropped earlier PNGs (`tokens.txt` FlipX / ImgWidth).
+    // One unflipped, unrotated bitmap stays on the host (IBM Floating
+    // IP Img*). flipH/flipV, canvas.rotate Angle, a canvas xor Flip,
+    // and a second canvas.image become ForeignData children: leftover
+    // FlipX / Angle on the host would applyXForm-mirror Geometry, and
+    // a single slot dropped earlier PNGs (`tokens.txt` FlipX / Angle /
+    // ImgWidth). collectForeignDataType transformAngle uses the shape
+    // Angle, not a separate image cell.
     final hostRasterEntry =
-        (_rasters.length == 1 && !_rasters.first.flipH && !_rasters.first.flipV)
+        (_rasters.length == 1 && _rasterStaysOnHost(_rasters.first))
             ? _rasters.first
             : null;
     for (final raster in _rasters) {
@@ -952,7 +955,7 @@ class _DrawioXmlShapeDecoder {
       case 'text':
         final runs = _decodeTextRuns(node);
         if (runs.isNotEmpty) {
-          _labels.add(_DrawioStencilLabel(
+          _labels.add(_snapshotLabelCanvas(_DrawioStencilLabel(
             text: runs.map((run) => run.text).join(),
             x: _number(node, 'x'),
             y: _number(node, 'y'),
@@ -990,7 +993,7 @@ class _DrawioXmlShapeDecoder {
             fontBorderFromStroke: _fontBorderFollowsStroke,
             fontBorderFromFill: _fontBorderFollowsFill,
             runs: runs,
-          ));
+          )));
         }
         break;
       case 'image':
@@ -1139,7 +1142,7 @@ class _DrawioXmlShapeDecoder {
     if (parsed == null) return;
     final boxW = _number(node, 'w');
     final boxH = _number(node, 'h');
-    _rasters.add(_DrawioRaster(
+    _rasters.add(_snapshotRasterCanvas(_DrawioRaster(
       part: registerDrawioStencilImage(
         parsed.bytes,
         mimeType: parsed.mime,
@@ -1155,7 +1158,7 @@ class _DrawioXmlShapeDecoder {
       boxH: boxH > 1e-9 ? boxH : null,
       flipH: node.getAttribute('flipH') == '1',
       flipV: node.getAttribute('flipV') == '1',
-    ));
+    )));
   }
 
   /// mxStencil.drawNode include-shape → nested stencil.drawShape in the
@@ -1264,22 +1267,25 @@ class _DrawioXmlShapeDecoder {
     nested._paintSections();
     _geometries.addAll(nested._geometries);
     _coloredParts.addAll(nested._coloredParts);
-    // Nested `_consume` stores text in nested stencil units. Geometry
-    // already went through nested `_x`/`_y` (include overlay). Labels
-    // used to wait for the host `_labelShape`, which multiplied by the
-    // catalog 1.5" scale, so include-shape glyphs sat at the host origin
-    // and Char size ignored nested minScale. Remap into host stencil
-    // space so collectTextBlock / collectCharIX match NestedStencil.
+    // Nested `_consume` snapshots leftover-inch Pin / TxtAngle / Img*
+    // at emit (overlay origin is already host leftover inches). Host
+    // `_labelShape` / `_rasterLeftoverBox` use that snapshot so a later
+    // host `<rotate>` cannot drag nested glyphs. Remap only labels that
+    // somehow missed the snapshot.
     _labels.addAll([
       for (final label in nested._labels)
-        nested._labelInParentStencilSpace(label, parent: this),
+        label.leftoverPinX != null
+            ? label
+            : nested._labelInParentStencilSpace(label, parent: this),
     ]);
     for (final nestedRaster in nested._rasters) {
       // Nested overlay already mapped geometry through leftover `_x`/`_y`.
       // Official canvas.image is `w*sx, h*sy` in those canvas pixels.
-      // Convert nested leftover Img* back into host stencil units so
-      // host leftover matches NestedStencil. Append — do not replace
-      // a host image leftover already collected.
+      // Emit-time leftover Img* / Angle is already host leftover inches.
+      if (nestedRaster.leftoverWidth != null) {
+        _rasters.add(nestedRaster);
+        continue;
+      }
       final leftoverBox = nested._rasterLeftoverBox(nestedRaster);
       if (leftoverBox != null) {
         _rasters.add(_rasterFromLeftover(leftoverBox, nestedRaster));
@@ -1573,29 +1579,82 @@ class _DrawioXmlShapeDecoder {
 
   /// Visio Image Properties are Y-up from the shape origin. mxStencil
   /// image y is top-down stencil space, same as `<rect>`.
+  ///
+  /// mxSvgCanvas2D.image puts `s.transform` (canvas.rotate) on the
+  /// `<image>` group; collectForeignDataType transformAngle uses the
+  /// shape Angle. leftover keeps w×h axis-aligned and rotates about
+  /// the leftover centre so Draw librevenge:rotate stands the PNG up.
+  /// Emit-time snapshot so a later `<rotate>` cannot drag earlier
+  /// bitmaps (`tokens.txt` Angle / FlipX / ImgOffsetX).
   ({double offsetX, double offsetY, double width, double height})?
       _rasterLeftoverBox(_DrawioRaster raster) {
-    final boxW = raster.boxW;
-    final boxH = raster.boxH;
-    if (boxW != null && boxH != null) {
-      final width = boxW * scaleX.abs() * _canvasUserScale;
-      final height = boxH * scaleY.abs() * _canvasUserScale;
-      if (width <= 1e-9 || height <= 1e-9) return null;
+    if (raster.leftoverWidth != null && raster.leftoverHeight != null) {
       return (
-        offsetX: _x(raster.left ?? 0, (raster.top ?? 0) + boxH),
-        offsetY: _y(raster.left ?? 0, (raster.top ?? 0) + boxH),
-        width: width,
-        height: height,
+        offsetX: raster.leftoverOffsetX ?? 0,
+        offsetY: raster.leftoverOffsetY ?? 0,
+        width: raster.leftoverWidth!,
+        height: raster.leftoverHeight!,
       );
     }
-    if (targetWidth <= 1e-9 || targetHeight <= 1e-9) return null;
+    return _rasterLeftoverBoxAtEmit(raster);
+  }
+
+  ({double offsetX, double offsetY, double width, double height})?
+      _rasterLeftoverBoxAtEmit(_DrawioRaster raster) {
+    final boxW = raster.boxW;
+    final boxH = raster.boxH;
+    late final double width;
+    late final double height;
+    late final double left;
+    late final double top;
+    late final double srcW;
+    late final double srcH;
+    if (boxW != null && boxH != null) {
+      width = boxW * scaleX.abs() * _canvasUserScale;
+      height = boxH * scaleY.abs() * _canvasUserScale;
+      left = raster.left ?? 0;
+      top = raster.top ?? 0;
+      srcW = boxW;
+      srcH = boxH;
+    } else {
+      if (targetWidth <= 1e-9 || targetHeight <= 1e-9) return null;
+      width = targetWidth;
+      height = targetHeight;
+      left = 0;
+      top = 0;
+      srcW = sourceWidth;
+      srcH = sourceHeight;
+    }
+    if (width <= 1e-9 || height <= 1e-9) return null;
+    final centre = _leftoverOf(left + srcW / 2, top + srcH / 2);
     return (
-      offsetX: _x(0, sourceHeight),
-      offsetY: _y(0, sourceHeight),
-      width: targetWidth,
-      height: targetHeight,
+      offsetX: centre.x - width / 2,
+      offsetY: centre.y - height / 2,
+      width: width,
+      height: height,
     );
   }
+
+  _DrawioRaster _snapshotRasterCanvas(_DrawioRaster raster) {
+    final box = _rasterLeftoverBoxAtEmit(raster);
+    if (box == null) return raster;
+    return raster.copyWith(
+      leftoverOffsetX: box.offsetX,
+      leftoverOffsetY: box.offsetY,
+      leftoverWidth: box.width,
+      leftoverHeight: box.height,
+      leftoverAngleRad: _canvasLeftoverRotationRad,
+      leftoverCanvasFlipX: _canvasXorFlipX,
+      leftoverCanvasFlipY: _canvasXorFlipY,
+    );
+  }
+
+  bool _rasterStaysOnHost(_DrawioRaster raster) =>
+      !raster.flipH &&
+      !raster.flipV &&
+      raster.leftoverAngleRad.abs() <= 1e-12 &&
+      !raster.leftoverCanvasFlipX &&
+      !raster.leftoverCanvasFlipY;
 
   /// Inverse of [_rasterLeftoverBox]: leftover inches → this decoder's
   /// stencil units. include-shape copies nested overlay leftover.
@@ -1619,6 +1678,13 @@ class _DrawioXmlShapeDecoder {
       boxH: boxH,
       flipH: source.flipH,
       flipV: source.flipV,
+      leftoverOffsetX: source.leftoverOffsetX,
+      leftoverOffsetY: source.leftoverOffsetY,
+      leftoverWidth: source.leftoverWidth,
+      leftoverHeight: source.leftoverHeight,
+      leftoverAngleRad: source.leftoverAngleRad,
+      leftoverCanvasFlipX: source.leftoverCanvasFlipX,
+      leftoverCanvasFlipY: source.leftoverCanvasFlipY,
     );
   }
 
@@ -2298,6 +2364,20 @@ class _DrawioXmlShapeDecoder {
 
   bool get _hasCanvasRotate =>
       _rotThetaDeg.abs() > 1e-9 || _rotFlipH || _rotFlipV;
+
+  /// mxSvgCanvas2D.rotate effective theta, as Visio CCW radians.
+  /// SVG +theta is clockwise Y-down; leftover TxtAngle / Angle are
+  /// Y-up (`tokens.txt` TxtAngle / Angle → librevenge:rotate).
+  double get _canvasLeftoverRotationRad {
+    if (!_hasCanvasRotate) return 0;
+    var theta = _rotThetaDeg;
+    if (_rotFlipH && _rotFlipV) theta += 180;
+    if (_rotFlipH ? !_rotFlipV : _rotFlipV) theta = -theta;
+    return -theta * math.pi / 180;
+  }
+
+  bool get _canvasXorFlipX => _rotFlipH && !_rotFlipV;
+  bool get _canvasXorFlipY => _rotFlipV && !_rotFlipH;
 
   VsdxShadow _shadowFromCanvas() {
     var offsetX = _shadowDx * scaleX * _canvasUserScale;
@@ -3100,8 +3180,9 @@ class _DrawioXmlShapeDecoder {
       height: height,
       locPinXInches: width / 2,
       locPinYInches: height / 2,
-      flipX: raster.flipH,
-      flipY: raster.flipV,
+      angleRad: raster.leftoverAngleRad,
+      flipX: raster.flipH != raster.leftoverCanvasFlipX,
+      flipY: raster.flipV != raster.leftoverCanvasFlipY,
       fill: const VsdxFill(pattern: 0),
       line: const VsdxLine(pattern: 0),
       geometries: <VsdxGeometry>[
@@ -3301,26 +3382,40 @@ class _DrawioXmlShapeDecoder {
         jiggle: _sketchJiggle,
       );
 
-  VsdxShape _labelShape({
-    required int id,
-    required _DrawioStencilLabel label,
+  /// mxSvgCanvas2D.text uses `state.rotation + text.rotation`. leftover
+  /// snapshots leftover-inch Pin / TxtAngle at emit so a later
+  /// `<rotate>` cannot drag earlier glyphs (`tokens.txt` TxtAngle).
+  _DrawioStencilLabel _snapshotLabelCanvas(_DrawioStencilLabel label) {
+    final scaleXAbs = scaleX.abs() * _canvasUserScale;
+    final scaleYAbs = scaleY.abs() * _canvasUserScale;
+    final layout = _labelLeftoverLayout(
+      label,
+      scaleXAbs: scaleXAbs,
+      scaleYAbs: scaleYAbs,
+    );
+    return label.copyWith(
+      leftoverPinX: layout.pinX,
+      leftoverPinY: layout.pinY,
+      leftoverAngleRad: layout.angle,
+      leftoverScaleX: scaleXAbs,
+      leftoverScaleY: scaleYAbs,
+    );
+  }
+
+  ({double pinX, double pinY, double width, double height, double angle})
+      _labelLeftoverLayout(
+    _DrawioStencilLabel label, {
+    required double scaleXAbs,
+    required double scaleYAbs,
   }) {
-    final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale;
+    final scale = math.min(scaleXAbs, scaleYAbs);
     final fontInches = math.max(_kMxMinCharSizeInches, label.fontSize * scale);
-    // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
-    // keep a tight pin; cell values (Ammeter A, Bootstrap Alert) fill
-    // the frame collectTextBlock maps to svg:width / fo:padding-*.
-    // mxGraphView.updateVertexLabelOffset shifts that box by one cell
-    // for labelPosition / verticalLabelPosition, so Pin can sit outside
-    // the parent XForm collectXFormData maps to svg:x / svg:y.
     final hasBox = label.boxWidth > 0 && label.boxHeight > 0;
     final width = hasBox
-        ? math.max(
-            label.boxWidth * scaleX.abs() * _canvasUserScale, fontInches * 0.5)
+        ? math.max(label.boxWidth * scaleXAbs, fontInches * 0.5)
         : math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
     final height = hasBox
-        ? math.max(
-            label.boxHeight * scaleY.abs() * _canvasUserScale, fontInches * 0.5)
+        ? math.max(label.boxHeight * scaleYAbs, fontInches * 0.5)
         : fontInches * 1.4;
     late final double pinX;
     late final double pinY;
@@ -3341,22 +3436,8 @@ class _DrawioXmlShapeDecoder {
         _ => y - height / 2,
       };
     }
-    final vert = switch (label.valign) {
-      'bottom' => VsdxVertAlign.bottom,
-      'middle' => VsdxVertAlign.middle,
-      _ => VsdxVertAlign.top,
-    };
     var angle = -label.rotationDegrees * math.pi / 180;
-    // Cell boxes with STYLE_HORIZONTAL=0 use TextDirection=1 so canvas /
-    // SVG rotate and libvisio_write can bake TxtAngle for Draw. Stencil
-    // glyphs (w=h=0) keep the mxStencil vertical → TxtAngle shortcut.
-    final boxedVertical = hasBox && label.vertical;
     if (label.vertical && !hasBox) angle -= math.pi / 2;
-    // mxStencil.drawNode align-shape="0": ignore shape.rotation for
-    // canvas.text except the STYLE_FLIPH/V xor (NestedStencil already
-    // does). leftover TxtAngle counters collectXFormData Angle; a
-    // single FlipX/Y adds that Angle instead of subtracting so Draw
-    // librevenge:rotate stays screen-upright after applyXForm FlipX.
     if (!label.alignShape) {
       final dr = _stencilCellRotationRad();
       if (_stencilCellFlipH && _stencilCellFlipV) {
@@ -3367,6 +3448,63 @@ class _DrawioXmlShapeDecoder {
         angle -= dr;
       }
     }
+    angle += _canvasLeftoverRotationRad;
+    return (
+      pinX: pinX,
+      pinY: pinY,
+      width: width,
+      height: height,
+      angle: angle,
+    );
+  }
+
+  VsdxShape _labelShape({
+    required int id,
+    required _DrawioStencilLabel label,
+  }) {
+    final scaleXAbs = label.leftoverScaleX ?? (scaleX.abs() * _canvasUserScale);
+    final scaleYAbs = label.leftoverScaleY ?? (scaleY.abs() * _canvasUserScale);
+    final scale = math.min(scaleXAbs, scaleYAbs);
+    final fontInches = math.max(_kMxMinCharSizeInches, label.fontSize * scale);
+    // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
+    // keep a tight pin; cell values (Ammeter A, Bootstrap Alert) fill
+    // the frame collectTextBlock maps to svg:width / fo:padding-*.
+    // mxGraphView.updateVertexLabelOffset shifts that box by one cell
+    // for labelPosition / verticalLabelPosition, so Pin can sit outside
+    // the parent XForm collectXFormData maps to svg:x / svg:y.
+    final hasBox = label.boxWidth > 0 && label.boxHeight > 0;
+    final width = hasBox
+        ? math.max(label.boxWidth * scaleXAbs, fontInches * 0.5)
+        : math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
+    final height = hasBox
+        ? math.max(label.boxHeight * scaleYAbs, fontInches * 0.5)
+        : fontInches * 1.4;
+    late final double pinX;
+    late final double pinY;
+    late final double angle;
+    if (label.leftoverPinX != null && label.leftoverPinY != null) {
+      pinX = label.leftoverPinX!;
+      pinY = label.leftoverPinY!;
+      angle = label.leftoverAngleRad;
+    } else {
+      final layout = _labelLeftoverLayout(
+        label,
+        scaleXAbs: scaleXAbs,
+        scaleYAbs: scaleYAbs,
+      );
+      pinX = layout.pinX;
+      pinY = layout.pinY;
+      angle = layout.angle;
+    }
+    final vert = switch (label.valign) {
+      'bottom' => VsdxVertAlign.bottom,
+      'middle' => VsdxVertAlign.middle,
+      _ => VsdxVertAlign.top,
+    };
+    // Cell boxes with STYLE_HORIZONTAL=0 use TextDirection=1 so canvas /
+    // SVG rotate and libvisio_write can bake TxtAngle for Draw. Stencil
+    // glyphs (w=h=0) keep the mxStencil vertical → TxtAngle shortcut.
+    final boxedVertical = hasBox && label.vertical;
     var shape = VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -3553,6 +3691,8 @@ class _DrawioXmlShapeDecoder {
   /// Map a nested-stencil-space label into [parent] stencil units so
   /// host `_labelShape` `_x`/`_y` / minScale match NestedStencil
   /// `canvas.text` / `setFontSize(size * minScale)` in the include box.
+  /// Nested emit already snapshots leftover-inch Pin / TxtAngle; this
+  /// remap is only for labels that missed that snapshot.
   _DrawioStencilLabel _labelInParentStencilSpace(
     _DrawioStencilLabel label, {
     required _DrawioXmlShapeDecoder parent,
@@ -3604,6 +3744,11 @@ class _DrawioXmlShapeDecoder {
       fontBgFromFill: label.fontBgFromFill,
       fontBorderFromStroke: label.fontBorderFromStroke,
       fontBorderFromFill: label.fontBorderFromFill,
+      leftoverPinX: label.leftoverPinX,
+      leftoverPinY: label.leftoverPinY,
+      leftoverAngleRad: label.leftoverAngleRad,
+      leftoverScaleX: label.leftoverScaleX,
+      leftoverScaleY: label.leftoverScaleY,
       runs: [
         for (final run in label.runs)
           _DrawioStencilLabelRun(
@@ -3667,6 +3812,13 @@ class _DrawioRaster {
     this.boxH,
     this.flipH = false,
     this.flipV = false,
+    this.leftoverOffsetX,
+    this.leftoverOffsetY,
+    this.leftoverWidth,
+    this.leftoverHeight,
+    this.leftoverAngleRad = 0,
+    this.leftoverCanvasFlipX = false,
+    this.leftoverCanvasFlipY = false,
   });
 
   final String part;
@@ -3677,6 +3829,40 @@ class _DrawioRaster {
   final double? boxH;
   final bool flipH;
   final bool flipV;
+  final double? leftoverOffsetX;
+  final double? leftoverOffsetY;
+  final double? leftoverWidth;
+  final double? leftoverHeight;
+  final double leftoverAngleRad;
+  final bool leftoverCanvasFlipX;
+  final bool leftoverCanvasFlipY;
+
+  _DrawioRaster copyWith({
+    double? leftoverOffsetX,
+    double? leftoverOffsetY,
+    double? leftoverWidth,
+    double? leftoverHeight,
+    double? leftoverAngleRad,
+    bool? leftoverCanvasFlipX,
+    bool? leftoverCanvasFlipY,
+  }) =>
+      _DrawioRaster(
+        part: part,
+        mime: mime,
+        left: left,
+        top: top,
+        boxW: boxW,
+        boxH: boxH,
+        flipH: flipH,
+        flipV: flipV,
+        leftoverOffsetX: leftoverOffsetX ?? this.leftoverOffsetX,
+        leftoverOffsetY: leftoverOffsetY ?? this.leftoverOffsetY,
+        leftoverWidth: leftoverWidth ?? this.leftoverWidth,
+        leftoverHeight: leftoverHeight ?? this.leftoverHeight,
+        leftoverAngleRad: leftoverAngleRad ?? this.leftoverAngleRad,
+        leftoverCanvasFlipX: leftoverCanvasFlipX ?? this.leftoverCanvasFlipX,
+        leftoverCanvasFlipY: leftoverCanvasFlipY ?? this.leftoverCanvasFlipY,
+      );
 }
 
 class _DrawioStencilLabel {
@@ -3709,6 +3895,11 @@ class _DrawioStencilLabel {
     this.fontBgFromFill = false,
     this.fontBorderFromStroke = false,
     this.fontBorderFromFill = false,
+    this.leftoverPinX,
+    this.leftoverPinY,
+    this.leftoverAngleRad = 0,
+    this.leftoverScaleX,
+    this.leftoverScaleY,
     required this.runs,
   });
 
@@ -3740,7 +3931,56 @@ class _DrawioStencilLabel {
   final bool fontBgFromFill;
   final bool fontBorderFromStroke;
   final bool fontBorderFromFill;
+  final double? leftoverPinX;
+  final double? leftoverPinY;
+  final double leftoverAngleRad;
+  final double? leftoverScaleX;
+  final double? leftoverScaleY;
   final List<_DrawioStencilLabelRun> runs;
+
+  _DrawioStencilLabel copyWith({
+    double? leftoverPinX,
+    double? leftoverPinY,
+    double? leftoverAngleRad,
+    double? leftoverScaleX,
+    double? leftoverScaleY,
+  }) =>
+      _DrawioStencilLabel(
+        text: text,
+        x: x,
+        y: y,
+        boxWidth: boxWidth,
+        boxHeight: boxHeight,
+        spacingLeft: spacingLeft,
+        spacingRight: spacingRight,
+        spacingTop: spacingTop,
+        spacingBottom: spacingBottom,
+        align: align,
+        valign: valign,
+        vertical: vertical,
+        wrap: wrap,
+        rotationDegrees: rotationDegrees,
+        alignShape: alignShape,
+        fontSize: fontSize,
+        fontStyle: fontStyle,
+        fontFamily: fontFamily,
+        color: color,
+        background: background,
+        border: border,
+        textOpacity: textOpacity,
+        fontFromStroke: fontFromStroke,
+        fontFromFill: fontFromFill,
+        fontBgFromStroke: fontBgFromStroke,
+        fontBgFromFill: fontBgFromFill,
+        fontBorderFromStroke: fontBorderFromStroke,
+        fontBorderFromFill: fontBorderFromFill,
+        leftoverPinX: leftoverPinX ?? this.leftoverPinX,
+        leftoverPinY: leftoverPinY ?? this.leftoverPinY,
+        leftoverAngleRad: leftoverAngleRad ?? this.leftoverAngleRad,
+        leftoverScaleX: leftoverScaleX ?? this.leftoverScaleX,
+        leftoverScaleY: leftoverScaleY ?? this.leftoverScaleY,
+        runs: runs,
+      );
 }
 
 class _DrawioStencilLabelRun {

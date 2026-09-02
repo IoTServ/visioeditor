@@ -15813,6 +15813,247 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D rotate leftover bakes TxtAngle for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final rotated = decodeDrawioMxStencilXml(
+        '<shape name="T" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<text str="A" x="20" y="0" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+        id: 486,
+      );
+      final glyph = glyphShape(rotated, 'A');
+      expect(glyph, isNotNull);
+      expect(
+        glyph!.pinX,
+        closeTo(0, 0.02),
+        reason: 'mxSvgCanvas2D.rotate(90) maps (20,0) to (0,20); leftover '
+            'TxtPin must sit at the rotated leftover inches so Draw '
+            'collectTextBlock does not keep the unrotated pin '
+            '(`tokens.txt` TxtPinX / TxtAngle)',
+      );
+      expect(
+        glyph.pinY,
+        closeTo((100 - 20) * canvasScale, 0.02),
+      );
+      expect(
+        glyph.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'mxSvgCanvas2D.text adds state.rotation; leftover TxtAngle '
+            'is Y-up CCW so Draw _flushText librevenge:rotate stands '
+            'the glyph with the canvas',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="A" x="20" y="0" align="center" valign="middle"/>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<text str="B" x="20" y="0" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final first = glyphShape(later, 'A')!;
+      final second = glyphShape(later, 'B')!;
+      expect(
+        first.pinX,
+        closeTo(20 * canvasScale, 0.02),
+        reason: 'first canvas.text keeps collectTextBlock unrotated',
+      );
+      expect(
+        first.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+      );
+      expect(
+        second.pinX,
+        closeTo(0, 0.02),
+        reason: 'later rotate leftover-bakes TxtPin so Draw does not '
+            'leave the second glyph on the first pin',
+      );
+      expect(
+        second.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<text str="A" x="5" y="5" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      final nestedGlyph = glyphShape(includeHost, 'A')!;
+      expect(
+        nestedGlyph.pinX,
+        closeTo(-0.075, 0.02),
+        reason: 'include-shape shares leftover-inch rotation; nested '
+            '(5,5) in the (20,0) overlay maps like geometry',
+      );
+      expect(
+        nestedGlyph.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphShape(leftover, 'A')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps the first TxtAngle Draw paints',
+      );
+      expect(
+        glyphShape(leftover, 'B')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save keeps the later rotated TxtAngle Draw paints',
+      );
+    },
+  );
+
+  test(
+    'mxStencil mxXmlCanvas2D rotate leftover bakes ForeignData Angle for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      VsdxShape? imageShape(VsdxShape shape) {
+        if (shape.hasImage) return shape;
+        for (final child in shape.children) {
+          final nested = imageShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        return <VsdxShape>[
+          if (shape.hasImage && shape.children.isEmpty) shape,
+          for (final child in shape.children) ...imageShapes(child),
+        ];
+      }
+
+      const canvasScale = 1.5 / 100;
+      final rotated = decodeDrawioMxStencilXml(
+        '<shape name="I" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<image src="data:image/png;base64,$png" x="20" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>',
+        id: 487,
+      );
+      expect(
+        rotated.hasImage,
+        isFalse,
+        reason: 'canvas.rotate Angle must not live on the host XForm; '
+            'leftover Angle would applyXForm-rotate Geometry',
+      );
+      expect(
+        rotated.flipX,
+        isFalse,
+        reason: 'canvas rotate flipH is not STYLE_FLIPH',
+      );
+      final pic = imageShape(rotated);
+      expect(pic, isNotNull);
+      expect(
+        pic!.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'collectForeignDataType transformAngle → librevenge:rotate',
+      );
+      expect(pic.width, closeTo(10 * canvasScale, 0.02));
+      expect(pic.height, closeTo(10 * canvasScale, 0.02));
+      expect(
+        pic.pinX,
+        closeTo(-0.075, 0.02),
+        reason: 'leftover keeps w×h axis-aligned and rotates about the '
+            'leftover centre so Draw does not AABB the rotated box',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="20" y="0" w="10" h="10"/>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<image src="data:image/png;base64,$png" x="20" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final pics = imageShapes(later);
+      expect(pics, hasLength(2));
+      expect(
+        pics.first.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'first canvas.image keeps collectForeignDataType unrotated',
+      );
+      expect(
+        pics.last.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'later rotate leftover-bakes Angle on the second PNG',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverPics = imageShapes(leftover);
+      expect(leftoverPics, hasLength(2));
+      expect(
+        leftoverPics.first.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps the first ForeignData Angle Draw paints',
+      );
+      expect(
+        leftoverPics.last.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save keeps the later rotated Angle Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
