@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape dashpattern shared canvas for
+  LibreOffice. Official `mxStencil.drawNode` include-shape calls nested
+  `drawShape` on the same canvas, so host `setDashPattern(n×minScale)`
+  already holds leftover inches. leftover used to multiply that array
+  by nested `min(sx,sy)` (`tokens.txt` LinePattern 0xfe is solid).
+  leftover now folds host leftover inches into nested stencil units.
+  Nested-authored `dashpattern` still uses nested minScale. A second
+  save bakes MoveTo gaps.
 - draw.io leftover mxStencil fillgradient painted box for LibreOffice.
   Official NestedStencil has no `<fillgradient>`; mxSvgCanvas2D captures
   it and leftover bakes FillPattern 25–34. A band rect used to keep the

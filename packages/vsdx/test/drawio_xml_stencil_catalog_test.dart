@@ -12928,6 +12928,98 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape dashpattern leftover keeps shared canvas dashes for LibreOffice',
+    () {
+      List<double>? firstCustomDash(VsdxShape shape) {
+        List<double>? found;
+        void walk(VsdxShape next) {
+          if (found != null) return;
+          final custom = next.line.customDashPattern;
+          if (next.line.hasLine && custom != null && custom.length >= 2) {
+            found = custom;
+            return;
+          }
+          for (final child in next.children) {
+            walk(child);
+            if (found != null) return;
+          }
+        }
+
+        walk(shape);
+        return found;
+      }
+
+      bool hasBakedDashGaps(VsdxShape shape) {
+        var moves = 0;
+        for (final geometry in descendantGeometries(shape)) {
+          if (geometry.noLine) continue;
+          moves += geometry.commands.whereType<MoveTo>().length;
+        }
+        return moves >= 2;
+      }
+
+      VsdxShape hostOf({required bool hostDash, required bool nestedDash}) =>
+          decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" strokewidth="1">'
+            '<foreground>'
+            '${hostDash ? '<dashed dashed="1"/><dashpattern pattern="8 8"/>' : ''}'
+            '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+            '</foreground>'
+            '</shape>'
+            '<shape name="tile" w="10" h="10" strokewidth="1">'
+            '<foreground>'
+            '${nestedDash ? '<dashed dashed="1"/><dashpattern pattern="8 8"/>' : ''}'
+            '<rect x="0" y="0" w="10" h="10"/>'
+            '<stroke/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+            id: nestedDash ? 462 : 461,
+          );
+
+      const canvasScale = 1.5 / 100;
+      const nestedMinScale = 40 / 10 * canvasScale;
+      final inherit = hostOf(hostDash: true, nestedDash: false);
+      final authored = hostOf(hostDash: false, nestedDash: true);
+      expect(
+        firstCustomDash(inherit)!.first,
+        closeTo(8 * canvasScale / drawioDashUnitInches, 0.05),
+        reason: 'mxStencil.drawNode include-shape shares the canvas; host '
+            'setDashPattern already used host minScale. leftover must not '
+            'multiply 8 8 by nested min(sx,sy) again',
+      );
+      expect(
+        firstCustomDash(authored)!.first,
+        closeTo(8 * nestedMinScale / drawioDashUnitInches, 0.05),
+        reason: 'nested drawNode dashpattern still uses nested minScale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(inherit.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        hasBakedDashGaps(leftover),
+        isTrue,
+        reason: 'a second save bakes veDashPattern into MoveTo gaps '
+            'because libvisio treats custom LinePattern 0xfe as solid',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

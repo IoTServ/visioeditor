@@ -1028,6 +1028,12 @@ class _DrawioXmlShapeDecoder {
       overlayScaleY: sy * scaleY,
       canvasScale: _canvasScale,
     );
+    // mxStencil.drawNode include-shape shares the canvas. Host
+    // setDashPattern already multiplied by host minScale; nested
+    // `_fixedDashPatternValues` would multiply again by nested
+    // min(sx,sy). Fold leftover inches into nested stencil units
+    // so Draw collectLine gaps match NestedStencil.
+    nested._scaleAdoptedCanvasDashFrom(this);
     nested._paintSections();
     _geometries.addAll(nested._geometries);
     _coloredParts.addAll(nested._coloredParts);
@@ -1095,32 +1101,39 @@ class _DrawioXmlShapeDecoder {
       _strokeWidth = nested._strokeWeightInches / hostMin;
       _strokeWidthFixed = false;
     }
-    // Nested drawShape does not reset font / dash; only convert when
-    // nested drawNode actually changed them.
+    // Nested drawShape does not reset font; only convert when nested
+    // drawNode actually changed size. Dash always maps leftover inches
+    // (NestedStencil last setDashPattern stays on the shared canvas).
     if ((nested._fontSize - hostFont).abs() > 1e-12) {
       _fontSize = nested._fontSize * nestedMin / hostMin;
     } else {
       _fontSize = hostFont;
     }
-    if (!_sameDashPattern(nested._dashPattern, hostDash)) {
-      final dashes = nested._dashPattern;
-      if (dashes != null && dashes.isNotEmpty) {
-        final ratio = nestedMin / hostMin;
-        _dashPattern = [for (final value in dashes) value * ratio];
-      }
+    final dashes = nested._dashPattern;
+    if (dashes != null && dashes.isEmpty) {
+      _dashPattern = const <double>[];
+    } else if (dashes != null && dashes.isNotEmpty && nestedMin > 1e-12) {
+      _dashPattern = [
+        for (final value in dashes) value * nestedMin / hostMin,
+      ];
     } else {
       _dashPattern = hostDash == null ? null : List<double>.of(hostDash);
     }
   }
 
-  static bool _sameDashPattern(List<double>? a, List<double>? b) {
-    if (identical(a, b)) return true;
-    if (a == null || b == null) return a == b;
-    if (a.length != b.length) return false;
-    for (var i = 0; i < a.length; i++) {
-      if ((a[i] - b[i]).abs() > 1e-12) return false;
-    }
-    return true;
+  /// Host `setDashPattern(n*hostMinScale)` leftover inches, expressed in
+  /// this overlay's stencil units so `_fixedDashPatternValues` does not
+  /// apply nested minScale a second time.
+  void _scaleAdoptedCanvasDashFrom(_DrawioXmlShapeDecoder host) {
+    if (!_dashed) return;
+    if (_dashPattern != null && _dashPattern!.isEmpty) return;
+    final hostMin = math.min(host.scaleX.abs(), host.scaleY.abs());
+    final nestedMin = math.min(scaleX.abs(), scaleY.abs());
+    if (nestedMin < 1e-12) return;
+    final source = _dashPattern ?? _kMxDefaultDashPattern;
+    _dashPattern = [
+      for (final value in source) value * hostMin / nestedMin,
+    ];
   }
 
   void _adoptPaint(_DrawioXmlShapeDecoder other) {
