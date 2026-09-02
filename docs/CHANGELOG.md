@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D roundrect dx leftover canvas radii for
+  LibreOffice. Official `canvas.roundrect(..., dx, dy)` emits
+  `<roundrect dx= dy=>`; `mxSvgCanvas2D.roundrect` sets SVG `rx`/`ry`
+  only when dx/dy > 0. mxStencil.drawNode uses `arcsize` percent, and
+  JS capture of r=0 writes `<rect>`. leftover ignored dx/dy and
+  defaulted arcsize 15, so Draw `collectGeometry` rounded a sharp
+  canvas roundrect (`tokens.txt` CubBezTo is RelCubBezTo). leftover
+  now uses dx/dy when present (0 is a sharp rect), include-shape
+  copies that overlay, and a later dx leftover-bakes a sibling. A
+  second save keeps both.
 - draw.io leftover mxXmlCanvas2D strokewidth 0 leftover minStrokeWidth
   for LibreOffice. Official `setStrokeWidth(0)` emits
   `<strokewidth width="0"/>`; `mxSvgCanvas2D.getCurrentStrokeWidth`

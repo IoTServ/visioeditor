@@ -755,6 +755,8 @@ class _DrawioXmlShapeDecoder {
         _setPending(_decodeRect(node));
         break;
       case 'roundrect':
+        // mxStencil.drawNode uses arcsize percent. mxXmlCanvas2D.roundrect
+        // writes dx/dy canvas-pixel radii (`mxSvgCanvas2D` rx/ry).
         _resetPen();
         _setPending(_decodeRoundRect(node));
         break;
@@ -1127,6 +1129,14 @@ class _DrawioXmlShapeDecoder {
       // only) onto QuadBezTo leftover RelQuadBezTo (`tokens.txt` has no
       // LineJoin; Draw round-joins from LineCap). Other path children
       // fall through to regular MoveTo/LineTo/CubBezTo like official.
+      // `roundrect` dx/dy follow mxXmlCanvas2D.roundrect onto leftover
+      // CubBezTo. mxSvgCanvas2D.roundrect sets SVG rx/ry only when
+      // dx/dy > 0; JS capture of r=0 writes `<rect>`. leftover used
+      // to ignore dx/dy and default arcsize 15, so Draw
+      // collectGeometry rounded a sharp canvas roundrect
+      // (`tokens.txt` has CubBezTo as RelCubBezTo). leftover now
+      // uses dx/dy when present (0 is a sharp rect) and keeps
+      // arcsize for mxStencil XML.
       // `text` align-shape="0" follows drawNode onto TxtAngle that
       // counters collectXFormData Angle so Draw keeps the glyph upright.
       // STYLE_FLIPH xor STYLE_FLIPV (one axis) adds Angle instead;
@@ -3329,8 +3339,29 @@ class _DrawioXmlShapeDecoder {
     if (width < 1e-9 && height < 1e-9) {
       return const <VsdxPathCommand>[];
     }
-    final right = left + width;
-    final bottom = top + height;
+    final dxRaw = rect.getAttribute('dx');
+    final dyRaw = rect.getAttribute('dy');
+    if (dxRaw != null || dyRaw != null) {
+      // mxXmlCanvas2D.roundrect. mxSvgCanvas2D.roundrect sets rx/ry
+      // only when dx/dy > 0. leftover used to ignore the attrs and
+      // default arcsize 15, so Draw collectGeometry rounded a sharp
+      // canvas roundrect (`tokens.txt` CubBezTo → RelCubBezTo).
+      var radiusX = double.tryParse(dxRaw ?? '') ?? 0.0;
+      var radiusY = double.tryParse(dyRaw ?? '') ?? radiusX;
+      if (!radiusX.isFinite) radiusX = 0;
+      if (!radiusY.isFinite) radiusY = 0;
+      if (!(radiusX > 0) && !(radiusY > 0)) {
+        return _decodeRect(rect);
+      }
+      return _roundRectCubics(
+        left: left,
+        top: top,
+        width: width,
+        height: height,
+        radiusX: radiusX.clamp(0.0, width / 2),
+        radiusY: radiusY.clamp(0.0, height / 2),
+      );
+    }
     // mxStencil.drawNode: Number(arcsize)==0 uses
     // RECTANGLE_ROUNDING_FACTOR * 100 (15). Omitted also defaults to 15.
     // Canvas roundrect(r=0) is captured as <rect>, not arcsize="0".
@@ -3347,6 +3378,26 @@ class _DrawioXmlShapeDecoder {
         factor * math.min(width * scaleX.abs(), height * scaleY.abs());
     final radiusX = scaleX.abs() < 1e-12 ? 0.0 : rInches / scaleX.abs();
     final radiusY = scaleY.abs() < 1e-12 ? 0.0 : rInches / scaleY.abs();
+    return _roundRectCubics(
+      left: left,
+      top: top,
+      width: width,
+      height: height,
+      radiusX: radiusX,
+      radiusY: radiusY,
+    );
+  }
+
+  List<VsdxPathCommand> _roundRectCubics({
+    required double left,
+    required double top,
+    required double width,
+    required double height,
+    required double radiusX,
+    required double radiusY,
+  }) {
+    final right = left + width;
+    final bottom = top + height;
     const kappa = 0.5522847498307936;
     final kX = radiusX * kappa;
     final kY = radiusY * kappa;

@@ -17246,6 +17246,147 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D roundrect dx leftover bakes canvas radii for LibreOffice',
+    () {
+      bool hasCubic(VsdxShape shape) => descendantGeometries(shape)
+          .expand((geometry) => geometry.commands)
+          .any((command) => command is CubBezTo || command is RelCubBezTo);
+
+      ({double dx, double dy})? firstCornerDelta(VsdxShape root) {
+        ({double dx, double dy})? found;
+        void walk(VsdxShape shape) {
+          if (found != null) return;
+          for (final geometry in shape.geometries) {
+            final cmds = geometry.commands;
+            for (var i = 0; i < cmds.length - 1; i++) {
+              final a = cmds[i];
+              final b = cmds[i + 1];
+              if (a is LineTo && b is CubBezTo) {
+                found = (dx: (b.x - a.x).abs(), dy: (b.y - a.y).abs());
+                return;
+              }
+            }
+          }
+          for (final child in shape.children) {
+            walk(child);
+            if (found != null) return;
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      const canvasScale = 1.5 / 100;
+
+      final sharp = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="100" h="60" dx="0" dy="0"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 495,
+      );
+      expect(
+        hasCubic(sharp),
+        isFalse,
+        reason: 'mxSvgCanvas2D.roundrect sets rx/ry only when dx/dy > 0; '
+            'leftover used to default arcsize 15 so Draw collectGeometry '
+            'rounded a sharp canvas roundrect',
+      );
+
+      final rounded = decodeDrawioMxStencilXml(
+        '<shape name="R" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="100" h="60" dx="10" dy="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(hasCubic(rounded), isTrue);
+      final delta = firstCornerDelta(rounded);
+      expect(delta, isNotNull);
+      expect(delta!.dx, closeTo(10 * canvasScale, 1e-6));
+      expect(delta.dy, closeTo(10 * canvasScale, 1e-6));
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20" dx="0" dy="0"/>'
+        '<fillstroke/>'
+        '<roundrect x="0" y="30" w="40" h="20" dx="8" dy="8"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        hasCubic(later),
+        isTrue,
+        reason: 'later dx leftover-bakes cubics on a sibling so Draw does '
+            'not round both rects',
+      );
+      expect(
+        descendantGeometries(later).any(
+          (geometry) =>
+              geometry.commands.every((command) => command is! CubBezTo),
+        ),
+        isTrue,
+        reason: 'the first dx=0 rail stays LineTo so Draw collectGeometry '
+            'keeps a sharp rect',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20" dx="0" dy="0"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        hasCubic(includeHost),
+        isFalse,
+        reason: 'include-shape nested dx=0 leftover stays a sharp rect',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final sharpId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(sharp.copyWith(id: sharpId)),
+      );
+      final roundedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(rounded.copyWith(id: roundedId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        hasCubic(leftoverDoc.pages.first.findShapeById(sharpId)!),
+        isFalse,
+      );
+      expect(
+        hasCubic(leftoverDoc.pages.first.findShapeById(roundedId)!),
+        isTrue,
+        reason: 'a second save keeps leftover CubBezTo Draw paints '
+            '(RelCubBezTo; tokens.txt has no CubBezTo)',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(
