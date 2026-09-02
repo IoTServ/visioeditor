@@ -380,14 +380,16 @@ class _DrawioXmlShapeDecoder {
   double? _parentStrokeTransparency;
   bool _dashed = false;
   // mxAbstractCanvas2D.createState fixDash is false (dash × strokeWidth).
-  // leftover tessellates custom arrays as leftover inches, so omitted
-  // `fixDash` stays true (JS capture never emits the attr). Official
-  // mxXmlCanvas2D `<dashed fixDash="0">` multiplies by strokeWidth.
-  bool _fixDash = true;
+  // mxStencil.drawNode calls setDashed(dashed=='1') with no second
+  // arg, so omitted `<dashed>` fixDash is relative. leftover used to
+  // keep true (JS capture never emits the attr), so later
+  // `<dashed dashed="1"/>` reused the first canvas-pixel MoveTo gaps
+  // (`tokens.txt` has no fixDash).
+  bool _fixDash = false;
   bool _solidPaintBeforeDash = false;
   bool _capturedParentDashState = false;
   bool _parentDashed = false;
-  bool _parentFixDash = true;
+  bool _parentFixDash = false;
   List<double>? _parentDashPattern;
   List<double>? _dashPattern;
   // mxAbstractCanvas2D.createState: lineCap 'flat' (SVG butt) and
@@ -816,11 +818,14 @@ class _DrawioXmlShapeDecoder {
         // mxStencil.drawNode: setDashed(dashed == '1'). Omitted / "true"
         // stay solid like official (NestedStencil uses === '1').
         _dashed = node.getAttribute('dashed') == '1';
-        // mxXmlCanvas2D.setDashed writes fixDash. createDashPattern is
-        // `(fixDash ? 1 : strokeWidth) * scale` (`tokens.txt` has no
-        // fixDash; leftover bakes leftover inches / MoveTo gaps).
-        final fixDash = node.getAttribute('fixDash');
-        if (fixDash != null) _fixDash = fixDash == '1';
+        // Official setDashed(value) leaves fixDash undefined/false.
+        // mxSvgCanvas2D.createDashPattern is
+        // `(fixDash ? 1 : strokeWidth) * scale`. leftover
+        // `if (fixDash != null)` kept the previous canvas-pixel gaps,
+        // so Draw leftover MoveTo reused the first leftover inches
+        // (`tokens.txt` has no fixDash). Omitted / empty snaps to
+        // relative like createState.
+        _fixDash = node.getAttribute('fixDash') == '1';
         break;
       case 'dashpattern':
         // mxStencil.drawNode / stencils.xsd use `pattern`. Cisco Guard /
@@ -1128,6 +1133,9 @@ class _DrawioXmlShapeDecoder {
       // stroke-dasharray is invalid and Draw must stay solid (AWS 4
       // work package), not createState `3 3`. Cisco `dash="8 8"` (no
       // `pattern`) is the authored array leftover bakes to MoveTo gaps.
+      // Omitted `<dashed>` fixDash snaps to createState false
+      // (× LineWeight) so Draw leftover MoveTo does not keep a prior
+      // canvas-pixel gap (`tokens.txt` has no fixDash).
       // `shadow` follows mxShape.configureCanvas / mxXmlCanvas2D
       // setShadow onto ShdwPattern that `_fillAndShadowProperties`
       // maps to ODF draw:shadow. Omitted enabled is off (`=== '1'`),
@@ -2835,8 +2843,9 @@ class _DrawioXmlShapeDecoder {
     final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale.abs();
     // mxSvgCanvas2D.createDashPattern: `(fixDash ? 1 : strokeWidth)*scale`.
     // leftover tessellates those leftover inches (`tokens.txt` has no
-    // fixDash). Omitted fixDash stays 1 so catalog MoveTo gaps match
-    // JS capture (never emits the attr).
+    // fixDash). Omitted `<dashed>` fixDash is createState false so
+    // later inherit stroke × LineWeight instead of the first
+    // canvas-pixel gaps.
     final fixed = fixDash ?? _fixDash;
     final strokeMul = fixed ? 1.0 : math.max(_strokeWidth ?? 1.0, 1e-9);
     final values = <double>[

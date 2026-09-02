@@ -1179,8 +1179,9 @@ void main() {
     }
 
     // AWS 3D Dashed Edge: dashed=1, no dashpattern. Catalog scale is
-    // 1.5/31.6; createState '3 3' → 3 * minScale / (1/96) CSS-px.
-    const expected = 3 * (1.5 / 31.6) * 96;
+    // 1.5/31.6; createState '3 3' × strokeWidth 4 (omitted fixDash is
+    // relative) → 3 * 4 * minScale / (1/96) CSS-px.
+    const expected = 3 * 4 * (1.5 / 31.6) * 96;
     final edge = dynamic
         .singleWhere((group) => group.name == 'Draw.io JS / AWS3D / AWS 3D')
         .stencils
@@ -1355,14 +1356,17 @@ void main() {
       final isdnDash = firstCustomDash(isdn);
       expect(isdnDash, isNotNull);
       final isdnScale = 1.5 / 37;
+      // shape strokewidth="2"; omitted fixDash is createState false so
+      // leftover × LineWeight (`tokens.txt` has no fixDash).
+      const isdnStroke = 2.0;
       expect(
         isdnDash!.first,
-        closeTo(12 * isdnScale / drawioDashUnitInches, 0.05),
+        closeTo(12 * isdnStroke * isdnScale / drawioDashUnitInches, 0.05),
         reason: 'ISDN Switch dash="12 4" is the authored on/off pair',
       );
       expect(
         isdnDash[1],
-        closeTo(4 * isdnScale / drawioDashUnitInches, 0.05),
+        closeTo(4 * isdnStroke * isdnScale / drawioDashUnitInches, 0.05),
       );
 
       const writer = VsdxWriter();
@@ -16348,6 +16352,148 @@ void main() {
         hasFillTrans(leftover, 1),
         isTrue,
         reason: 'a second save keeps leftover FillForegndTrans 1 Draw paints',
+      );
+    },
+  );
+
+  test(
+    'mxStencil mxXmlCanvas2D dashed omitted fixDash leftover bakes LineWeight dash for LibreOffice',
+    () {
+      List<double> firstDash(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          final custom = next.line.customDashPattern;
+          if (next.line.hasLine && custom != null && custom.isNotEmpty) {
+            values.add(custom.first);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const dashUnit = 1 / 96;
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 505,
+      );
+      expect(
+        firstDash(omitted).single,
+        closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+        reason: 'omitted fixDash is createState false; leftover kept '
+            'canvas-pixel gaps so Draw leftover MoveTo missed × LineWeight '
+            '(`tokens.txt` has no fixDash)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1" fixDash="1"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<dashed dashed="1"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstDash(laterHost),
+        [
+          closeTo(3 * canvasScale / dashUnit, 1e-6),
+          closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+        ],
+        reason: 'libvisio collectLine is shape-level; leftover must bake '
+            'the later omitted fixDash inherit stroke as a sibling so Draw '
+            'does not reuse the first canvas-pixel leftover inches',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1" fixDash="1"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="4">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        firstDash(includeHost),
+        [
+          closeTo(3 * canvasScale / dashUnit, 1e-6),
+          closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+          closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+        ],
+        reason: 'include-shape shares the canvas; nested omitted fixDash '
+            'stays relative for later host inherit stroke',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      var leftoverDashed = 0;
+      void leftoverWalk(VsdxShape next) {
+        if (next.line.hasLine) {
+          final moves = next.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          final custom = next.line.customDashPattern;
+          if ((custom != null && custom.isNotEmpty) || moves >= 2) {
+            leftoverDashed++;
+          }
+        }
+        for (final child in next.children) {
+          leftoverWalk(child);
+        }
+      }
+
+      leftoverWalk(leftover);
+      expect(
+        leftoverDashed,
+        greaterThan(1),
+        reason: 'a second save keeps both leftover-inch rails Draw paints',
       );
     },
   );

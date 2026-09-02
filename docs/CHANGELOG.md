@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D dashed omitted fixDash leftover
+  LineWeight dash for LibreOffice. Official `setDashed(value)` leaves
+  `state.fixDash` false; `mxSvgCanvas2D.createDashPattern` then
+  multiplies by strokeWidth. leftover `if (fixDash != null)` kept the
+  previous canvas-pixel gaps, so Draw leftover MoveTo reused the first
+  leftover inches (`tokens.txt` has no fixDash). leftover now snaps
+  omitted to relative, include-shape copies that overlay, and a later
+  omitted fixDash leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D fillalpha omitted leftover
   FillForegndTrans 1 for LibreOffice. Official `setAlpha(null)` /
   NestedStencil `attrNum` fallback is 0; mxSvgCanvas2D fill-opacity
