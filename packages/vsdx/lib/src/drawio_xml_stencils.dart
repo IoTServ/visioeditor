@@ -213,6 +213,9 @@ class _MxPaintState {
     required this.sketchAngle,
     required this.sketchWeight,
     required this.sketchJiggle,
+    required this.canvasDx,
+    required this.canvasDy,
+    required this.canvasUserScale,
   });
 
   final double fontSize;
@@ -255,6 +258,13 @@ class _MxPaintState {
   final double? sketchAngle;
   final double? sketchWeight;
   final double? sketchJiggle;
+  // mxAbstractCanvas2D.createState dx/dy/scale. leftover bakes
+  // addOp `(x + dx) * scale` into leftover inches because
+  // collectGeometry has no canvas transform (tokens.txt PinX /
+  // Width / Angle are shape-level).
+  final double canvasDx;
+  final double canvasDy;
+  final double canvasUserScale;
 }
 
 class _DrawioXmlShapeDecoder {
@@ -292,6 +302,13 @@ class _DrawioXmlShapeDecoder {
   // include-shape keeps this root scale: `<strokewidth fixed="1">`
   // is width×1 canvas pixel, not nested minScale.
   double _canvasScale = 1;
+  // mxAbstractCanvas2D.createState: dx/dy 0, scale 1.
+  // mxXmlCanvas2D `<translate>` / `<scale>` update these; leftover
+  // `_x`/`_y` bake `(source + dx) * scale` so Draw collectGeometry
+  // paints the transformed vertices (`tokens.txt` has no canvas).
+  double _canvasDx = 0;
+  double _canvasDy = 0;
+  double _canvasUserScale = 1;
 
   final List<VsdxGeometry> _geometries = <VsdxGeometry>[];
   final List<_DrawioStencilLabel> _labels = <_DrawioStencilLabel>[];
@@ -722,6 +739,22 @@ class _DrawioXmlShapeDecoder {
         _pending = null;
         _resetPen();
         break;
+      case 'translate':
+        // mxXmlCanvas2D.translate. leftover used to ignore the node,
+        // so later inherit fill extraInheritFill siblings sat on the
+        // same Pin (`tokens.txt` PinX; collectGeometry has no canvas).
+        _canvasDx += _number(node, 'dx');
+        _canvasDy += _number(node, 'dy');
+        if (_shadow != null) _rebuildEnabledShadow();
+        break;
+      case 'scale':
+        // mxXmlCanvas2D.scale. mxAbstractCanvas2D.scale multiplies
+        // state.scale (addOp / getStrokeWidth / createDashPattern).
+        // leftover used to ignore the node, so later inherit stroke
+        // collectLine kept the first leftover inches (`tokens.txt`
+        // LineWeight / PinX).
+        _applyMxCanvasScale(_number(node, 'scale', fallback: 1));
+        break;
       case 'dashed':
         // mxStencil.drawNode: setDashed(dashed == '1'). Omitted / "true"
         // stay solid like official (NestedStencil uses === '1').
@@ -1040,6 +1073,14 @@ class _DrawioXmlShapeDecoder {
       // Later `<strokewidth>` / nested setStrokeWidth leftover-bakes a
       // LineWeight sibling because collectLine is shape-level
       // (`tokens.txt` LineWeight).
+      // `translate` / `scale` follow mxXmlCanvas2D onto leftover
+      // inches (`addOp` `(x + dx) * scale`). JS capture bakes those
+      // into coordinates and never emits the nodes; official playback
+      // still has them. leftover used to ignore them, so Draw
+      // collectGeometry kept the untransformed Pin (`tokens.txt` PinX /
+      // Width). include-shape bakes the host transform into the overlay
+      // origin / minScale and resets nested dx/scale so nested
+      // `_x`/`_y` do not apply them twice.
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -1157,10 +1198,15 @@ class _DrawioXmlShapeDecoder {
     nested._initOverlayMetrics(
       originX: _x(x0),
       originY: _y(y0 + nestedH * sy),
-      overlayScaleX: sx * scaleX,
-      overlayScaleY: sy * scaleY,
-      canvasScale: _canvasScale,
+      overlayScaleX: sx * scaleX * _canvasUserScale,
+      overlayScaleY: sy * scaleY * _canvasUserScale,
+      canvasScale: _canvasScale * _canvasUserScale,
     );
+    // Host `_x`/`_y` already applied canvas dx/scale. Nested overlay
+    // minScale includes userScale so nested `_x`/`_y` stay identity.
+    nested._canvasDx = 0;
+    nested._canvasDy = 0;
+    nested._canvasUserScale = 1;
     // mxStencil.drawNode include-shape shares the canvas. Host
     // setDashPattern already multiplied by host minScale; nested
     // `_fixedDashPatternValues` would multiply again by nested
@@ -1239,34 +1285,51 @@ class _DrawioXmlShapeDecoder {
     final hostMin = math.min(scaleX.abs(), scaleY.abs());
     final nestedMin = math.min(nested.scaleX.abs(), nested.scaleY.abs());
     final hostDash = _dashPattern;
+    final hostDx = _canvasDx;
+    final hostDy = _canvasDy;
+    final hostUser = _canvasUserScale;
     _adoptPaint(nested);
+    // Nested overlay baked the host canvas into origin / minScale and
+    // reset nested dx/scale. Keep the host transform for later paint.
+    _canvasDx = hostDx;
+    _canvasDy = hostDy;
+    _canvasUserScale = hostUser;
     if (hostMin < 1e-12) return;
+    final hostUnit = hostMin * hostUser;
+    final nestedUnit = nestedMin * nested._canvasUserScale;
     // Nested drawShape always setStrokeWidth from the nested stencil.
-    if (nested._strokeWidth != null) {
-      _strokeWidth = nested._strokeWeightInches / hostMin;
+    if (nested._strokeWidth != null && hostUnit > 1e-12) {
+      _strokeWidth = nested._strokeWeightInches / hostUnit;
       _strokeWidthFixed = false;
     }
     // NestedStencil last setFontSize / setDashPattern stay on the
     // shared canvas. leftover `_fontSize` / `_dashPattern` are stencil
     // units of the nested overlay — map leftover inches back to host.
-    if (nestedMin > 1e-12) {
-      _fontSize = nested._fontSize * nestedMin / hostMin;
+    if (nestedUnit > 1e-12 && hostUnit > 1e-12) {
+      _fontSize = nested._fontSize * nestedUnit / hostUnit;
     }
     final dashes = nested._dashPattern;
     if (dashes != null && dashes.isEmpty) {
       _dashPattern = const <double>[];
-    } else if (dashes != null && dashes.isNotEmpty && nestedMin > 1e-12) {
+    } else if (dashes != null &&
+        dashes.isNotEmpty &&
+        nestedUnit > 1e-12 &&
+        hostUnit > 1e-12) {
       _dashPattern = [
-        for (final value in dashes) value * nestedMin / hostMin,
+        for (final value in dashes) value * nestedUnit / hostUnit,
       ];
     } else {
       _dashPattern = hostDash == null ? null : List<double>.of(hostDash);
     }
-    if (nested.scaleX.abs() > 1e-12 && scaleX.abs() > 1e-12) {
-      _shadowDx = nested._shadowDx * nested.scaleX / scaleX;
+    final hostXUnit = scaleX.abs() * hostUser;
+    final nestedXUnit = nested.scaleX.abs() * nested._canvasUserScale;
+    if (nestedXUnit > 1e-12 && hostXUnit > 1e-12) {
+      _shadowDx = nested._shadowDx * nestedXUnit / hostXUnit;
     }
-    if (nested.scaleY.abs() > 1e-12 && scaleY.abs() > 1e-12) {
-      _shadowDy = nested._shadowDy * nested.scaleY / scaleY;
+    final hostYUnit = scaleY.abs() * hostUser;
+    final nestedYUnit = nested.scaleY.abs() * nested._canvasUserScale;
+    if (nestedYUnit > 1e-12 && hostYUnit > 1e-12) {
+      _shadowDy = nested._shadowDy * nestedYUnit / hostYUnit;
     }
   }
 
@@ -1280,17 +1343,34 @@ class _DrawioXmlShapeDecoder {
   }) {
     final fromMin = math.min(from.scaleX.abs(), from.scaleY.abs());
     final toMin = math.min(scaleX.abs(), scaleY.abs());
-    final ratio = (fromMin < 1e-12 || toMin < 1e-12) ? 1.0 : fromMin / toMin;
+    final destUser = from._canvasUserScale.abs() < 1e-12
+        ? 1.0
+        : source.canvasUserScale / from._canvasUserScale;
+    final destDx = scaleX.abs() < 1e-12
+        ? source.canvasDx
+        : (source.canvasDx - from._canvasDx) * from.scaleX / scaleX;
+    final destDy = scaleY.abs() < 1e-12
+        ? source.canvasDy
+        : (source.canvasDy - from._canvasDy) * from.scaleY / scaleY;
+    final fromUnit = fromMin * source.canvasUserScale;
+    final toUnit = toMin * destUser;
+    final ratio =
+        (fromUnit < 1e-12 || toUnit < 1e-12) ? 1.0 : fromUnit / toUnit;
     double? strokeWidth;
     final srcWidth = source.strokeWidth;
     if (srcWidth != null) {
       final fromScale =
           source.strokeWidthFixed ? from._canvasScale.abs() : fromMin;
-      final inches =
-          fromScale < 1e-12 ? srcWidth : math.max(0.001, srcWidth * fromScale);
-      strokeWidth = toMin < 1e-12 ? inches : inches / toMin;
+      final inches = fromScale < 1e-12
+          ? srcWidth
+          : math.max(0.001, srcWidth * fromScale * source.canvasUserScale);
+      strokeWidth = toUnit < 1e-12 ? inches : inches / toUnit;
     }
     final dashes = source.dashPattern;
+    final fromXUnit = from.scaleX.abs() * source.canvasUserScale;
+    final toXUnit = scaleX.abs() * destUser;
+    final fromYUnit = from.scaleY.abs() * source.canvasUserScale;
+    final toYUnit = scaleY.abs() * destUser;
     return _MxPaintState(
       fontSize: source.fontSize * ratio,
       fontStyle: source.fontStyle,
@@ -1328,18 +1408,21 @@ class _DrawioXmlShapeDecoder {
       shadow: source.shadow,
       shadowColor: source.shadowColor,
       shadowAlpha: source.shadowAlpha,
-      shadowDx: from.scaleX.abs() < 1e-12 || scaleX.abs() < 1e-12
+      shadowDx: fromXUnit < 1e-12 || toXUnit < 1e-12
           ? source.shadowDx
-          : source.shadowDx * from.scaleX / scaleX,
-      shadowDy: from.scaleY.abs() < 1e-12 || scaleY.abs() < 1e-12
+          : source.shadowDx * fromXUnit / toXUnit,
+      shadowDy: fromYUnit < 1e-12 || toYUnit < 1e-12
           ? source.shadowDy
-          : source.shadowDy * from.scaleY / scaleY,
+          : source.shadowDy * fromYUnit / toYUnit,
       sketchEnabled: source.sketchEnabled,
       sketchFill: source.sketchFill,
       sketchGap: source.sketchGap,
       sketchAngle: source.sketchAngle,
       sketchWeight: source.sketchWeight,
       sketchJiggle: source.sketchJiggle,
+      canvasDx: destDx,
+      canvasDy: destDy,
+      canvasUserScale: destUser,
     );
   }
 
@@ -1356,8 +1439,11 @@ class _DrawioXmlShapeDecoder {
     final nestedMin = math.min(scaleX.abs(), scaleY.abs());
     if (nestedMin < 1e-12) return;
     final source = _dashPattern ?? _kMxDefaultDashPattern;
+    final hostUnit = hostMin * host._canvasUserScale;
+    final nestedUnit = nestedMin * _canvasUserScale;
+    if (nestedUnit < 1e-12) return;
     _dashPattern = [
-      for (final value in source) value * hostMin / nestedMin,
+      for (final value in source) value * hostUnit / nestedUnit,
     ];
   }
 
@@ -1368,18 +1454,25 @@ class _DrawioXmlShapeDecoder {
     final hostMin = math.min(host.scaleX.abs(), host.scaleY.abs());
     final nestedMin = math.min(scaleX.abs(), scaleY.abs());
     if (nestedMin < 1e-12) return;
-    _fontSize = _fontSize * hostMin / nestedMin;
+    final hostUnit = hostMin * host._canvasUserScale;
+    final nestedUnit = nestedMin * _canvasUserScale;
+    if (nestedUnit < 1e-12) return;
+    _fontSize = _fontSize * hostUnit / nestedUnit;
   }
 
   /// Host `setShadowOffset` leftover inches, expressed in this overlay's
   /// stencil units so `_shadowFromCanvas` does not apply nested scale
   /// a second time.
   void _scaleAdoptedCanvasShadowFrom(_DrawioXmlShapeDecoder host) {
-    if (scaleX.abs() > 1e-12 && host.scaleX.abs() > 1e-12) {
-      _shadowDx = _shadowDx * host.scaleX / scaleX;
+    final hostXUnit = host.scaleX.abs() * host._canvasUserScale;
+    final nestedXUnit = scaleX.abs() * _canvasUserScale;
+    if (nestedXUnit > 1e-12 && hostXUnit > 1e-12) {
+      _shadowDx = _shadowDx * hostXUnit / nestedXUnit;
     }
-    if (scaleY.abs() > 1e-12 && host.scaleY.abs() > 1e-12) {
-      _shadowDy = _shadowDy * host.scaleY / scaleY;
+    final hostYUnit = host.scaleY.abs() * host._canvasUserScale;
+    final nestedYUnit = scaleY.abs() * _canvasUserScale;
+    if (nestedYUnit > 1e-12 && hostYUnit > 1e-12) {
+      _shadowDy = _shadowDy * hostYUnit / nestedYUnit;
     }
   }
 
@@ -1426,6 +1519,9 @@ class _DrawioXmlShapeDecoder {
     _sketchAngle = other._sketchAngle;
     _sketchWeight = other._sketchWeight;
     _sketchJiggle = other._sketchJiggle;
+    _canvasDx = other._canvasDx;
+    _canvasDy = other._canvasDy;
+    _canvasUserScale = other._canvasUserScale;
   }
 
   /// Visio Image Properties are Y-up from the shape origin. mxStencil
@@ -1435,8 +1531,8 @@ class _DrawioXmlShapeDecoder {
     final boxW = raster.boxW;
     final boxH = raster.boxH;
     if (boxW != null && boxH != null) {
-      final width = boxW * scaleX.abs();
-      final height = boxH * scaleY.abs();
+      final width = boxW * scaleX.abs() * _canvasUserScale;
+      final height = boxH * scaleY.abs() * _canvasUserScale;
       if (width <= 1e-9 || height <= 1e-9) return null;
       return (
         offsetX: _x(raster.left ?? 0),
@@ -1460,12 +1556,12 @@ class _DrawioXmlShapeDecoder {
     ({double offsetX, double offsetY, double width, double height}) box,
     _DrawioRaster source,
   ) {
-    final left = scaleX.abs() < 1e-12 ? 0.0 : (box.offsetX - _originX) / scaleX;
-    final boxW = scaleX.abs() < 1e-12 ? box.width : box.width / scaleX.abs();
-    final boxH = scaleY.abs() < 1e-12 ? box.height : box.height / scaleY.abs();
-    final bottomSrc = scaleY.abs() < 1e-12
-        ? sourceHeight
-        : sourceHeight - (box.offsetY - _originY) / scaleY;
+    final left = _sourceXFromLeftover(box.offsetX);
+    final xUnit = scaleX.abs() * _canvasUserScale;
+    final yUnit = scaleY.abs() * _canvasUserScale;
+    final boxW = xUnit < 1e-12 ? box.width : box.width / xUnit;
+    final boxH = yUnit < 1e-12 ? box.height : box.height / yUnit;
+    final bottomSrc = _sourceYFromLeftover(box.offsetY);
     return _DrawioRaster(
       part: source.part,
       mime: source.mime,
@@ -1521,6 +1617,9 @@ class _DrawioXmlShapeDecoder {
         sketchAngle: _sketchAngle,
         sketchWeight: _sketchWeight,
         sketchJiggle: _sketchJiggle,
+        canvasDx: _canvasDx,
+        canvasDy: _canvasDy,
+        canvasUserScale: _canvasUserScale,
       );
 
   void _restorePaint(_MxPaintState saved) {
@@ -1566,6 +1665,9 @@ class _DrawioXmlShapeDecoder {
     _sketchAngle = saved.sketchAngle;
     _sketchWeight = saved.sketchWeight;
     _sketchJiggle = saved.sketchJiggle;
+    _canvasDx = saved.canvasDx;
+    _canvasDy = saved.canvasDy;
+    _canvasUserScale = saved.canvasUserScale;
   }
 
   void _resetPen() {
@@ -2111,9 +2213,15 @@ class _DrawioXmlShapeDecoder {
     _shadow = _shadowFromCanvas();
   }
 
+  void _applyMxCanvasScale(double value) {
+    if (!(value > 0) || !value.isFinite) return;
+    _canvasUserScale *= value;
+    if (_shadow != null) _rebuildEnabledShadow();
+  }
+
   VsdxShadow _shadowFromCanvas() {
-    var offsetX = _shadowDx * scaleX;
-    var offsetY = -_shadowDy * scaleY;
+    var offsetX = _shadowDx * scaleX * _canvasUserScale;
+    var offsetY = -_shadowDy * scaleY * _canvasUserScale;
     if (offsetX.abs() < 1e-9) offsetX = 0.02;
     if (offsetY.abs() < 1e-9) offsetY = -0.03;
     return VsdxShadow(
@@ -2137,8 +2245,10 @@ class _DrawioXmlShapeDecoder {
     // that root scale while scaleX/scaleY become the nested aspect, so
     // fixed strokes stay hairlines when the include box is larger than
     // nested w0×h0.
-    final scale =
-        _strokeWidthFixed ? _canvasScale : math.min(scaleX.abs(), scaleY.abs());
+    final scale = (_strokeWidthFixed
+            ? _canvasScale
+            : math.min(scaleX.abs(), scaleY.abs())) *
+        _canvasUserScale;
     return math.max(0.001, width * scale);
   }
 
@@ -2176,7 +2286,7 @@ class _DrawioXmlShapeDecoder {
     // weight-scaled dashes that look solid on a short rail.
     final source = raw ?? _dashPattern ?? _kMxDefaultDashPattern;
     if (source.isEmpty) return null;
-    final scale = math.min(scaleX.abs(), scaleY.abs());
+    final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale;
     final values = <double>[
       for (final value in source)
         if (value > 0) value * scale / drawioDashUnitInches,
@@ -3112,7 +3222,7 @@ class _DrawioXmlShapeDecoder {
     required int id,
     required _DrawioStencilLabel label,
   }) {
-    final scale = math.min(scaleX.abs(), scaleY.abs());
+    final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale;
     final fontInches = math.max(_kMxMinCharSizeInches, label.fontSize * scale);
     // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
     // keep a tight pin; cell values (Ammeter A, Bootstrap Alert) fill
@@ -3122,10 +3232,12 @@ class _DrawioXmlShapeDecoder {
     // the parent XForm collectXFormData maps to svg:x / svg:y.
     final hasBox = label.boxWidth > 0 && label.boxHeight > 0;
     final width = hasBox
-        ? math.max(label.boxWidth * scaleX.abs(), fontInches * 0.5)
+        ? math.max(
+            label.boxWidth * scaleX.abs() * _canvasUserScale, fontInches * 0.5)
         : math.max(fontInches * 1.2, label.text.length * fontInches * 0.62);
     final height = hasBox
-        ? math.max(label.boxHeight * scaleY.abs(), fontInches * 0.5)
+        ? math.max(
+            label.boxHeight * scaleY.abs() * _canvasUserScale, fontInches * 0.5)
         : fontInches * 1.4;
     late final double pinX;
     late final double pinY;
@@ -3268,8 +3380,25 @@ class _DrawioXmlShapeDecoder {
     );
   }
 
-  double _x(double source) => _originX + source * scaleX;
-  double _y(double source) => _originY + (sourceHeight - source) * scaleY;
+  double _x(double source) =>
+      _originX + (source + _canvasDx) * _canvasUserScale * scaleX;
+  double _y(double source) =>
+      _originY +
+      (sourceHeight - (source + _canvasDy) * _canvasUserScale) * scaleY;
+
+  double _sourceXFromLeftover(double leftoverX) {
+    final denom = scaleX * _canvasUserScale;
+    if (denom.abs() < 1e-12) return 0;
+    return (leftoverX - _originX) / denom - _canvasDx;
+  }
+
+  double _sourceYFromLeftover(double leftoverY) {
+    if (scaleY.abs() < 1e-12 || _canvasUserScale.abs() < 1e-12) {
+      return sourceHeight;
+    }
+    return (sourceHeight - (leftoverY - _originY) / scaleY) / _canvasUserScale -
+        _canvasDy;
+  }
 
   /// Map a nested-stencil-space label into [parent] stencil units so
   /// host `_labelShape` `_x`/`_y` / minScale match NestedStencil
@@ -3280,20 +3409,21 @@ class _DrawioXmlShapeDecoder {
   }) {
     final leftoverX = _x(label.x);
     final leftoverY = _y(label.y);
+    final parentX = parent._sourceXFromLeftover(leftoverX);
+    final parentY = parent._sourceYFromLeftover(leftoverY);
     final parentScaleX = parent.scaleX;
     final parentScaleY = parent.scaleY;
-    final parentX = parentScaleX.abs() < 1e-12
-        ? 0.0
-        : (leftoverX - parent._originX) / parentScaleX;
-    final parentY = parentScaleY.abs() < 1e-12
-        ? 0.0
-        : parent.sourceHeight - (leftoverY - parent._originY) / parentScaleY;
-    final scaleXRatio =
-        parentScaleX.abs() < 1e-12 ? 1.0 : scaleX.abs() / parentScaleX.abs();
-    final scaleYRatio =
-        parentScaleY.abs() < 1e-12 ? 1.0 : scaleY.abs() / parentScaleY.abs();
-    final nestedMin = math.min(scaleX.abs(), scaleY.abs());
-    final parentMin = math.min(parentScaleX.abs(), parentScaleY.abs());
+    final scaleXRatio = parentScaleX.abs() < 1e-12
+        ? 1.0
+        : (scaleX.abs() * _canvasUserScale) /
+            (parentScaleX.abs() * parent._canvasUserScale);
+    final scaleYRatio = parentScaleY.abs() < 1e-12
+        ? 1.0
+        : (scaleY.abs() * _canvasUserScale) /
+            (parentScaleY.abs() * parent._canvasUserScale);
+    final nestedMin = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale;
+    final parentMin = math.min(parentScaleX.abs(), parentScaleY.abs()) *
+        parent._canvasUserScale;
     final fontRatio = parentMin < 1e-12 ? 1.0 : nestedMin / parentMin;
     return _DrawioStencilLabel(
       text: label.text,

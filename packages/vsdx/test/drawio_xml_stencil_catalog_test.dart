@@ -15407,6 +15407,277 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D translate leftover bakes PinX for LibreOffice',
+    () {
+      double minMoveX(VsdxShape shape) {
+        var min = double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is MoveTo) min = math.min(min, command.x);
+          }
+        }
+        return min;
+      }
+
+      double minMoveXDeep(VsdxShape shape) {
+        var min = minMoveX(shape);
+        for (final child in shape.children) {
+          min = math.min(min, minMoveXDeep(child));
+        }
+        return min;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="T" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<translate dx="30" dy="0"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 483,
+      );
+      expect(
+        minMoveXDeep(host),
+        closeTo(30 * canvasScale, 0.02),
+        reason: 'mxXmlCanvas2D.translate is addOp (x+dx)*scale; leftover '
+            'must bake leftover inches so Draw collectGeometry does not '
+            'keep the unshifted Pin (`tokens.txt` PinX)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '<translate dx="30" dy="0"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(laterHost),
+        closeTo(0, 0.02),
+        reason: 'first inherit fill keeps collectGeometry at the origin',
+      );
+      expect(
+        laterHost.children.any(
+          (child) => minMoveXDeep(child).abs() > 20 * canvasScale,
+        ),
+        isTrue,
+        reason: 'later translate leftover-bakes an extraInheritFill sibling '
+            'so Draw does not evenodd two overlapping rails',
+      );
+
+      final saved = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<translate dx="30" dy="0"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '<restore/>'
+        '<rect x="0" y="20" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(saved) > 20 * canvasScale &&
+            saved.children.any((child) => minMoveX(child) < 10 * canvasScale),
+        isTrue,
+        reason: 'save snapshots canvas dx so restore leftover stays unshifted',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '<translate dx="30" dy="0"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.children.any(
+          (child) => minMoveXDeep(child) > 35 * canvasScale,
+        ),
+        isTrue,
+        reason: 'include-shape shares the canvas; host translate stays for '
+            'nested leftover inches (10+30)*catalog scale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        minMoveX(leftover),
+        closeTo(0, 0.02),
+        reason: 'a second save keeps the first inherit Pin Draw paints',
+      );
+      expect(
+        leftover.children.any(
+          (child) => minMoveXDeep(child).abs() > 20 * canvasScale,
+        ),
+        isTrue,
+        reason: 'a second save keeps the later translated Pin Draw paints',
+      );
+    },
+  );
+
+  test(
+    'mxStencil mxXmlCanvas2D scale leftover bakes LineWeight for LibreOffice',
+    () {
+      double maxMoveX(VsdxShape shape) {
+        var max = 0.0;
+        for (final geometry in descendantGeometries(shape)) {
+          for (final command in geometry.commands) {
+            if (command is MoveTo) {
+              max = math.max(max, command.x);
+            } else if (command is LineTo) {
+              max = math.max(max, command.x);
+            }
+          }
+        }
+        return max;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<scale scale="2"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 484,
+      );
+      expect(
+        maxMoveX(host),
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'mxXmlCanvas2D.scale is addOp x*state.scale; leftover must '
+            'bake leftover inches so Draw collectGeometry does not keep '
+            'the unscaled Width (`tokens.txt` Width)',
+      );
+      expect(
+        host.line.weightInches,
+        closeTo(2 * canvasScale, 0.002),
+        reason: 'mxSvgCanvas2D.getStrokeWidth is strokeWidth*state.scale; '
+            'leftover LineWeight follows (`tokens.txt` LineWeight)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<scale scale="2"/>'
+        '<rect x="0" y="20" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.line.weightInches,
+        closeTo(canvasScale, 0.002),
+        reason: 'first inherit stroke keeps collectLine LineWeight',
+      );
+      expect(
+        laterHost.children.any(
+          (child) => (child.line.weightInches - 2 * canvasScale).abs() < 0.002,
+        ),
+        isTrue,
+        reason: 'later scale leftover-bakes a LineWeight sibling so Draw '
+            'does not hairline the scaled rail (`tokens.txt` LineWeight)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<scale scale="2"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.line.weightInches,
+        closeTo(canvasScale, 0.002),
+        reason: 'the first host inherit stroke keeps the unscaled LineWeight',
+      );
+      expect(
+        includeHost.children.any(
+          (child) => child.line.weightInches > 1.5 * canvasScale,
+        ),
+        isTrue,
+        reason: 'include-shape shares the canvas; nested stroke leftover '
+            'inches follow host scale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.line.weightInches,
+        closeTo(canvasScale, 0.002),
+        reason: 'a second save keeps the first inherit LineWeight Draw paints',
+      );
+      expect(
+        leftover.children.any(
+          (child) => (child.line.weightInches - 2 * canvasScale).abs() < 0.002,
+        ),
+        isTrue,
+        reason: 'a second save keeps the later LineWeight Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

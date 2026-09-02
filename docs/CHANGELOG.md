@@ -582,6 +582,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D translate / scale leftover inches for
+  LibreOffice. Official `mxXmlCanvas2D.translate` / `scale` are
+  `addOp` `(x + dx) * state.scale` (and `getStrokeWidth` /
+  `createDashPattern` / `canvas.image` width also `* state.scale`);
+  JS capture bakes those into coordinates and never emits the nodes.
+  leftover ignored them, so later inherit fill extraInheritFill
+  siblings sat on the same Pin and later inherit stroke kept the first
+  LineWeight (`tokens.txt` PinX / Width / LineWeight; collectGeometry
+  has no canvas). leftover now bakes leftover inches, include-shape
+  folds the host transform into the overlay origin / minScale, and a
+  later scale leftover-bakes a LineWeight sibling. A second save keeps
+  both rails.
 - draw.io leftover mxXmlCanvas2D gradient FillPattern sibling for
   LibreOffice. Official `setGradient` emits `<gradient c1= c2=>`;
   leftover only consumed NestedStencil `<fillgradient color1=>`, so
