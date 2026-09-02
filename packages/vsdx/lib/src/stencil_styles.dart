@@ -679,7 +679,11 @@ VsdxShape applyStencilStyle(
       !shape.line.hasLine &&
       shape.children.isEmpty &&
       !_userFlag(shape, VsdxShape.userMxFontFromStroke) &&
-      !_userFlag(shape, VsdxShape.userMxFontFromFill)) {
+      !_userFlag(shape, VsdxShape.userMxFontFromFill) &&
+      !_userFlag(shape, VsdxShape.userMxFontBgFromStroke) &&
+      !_userFlag(shape, VsdxShape.userMxFontBgFromFill) &&
+      !_userFlag(shape, VsdxShape.userMxFontBorderFromStroke) &&
+      !_userFlag(shape, VsdxShape.userMxFontBorderFromFill)) {
     return shape;
   }
 
@@ -758,11 +762,40 @@ VsdxShape applyStencilStyle(
       );
     }
   }
+  var block = (richText ?? shape.richText).textBlock;
+  if (block.backgroundColor == null) {
+    final bgPin = _userFlag(shape, VsdxShape.userMxFontBgFromStroke)
+        ? lineColor
+        : _userFlag(shape, VsdxShape.userMxFontBgFromFill)
+            ? fillColor
+            : null;
+    if (bgPin != null) {
+      // mxStencil.getColorValue('strokeColor') is STYLE_STROKECOLOR.
+      // leftover inherit fontbackgroundcolor=stroke must take the
+      // palette LineColor (`tokens.txt` TextBkgnd → fo:background-color).
+      richText = (richText ?? shape.richText).copyWith(
+        textBlock: block.copyWith(backgroundColor: bgPin),
+      );
+    }
+  }
+  VsdxColor? borderPin;
+  if (shape.labelBorderColor == null) {
+    borderPin = _userFlag(shape, VsdxShape.userMxFontBorderFromStroke)
+        ? lineColor
+        : _userFlag(shape, VsdxShape.userMxFontBorderFromFill)
+            ? fillColor
+            : null;
+  }
   var next = shape;
   if (!identical(fill, shape.fill) ||
       !identical(line, shape.line) ||
       richText != null) {
     next = shape.copyWith(fill: fill, line: line, richText: richText);
+  }
+  if (borderPin != null) {
+    // leftover write bakes a NoFill sibling from User.veLabelBorderColor
+    // (`tokens.txt` has no label border).
+    next = next.withLabelBorderColor(borderPin);
   }
   if (next.children.isEmpty) return next;
   final children = <VsdxShape>[

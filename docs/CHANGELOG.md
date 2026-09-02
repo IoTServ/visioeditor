@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fontbackgroundcolor=strokeColor TextBkgnd
+  for LibreOffice. Official `mxStencil.getColorValue('strokeColor')` is
+  `STYLE_STROKECOLOR`; include-shape nested `setFontBackgroundColor`
+  stays on the shared canvas for later host glyphs. leftover left
+  inherit fontbackgroundcolor=strokeColor as null TextBkgnd, so Draw
+  `collectTextBlock` skipped `fo:background-color` (`tokens.txt`
+  TextBkgnd). leftover now marks `User.veMxFontBgFromStroke` /
+  `veMxFontBgFromFill` (and `veMxFontBorderFromStroke` /
+  `veMxFontBorderFromFill` for `fontbordercolor`) so
+  `applyStencilStyle` pins palette LineColor / FillForegnd. A second
+  save keeps both.
 - draw.io leftover mxStencil fontcolor=strokeColor Char Color for
   LibreOffice. Official `mxStencil.getColorValue('strokeColor')` is
   `STYLE_STROKECOLOR` (iOS 7 Calendar2); include-shape nested

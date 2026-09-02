@@ -14820,6 +14820,236 @@ void main() {
   );
 
   test(
+    'mxStencil fontbackgroundcolor strokeColor leftover bakes TextBkgnd for LibreOffice',
+    () {
+      const fillBlue = VsdxColor(0xFFDAE8FC);
+      const strokeBlue = VsdxColor(0xFF6C8EBF);
+      const palette = StencilColors('#DAE8FC', '#6C8EBF');
+
+      bool bgFromStroke(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxFontBgFromStroke &&
+                cell.value == '1',
+          );
+
+      bool bgFromFill(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxFontBgFromFill &&
+                cell.value == '1',
+          );
+
+      bool borderFromStroke(VsdxShape shape) => shape.userCells.any(
+            (cell) =>
+                cell.name == VsdxShape.userMxFontBorderFromStroke &&
+                cell.value == '1',
+          );
+
+      VsdxShape? glyph(VsdxShape shape, String text) {
+        if (shape.text == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyph(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxColor? bgOf(VsdxShape shape, String text) =>
+          glyph(shape, text)?.richText.textBlock.backgroundColor;
+
+      VsdxShape? plateOf(VsdxShape root, int sourceId) {
+        final name = '$kLibvisioLabelBorderShapeNamePrefix$sourceId';
+        VsdxShape? found;
+        void walk(VsdxShape next) {
+          if (found != null) return;
+          if (next.name == name) {
+            found = next;
+            return;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      final host = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="T" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="10" y="10" str="A"/>'
+          '<fontbackgroundcolor color="strokeColor"/>'
+          '<text x="10" y="40" str="B"/>'
+          '</foreground>'
+          '</shape>',
+          id: 479,
+        ),
+        colors: palette,
+      );
+      expect(bgFromStroke(glyph(host, 'A')!), isFalse);
+      expect(
+        bgFromStroke(glyph(host, 'B')!),
+        isTrue,
+        reason: 'libvisio collectTextBlock is shape-level; leftover inherit '
+            'fontbackgroundcolor=strokeColor must mark the later glyph so '
+            'Draw does not skip fo:background-color on both',
+      );
+      expect(bgOf(host, 'A'), isNull);
+      expect(
+        bgOf(host, 'B'),
+        strokeBlue,
+        reason: 'mxStencil.getColorValue(strokeColor) is STYLE_STROKECOLOR; '
+            'applyStencilStyle pins leftover inherit TextBkgnd to palette '
+            'LineColor (tokens.txt TextBkgnd → fo:background-color)',
+      );
+
+      final fillHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="F" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="10" y="10" str="A"/>'
+          '<fontbackgroundcolor color="fillColor"/>'
+          '<text x="10" y="40" str="B"/>'
+          '</foreground>'
+          '</shape>',
+        ),
+        colors: palette,
+      );
+      expect(bgFromFill(glyph(fillHost, 'B')!), isTrue);
+      expect(bgOf(fillHost, 'B'), fillBlue);
+
+      final strokeHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="S" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="10" y="10" str="A"/>'
+          '<fontbackgroundcolor color="stroke"/>'
+          '<text x="10" y="40" str="B"/>'
+          '</foreground>'
+          '</shape>',
+        ),
+        colors: palette,
+      );
+      expect(bgFromStroke(glyph(strokeHost, 'B')!), isTrue);
+      expect(bgOf(strokeHost, 'B'), strokeBlue);
+
+      final includeHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shapes name="mxgraph.test">'
+          '<shape name="host" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="50" y="10" str="H1"/>'
+          '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+          '<text x="50" y="90" str="H2"/>'
+          '</foreground>'
+          '</shape>'
+          '<shape name="tile" w="10" h="10" strokewidth="1">'
+          '<foreground>'
+          '<fontbackgroundcolor color="strokeColor"/>'
+          '<text x="5" y="5" str="N"/>'
+          '</foreground>'
+          '</shape>'
+          '</shapes>',
+        ),
+        colors: palette,
+      );
+      expect(bgOf(includeHost, 'H1'), isNull);
+      expect(
+        bgOf(includeHost, 'N'),
+        strokeBlue,
+        reason: 'include-shape nested setFontBackgroundColor(strokeColor) '
+            'leftover-bakes TextBkgnd from palette stroke',
+      );
+      expect(
+        bgOf(includeHost, 'H2'),
+        strokeBlue,
+        reason: 'include-shape shares the canvas; nested '
+            'setFontBackgroundColor stays for later host text',
+      );
+
+      final borderHost = applyStencilStyle(
+        decodeDrawioMxStencilXml(
+          '<shape name="Br" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text x="10" y="10" str="A" align="center" valign="middle"/>'
+          '<fontbordercolor color="strokeColor"/>'
+          '<text x="10" y="40" str="B" align="center" valign="middle"/>'
+          '</foreground>'
+          '</shape>',
+        ),
+        colors: palette,
+      );
+      expect(borderFromStroke(glyph(borderHost, 'A')!), isFalse);
+      expect(borderFromStroke(glyph(borderHost, 'B')!), isTrue);
+      expect(glyph(borderHost, 'A')!.labelBorderColor, isNull);
+      expect(
+        glyph(borderHost, 'B')!.labelBorderColor,
+        strokeBlue,
+        reason: 'mxStencil.getColorValue(strokeColor) is STYLE_STROKECOLOR; '
+            'applyStencilStyle pins leftover inherit label border to '
+            'palette LineColor',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        bgOf(leftover, 'A'),
+        isNull,
+        reason: 'a second save keeps the first inherit transparent TextBkgnd',
+      );
+      expect(
+        bgOf(leftover, 'B'),
+        strokeBlue,
+        reason: 'a second save keeps the later stroke TextBkgnd Draw paints',
+      );
+
+      var borderDoc = parser.parse(writer.emptyDocument());
+      final borderId = borderDoc.pages.first.nextFreeShapeId();
+      borderDoc = borderDoc.replacePage(
+        0,
+        borderDoc.pages.first.addShape(borderHost.copyWith(id: borderId)),
+      );
+      final leftoverBorderPage = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: borderDoc,
+            ),
+          )
+          .pages
+          .first;
+      final leftoverBorder = leftoverBorderPage.findShapeById(borderId)!;
+      final leftoverGlyphB = glyph(leftoverBorder, 'B')!;
+      expect(
+        leftoverGlyphB.labelBorderColor,
+        isNull,
+        reason: 'leftover drops the User row after baking the plate',
+      );
+      final plate = plateOf(leftoverBorder, leftoverGlyphB.id);
+      expect(
+        plate,
+        isNotNull,
+        reason: 'Draw collectLine needs the NoFill sibling',
+      );
+      expect(plate!.line.color, strokeBlue);
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

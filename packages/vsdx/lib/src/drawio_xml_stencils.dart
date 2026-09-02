@@ -182,6 +182,10 @@ class _MxPaintState {
     required this.strokeFollowsFill,
     required this.fontFollowsStroke,
     required this.fontFollowsFill,
+    required this.fontBgFollowsStroke,
+    required this.fontBgFollowsFill,
+    required this.fontBorderFollowsStroke,
+    required this.fontBorderFollowsFill,
     required this.overallAlpha,
     required this.fillAlpha,
     required this.strokeAlpha,
@@ -216,6 +220,10 @@ class _MxPaintState {
   final bool strokeFollowsFill;
   final bool fontFollowsStroke;
   final bool fontFollowsFill;
+  final bool fontBgFollowsStroke;
+  final bool fontBgFollowsFill;
+  final bool fontBorderFollowsStroke;
+  final bool fontBorderFollowsFill;
   final double overallAlpha;
   final double fillAlpha;
   final double strokeAlpha;
@@ -294,6 +302,10 @@ class _DrawioXmlShapeDecoder {
   bool _strokeFollowsFill = false;
   bool _fontFollowsStroke = false;
   bool _fontFollowsFill = false;
+  bool _fontBgFollowsStroke = false;
+  bool _fontBgFollowsFill = false;
+  bool _fontBorderFollowsStroke = false;
+  bool _fontBorderFollowsFill = false;
   bool _capturedParentFill = false;
   bool _parentFillFollowsStroke = false;
   bool _parentStrokeFollowsFill = false;
@@ -860,6 +872,10 @@ class _DrawioXmlShapeDecoder {
             textOpacity: runs.first.textOpacity,
             fontFromStroke: _fontFollowsStroke,
             fontFromFill: _fontFollowsFill,
+            fontBgFromStroke: _fontBgFollowsStroke,
+            fontBgFromFill: _fontBgFollowsFill,
+            fontBorderFromStroke: _fontBorderFollowsStroke,
+            fontBorderFromFill: _fontBorderFollowsFill,
             runs: runs,
           ));
         }
@@ -1226,6 +1242,10 @@ class _DrawioXmlShapeDecoder {
       strokeFollowsFill: source.strokeFollowsFill,
       fontFollowsStroke: source.fontFollowsStroke,
       fontFollowsFill: source.fontFollowsFill,
+      fontBgFollowsStroke: source.fontBgFollowsStroke,
+      fontBgFollowsFill: source.fontBgFollowsFill,
+      fontBorderFollowsStroke: source.fontBorderFollowsStroke,
+      fontBorderFollowsFill: source.fontBorderFollowsFill,
       overallAlpha: source.overallAlpha,
       fillAlpha: source.fillAlpha,
       strokeAlpha: source.strokeAlpha,
@@ -1294,6 +1314,10 @@ class _DrawioXmlShapeDecoder {
     _strokeFollowsFill = other._strokeFollowsFill;
     _fontFollowsStroke = other._fontFollowsStroke;
     _fontFollowsFill = other._fontFollowsFill;
+    _fontBgFollowsStroke = other._fontBgFollowsStroke;
+    _fontBgFollowsFill = other._fontBgFollowsFill;
+    _fontBorderFollowsStroke = other._fontBorderFollowsStroke;
+    _fontBorderFollowsFill = other._fontBorderFollowsFill;
     _overallAlpha = other._overallAlpha;
     _fillAlpha = other._fillAlpha;
     _strokeAlpha = other._strokeAlpha;
@@ -1381,6 +1405,10 @@ class _DrawioXmlShapeDecoder {
         strokeFollowsFill: _strokeFollowsFill,
         fontFollowsStroke: _fontFollowsStroke,
         fontFollowsFill: _fontFollowsFill,
+        fontBgFollowsStroke: _fontBgFollowsStroke,
+        fontBgFollowsFill: _fontBgFollowsFill,
+        fontBorderFollowsStroke: _fontBorderFollowsStroke,
+        fontBorderFollowsFill: _fontBorderFollowsFill,
         overallAlpha: _overallAlpha,
         fillAlpha: _fillAlpha,
         strokeAlpha: _strokeAlpha,
@@ -1418,6 +1446,10 @@ class _DrawioXmlShapeDecoder {
     _strokeFollowsFill = saved.strokeFollowsFill;
     _fontFollowsStroke = saved.fontFollowsStroke;
     _fontFollowsFill = saved.fontFollowsFill;
+    _fontBgFollowsStroke = saved.fontBgFollowsStroke;
+    _fontBgFollowsFill = saved.fontBgFollowsFill;
+    _fontBorderFollowsStroke = saved.fontBorderFollowsStroke;
+    _fontBorderFollowsFill = saved.fontBorderFollowsFill;
     _overallAlpha = saved.overallAlpha;
     _fillAlpha = saved.fillAlpha;
     _strokeAlpha = saved.strokeAlpha;
@@ -1726,8 +1758,28 @@ class _DrawioXmlShapeDecoder {
   void _applyMxFontBackground(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
+    _fontBgFollowsStroke = false;
+    _fontBgFollowsFill = false;
     if (token.isEmpty || lower == 'default' || lower == 'none') {
       _fontBackground = null;
+      return;
+    }
+    if (lower == 'font') {
+      // mxStencil.parseColor('font') is STYLE_FONTCOLOR, default black.
+      _fontBackground = _kMxDefaultFontColor;
+      return;
+    }
+    if (lower == 'fill' || token == 'fillColor') {
+      _fontBackground = _fillColor;
+      _fontBgFollowsFill = _fillColor == null && !_fillIsNone;
+      return;
+    }
+    if (lower == 'stroke' || token == 'strokeColor') {
+      // parseColor('stroke') / getColorValue('strokeColor') is
+      // shape.stroke / STYLE_STROKECOLOR. leftover inherit TextBkgnd
+      // must follow palette LineColor (tokens.txt TextBkgnd).
+      _fontBackground = _strokeColor;
+      _fontBgFollowsStroke = _strokeColor == null && !_strokeIsNone;
       return;
     }
     final parsed = _mxGraphPaintColor(token);
@@ -1745,8 +1797,28 @@ class _DrawioXmlShapeDecoder {
   void _applyMxFontBorder(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
+    _fontBorderFollowsStroke = false;
+    _fontBorderFollowsFill = false;
     if (token.isEmpty || lower == 'default' || lower == 'none') {
       _fontBorder = null;
+      return;
+    }
+    if (lower == 'font') {
+      _fontBorder = _kMxDefaultFontColor;
+      return;
+    }
+    if (lower == 'fill' || token == 'fillColor') {
+      _fontBorder = _fillColor;
+      _fontBorderFollowsFill = _fillColor == null && !_fillIsNone;
+      return;
+    }
+    if (lower == 'stroke' || token == 'strokeColor') {
+      // parseColor('stroke') / getColorValue('strokeColor') is
+      // shape.stroke / STYLE_STROKECOLOR. leftover inherit label
+      // border must follow palette LineColor (tokens.txt has no
+      // label border; leftover write bakes a NoFill sibling).
+      _fontBorder = _strokeColor;
+      _fontBorderFollowsStroke = _strokeColor == null && !_strokeIsNone;
       return;
     }
     final parsed = _mxGraphPaintColor(token);
@@ -2801,11 +2873,19 @@ class _DrawioXmlShapeDecoder {
     required bool strokeFromFill,
     bool fontFromStroke = false,
     bool fontFromFill = false,
+    bool fontBgFromStroke = false,
+    bool fontBgFromFill = false,
+    bool fontBorderFromStroke = false,
+    bool fontBorderFromFill = false,
   }) {
     if (!fillFromStroke &&
         !strokeFromFill &&
         !fontFromStroke &&
-        !fontFromFill) {
+        !fontFromFill &&
+        !fontBgFromStroke &&
+        !fontBgFromFill &&
+        !fontBorderFromStroke &&
+        !fontBorderFromFill) {
       return shape;
     }
     return shape.copyWith(
@@ -2819,6 +2899,23 @@ class _DrawioXmlShapeDecoder {
           const VsdxUserCell(name: VsdxShape.userMxFontFromStroke, value: '1'),
         if (fontFromFill)
           const VsdxUserCell(name: VsdxShape.userMxFontFromFill, value: '1'),
+        if (fontBgFromStroke)
+          const VsdxUserCell(
+            name: VsdxShape.userMxFontBgFromStroke,
+            value: '1',
+          ),
+        if (fontBgFromFill)
+          const VsdxUserCell(name: VsdxShape.userMxFontBgFromFill, value: '1'),
+        if (fontBorderFromStroke)
+          const VsdxUserCell(
+            name: VsdxShape.userMxFontBorderFromStroke,
+            value: '1',
+          ),
+        if (fontBorderFromFill)
+          const VsdxUserCell(
+            name: VsdxShape.userMxFontBorderFromFill,
+            value: '1',
+          ),
       ],
     );
   }
@@ -3021,6 +3118,10 @@ class _DrawioXmlShapeDecoder {
       strokeFromFill: false,
       fontFromStroke: label.fontFromStroke && label.color == null,
       fontFromFill: label.fontFromFill && label.color == null,
+      fontBgFromStroke: label.fontBgFromStroke && label.background == null,
+      fontBgFromFill: label.fontBgFromFill && label.background == null,
+      fontBorderFromStroke: label.fontBorderFromStroke && label.border == null,
+      fontBorderFromFill: label.fontBorderFromFill && label.border == null,
     );
   }
 
@@ -3076,6 +3177,10 @@ class _DrawioXmlShapeDecoder {
       textOpacity: label.textOpacity,
       fontFromStroke: label.fontFromStroke,
       fontFromFill: label.fontFromFill,
+      fontBgFromStroke: label.fontBgFromStroke,
+      fontBgFromFill: label.fontBgFromFill,
+      fontBorderFromStroke: label.fontBorderFromStroke,
+      fontBorderFromFill: label.fontBorderFromFill,
       runs: [
         for (final run in label.runs)
           _DrawioStencilLabelRun(
@@ -3177,6 +3282,10 @@ class _DrawioStencilLabel {
     this.textOpacity = 100,
     this.fontFromStroke = false,
     this.fontFromFill = false,
+    this.fontBgFromStroke = false,
+    this.fontBgFromFill = false,
+    this.fontBorderFromStroke = false,
+    this.fontBorderFromFill = false,
     required this.runs,
   });
 
@@ -3204,6 +3313,10 @@ class _DrawioStencilLabel {
   final double textOpacity;
   final bool fontFromStroke;
   final bool fontFromFill;
+  final bool fontBgFromStroke;
+  final bool fontBgFromFill;
+  final bool fontBorderFromStroke;
+  final bool fontBorderFromFill;
   final List<_DrawioStencilLabelRun> runs;
 }
 

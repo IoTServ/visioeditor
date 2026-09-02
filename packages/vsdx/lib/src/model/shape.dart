@@ -1048,6 +1048,31 @@ class VsdxShape {
   /// fill so Draw collectCharIX does not reuse fo:color (`tokens.txt`).
   static const String userMxFontFromFill = 'veMxFontFromFill';
 
+  /// mxStencil `fontbackgroundcolor color="stroke"` / `strokeColor` while
+  /// LineColor is still inherit. `applyStencilStyle` paints TextBkgnd from
+  /// the palette stroke so Draw collectTextBlock does not skip
+  /// fo:background-color (`tokens.txt` TextBkgnd).
+  static const String userMxFontBgFromStroke = 'veMxFontBgFromStroke';
+
+  /// mxStencil `fontbackgroundcolor color="fill"` / `fillColor` while
+  /// FillForegnd is still inherit. `applyStencilStyle` paints TextBkgnd
+  /// from the palette fill so Draw collectTextBlock does not skip
+  /// fo:background-color (`tokens.txt` TextBkgnd).
+  static const String userMxFontBgFromFill = 'veMxFontBgFromFill';
+
+  /// mxStencil `fontbordercolor color="stroke"` / `strokeColor` while
+  /// LineColor is still inherit. `applyStencilStyle` paints
+  /// User.veLabelBorderColor from the palette stroke so leftover write
+  /// can bake the NoFill sibling Draw collectLine strokes (`tokens.txt`
+  /// has no label border).
+  static const String userMxFontBorderFromStroke = 'veMxFontBorderFromStroke';
+
+  /// mxStencil `fontbordercolor color="fill"` / `fillColor` while
+  /// FillForegnd is still inherit. `applyStencilStyle` paints
+  /// User.veLabelBorderColor from the palette fill so leftover write
+  /// can bake the NoFill sibling Draw collectLine strokes.
+  static const String userMxFontBorderFromFill = 'veMxFontBorderFromFill';
+
   /// Media part [userLibvisioSourceImage] names, or `null` when absent.
   String? get libvisioSourceImagePart {
     for (final c in userCells) {
