@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D gradient FillPattern sibling for
+  LibreOffice. Official `setGradient` emits `<gradient c1= c2=>`;
+  leftover only consumed NestedStencil `<fillgradient color1=>`, so
+  Draw `collectFill` reused solid FillForegnd (`tokens.txt` FillPattern
+  25–34 → `draw:fill=gradient`). leftover now maps `c1`/`c2` onto the
+  fillgradient bake. A later inherit fill leftover-bakes a sibling.
+  `<begin/>` discards the unpainted path like `mxSvgCanvas2D.begin` so
+  `collectGeometry` does not evenodd the dropped contour. A second
+  save keeps both.
 - draw.io leftover mxStencil shadowcolor ShdwForegnd sibling for
   LibreOffice. Official `mxXmlCanvas2D.setShadowColor` /
   `setShadowAlpha` / `setShadowOffset` stay on the shared canvas;

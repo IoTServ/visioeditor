@@ -713,6 +713,15 @@ class _DrawioXmlShapeDecoder {
         // JS capture already did; the Dart decoder used to drop them.
         _appendImplicitPathNode(node);
         break;
+      case 'begin':
+        // mxXmlCanvas2D.begin / mxSvgCanvas2D.begin discards the
+        // unpainted path (AWS EMR leftover after fill). leftover used
+        // to concatenate onto the next fill/stroke, so Draw
+        // collectGeometry evenodd-punched or stroked the dropped
+        // contour (`tokens.txt` Line / FillForegnd).
+        _pending = null;
+        _resetPen();
+        break;
       case 'dashed':
         // mxStencil.drawNode: setDashed(dashed == '1'). Omitted / "true"
         // stay solid like official (NestedStencil uses === '1').
@@ -814,6 +823,11 @@ class _DrawioXmlShapeDecoder {
         );
         break;
       case 'fillgradient':
+      case 'gradient':
+        // mxXmlCanvas2D.setGradient is `<gradient c1= c2=>`. NestedStencil
+        // capture writes `<fillgradient color1=>`. Both leftover-bake
+        // FillPattern 25–40 so Draw `_fillAndShadowProperties` keeps the
+        // ramp (`tokens.txt` FillPattern → draw:fill=gradient).
         _applyMxFillGradient(node);
         break;
       case 'alpha':
@@ -940,8 +954,9 @@ class _DrawioXmlShapeDecoder {
         break;
       // Hex fillcolor / strokecolor / fontcolor are consumed above so
       // Draw can paint them as sibling shapes (one FillForegnd each).
-      // `fillgradient` bakes FillPattern 25–34 so libvisio's two-stop
-      // linear (`_fillAndShadowProperties`) keeps AWS brand ramps;
+      // `fillgradient` / mxXmlCanvas2D `<gradient c1= c2=>` bake
+      // FillPattern 25–34 so libvisio's two-stop linear
+      // (`_fillAndShadowProperties`) keeps AWS brand ramps;
       // `applyStencilStyle.withSolidForeground` would otherwise beige them.
       // `alpha` / `fillalpha` / `strokealpha` become FillForegndTrans /
       // LineColorTrans that `_fillAndShadowProperties` maps to draw:opacity.
@@ -1643,11 +1658,13 @@ class _DrawioXmlShapeDecoder {
   /// `draw:angle` 0 is bottom→top (north), 180 top→bottom (south),
   /// 90 left→right (east), 270 right→left (west).
   void _applyMxFillGradient(XmlElement node) {
-    final start = _mxGraphPaintColor(node.getAttribute('color1'));
-    final end = _mxGraphPaintColor(node.getAttribute('color2'));
+    final color1 = node.getAttribute('color1') ?? node.getAttribute('c1');
+    final color2 = node.getAttribute('color2') ?? node.getAttribute('c2');
+    final start = _mxGraphPaintColor(color1);
+    final end = _mxGraphPaintColor(color2);
     if (start == null) {
       _applyMxFill(
-        node.getAttribute('color1'),
+        color1,
         fallback: node.getAttribute('default'),
       );
       return;
@@ -1690,7 +1707,7 @@ class _DrawioXmlShapeDecoder {
     // two Trans cells so leftover bakes SoftEdges PNG.
     if (end == null || (start == end && (alpha1 - alpha2).abs() <= 1e-9)) {
       _applyMxFill(
-        node.getAttribute('color1'),
+        color1,
         fallback: node.getAttribute('default'),
       );
       return;
