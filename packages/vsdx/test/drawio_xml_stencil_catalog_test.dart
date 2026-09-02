@@ -16316,6 +16316,168 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D image aspect leftover letterboxes ImgWidth for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      VsdxShape? imageShape(VsdxShape shape) {
+        if (shape.hasImage) return shape;
+        for (final child in shape.children) {
+          final nested = imageShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        return <VsdxShape>[
+          if (shape.hasImage && shape.children.isEmpty) shape,
+          for (final child in shape.children) ...imageShapes(child),
+        ];
+      }
+
+      const canvasScale = 1.5 / 100;
+      String imageXml(String aspectAttr) =>
+          '<shape name="I" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<image src="data:image/png;base64,$png" '
+          'x="20" y="0" w="40" h="10"$aspectAttr/>'
+          '</foreground>'
+          '</shape>';
+
+      final stretch = decodeDrawioMxStencilXml(
+        imageXml(' aspect="0"'),
+        id: 489,
+      );
+      expect(
+        stretch.flipX,
+        isFalse,
+        reason: 'canvas.image aspect is not STYLE_FLIPH',
+      );
+      expect(stretch.hasImage, isTrue);
+      expect(
+        stretch.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'mxStencil.drawNode / aspect="0" stretch Img* to the box',
+      );
+      expect(stretch.imgHeightInches, closeTo(10 * canvasScale, 0.02));
+
+      final omitted = decodeDrawioMxStencilXml(imageXml(''));
+      expect(
+        omitted.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'JS capture omits aspect; leftover stays stretch',
+      );
+
+      final meet = decodeDrawioMxStencilXml(imageXml(' aspect="1"'));
+      expect(meet.hasImage, isTrue);
+      expect(
+        meet.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+        reason: 'mxSvgCanvas2D.image aspect meet letterboxes leftover '
+            'ImgWidth so Draw svg:width is not the stretched box '
+            '(`tokens.txt` has no image aspect)',
+      );
+      expect(meet.imgHeightInches, closeTo(10 * canvasScale, 0.02));
+      expect(
+        meet.imgOffsetXInches + meet.imgWidthInches! / 2,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'xMidYMid meet keeps the leftover centre of the stencil box',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="20" y="0" w="40" h="10" aspect="0"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="20" y="20" w="40" h="10" aspect="1"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final pics = imageShapes(later);
+      expect(pics, hasLength(2));
+      expect(
+        pics.first.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'first canvas.image keeps collectForeignDataType stretched',
+      );
+      expect(
+        pics.last.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+        reason: 'later aspect="1" leftover-bakes a ForeignData sibling so '
+            'Draw does not stretch both PNGs',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="45" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="40" h="10" aspect="1"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      final nestedPic = imageShape(includeHost)!;
+      expect(
+        nestedPic.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+        reason: 'include-shape copies leftover-inch meet Img*',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final stretchId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(stretch.copyWith(id: stretchId)),
+      );
+      final meetId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(meet.copyWith(id: meetId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        leftoverDoc.pages.first.findShapeById(stretchId)!.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+      );
+      expect(
+        leftoverDoc.pages.first.findShapeById(meetId)!.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+        reason: 'a second save keeps leftover meet ImgWidth Draw paints',
+      );
+      final leftoverPics = imageShapes(
+        leftoverDoc.pages.first.findShapeById(laterId)!,
+      );
+      expect(leftoverPics, hasLength(2));
+      expect(
+        leftoverPics.first.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+      );
+      expect(
+        leftoverPics.last.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

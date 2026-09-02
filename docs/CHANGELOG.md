@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D image aspect leftover Img* for
+  LibreOffice. Official `canvas.image(..., aspect)` emits
+  `<image aspect=>`; `mxSvgCanvas2D.image` uses
+  `preserveAspectRatio` meet when true and `none` when false.
+  mxStencil.drawNode always stretches, and JS capture omits the attr.
+  leftover ignored it, so Draw `collectForeignDataType` stretched
+  every PNG (`tokens.txt` has no image aspect; `svg:width` is
+  ImgWidth with no clip). leftover now letterboxes Img* for
+  `aspect="1"`, include-shape copies that overlay, and a later
+  aspect leftover-bakes a ForeignData sibling. A second save keeps
+  both.
 - draw.io leftover mxXmlCanvas2D dashed fixDash leftover inches for
   LibreOffice. Official `setDashed(value, fixDash)` emits
   `<dashed fixDash=>`; `mxSvgCanvas2D.createDashPattern` multiplies by

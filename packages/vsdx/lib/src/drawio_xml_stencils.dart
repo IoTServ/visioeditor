@@ -1103,6 +1103,13 @@ class _DrawioXmlShapeDecoder {
       // `image` flipH/flipV leftover-bakes FlipX on a ForeignData child
       // (`draw:mirror-*`); host FlipX stays `cellfliph` so applyXForm
       // does not mirror later Geometry.
+      // `image` aspect follows mxXmlCanvas2D onto leftover Img*
+      // (`mxSvgCanvas2D.image` preserveAspectRatio meet vs none).
+      // mxStencil.drawNode always stretches (`aspect=false`); JS
+      // capture omits the attr. leftover used to ignore it, so Draw
+      // collectForeignDataType stretched every PNG (`tokens.txt` has
+      // no image aspect; svg:width is ImgWidth with no clip). leftover
+      // now letterboxes Img* for aspect="1".
       // `include-shape` follows drawNode stencil.drawShape into the
       // include box (NestedStencil already does). leftover merges
       // nested Geometry in that box so Draw collectGeometry paints it.
@@ -1157,8 +1164,34 @@ class _DrawioXmlShapeDecoder {
     final src = node.getAttribute('src') ?? '';
     final parsed = _dataUriImage(src);
     if (parsed == null) return;
-    final boxW = _number(node, 'w');
-    final boxH = _number(node, 'h');
+    var left = _number(node, 'x');
+    var top = _number(node, 'y');
+    var boxW = _number(node, 'w');
+    var boxH = _number(node, 'h');
+    // mxXmlCanvas2D.image always writes aspect (default true). Official
+    // mxSvgCanvas2D.image uses preserveAspectRatio meet when aspect, and
+    // "none" when false. mxStencil.drawNode always passes false (stretch);
+    // JS capture omits the attr. libvisio collectForeignDataType maps
+    // Img* to svg:width with no clip (`tokens.txt` has no image aspect),
+    // so leftover letterboxes Img* for aspect="1" or Draw stretches the
+    // PNG into the stencil box.
+    if (_flag(node, 'aspect') && boxW > 1e-9 && boxH > 1e-9) {
+      final size = _rasterPixelSize(parsed.bytes);
+      if (size != null) {
+        final meet = _mxSvgMeetBox(
+          left: left,
+          top: top,
+          boxW: boxW,
+          boxH: boxH,
+          imageW: size.width,
+          imageH: size.height,
+        );
+        left = meet.left;
+        top = meet.top;
+        boxW = meet.width;
+        boxH = meet.height;
+      }
+    }
     _rasters.add(_snapshotRasterCanvas(_DrawioRaster(
       part: registerDrawioStencilImage(
         parsed.bytes,
@@ -1169,8 +1202,8 @@ class _DrawioXmlShapeDecoder {
       // maps ImgOffsetX/Y + ImgWidth/Height to svg:x/y/width/height.
       // A missing box stretches the PNG over the XForm (IBM Floating IP
       // is a mid-band icon on a 60×60 cell).
-      left: _number(node, 'x'),
-      top: _number(node, 'y'),
+      left: left,
+      top: top,
       boxW: boxW > 1e-9 ? boxW : null,
       boxH: boxH > 1e-9 ? boxH : null,
       flipH: node.getAttribute('flipH') == '1',
@@ -4748,6 +4781,43 @@ List<VsdxPathCommand> _closedPolylineFromMoveOnly(
     out.add(LineTo(first.x, first.y));
   }
   return out;
+}
+
+/// PNG IHDR pixel size so leftover can letterbox `canvas.image` aspect.
+({int width, int height})? _rasterPixelSize(Uint8List bytes) {
+  if (bytes.length < 24) return null;
+  if (bytes[0] != 0x89 ||
+      bytes[1] != 0x50 ||
+      bytes[2] != 0x4e ||
+      bytes[3] != 0x47) {
+    return null;
+  }
+  final width =
+      (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+  final height =
+      (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+  if (width <= 0 || height <= 0) return null;
+  return (width: width, height: height);
+}
+
+/// mxSvgCanvas2D.image preserveAspectRatio xMidYMid meet inside the box.
+({double left, double top, double width, double height}) _mxSvgMeetBox({
+  required double left,
+  required double top,
+  required double boxW,
+  required double boxH,
+  required int imageW,
+  required int imageH,
+}) {
+  final scale = math.min(boxW / imageW, boxH / imageH);
+  final fittedW = imageW * scale;
+  final fittedH = imageH * scale;
+  return (
+    left: left + (boxW - fittedW) / 2,
+    top: top + (boxH - fittedH) / 2,
+    width: fittedW,
+    height: fittedH,
+  );
 }
 
 ({Uint8List bytes, String mime})? _dataUriImage(String src) {
