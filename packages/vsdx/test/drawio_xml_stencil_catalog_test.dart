@@ -16245,6 +16245,114 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fillalpha omitted leftover bakes FillForegndTrans 1 for LibreOffice',
+    () {
+      double? fillTrans(VsdxShape shape) {
+        if (shape.fill.hasFill) return shape.fill.foregroundTransparency;
+        return null;
+      }
+
+      bool hasFillTrans(VsdxShape shape, double trans) {
+        if (shape.fill.hasFill &&
+            (shape.fill.foregroundTransparency - trans).abs() < 0.05) {
+          return true;
+        }
+        return shape.children.any((child) => hasFillTrans(child, trans));
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillalpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 504,
+      );
+      expect(
+        fillTrans(omitted),
+        closeTo(1, 0.05),
+        reason: 'omitted fillalpha is Number(null)=0; leftover fallback 1 '
+            'kept FillForegndTrans 0 so Draw collectFillAndShadow painted '
+            'an opaque rail (`tokens.txt` FillForegndTrans)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<fillalpha/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.fill.foregroundTransparency,
+        closeTo(0, 0.05),
+        reason: 'first inherit fill keeps collectFill opaque FillForegndTrans',
+      );
+      expect(
+        hasFillTrans(laterHost, 1),
+        isTrue,
+        reason: 'later omitted fillalpha leftover-bakes FillForegndTrans 1 '
+            'so Draw does not paint the second rail (`tokens.txt` '
+            'FillForegndTrans)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<fillalpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(includeHost.fill.foregroundTransparency, closeTo(0, 0.05));
+      expect(
+        hasFillTrans(includeHost, 1),
+        isTrue,
+        reason: 'include-shape nested omitted fillalpha leftover-bakes '
+            'FillForegndTrans 1 so Draw does not paint the tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(leftover.fill.foregroundTransparency, closeTo(0, 0.05));
+      expect(
+        hasFillTrans(leftover, 1),
+        isTrue,
+        reason: 'a second save keeps leftover FillForegndTrans 1 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

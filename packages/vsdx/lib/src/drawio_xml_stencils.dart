@@ -953,6 +953,11 @@ class _DrawioXmlShapeDecoder {
         _applyMxFillGradient(node);
         break;
       case 'alpha':
+        // mxStencil.drawNode setAlpha(getAttribute('alpha')). Omitted
+        // is null; Number(null) is 0 and mxSvgCanvas2D fill-opacity
+        // is alpha*fillAlpha → 0. leftover fallback 1 kept the rail
+        // opaque so Draw collectFillAndShadow painted
+        // draw:opacity=1 (`tokens.txt` FillForegndTrans).
         _overallAlpha = _alphaValue(node);
         break;
       case 'fillalpha':
@@ -1104,6 +1109,8 @@ class _DrawioXmlShapeDecoder {
       // `applyStencilStyle.withSolidForeground` would otherwise beige them.
       // `alpha` / `fillalpha` / `strokealpha` become FillForegndTrans /
       // LineColorTrans that `_fillAndShadowProperties` maps to draw:opacity.
+      // Omitted alpha attr is Number(null)=0 so Draw does not paint
+      // an opaque rail (`tokens.txt` FillForegndTrans).
       // Inherit fill (Networks2 hub shadow) and inherit stroke
       // (Cortana fillstroke) capture that Trans on the parent at
       // _finish; hex fillcolor already bakes a sibling.
@@ -2162,8 +2169,19 @@ class _DrawioXmlShapeDecoder {
   double get _strokeTransparency =>
       (1 - (_overallAlpha * _strokeAlpha).clamp(0.0, 1.0)).clamp(0.0, 1.0);
 
-  double _alphaValue(XmlElement node) =>
-      _number(node, 'alpha', fallback: 1).clamp(0.0, 1.0).toDouble();
+  double _alphaValue(XmlElement node) {
+    // mxStencil.drawNode getAttribute('alpha') is null when omitted.
+    // Number(null) / NestedStencil attrNum fallback is 0; leftover
+    // `_number` fallback 1 kept FillForegndTrans 0 so Draw painted
+    // an opaque rail mxSvgCanvas2D fill-opacity 0 never painted
+    // (`tokens.txt` FillForegndTrans → draw:opacity). Invalid CSS
+    // opacity is opaque 1 (NestedStencil _setAlphaChannel NaN).
+    final raw = node.getAttribute('alpha');
+    if (raw == null || raw.trim().isEmpty) return 0;
+    final parsed = double.tryParse(raw.trim());
+    if (parsed == null || !parsed.isFinite) return 1;
+    return parsed.clamp(0.0, 1.0).toDouble();
+  }
 
   /// STYLE_TEXT_OPACITY percent × canvas setAlpha (`<alpha>`).
   double _opacityPercentWithCanvasAlpha(double percent) =>

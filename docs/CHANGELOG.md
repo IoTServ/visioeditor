@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fillalpha omitted leftover
+  FillForegndTrans 1 for LibreOffice. Official `setAlpha(null)` /
+  NestedStencil `attrNum` fallback is 0; mxSvgCanvas2D fill-opacity
+  is then 0. leftover `_number` fallback 1 kept FillForegndTrans 0,
+  so Draw `collectFillAndShadow` painted an opaque rail
+  (`tokens.txt` FillForegndTrans → `draw:opacity`). leftover now
+  snaps to 0, include-shape copies that overlay, and a later omitted
+  fillalpha leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D scale negative leftover TxtAngle π for
   LibreOffice. Official `scale *= -1` is SVG `scale(-1,-1)` ≡ 180°.
   leftover Path vertices already *(userScale), but ForeignData / glyphs
