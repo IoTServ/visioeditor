@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D dashed fixDash leftover inches for
+  LibreOffice. Official `setDashed(value, fixDash)` emits
+  `<dashed fixDash=>`; `mxSvgCanvas2D.createDashPattern` multiplies by
+  `(fixDash ? 1 : strokeWidth) * scale`. JS capture never writes the
+  attr, and leftover always tessellated as leftover inches, so later
+  inherit stroke reused the first MoveTo gaps (`tokens.txt` has no
+  fixDash; collectLine is shape-level). leftover now multiplies by
+  LineWeight when `fixDash="0"`, include-shape keeps nested fixDash
+  for later host strokes, and a later fixDash leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D rotate TxtAngle / ForeignData Angle for
   LibreOffice. Official `mxSvgCanvas2D.text` adds `state.rotation` to
   the glyph (`tokens.txt` TxtAngle → `_flushText` librevenge:rotate)

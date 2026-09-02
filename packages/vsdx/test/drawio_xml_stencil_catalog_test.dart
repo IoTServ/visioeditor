@@ -13857,6 +13857,166 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D dashed fixDash leftover bakes LinePattern sibling for LibreOffice',
+    () {
+      List<double> firstDash(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          final custom = next.line.customDashPattern;
+          if (next.line.hasLine && custom != null && custom.isNotEmpty) {
+            values.add(custom.first);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const dashUnit = 1 / 96;
+      final relative = decodeDrawioMxStencilXml(
+        '<shape name="R" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1" fixDash="0"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 488,
+      );
+      expect(
+        firstDash(relative).single,
+        closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+        reason: 'mxSvgCanvas2D.createDashPattern multiplies by strokeWidth '
+            'when fixDash is false; leftover leftover-inches / MoveTo '
+            'gaps must follow (`tokens.txt` has no fixDash)',
+      );
+
+      final fixed = decodeDrawioMxStencilXml(
+        '<shape name="F" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1" fixDash="1"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstDash(fixed).single,
+        closeTo(3 * canvasScale / dashUnit, 1e-6),
+        reason: 'fixDash=1 is canvas pixels, not × LineWeight',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1" fixDash="1"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<dashed dashed="1" fixDash="0"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstDash(later),
+        [
+          closeTo(3 * canvasScale / dashUnit, 1e-6),
+          closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+        ],
+        reason: 'libvisio collectLine is shape-level; leftover must bake '
+            'the later fixDash inherit stroke as a sibling so Draw does '
+            'not reuse the first leftover inches',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<dashed dashed="1" fixDash="1"/>'
+        '<dashpattern pattern="3 3"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="4">'
+        '<foreground>'
+        '<dashed dashed="1" fixDash="0"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        firstDash(includeHost),
+        [
+          closeTo(3 * canvasScale / dashUnit, 1e-6),
+          closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+          closeTo(3 * 4 * canvasScale / dashUnit, 1e-6),
+        ],
+        reason: 'include-shape shares the canvas; nested fixDash stays '
+            'for later host inherit stroke',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      var leftoverDashed = 0;
+      void leftoverWalk(VsdxShape next) {
+        if (next.line.hasLine) {
+          final moves = next.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          final custom = next.line.customDashPattern;
+          if ((custom != null && custom.isNotEmpty) || moves >= 2) {
+            leftoverDashed++;
+          }
+        }
+        for (final child in next.children) {
+          leftoverWalk(child);
+        }
+      }
+
+      leftoverWalk(leftover);
+      expect(
+        leftoverDashed,
+        greaterThan(1),
+        reason: 'a second save keeps both fixDash leftover-inch rails '
+            'Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil later strokealpha leftover bakes LineColorTrans sibling for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

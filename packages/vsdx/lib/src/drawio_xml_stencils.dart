@@ -198,6 +198,7 @@ class _MxPaintState {
     required this.strokeWidth,
     required this.strokeWidthFixed,
     required this.dashed,
+    required this.fixDash,
     required this.dashPattern,
     required this.lineCap,
     required this.lineJoin,
@@ -248,6 +249,7 @@ class _MxPaintState {
   final double? strokeWidth;
   final bool strokeWidthFixed;
   final bool dashed;
+  final bool fixDash;
   final List<double>? dashPattern;
   final LineCap? lineCap;
   final VsdxLineJoin? lineJoin;
@@ -372,9 +374,15 @@ class _DrawioXmlShapeDecoder {
   double? _parentFillTransparency;
   double? _parentStrokeTransparency;
   bool _dashed = false;
+  // mxAbstractCanvas2D.createState fixDash is false (dash × strokeWidth).
+  // leftover tessellates custom arrays as leftover inches, so omitted
+  // `fixDash` stays true (JS capture never emits the attr). Official
+  // mxXmlCanvas2D `<dashed fixDash="0">` multiplies by strokeWidth.
+  bool _fixDash = true;
   bool _solidPaintBeforeDash = false;
   bool _capturedParentDashState = false;
   bool _parentDashed = false;
+  bool _parentFixDash = true;
   List<double>? _parentDashPattern;
   List<double>? _dashPattern;
   // mxAbstractCanvas2D.createState: lineCap 'flat' (SVG butt) and
@@ -639,7 +647,11 @@ class _DrawioXmlShapeDecoder {
       // Arrowheads call setDashed(false) after the rail. collectLine is
       // shape-level, so keep the dash that was in force when parent
       // Geometry was painted.
-      parentLine = _lineWithDash(parentLine, _parentDashPattern);
+      parentLine = _lineWithDash(
+        parentLine,
+        _parentDashPattern,
+        fixDash: _parentFixDash,
+      );
     } else if (inheritLine && _solidPaintBeforeDash) {
       // Later <dashpattern> belongs on siblings.
       parentLine = parentLine.copyWith(
@@ -791,6 +803,11 @@ class _DrawioXmlShapeDecoder {
         // mxStencil.drawNode: setDashed(dashed == '1'). Omitted / "true"
         // stay solid like official (NestedStencil uses === '1').
         _dashed = node.getAttribute('dashed') == '1';
+        // mxXmlCanvas2D.setDashed writes fixDash. createDashPattern is
+        // `(fixDash ? 1 : strokeWidth) * scale` (`tokens.txt` has no
+        // fixDash; leftover bakes leftover inches / MoveTo gaps).
+        final fixDash = node.getAttribute('fixDash');
+        if (fixDash != null) _fixDash = fixDash == '1';
         break;
       case 'dashpattern':
         // mxStencil.drawNode / stencils.xsd use `pattern`. Cisco Guard /
@@ -1438,6 +1455,7 @@ class _DrawioXmlShapeDecoder {
       strokeWidth: strokeWidth,
       strokeWidthFixed: false,
       dashed: source.dashed,
+      fixDash: source.fixDash,
       dashPattern: dashes == null
           ? null
           : dashes.isEmpty
@@ -1550,6 +1568,7 @@ class _DrawioXmlShapeDecoder {
     _strokeWidth = other._strokeWidth;
     _strokeWidthFixed = other._strokeWidthFixed;
     _dashed = other._dashed;
+    _fixDash = other._fixDash;
     _dashPattern = other._dashPattern == null
         ? null
         : List<double>.of(other._dashPattern!);
@@ -1714,6 +1733,7 @@ class _DrawioXmlShapeDecoder {
         strokeWidth: _strokeWidth,
         strokeWidthFixed: _strokeWidthFixed,
         dashed: _dashed,
+        fixDash: _fixDash,
         dashPattern: _dashPattern == null
             ? null
             : List<double>.unmodifiable(_dashPattern!),
@@ -1767,6 +1787,7 @@ class _DrawioXmlShapeDecoder {
     _strokeWidth = saved.strokeWidth;
     _strokeWidthFixed = saved.strokeWidthFixed;
     _dashed = saved.dashed;
+    _fixDash = saved.fixDash;
     _dashPattern = saved.dashPattern == null
         ? null
         : List<double>.from(saved.dashPattern!);
@@ -2438,7 +2459,7 @@ class _DrawioXmlShapeDecoder {
     return line;
   }
 
-  List<double>? _fixedDashPatternValues([List<double>? raw]) {
+  List<double>? _fixedDashPatternValues([List<double>? raw, bool? fixDash]) {
     // mxAbstractCanvas2D.createState dashPattern is '3 3'. A dashed
     // stroke with no <dashpattern> (AWS 3D Dashed Edge, Cisco Metro
     // 1500) must not fall through to Visio LinePattern 2 (6×/3×
@@ -2447,14 +2468,24 @@ class _DrawioXmlShapeDecoder {
     final source = raw ?? _dashPattern ?? _kMxDefaultDashPattern;
     if (source.isEmpty) return null;
     final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale;
+    // mxSvgCanvas2D.createDashPattern: `(fixDash ? 1 : strokeWidth)*scale`.
+    // leftover tessellates those leftover inches (`tokens.txt` has no
+    // fixDash). Omitted fixDash stays 1 so catalog MoveTo gaps match
+    // JS capture (never emits the attr).
+    final fixed = fixDash ?? _fixDash;
+    final strokeMul = fixed ? 1.0 : math.max(_strokeWidth ?? 1.0, 1e-9);
     final values = <double>[
       for (final value in source)
-        if (value > 0) value * scale / drawioDashUnitInches,
+        if (value > 0) value * scale * strokeMul / drawioDashUnitInches,
     ];
     return values.length >= 2 ? values : null;
   }
 
-  VsdxLine _lineWithDash(VsdxLine line, List<double>? pattern) {
+  VsdxLine _lineWithDash(
+    VsdxLine line,
+    List<double>? pattern, {
+    bool? fixDash,
+  }) {
     // Explicit `<dashpattern pattern="none"/>` (empty list) is solid.
     // Missing pattern stays mx createState `3 3`.
     if (pattern != null && pattern.isEmpty) {
@@ -2464,7 +2495,7 @@ class _DrawioXmlShapeDecoder {
         fixedDash: false,
       );
     }
-    final custom = _fixedDashPatternValues(pattern);
+    final custom = _fixedDashPatternValues(pattern, fixDash);
     if (custom != null) {
       return line.copyWith(
         pattern: 1,
@@ -2561,10 +2592,11 @@ class _DrawioXmlShapeDecoder {
         _capturedParentDashState &&
         (_dashed != _parentDashed ||
             (_dashed &&
-                !_dashPatternsEqual(
-                  _dashPattern ?? _kMxDefaultDashPattern,
-                  _parentDashPattern,
-                )));
+                (!_dashPatternsEqual(
+                      _dashPattern ?? _kMxDefaultDashPattern,
+                      _parentDashPattern,
+                    ) ||
+                    _fixDash != _parentFixDash)));
     // collectGeometry concatenates every NoFill=0 section into one
     // evenodd path (`_fillAndShadowProperties` svg:fill-rule=evenodd).
     // A second inherit-fill (AWS Cloud puffs, Citrix server blobs)
@@ -2724,6 +2756,7 @@ class _DrawioXmlShapeDecoder {
       // `<dashpattern>` belong on siblings so Draw can emit both.
       _capturedParentDashState = true;
       _parentDashed = _dashed;
+      _parentFixDash = _fixDash;
       if (_dashed) {
         _parentDashPattern = _dashPattern ?? _kMxDefaultDashPattern;
       }
