@@ -970,8 +970,14 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'strokewidth':
         // mxStencil.drawNode: width * (fixed=="1" ? 1 : minScale).
-        final width = _number(node, 'width');
-        if (width > 0) {
+        // mxXmlCanvas2D.setStrokeWidth always writes width, including
+        // 0. leftover `width > 0` kept the previous leftover inches,
+        // so Draw collectLine stroked the hairline with the thick
+        // rail (`tokens.txt` LineWeight). Official
+        // `getCurrentStrokeWidth` is max(minStrokeWidth=1, …).
+        final raw = node.getAttribute('width');
+        final width = double.tryParse(raw ?? '');
+        if (width != null && width.isFinite) {
           _strokeWidth = width;
           _strokeWidthFixed = node.getAttribute('fixed') == '1';
         }
@@ -1177,7 +1183,10 @@ class _DrawioXmlShapeDecoder {
       // leftover saves onto the host (`tokens.txt` LineColor).
       // Later `<strokewidth>` / nested setStrokeWidth leftover-bakes a
       // LineWeight sibling because collectLine is shape-level
-      // (`tokens.txt` LineWeight).
+      // (`tokens.txt` LineWeight). `width="0"` follows
+      // mxSvgCanvas2D.getCurrentStrokeWidth minStrokeWidth=1 canvas
+      // pixel so Draw paints the hairline instead of the previous
+      // thick leftover inches.
       // `translate` / `scale` follow mxXmlCanvas2D onto leftover
       // inches (`addOp` `(x + dx) * scale`). JS capture bakes those
       // into coordinates and never emits the nodes; official playback
@@ -2683,11 +2692,18 @@ class _DrawioXmlShapeDecoder {
     // that root scale while scaleX/scaleY become the nested aspect, so
     // fixed strokes stay hairlines when the include box is larger than
     // nested w0×h0.
+    // mxSvgCanvas2D.getCurrentStrokeWidth:
+    // `max(minStrokeWidth=1, max(0.01, format(width * state.scale)))`.
+    // leftover `width > 0` skipped 0, so Draw collectLine kept the
+    // previous leftover inches (`tokens.txt` LineWeight). A zero
+    // canvas width is one stencil pixel, same as width=1 after the
+    // minStrokeWidth floor (state.scale is leftover `_canvasUserScale`).
     final scale = (_strokeWidthFixed
             ? _canvasScale
             : math.min(scaleX.abs(), scaleY.abs())) *
         _canvasUserScale;
-    return math.max(0.001, width * scale);
+    final canvas = width <= 0 ? 1.0 : width;
+    return math.max(0.001, canvas * scale);
   }
 
   VsdxLine _paintLine({required bool stroke}) {
@@ -5017,7 +5033,12 @@ double? _mxShapeAttrStrokeWidth(XmlElement element) {
   if (raw.toLowerCase() == 'inherit') return null;
   if (raw.isEmpty) return 1;
   final value = double.tryParse(raw);
-  if (value == null || !value.isFinite || value <= 0) return null;
+  if (value == null || !value.isFinite) return null;
+  // mxStencil.drawShape `Number(strokewidth) * minScale`. 0 still
+  // calls setStrokeWidth(0); leftover used to treat it as inherit
+  // so Draw collectLine pinned the palette LineWeight
+  // (`tokens.txt` LineWeight). `_strokeWeightInches` floors 0 to
+  // mxSvgCanvas2D.minStrokeWidth 1 canvas pixel.
   return value;
 }
 

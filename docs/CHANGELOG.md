@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D strokewidth 0 leftover minStrokeWidth
+  for LibreOffice. Official `setStrokeWidth(0)` emits
+  `<strokewidth width="0"/>`; `mxSvgCanvas2D.getCurrentStrokeWidth`
+  is `max(minStrokeWidth=1, …)`. leftover `width > 0` skipped 0, so
+  Draw `collectLine` kept the previous leftover inches
+  (`tokens.txt` LineWeight). leftover now floors 0 to one canvas
+  pixel, include-shape copies that overlay, and a later width=0
+  leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D text format=html leftover Character
   Style for LibreOffice. Official `canvas.text(..., format)` emits
   `<text format= str=>`; `mxSvgCanvas2D.text` html paints `<b>` /
