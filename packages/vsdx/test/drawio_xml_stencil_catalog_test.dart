@@ -13972,6 +13972,130 @@ void main() {
   );
 
   test(
+    'mxStencil later shadow leftover bakes ShdwPattern sibling for LibreOffice',
+    () {
+      ({int shadowed, int plain}) shadowCounts(VsdxShape shape) {
+        var shadowed = 0;
+        var plain = 0;
+        void walk(VsdxShape next) {
+          final paints = next.line.hasLine || next.fill.hasFill;
+          if (paints) {
+            if (next.shadow.enabled) {
+              shadowed++;
+            } else {
+              plain++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (shadowed: shadowed, plain: plain);
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<shadow enabled="1" dx="4" dy="6" color="#808080"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 473,
+      );
+      expect(
+        shadowCounts(host),
+        (shadowed: 1, plain: 1),
+        reason: 'libvisio collectFillAndShadow is shape-level; leftover must '
+            'bake the later shadow inherit stroke as a sibling so Draw does '
+            'not offset both rails',
+      );
+      expect(host.shadow.enabled, isFalse);
+
+      final offHost = decodeDrawioMxStencilXml(
+        '<shape name="Off" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1" dx="4" dy="6" color="#808080"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<shadow enabled="0"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        shadowCounts(offHost),
+        (shadowed: 1, plain: 1),
+        reason: 'later shadow enabled="0" must not keep ShdwPattern on the '
+            'second inherit stroke',
+      );
+      expect(offHost.shadow.enabled, isTrue);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<background>'
+        '<shadow enabled="1" dx="2" dy="3" color="#808080"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</background>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        shadowCounts(includeHost),
+        (shadowed: 2, plain: 1),
+        reason: 'include-shape shares the canvas; nested background setShadow '
+            'stays for later host inherit stroke, which must not reuse the '
+            'first collectFillAndShadow ShdwPattern',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.shadow.enabled,
+        isFalse,
+        reason: 'a second save keeps the first inherit stroke unshadowed',
+      );
+      expect(
+        leftover.children.any(
+          (child) => child.shadow.enabled && child.fill.hasFill,
+        ),
+        isTrue,
+        reason: 'a second save keeps the later ShdwPattern Draw paints; '
+            'unfilled collectLine does not emit draw:shadow',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

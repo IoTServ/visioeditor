@@ -317,6 +317,7 @@ class _DrawioXmlShapeDecoder {
   double? _parentMiterLimit;
   VsdxShadow? _shadow;
   VsdxShadow? _parentShadow;
+  bool _capturedParentShadow = false;
   final List<_MxPaintState> _saveStack = <_MxPaintState>[];
   // mxStencil.drawNode canvas.image may run more than once (host plus
   // include-shape). leftover used a single slot and dropped earlier
@@ -595,7 +596,7 @@ class _DrawioXmlShapeDecoder {
             children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
         fill: parentFill,
         line: parentLine,
-        shadow: inheritFill
+        shadow: (inheritFill || inheritLine)
             ? (_parentShadow ?? VsdxShadow.disabled)
             : VsdxShadow.disabled,
         imagePartName: hostPart,
@@ -1951,7 +1952,9 @@ class _DrawioXmlShapeDecoder {
         // leftovers stay in host leftover inches (arc / roundrect tests).
         fitBox: fill.pattern >= 25 && fill.pattern <= 40,
       ));
-      if (_shadow != null) _parentShadow ??= _shadow;
+      if (!_capturedParentShadow && _shadow != null) {
+        _parentShadow ??= _shadow;
+      }
       return;
     }
     final bakeFill = doFill && _fillColor != null;
@@ -2016,8 +2019,21 @@ class _DrawioXmlShapeDecoder {
     final bakeStrokeTrans = doStroke &&
         _parentStrokeTransparency != null &&
         (_strokeTransparency - _parentStrokeTransparency!).abs() > 1e-6;
+    // collectFillAndShadow is shape-level. A later `<shadow>` (or
+    // include-shape nested setShadow that stays on the shared canvas)
+    // must be a sibling so `_fillAndShadowProperties` can emit both
+    // ShdwPattern values. leftover used to concatenate onto the parent,
+    // so Draw painted `draw:shadow` on the first rail too (`tokens.txt`
+    // ShdwPattern / ShdwOffsetX / ShdwOffsetY).
+    final bakeShadow = (doFill || doStroke) &&
+        _capturedParentShadow &&
+        !_shadowsEqual(_shadow, _parentShadow);
     final inheritFillSibling = extraInheritFill ||
-        ((bakeLineStyle || bakeWeight || bakeDashState || bakeStrokeTrans) &&
+        ((bakeLineStyle ||
+                bakeWeight ||
+                bakeDashState ||
+                bakeStrokeTrans ||
+                bakeShadow) &&
             doFill &&
             !bakeFill);
     if (bakeFill ||
@@ -2027,7 +2043,8 @@ class _DrawioXmlShapeDecoder {
         extraInheritFill ||
         bakeLineStyle ||
         bakeWeight ||
-        bakeStrokeTrans) {
+        bakeStrokeTrans ||
+        bakeShadow) {
       final partFill = inheritFillSibling
           ? VsdxFill(
               pattern: 1,
@@ -2053,7 +2070,9 @@ class _DrawioXmlShapeDecoder {
         // tessellate at capture (FillPattern 1), not here.
         fitBox: partFill.pattern >= 25 && partFill.pattern <= 40,
       ));
-      if (_shadow != null) _parentShadow ??= _shadow;
+      if (!_capturedParentShadow && _shadow != null) {
+        _parentShadow ??= _shadow;
+      }
       return;
     }
     _geometries.add(VsdxGeometry(
@@ -2097,7 +2116,12 @@ class _DrawioXmlShapeDecoder {
     if (doStroke && _strokeWidth != null) {
       _parentStrokeWeightInches ??= _strokeWeightInches;
     }
-    if (_shadow != null) _parentShadow ??= _shadow;
+    if (!_capturedParentShadow && (doFill || doStroke)) {
+      // First inherit paint owns collectFillAndShadow. Later `<shadow>`
+      // belongs on siblings so Draw can emit both ShdwPattern values.
+      _capturedParentShadow = true;
+      _parentShadow = _shadow;
+    }
     if (!_capturedParentSketch) {
       _capturedParentSketch = true;
       _parentSketch = _currentSketch;
@@ -3435,6 +3459,18 @@ String? _mxFontFamily(String? raw) {
     'helvetica' => 'Helvetica',
     _ => token,
   };
+}
+
+bool _shadowsEqual(VsdxShadow? a, VsdxShadow? b) {
+  final left = a ?? VsdxShadow.disabled;
+  final right = b ?? VsdxShadow.disabled;
+  if (left.enabled != right.enabled) return false;
+  if (!left.enabled) return true;
+  return left.pattern == right.pattern &&
+      (left.offsetXInches - right.offsetXInches).abs() < 1e-6 &&
+      (left.offsetYInches - right.offsetYInches).abs() < 1e-6 &&
+      (left.transparency - right.transparency).abs() < 1e-6 &&
+      left.color == right.color;
 }
 
 bool _dashPatternsEqual(List<double>? a, List<double>? b) {
