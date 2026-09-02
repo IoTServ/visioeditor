@@ -16095,6 +16095,123 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D shadow omitted leftover bakes ShdwPattern 0 for LibreOffice',
+    () {
+      ({int shadowed, int plain}) shadowCounts(VsdxShape shape) {
+        var shadowed = 0;
+        var plain = 0;
+        void walk(VsdxShape next) {
+          final paints = next.line.hasLine || next.fill.hasFill;
+          if (paints) {
+            if (next.shadow.enabled) {
+              shadowed++;
+            } else {
+              plain++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (shadowed: shadowed, plain: plain);
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 500,
+      );
+      expect(
+        omitted.shadow.enabled,
+        isFalse,
+        reason: 'omitted enabled is setShadow falsy / NestedStencil !== "1"; '
+            'leftover used to turn ShdwPattern on so Draw collectFillAndShadow '
+            'offset the rail (`tokens.txt` ShdwPattern)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1" dx="4" dy="6" color="#808080"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<shadow/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        shadowCounts(laterHost),
+        (shadowed: 1, plain: 1),
+        reason: 'later omitted shadow leftover-bakes ShdwPattern 0 so Draw '
+            'does not offset the second rail (`tokens.txt` ShdwPattern)',
+      );
+      expect(laterHost.shadow.enabled, isTrue);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1" dx="4" dy="6" color="#808080"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<shadow/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(includeHost.shadow.enabled, isTrue);
+      expect(
+        includeHost.children.any(
+          (child) => child.line.hasLine && !child.shadow.enabled,
+        ),
+        isTrue,
+        reason: 'include-shape nested omitted shadow leftover-bakes '
+            'ShdwPattern 0 so Draw does not offset the tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(leftover.shadow.enabled, isTrue);
+      expect(
+        leftover.children.any(
+          (child) => child.line.hasLine && !child.shadow.enabled,
+        ),
+        isTrue,
+        reason: 'a second save keeps leftover ShdwPattern 0 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D rotate leftover bakes PinX for LibreOffice',
     () {
       double minMoveX(VsdxShape shape) {

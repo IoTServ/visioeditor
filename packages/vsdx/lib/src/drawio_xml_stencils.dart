@@ -1111,9 +1111,10 @@ class _DrawioXmlShapeDecoder {
       // stroke-dasharray is invalid and Draw must stay solid (AWS 4
       // work package), not createState `3 3`. Cisco `dash="8 8"` (no
       // `pattern`) is the authored array leftover bakes to MoveTo gaps.
-      // `shadow` follows mxShape.configureCanvas setShadow onto ShdwPattern
-      // that `_fillAndShadowProperties` maps to ODF draw:shadow (hard
-      // translate like mxSvgCanvas2D.createShadow, not ShadowBlur).
+      // `shadow` follows mxShape.configureCanvas / mxXmlCanvas2D
+      // setShadow onto ShdwPattern that `_fillAndShadowProperties`
+      // maps to ODF draw:shadow. Omitted enabled is off (`=== '1'`),
+      // same as NestedStencil and leftover dashed.
       // `shadowcolor` / `shadowalpha` / `shadowoffset` follow
       // mxXmlCanvas2D setShadowColor / setShadowAlpha / setShadowOffset
       // onto ShdwForegnd / ShapeShdwOffset* (`tokens.txt`). A later
@@ -2613,7 +2614,12 @@ class _DrawioXmlShapeDecoder {
   /// dx/dy are mxGraph pixels (Y down). Visio ShapeShdwOffsetY is up;
   /// libvisio `_fillAndShadowProperties` emits ODF offset-y as −Y.
   void _applyMxShadow(XmlElement node) {
-    if (node.getAttribute('enabled') == '0') {
+    // mxXmlCanvas2D.setShadow writes enabled 1 or 0. NestedStencil
+    // setShadow is `enabled === true || === 1 || === '1'`. leftover
+    // treated omitted as on, so Draw collectFillAndShadow offset a
+    // rail mxSvgCanvas2D.createShadow never painted (`tokens.txt`
+    // ShdwPattern → draw:shadow).
+    if (node.getAttribute('enabled') != '1') {
       _shadow = null;
       return;
     }

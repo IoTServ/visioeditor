@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D shadow omitted leftover ShdwPattern 0
+  for LibreOffice. Official `setShadow` writes `<shadow enabled="1|0"/>`;
+  NestedStencil enables only `enabled === '1'`. leftover treated omitted
+  enabled as on, so Draw `collectFillAndShadow` offset a rail
+  `mxSvgCanvas2D.createShadow` never painted (`tokens.txt` ShdwPattern
+  → `draw:shadow`). leftover now matches `=== '1'`, include-shape copies
+  that overlay, and a later omitted shadow leftover-bakes a sibling. A
+  second save keeps both.
 - draw.io leftover mxXmlCanvas2D linecap omitted leftover LineCap 1 for
   LibreOffice. Official `setLineCap` writes `<linecap cap=>`; omitted
   or invalid cap leaves `state.lineCap` null and `mxSvgCanvas2D` skips
