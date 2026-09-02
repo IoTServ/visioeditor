@@ -13588,6 +13588,104 @@ void main() {
   );
 
   test(
+    'mxStencil later strokewidth leftover bakes LineWeight sibling for LibreOffice',
+    () {
+      List<double> lineWeights(VsdxShape shape) {
+        final weights = <double>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) weights.add(next.line.weightInches);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return weights;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="W" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<strokewidth width="4"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 470,
+      );
+      final hostWeights = lineWeights(host)..sort();
+      expect(
+        hostWeights,
+        hasLength(2),
+        reason: 'libvisio collectLine is shape-level; leftover must bake the '
+            'later strokewidth as a sibling so Draw emits both LineWeights',
+      );
+      expect(hostWeights[0], closeTo(1 * canvasScale, 1e-6));
+      expect(hostWeights[1], closeTo(4 * canvasScale, 1e-6));
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="4">'
+        '<foreground>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      const nestedMinScale = 40 / 10 * canvasScale;
+      final includeWeights = lineWeights(includeHost)..sort();
+      expect(
+        includeWeights.where((w) => (w - nestedMinScale * 4).abs() < 0.01).length,
+        greaterThanOrEqualTo(2),
+        reason: 'include-shape shares the canvas; later host inherit stroke '
+            'must keep nested setStrokeWidth leftover inches',
+      );
+      expect(
+        includeWeights.any((w) => (w - canvasScale).abs() < 1e-6),
+        isTrue,
+        reason: 'the first host inherit stroke keeps catalog-scale LineWeight',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final leftoverWeights = lineWeights(leftover)..sort();
+      expect(leftoverWeights, hasLength(2));
+      expect(leftoverWeights[0], closeTo(1 * canvasScale, 1e-6));
+      expect(
+        leftoverWeights[1],
+        closeTo(4 * canvasScale, 1e-6),
+        reason: 'a second save keeps both LineWeights Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

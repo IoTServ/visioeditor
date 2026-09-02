@@ -929,6 +929,9 @@ class _DrawioXmlShapeDecoder {
       // counts reset to the entry snapshot (`drawShape` assigns
       // `canvas.states = stack`) so leftover never copies nested
       // leftover saves onto the host (`tokens.txt` LineColor).
+      // Later `<strokewidth>` / nested setStrokeWidth leftover-bakes a
+      // LineWeight sibling because collectLine is shape-level
+      // (`tokens.txt` LineWeight).
       // Nested `aspect="fixed"` follows computeAspect min(sx,sy) +
       // centre so Salesforce icons are not anamorphic XForms.
       // Host `celldirection` north/south follows computeAspect inverse
@@ -1977,13 +1980,22 @@ class _DrawioXmlShapeDecoder {
         (_lineCap != _parentStrokeCap ||
             _lineJoin != _parentStrokeJoin ||
             _miterLimit != _parentMiterLimit);
-    final inheritFillSibling =
-        extraInheritFill || (bakeLineStyle && doFill && !bakeFill);
+    // collectLine is shape-level. A later `<strokewidth>` (or include-shape
+    // nested setStrokeWidth that stays on the shared canvas) must be a
+    // sibling so `_lineProperties` can emit both LineWeights. leftover
+    // used to concatenate onto the parent, so Draw stroked the later
+    // rail with the first leftover inches (`tokens.txt` LineWeight).
+    final bakeWeight = doStroke &&
+        _parentStrokeWeightInches != null &&
+        (_strokeWeightInches - _parentStrokeWeightInches!).abs() > 1e-6;
+    final inheritFillSibling = extraInheritFill ||
+        ((bakeLineStyle || bakeWeight) && doFill && !bakeFill);
     if (bakeFill ||
         bakeStroke ||
         bakeDash ||
         extraInheritFill ||
-        bakeLineStyle) {
+        bakeLineStyle ||
+        bakeWeight) {
       final partFill = inheritFillSibling
           ? VsdxFill(
               pattern: 1,

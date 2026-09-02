@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil later strokewidth LineWeight sibling for
+  LibreOffice. Official `mxStencil.drawNode` `<strokewidth>` is
+  `canvas.setStrokeWidth`; include-shape nested numeric width stays on
+  the shared canvas for later host strokes. leftover used one
+  collectLine LineWeight captured at the first inherit stroke, so Draw
+  `_lineProperties` painted the later rail as a hairline (`tokens.txt`
+  LineWeight). leftover now bakes a sibling when leftover inches
+  differ. A second save keeps both weights.
 - draw.io leftover mxStencil include-shape nested restore for
   LibreOffice. Official `mxStencil.drawShape` include-shape shares
   `canvas.states`; nested restore can pop a host `canvas.save`, then
