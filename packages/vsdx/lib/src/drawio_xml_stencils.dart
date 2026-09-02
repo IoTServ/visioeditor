@@ -832,7 +832,14 @@ class _DrawioXmlShapeDecoder {
         // Do not fall through to createState `3 3` (AWS 4 work package).
         break;
       case 'linecap':
-        _lineCap = _mxLineCap(node.getAttribute('cap'));
+        // mxXmlCanvas2D.setLineCap / mxStencil.drawNode always call
+        // setLineCap(cap). Omitted/invalid is null; leftover assigned
+        // that and `_paintLine` skipped copyWith, so Draw collectLine
+        // used Visio factory LineCap 0 (`tokens.txt` LineCap →
+        // svg:stroke-linecap=round and round join). mxSvgCanvas2D
+        // skips the attribute when state.lineCap is null; SVG default
+        // is butt (LineCap 1 / extended).
+        _lineCap = _mxLineCap(node.getAttribute('cap')) ?? LineCap.extended;
         break;
       case 'linejoin':
         // mxStencil.drawNode always setLineJoin(join). XSD is miter /
@@ -1098,6 +1105,8 @@ class _DrawioXmlShapeDecoder {
       // `linecap` / `linejoin` / `miterlimit` / `dashpattern` follow
       // mxStencil.drawNode onto collectLine LineCap / LinePattern (custom
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
+      // Omitted linecap cap snaps to LineCap 1 (SVG butt) so Draw does
+      // not round (`tokens.txt` LineCap).
       // `dashpattern pattern="none"` is NaN in official drawNode, so SVG
       // stroke-dasharray is invalid and Draw must stay solid (AWS 4
       // work package), not createState `3 3`. Cisco `dash="8 8"` (no
@@ -2754,9 +2763,10 @@ class _DrawioXmlShapeDecoder {
     if (_strokeTransparency > 1e-9) {
       line = line.copyWith(transparency: _strokeTransparency);
     }
-    if (_lineCap != null) {
-      line = line.copyWith(cap: _lineCap);
-    }
+    // mx createState lineCap is flat. VsdxLine.defaultLine is Visio
+    // factory round; a null canvas cap must not leak LineCap 0 into
+    // collectLine (`tokens.txt` LineCap → svg:stroke-linecap=round).
+    line = line.copyWith(cap: _lineCap ?? LineCap.extended);
     if (_lineJoin != null) {
       line = line.copyWith(join: _lineJoin);
     }
@@ -5129,7 +5139,9 @@ double? _mxShapeAttrStrokeWidth(XmlElement element) {
 }
 
 /// Visio LineCap: 0 round, 1 extended/butt, 2 square. libvisio
-/// `_lineProperties` maps those onto svg:stroke-linecap.
+/// `_lineProperties` maps those onto svg:stroke-linecap. Empty /
+/// unknown tokens are null so the caller can snap to createState
+/// flat (LineCap 1); SVG default when state.lineCap is null is butt.
 LineCap? _mxLineCap(String? raw) => switch ((raw ?? '').trim().toLowerCase()) {
       'round' => LineCap.round,
       'square' => LineCap.square,

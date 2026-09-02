@@ -15978,6 +15978,123 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
+    () {
+      LineCap? strokedCap(VsdxShape shape) {
+        if (shape.line.hasLine) return shape.line.cap;
+        return null;
+      }
+
+      bool hasCap(VsdxShape shape, LineCap cap) {
+        if (shape.line.hasLine && shape.line.cap == cap) return true;
+        return shape.children.any((child) => hasCap(child, cap));
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<linecap/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 499,
+      );
+      expect(
+        strokedCap(omitted),
+        LineCap.extended,
+        reason: 'omitted cap is SVG butt; leftover used to leak Visio '
+            'factory LineCap 0 so Draw collectLine rounded the rail '
+            '(`tokens.txt` LineCap)',
+      );
+      expect(
+        hasCap(omitted, LineCap.round),
+        isFalse,
+        reason: 'omitted linecap must not paint round caps',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<linecap cap="square"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<linecap/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.line.cap,
+        LineCap.square,
+        reason: 'first inherit stroke keeps collectLine LineCap 2',
+      );
+      expect(
+        laterHost.children.any(
+          (child) => child.line.hasLine && child.line.cap == LineCap.extended,
+        ),
+        isTrue,
+        reason: 'later omitted cap leftover-bakes LineCap 1 so Draw does '
+            'not keep the square rail (`tokens.txt` LineCap)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<linecap cap="square"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<linecap/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(includeHost.line.cap, LineCap.square);
+      expect(
+        includeHost.children.any(
+          (child) => child.line.hasLine && child.line.cap == LineCap.extended,
+        ),
+        isTrue,
+        reason: 'include-shape nested omitted cap leftover-bakes LineCap 1 '
+            'so Draw does not square the tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(leftover.line.cap, LineCap.square);
+      expect(
+        leftover.children.any(
+          (child) => child.line.hasLine && child.line.cap == LineCap.extended,
+        ),
+        isTrue,
+        reason: 'a second save keeps leftover LineCap 1 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D rotate leftover bakes PinX for LibreOffice',
     () {
       double minMoveX(VsdxShape shape) {
