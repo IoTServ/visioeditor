@@ -714,6 +714,10 @@ class _DrawioXmlShapeDecoder {
         imgOffsetYInches: hostBox?.offsetY ?? 0,
         imgWidthInches: hostBox?.width,
         imgHeightInches: hostBox?.height,
+        // mxSvgCanvas2D.image opacity is `s.alpha * s.fillAlpha`.
+        // leftover write bakes Transparency into PNG; Draw has no
+        // Foreign graphic-style opacity.
+        imageTransparency: hostRasterEntry?.leftoverTransparency ?? 0,
         // Cell STYLE_FLIPH/V is `cellfliph` / `cellflipv`. Image
         // `flipH`/`flipV` leftover-bakes FlipX on a ForeignData child
         // (`draw:mirror-*`). Do not OR the two onto the host — leftover
@@ -1110,6 +1114,12 @@ class _DrawioXmlShapeDecoder {
       // collectForeignDataType stretched every PNG (`tokens.txt` has
       // no image aspect; svg:width is ImgWidth with no clip). leftover
       // now letterboxes Img* for aspect="1".
+      // `image` canvas alpha follows mxSvgCanvas2D.image
+      // (`s.alpha * s.fillAlpha`) onto leftover Transparency. libvisio
+      // `_flushCurrentForeignData` emits an empty graphic style
+      // (`tokens.txt` has no Foreign opacity), so a save bakes that
+      // into the PNG Draw paints. leftover snapshots at emit so a
+      // later `<alpha>` / `<fillalpha>` cannot fade earlier bitmaps.
       // `include-shape` follows drawNode stencil.drawShape into the
       // include box (NestedStencil already does). leftover merges
       // nested Geometry in that box so Draw collectGeometry paints it.
@@ -1349,6 +1359,7 @@ class _DrawioXmlShapeDecoder {
           boxH: nestedRaster.boxH == null ? null : nestedRaster.boxH! * sy,
           flipH: nestedRaster.flipH,
           flipV: nestedRaster.flipV,
+          leftoverTransparency: nestedRaster.leftoverTransparency,
         ));
       }
     }
@@ -1688,9 +1699,13 @@ class _DrawioXmlShapeDecoder {
   }
 
   _DrawioRaster _snapshotRasterCanvas(_DrawioRaster raster) {
-    final box = _rasterLeftoverBoxAtEmit(raster);
-    if (box == null) return raster;
-    return raster.copyWith(
+    // mxSvgCanvas2D.image opacity is `s.alpha * s.fillAlpha`, not
+    // strokeAlpha. leftover Transparency is the inverse so a save
+    // bakes PNG alpha (`tokens.txt` has no Foreign opacity).
+    final faded = raster.copyWith(leftoverTransparency: _fillTransparency);
+    final box = _rasterLeftoverBoxAtEmit(faded);
+    if (box == null) return faded;
+    return faded.copyWith(
       leftoverOffsetX: box.offsetX,
       leftoverOffsetY: box.offsetY,
       leftoverWidth: box.width,
@@ -1737,6 +1752,7 @@ class _DrawioXmlShapeDecoder {
       leftoverAngleRad: source.leftoverAngleRad,
       leftoverCanvasFlipX: source.leftoverCanvasFlipX,
       leftoverCanvasFlipY: source.leftoverCanvasFlipY,
+      leftoverTransparency: source.leftoverTransparency,
     );
   }
 
@@ -3275,6 +3291,7 @@ class _DrawioXmlShapeDecoder {
       ),
       imgWidthInches: width,
       imgHeightInches: height,
+      imageTransparency: raster.leftoverTransparency,
       richText: const VsdxRichText(
         runs: <VsdxTextRun>[],
         textBlock: VsdxTextBlock(hideText: true),
@@ -3885,6 +3902,7 @@ class _DrawioRaster {
     this.leftoverAngleRad = 0,
     this.leftoverCanvasFlipX = false,
     this.leftoverCanvasFlipY = false,
+    this.leftoverTransparency = 0,
   });
 
   final String part;
@@ -3902,6 +3920,7 @@ class _DrawioRaster {
   final double leftoverAngleRad;
   final bool leftoverCanvasFlipX;
   final bool leftoverCanvasFlipY;
+  final double leftoverTransparency;
 
   _DrawioRaster copyWith({
     double? leftoverOffsetX,
@@ -3911,6 +3930,7 @@ class _DrawioRaster {
     double? leftoverAngleRad,
     bool? leftoverCanvasFlipX,
     bool? leftoverCanvasFlipY,
+    double? leftoverTransparency,
   }) =>
       _DrawioRaster(
         part: part,
@@ -3928,6 +3948,7 @@ class _DrawioRaster {
         leftoverAngleRad: leftoverAngleRad ?? this.leftoverAngleRad,
         leftoverCanvasFlipX: leftoverCanvasFlipX ?? this.leftoverCanvasFlipX,
         leftoverCanvasFlipY: leftoverCanvasFlipY ?? this.leftoverCanvasFlipY,
+        leftoverTransparency: leftoverTransparency ?? this.leftoverTransparency,
       );
 }
 

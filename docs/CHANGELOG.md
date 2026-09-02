@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D image alpha leftover Transparency for
+  LibreOffice. Official `mxSvgCanvas2D.image` sets SVG `opacity` to
+  `s.alpha * s.fillAlpha` (`<alpha>` / `<fillalpha>`). libvisio
+  `_flushCurrentForeignData` emits an empty graphic style
+  (`tokens.txt` has no Foreign opacity), so Draw painted every PNG
+  opaque. leftover now snapshots Transparency at emit, include-shape
+  copies that overlay, and a later alpha leftover-bakes a ForeignData
+  sibling. A save composites the fade into PNG. A second save keeps
+  both.
 - draw.io leftover mxXmlCanvas2D image aspect leftover Img* for
   LibreOffice. Official `canvas.image(..., aspect)` emits
   `<image aspect=>`; `mxSvgCanvas2D.image` uses

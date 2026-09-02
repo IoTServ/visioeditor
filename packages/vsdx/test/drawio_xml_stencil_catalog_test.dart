@@ -16478,6 +16478,166 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D image alpha leftover bakes Transparency for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      VsdxShape? imageShape(VsdxShape shape) {
+        if (shape.hasImage) return shape;
+        for (final child in shape.children) {
+          final nested = imageShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        return <VsdxShape>[
+          if (shape.hasImage && shape.children.isEmpty) shape,
+          for (final child in shape.children) ...imageShapes(child),
+        ];
+      }
+
+      String imageXml(String prefix) =>
+          '<shape name="I" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '$prefix'
+          '<image src="data:image/png;base64,$png" x="20" y="0" w="10" h="10"/>'
+          '</foreground>'
+          '</shape>';
+
+      final opaque = decodeDrawioMxStencilXml(imageXml(''), id: 490);
+      expect(opaque.hasImage, isTrue);
+      expect(
+        opaque.imageTransparency,
+        closeTo(0, 1e-6),
+        reason: 'omitted canvas alpha stays opaque ForeignData',
+      );
+
+      final faded = decodeDrawioMxStencilXml(
+        imageXml('<alpha alpha="0.4"/>'),
+      );
+      expect(faded.hasImage, isTrue);
+      expect(
+        faded.imageTransparency,
+        closeTo(0.6, 1e-6),
+        reason: 'mxSvgCanvas2D.image opacity is s.alpha * s.fillAlpha; '
+            'leftover Transparency so a save bakes PNG alpha '
+            '(`tokens.txt` has no Foreign opacity)',
+      );
+
+      final fillFaded = decodeDrawioMxStencilXml(
+        imageXml('<fillalpha alpha="0.4"/>'),
+      );
+      expect(
+        fillFaded.imageTransparency,
+        closeTo(0.6, 1e-6),
+        reason: 'canvas.image uses fillAlpha, not strokeAlpha',
+      );
+
+      final strokeOnly = decodeDrawioMxStencilXml(
+        imageXml('<strokealpha alpha="0.4"/>'),
+      );
+      expect(
+        strokeOnly.imageTransparency,
+        closeTo(0, 1e-6),
+        reason: 'mxSvgCanvas2D.image does not multiply strokeAlpha',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="20" y="0" w="10" h="10"/>'
+        '<alpha alpha="0.4"/>'
+        '<image src="data:image/png;base64,$png" x="20" y="20" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final pics = imageShapes(later);
+      expect(pics, hasLength(2));
+      expect(
+        pics.first.imageTransparency,
+        closeTo(0, 1e-6),
+        reason: 'first canvas.image keeps collectForeignDataType opaque',
+      );
+      expect(
+        pics.last.imageTransparency,
+        closeTo(0.6, 1e-6),
+        reason: 'later alpha leftover-bakes Transparency on a ForeignData '
+            'sibling so Draw does not fade both PNGs',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<alpha alpha="0.4"/>'
+        '<image src="data:image/png;base64,$png" x="0" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        imageShape(includeHost)!.imageTransparency,
+        closeTo(0.6, 1e-6),
+        reason: 'include-shape copies leftover-inch canvas image alpha',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final fadedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(faded.copyWith(id: fadedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverFaded = leftoverDoc.pages.first.findShapeById(fadedId)!;
+      expect(
+        leftoverFaded.imageTransparency,
+        closeTo(0, 1e-6),
+        reason: 'a save bakes Transparency into PNG; Draw has no Foreign '
+            'graphic-style opacity',
+      );
+      expect(
+        leftoverFaded.imagePartName,
+        contains('image_lo_tone'),
+        reason: 'leftover write composites canvas image alpha into the PNG '
+            'Draw paints',
+      );
+      final leftoverPics = imageShapes(
+        leftoverDoc.pages.first.findShapeById(laterId)!,
+      );
+      expect(leftoverPics, hasLength(2));
+      expect(leftoverPics.first.imageTransparency, closeTo(0, 1e-6));
+      expect(
+        leftoverPics.first.imagePartName,
+        isNot(contains('image_lo_tone')),
+        reason: 'first canvas.image stays the opaque PNG',
+      );
+      expect(leftoverPics.last.imageTransparency, closeTo(0, 1e-6));
+      expect(
+        leftoverPics.last.imagePartName,
+        contains('image_lo_tone'),
+        reason: 'a second save keeps the faded sibling PNG Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(
