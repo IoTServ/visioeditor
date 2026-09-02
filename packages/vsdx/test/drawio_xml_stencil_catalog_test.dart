@@ -16115,6 +16115,136 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D scale negative leftover bakes TxtAngle pi for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        if (shape.text == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxShape? imageShape(VsdxShape shape) {
+        if (shape.hasImage) return shape;
+        for (final child in shape.children) {
+          final nested = imageShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool isHalfTurn(double rad) {
+        var x = rad;
+        while (x > math.pi) {
+          x -= 2 * math.pi;
+        }
+        while (x < -math.pi) {
+          x += 2 * math.pi;
+        }
+        return (x.abs() - math.pi).abs() < 0.05;
+      }
+
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      final flipped = decodeDrawioMxStencilXml(
+        '<shape name="F" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<scale scale="-1"/>'
+        '<text str="A" x="20" y="10" align="center" valign="middle"/>'
+        '<image src="data:image/png;base64,$png" x="20" y="20" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+        id: 503,
+      );
+      expect(
+        isHalfTurn(glyphShape(flipped, 'A')!.richText.textBlock.angleRad),
+        isTrue,
+        reason: 'mxAbstractCanvas2D.scale *= -1 is SVG scale(-1,-1) ≡ 180°; '
+            'leftover used to leave TxtAngle 0 so Draw transformAngle '
+            'missed librevenge:rotate (`tokens.txt` TxtAngle)',
+      );
+      expect(
+        isHalfTurn(imageShape(flipped)!.angleRad),
+        isTrue,
+        reason: 'ForeignData Angle follows the same 180° leftover '
+            '(`tokens.txt` Angle)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="A" x="20" y="10" align="center" valign="middle"/>'
+        '<scale scale="-1"/>'
+        '<text str="B" x="20" y="30" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphShape(laterHost, 'A')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'first canvas.text keeps collectTextBlock unrotated',
+      );
+      expect(
+        isHalfTurn(glyphShape(laterHost, 'B')!.richText.textBlock.angleRad),
+        isTrue,
+        reason: 'later scale=-1 leftover-bakes TxtAngle π so Draw does '
+            'not leave the second glyph upright (`tokens.txt` TxtAngle)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<scale scale="-1"/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="10" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="20" h="10" strokewidth="1">'
+        '<foreground>'
+        '<text str="A" x="10" y="5" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        isHalfTurn(glyphShape(includeHost, 'A')!.richText.textBlock.angleRad),
+        isTrue,
+        reason: 'include-shape overlay inherits host scale=-1; nested '
+            'TxtAngle π follows leftover inches',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        glyphShape(leftover, 'A')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps the first TxtAngle Draw paints',
+      );
+      expect(
+        isHalfTurn(glyphShape(leftover, 'B')!.richText.textBlock.angleRad),
+        isTrue,
+        reason: 'a second save keeps leftover TxtAngle π Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

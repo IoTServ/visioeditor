@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D scale negative leftover TxtAngle π for
+  LibreOffice. Official `scale *= -1` is SVG `scale(-1,-1)` ≡ 180°.
+  leftover Path vertices already *(userScale), but ForeignData / glyphs
+  stayed upright so Draw `transformAngle` missed `librevenge:rotate`
+  (`tokens.txt` Angle / TxtAngle). leftover now bakes Angle π, include-shape
+  copies that overlay, and a later negative scale leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D scale negative leftover Pin flip for
   LibreOffice. Official `mxAbstractCanvas2D.scale` is
   `state.scale *= value`, and `setScale(-1)` emits `<scale scale="-1"/>`

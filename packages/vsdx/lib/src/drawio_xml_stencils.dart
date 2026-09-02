@@ -2719,12 +2719,21 @@ class _DrawioXmlShapeDecoder {
   /// mxSvgCanvas2D.rotate effective theta, as Visio CCW radians.
   /// SVG +theta is clockwise Y-down; leftover TxtAngle / Angle are
   /// Y-up (`tokens.txt` TxtAngle / Angle → librevenge:rotate).
+  /// `scale *= -1` is SVG scale(-1,-1) ≡ 180°; leftover Path vertices
+  /// already *(userScale), but ForeignData / glyphs still need Angle
+  /// so Draw transformAngle stands them up.
   double get _canvasLeftoverRotationRad {
-    if (!_hasCanvasRotate) return 0;
-    var theta = _rotThetaDeg;
-    if (_rotFlipH && _rotFlipV) theta += 180;
-    if (_rotFlipH ? !_rotFlipV : _rotFlipV) theta = -theta;
-    return -theta * math.pi / 180;
+    var rad = 0.0;
+    if (_hasCanvasRotate) {
+      var theta = _rotThetaDeg;
+      if (_rotFlipH && _rotFlipV) theta += 180;
+      if (_rotFlipH ? !_rotFlipV : _rotFlipV) theta = -theta;
+      rad = -theta * math.pi / 180;
+    }
+    if (scaleX * _canvasUserScale < 0 && scaleY * _canvasUserScale < 0) {
+      rad += math.pi;
+    }
+    return rad;
   }
 
   bool get _canvasXorFlipX => _rotFlipH && !_rotFlipV;
