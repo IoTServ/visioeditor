@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil later strokealpha LineColorTrans sibling
+  for LibreOffice. Official NestedStencil `<strokealpha>` is
+  `canvas.setStrokeAlpha`; include-shape nested alpha stays on the
+  shared canvas for later host strokes. leftover used one collectLine
+  transparency captured at the first inherit stroke, so Draw
+  `_lineProperties` (and leftover FillForegndTrans ribbons) faded the
+  later rail (`tokens.txt` has no LineColorTrans; `xmlStringToColour`
+  zeros Colour.a). leftover now bakes a sibling when leftover trans
+  differs. A second save keeps both rails.
 - draw.io leftover mxStencil later dashed LinePattern sibling for
   LibreOffice. Official `mxStencil.drawNode` `<dashed>` / `<dashpattern>`
   are `canvas.setDashed` / `setDashPattern`; include-shape nested

@@ -13857,6 +13857,121 @@ void main() {
   );
 
   test(
+    'mxStencil later strokealpha leftover bakes LineColorTrans sibling for LibreOffice',
+    () {
+      List<double> strokeTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) values.add(next.line.transparency);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      ({int fadedFill, int opaqueLine}) leftoverPaint(VsdxShape shape) {
+        var fadedFill = 0;
+        var opaqueLine = 0;
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill && next.fill.foregroundTransparency > 0.5) {
+            fadedFill++;
+          }
+          if (next.line.hasLine && next.line.transparency < 0.1) {
+            opaqueLine++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (fadedFill: fadedFill, opaqueLine: opaqueLine);
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="A" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokealpha alpha="0.4"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<strokealpha alpha="1"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 472,
+      );
+      expect(
+        strokeTrans(host),
+        [closeTo(0, 1e-6), closeTo(0.6, 1e-6)],
+        reason: 'libvisio collectLine is shape-level; leftover must bake the '
+            'later strokealpha inherit stroke as a sibling so Draw does not '
+            'ribbon both rails',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokealpha alpha="0.4"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        strokeTrans(includeHost),
+        [closeTo(0, 1e-6), closeTo(0.6, 1e-6), closeTo(0.6, 1e-6)],
+        reason: 'include-shape shares the canvas; nested strokealpha stays '
+            'for later host inherit stroke, which must not reuse the first '
+            'collectLine LineColorTrans',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      final paint = leftoverPaint(leftover);
+      expect(
+        paint.fadedFill,
+        greaterThan(0),
+        reason: 'LineColorTrans is not a token; leftover ribbons the faded '
+            'rail as FillForegndTrans',
+      );
+      expect(
+        paint.opaqueLine,
+        greaterThan(0),
+        reason: 'a second save keeps the later opaque rail Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

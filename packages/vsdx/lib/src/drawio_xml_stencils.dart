@@ -563,11 +563,15 @@ class _DrawioXmlShapeDecoder {
     }
     if (inheritLine &&
         parentLine.hasLine &&
-        (_parentStrokeTransparency ?? 0) > 1e-9) {
-      // restore() pops <alpha> after inherit fillstroke. LineColorTrans
-      // is not a token (`xmlStringToColour` zeros Colour.a); leftover
-      // bakes a FillForegndTrans ribbon. Capture Trans at _finish so
-      // that bake can run (Cortana / vNIC 0.4–0.5 silhouettes).
+        _parentStrokeTransparency != null) {
+      // restore() pops <alpha> after inherit fillstroke. A later
+      // `<strokealpha>` (include-shape nested setStrokeAlpha) leaks
+      // onto `_paintLine` at build. collectLine is shape-level, so keep
+      // leftover Trans captured when parent Geometry was painted —
+      // including 0, or leftover would ribbon the opaque first rail.
+      // LineColorTrans is not a token (`xmlStringToColour` zeros
+      // Colour.a); leftover bakes a FillForegndTrans ribbon (Cortana /
+      // vNIC 0.4–0.5 silhouettes).
       parentLine = parentLine.copyWith(
         transparency: _parentStrokeTransparency,
       );
@@ -2002,15 +2006,28 @@ class _DrawioXmlShapeDecoder {
     final bakeWeight = doStroke &&
         _parentStrokeWeightInches != null &&
         (_strokeWeightInches - _parentStrokeWeightInches!).abs() > 1e-6;
+    // collectLine is shape-level. A later `<strokealpha>` (or include-shape
+    // nested setStrokeAlpha that stays on the shared canvas) must be a
+    // sibling so leftover can ribbon only the faded rail. `tokens.txt`
+    // has no LineColorTrans; `xmlStringToColour` zeros Colour.a, so
+    // `_lineProperties` always emits svg:stroke-opacity=1. leftover used
+    // to concatenate onto the parent, so the later opaque rail vanished
+    // into the same FillForegndTrans ribbon.
+    final bakeStrokeTrans = doStroke &&
+        _parentStrokeTransparency != null &&
+        (_strokeTransparency - _parentStrokeTransparency!).abs() > 1e-6;
     final inheritFillSibling = extraInheritFill ||
-        ((bakeLineStyle || bakeWeight || bakeDashState) && doFill && !bakeFill);
+        ((bakeLineStyle || bakeWeight || bakeDashState || bakeStrokeTrans) &&
+            doFill &&
+            !bakeFill);
     if (bakeFill ||
         bakeStroke ||
         bakeDash ||
         bakeDashState ||
         extraInheritFill ||
         bakeLineStyle ||
-        bakeWeight) {
+        bakeWeight ||
+        bakeStrokeTrans) {
       final partFill = inheritFillSibling
           ? VsdxFill(
               pattern: 1,
