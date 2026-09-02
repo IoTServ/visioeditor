@@ -13020,6 +13020,88 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape fontsize leftover keeps shared canvas Char for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        for (final child in shape.children) {
+          if (child.text == text) return child;
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxShape hostOf({required bool hostFont, required bool nestedFont}) =>
+          decodeDrawioMxStencilXml(
+            '<shapes name="mxgraph.test">'
+            '<shape name="host" w="100" h="100" strokewidth="1">'
+            '<foreground>'
+            '${hostFont ? '<fontsize size="12"/>' : ''}'
+            '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+            '${hostFont ? '<text x="50" y="90" str="B" align="center" valign="middle"/>' : ''}'
+            '</foreground>'
+            '</shape>'
+            '<shape name="tile" w="10" h="10" strokewidth="1">'
+            '<foreground>'
+            '${nestedFont ? '<fontsize size="10"/>' : ''}'
+            '<text x="5" y="5" str="A" align="center" valign="middle"/>'
+            '</foreground>'
+            '</shape>'
+            '</shapes>',
+            id: nestedFont ? 464 : 463,
+          );
+
+      const canvasScale = 1.5 / 100;
+      const nestedMinScale = 40 / 10 * canvasScale;
+      final inherit = hostOf(hostFont: true, nestedFont: false);
+      final authored = hostOf(hostFont: false, nestedFont: true);
+      expect(
+        glyphShape(inherit, 'A')!.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(12 * canvasScale, 0.01),
+        reason: 'mxStencil.drawNode include-shape shares the canvas; host '
+            'setFontSize already used host minScale. leftover must not '
+            'multiply size by nested min(sx,sy) again',
+      );
+      expect(
+        glyphShape(inherit, 'B')!.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(12 * canvasScale, 0.01),
+        reason: 'later host canvas.text keeps the host fontsize leftover',
+      );
+      expect(
+        glyphShape(authored, 'A')!.richText.runs.first.charStyle.fontSizeInches,
+        closeTo(10 * nestedMinScale, 0.01),
+        reason: 'nested drawNode fontsize still uses nested minScale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(inherit.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        glyphShape(leftover, 'A')!
+            .richText
+            .runs
+            .first
+            .charStyle
+            .fontSizeInches,
+        closeTo(12 * canvasScale, 0.01),
+        reason: 'a second save keeps shared-canvas Char size',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

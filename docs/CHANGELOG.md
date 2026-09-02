@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape fontsize shared canvas for
+  LibreOffice. Official `mxStencil.drawNode` include-shape calls nested
+  `drawShape` on the same canvas, so host `setFontSize(size×minScale)`
+  already holds leftover inches. leftover used to multiply nested
+  `canvas.text` by nested `min(sx,sy)` (`tokens.txt` Size). leftover
+  now folds host leftover inches into nested stencil units.
+  Nested-authored `fontsize` still uses nested minScale. A second
+  save keeps Char size.
 - draw.io leftover mxStencil include-shape dashpattern shared canvas for
   LibreOffice. Official `mxStencil.drawNode` include-shape calls nested
   `drawShape` on the same canvas, so host `setDashPattern(n×minScale)`

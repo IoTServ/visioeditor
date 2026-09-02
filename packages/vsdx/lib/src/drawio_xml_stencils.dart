@@ -1034,6 +1034,7 @@ class _DrawioXmlShapeDecoder {
     // min(sx,sy). Fold leftover inches into nested stencil units
     // so Draw collectLine gaps match NestedStencil.
     nested._scaleAdoptedCanvasDashFrom(this);
+    nested._scaleAdoptedCanvasFontFrom(this);
     nested._paintSections();
     _geometries.addAll(nested._geometries);
     _coloredParts.addAll(nested._coloredParts);
@@ -1092,7 +1093,6 @@ class _DrawioXmlShapeDecoder {
   void _adoptNestedCanvas(_DrawioXmlShapeDecoder nested) {
     final hostMin = math.min(scaleX.abs(), scaleY.abs());
     final nestedMin = math.min(nested.scaleX.abs(), nested.scaleY.abs());
-    final hostFont = _fontSize;
     final hostDash = _dashPattern;
     _adoptPaint(nested);
     if (hostMin < 1e-12) return;
@@ -1101,13 +1101,11 @@ class _DrawioXmlShapeDecoder {
       _strokeWidth = nested._strokeWeightInches / hostMin;
       _strokeWidthFixed = false;
     }
-    // Nested drawShape does not reset font; only convert when nested
-    // drawNode actually changed size. Dash always maps leftover inches
-    // (NestedStencil last setDashPattern stays on the shared canvas).
-    if ((nested._fontSize - hostFont).abs() > 1e-12) {
+    // NestedStencil last setFontSize / setDashPattern stay on the
+    // shared canvas. leftover `_fontSize` / `_dashPattern` are stencil
+    // units of the nested overlay — map leftover inches back to host.
+    if (nestedMin > 1e-12) {
       _fontSize = nested._fontSize * nestedMin / hostMin;
-    } else {
-      _fontSize = hostFont;
     }
     final dashes = nested._dashPattern;
     if (dashes != null && dashes.isEmpty) {
@@ -1134,6 +1132,16 @@ class _DrawioXmlShapeDecoder {
     _dashPattern = [
       for (final value in source) value * hostMin / nestedMin,
     ];
+  }
+
+  /// Host `setFontSize(size*hostMinScale)` leftover inches, expressed in
+  /// this overlay's stencil units so `_labelInParentStencilSpace` does
+  /// not apply nested minScale a second time.
+  void _scaleAdoptedCanvasFontFrom(_DrawioXmlShapeDecoder host) {
+    final hostMin = math.min(host.scaleX.abs(), host.scaleY.abs());
+    final nestedMin = math.min(scaleX.abs(), scaleY.abs());
+    if (nestedMin < 1e-12) return;
+    _fontSize = _fontSize * hostMin / nestedMin;
   }
 
   void _adoptPaint(_DrawioXmlShapeDecoder other) {
