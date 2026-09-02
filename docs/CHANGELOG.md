@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape image canvas box and flipH for
+  LibreOffice. Official `mxStencil.drawNode` image is
+  `canvas.image(x, y, w×sx, h×sy, …, flipH, flipV)` in canvas pixels.
+  leftover used to remap nested stencil units then keep FlipX on the
+  host, so include-shape variable aspect kept the nested square and
+  `flipH` applyXForm-mirrored later Geometry (`tokens.txt` FlipX /
+  ImgWidth). leftover now copies nested leftover inches and bakes
+  image Flip onto a ForeignData child (`draw:mirror-*`). Host FlipX
+  stays `cellfliph`. A second save keeps Img* / FlipX.
 - draw.io leftover mxStencil include-shape SVG arc canvas radii for
   LibreOffice. Official `mxStencil.drawNode` arc is
   `canvas.arcTo(rx×sx, ry×sy, φ, …)` in canvas pixels. leftover used to

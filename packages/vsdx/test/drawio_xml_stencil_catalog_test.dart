@@ -12595,6 +12595,180 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape image leftover keeps canvas w*sx h*sy for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="0" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 455,
+      );
+      const canvasScale = 1.5 / 100;
+      expect(host.hasImage, isTrue);
+      expect(
+        host.imgWidthInches,
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'mxStencil.drawNode canvas.image is w*sx in canvas pixels; '
+            'leftover ImgWidth must follow the 80-wide include box, not '
+            'the nested 10×10 square',
+      );
+      expect(
+        host.imgHeightInches,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'variable aspect include-shape stretches h*sy',
+      );
+      expect(
+        host.imgOffsetXInches,
+        closeTo(10 * canvasScale, 0.02),
+      );
+      expect(
+        host.imgOffsetYInches,
+        closeTo((100 - 50) * canvasScale, 0.02),
+        reason: 'image y is stencil-top; ImgOffsetY is Visio Y-up bottom',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(leftover.hasImage, isTrue);
+      expect(
+        leftover.imgWidthInches,
+        closeTo(80 * canvasScale, 0.02),
+        reason: 'a second save keeps collectForeignDataType svg:width',
+      );
+      expect(
+        leftover.imgHeightInches,
+        closeTo(40 * canvasScale, 0.02),
+      );
+    },
+  );
+
+  test(
+    'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      VsdxShape? imageShape(VsdxShape shape) {
+        if (shape.hasImage) return shape;
+        for (final child in shape.children) {
+          final nested = imageShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final flipped = decodeDrawioMxStencilXml(
+        '<shape name="Flip" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="80" w="100" h="10"/>'
+        '<stroke/>'
+        '<image src="data:image/png;base64,$png" x="10" y="10" w="80" h="40" flipH="1"/>'
+        '</foreground>'
+        '</shape>',
+        id: 456,
+      );
+      expect(
+        flipped.flipX,
+        isFalse,
+        reason: 'canvas.image flipH is not STYLE_FLIPH; leftover FlipX on '
+            'the host would applyXForm-mirror the later rect',
+      );
+      expect(
+        flipped.hasImage,
+        isFalse,
+        reason: 'ForeignData lives on a child so transformFlips XOR stays '
+            'on the PNG',
+      );
+      expect(
+        flipped.line.hasLine,
+        isTrue,
+        reason: 'mxStencil.drawNode still strokes after <image>; leftover '
+            'must not force LinePattern 0 because the shape has a raster',
+      );
+      final pic = imageShape(flipped);
+      expect(pic, isNotNull);
+      expect(
+        pic!.flipX,
+        isTrue,
+        reason: 'collectForeignDataType transformFlips → draw:mirror-horizontal',
+      );
+      const canvasScale = 1.5 / 100;
+      expect(pic.imgWidthInches, closeTo(80 * canvasScale, 0.02));
+      expect(pic.imgHeightInches, closeTo(40 * canvasScale, 0.02));
+
+      final cellFlip = decodeDrawioMxStencilXml(
+        '<shape name="Cell" w="100" h="100" cellfliph="1" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="10" y="10" w="80" h="40"/>'
+        '</foreground>'
+        '</shape>',
+        id: 457,
+      );
+      expect(
+        cellFlip.flipX,
+        isTrue,
+        reason: 'STYLE_FLIPH leftover FlipX; an image must not drop cellfliph',
+      );
+      expect(cellFlip.hasImage, isTrue);
+      expect(cellFlip.children.where((c) => c.hasImage), isEmpty);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final flipId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(flipped.copyWith(id: flipId)),
+      );
+      final cellId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(cellFlip.copyWith(id: cellId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverFlip = leftoverDoc.pages.first.findShapeById(flipId)!;
+      final leftoverCell = leftoverDoc.pages.first.findShapeById(cellId)!;
+      expect(leftoverFlip.flipX, isFalse);
+      expect(leftoverFlip.line.hasLine, isTrue);
+      final leftoverPic = imageShape(leftoverFlip);
+      expect(leftoverPic, isNotNull);
+      expect(
+        leftoverPic!.flipX,
+        isTrue,
+        reason: 'a second save keeps ForeignData FlipX',
+      );
+      expect(leftoverCell.flipX, isTrue);
+      expect(leftoverCell.hasImage, isTrue);
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

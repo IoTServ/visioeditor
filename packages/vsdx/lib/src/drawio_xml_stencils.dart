@@ -444,6 +444,13 @@ class _DrawioXmlShapeDecoder {
     }
     final inheritFill = _geometries.any((geometry) => !geometry.noFill);
     final inheritLine = _geometries.any((geometry) => !geometry.noLine);
+    // Picture-only leftover matches VsdxShapeFactory.picture: NoFill/NoLine
+    // so collectFillAndShadow does not wash a frame over ForeignData.
+    // mxStencil.drawNode still paints later fill/stroke after `<image>`,
+    // so leftover must keep inherit FillPattern / LinePattern when the
+    // stencil also has a contour (`_rasterPart` used to force NoLine).
+    final pictureFrameOnly =
+        _rasterPart != null && !inheritFill && !inheritLine;
     var nextId = id + 1;
     final children = <VsdxShape>[];
     for (final part in _coloredParts) {
@@ -455,6 +462,18 @@ class _DrawioXmlShapeDecoder {
     }
     for (final label in _labels) {
       children.add(_labelShape(id: nextId++, label: label));
+    }
+    final rasterBox = _rasterImageBox();
+    // mxStencil.drawNode canvas.image flipH/flipV mirrors only the
+    // bitmap. leftover FlipX on the host would applyXForm-mirror
+    // Geometry too (`collectXFormData`). Isolate that Flip onto a
+    // ForeignData child so transformFlips → draw:mirror-* stays on
+    // the PNG. Host FlipX is STYLE_FLIPH (`cellfliph`), not image flip.
+    final isolateRasterFlip = _rasterPart != null &&
+        rasterBox != null &&
+        (_rasterFlipH || _rasterFlipV);
+    if (isolateRasterFlip) {
+      children.add(_rasterPictureShape(id: nextId++, box: rasterBox));
     }
     // Use Sheet.N like factory / chart stencils. The catalog keeps the
     // human-readable stencil title for the palette; putting it on shape.name
@@ -470,16 +489,15 @@ class _DrawioXmlShapeDecoder {
     // collectFillAndShadow → _fillAndShadowProperties pattern==1 emits
     // draw:opacity = 1 − FillForegndTrans (Networks2 hub shadow 0.25).
     final parentFillTrans = _parentFillTransparency ?? 0.0;
-    final parentFill =
-        _rasterPart != null || (!inheritFill && children.isNotEmpty)
-            ? const VsdxFill(pattern: 0)
-            : (_styleFill != null
-                ? VsdxFill(
-                    pattern: 1,
-                    foreground: _styleFill,
-                    foregroundTransparency: parentFillTrans,
-                  )
-                : VsdxFill(foregroundTransparency: parentFillTrans));
+    final parentFill = pictureFrameOnly || (!inheritFill && children.isNotEmpty)
+        ? const VsdxFill(pattern: 0)
+        : (_styleFill != null
+            ? VsdxFill(
+                pattern: 1,
+                foreground: _styleFill,
+                foregroundTransparency: parentFillTrans,
+              )
+            : VsdxFill(foregroundTransparency: parentFillTrans));
     // restore() / later sibling linecap leak onto collectLine otherwise.
     // Capture at the inherit `_finish` like LineWeight / LineColorTrans.
     final savedCap = _lineCap;
@@ -497,10 +515,9 @@ class _DrawioXmlShapeDecoder {
     if (inheritLine && _capturedParentStrokeColor) {
       _strokeColor = _parentStrokeColor;
     }
-    var parentLine =
-        _rasterPart != null || (!inheritLine && children.isNotEmpty)
-            ? const VsdxLine(pattern: 0)
-            : _paintLine(stroke: true);
+    var parentLine = pictureFrameOnly || (!inheritLine && children.isNotEmpty)
+        ? const VsdxLine(pattern: 0)
+        : _paintLine(stroke: true);
     if (inheritLine && _capturedParentStrokeColor) {
       _strokeColor = savedStrokeColor;
     }
@@ -545,7 +562,7 @@ class _DrawioXmlShapeDecoder {
         transparency: _parentStrokeTransparency,
       );
     }
-    final rasterBox = _rasterImageBox();
+    final hostRaster = isolateRasterFlip ? null : _rasterPart;
     return _withLineUserCells(VsdxShape(
       id: id,
       name: 'Sheet.$id',
@@ -563,30 +580,29 @@ class _DrawioXmlShapeDecoder {
       shadow: inheritFill
           ? (_parentShadow ?? VsdxShadow.disabled)
           : VsdxShadow.disabled,
-      imagePartName: _rasterPart,
-      foreignType: _rasterPart == null
+      imagePartName: hostRaster,
+      foreignType: hostRaster == null
           ? null
           : VsdxImage.foreignTypeFor(
               mimeType: _rasterMime ?? '',
-              partName: _rasterPart!,
+              partName: hostRaster,
             ),
-      foreignCompressionType: _rasterPart == null
+      foreignCompressionType: hostRaster == null
           ? null
           : VsdxImage.compressionTypeFor(
               mimeType: _rasterMime ?? '',
-              partName: _rasterPart!,
+              partName: hostRaster,
             ),
-      imgOffsetXInches: rasterBox?.offsetX ?? 0,
-      imgOffsetYInches: rasterBox?.offsetY ?? 0,
-      imgWidthInches: rasterBox?.width,
-      imgHeightInches: rasterBox?.height,
-      // Image `flipH`/`flipV` leftover-bake FlipX/Y for
-      // collectForeignDataType `draw:mirror-*`. Cell STYLE_FLIPH/V is
-      // `cellfliph` / `cellflipv` (like cellrotation); leftover XForm
-      // FlipX is what collectXFormData / applyXForm mirrors. Do not
-      // OR the two — image flip is not STYLE_FLIPH.
-      flipX: _rasterPart != null ? _rasterFlipH : _stencilCellFlipH,
-      flipY: _rasterPart != null ? _rasterFlipV : _stencilCellFlipV,
+      imgOffsetXInches: isolateRasterFlip ? 0 : (rasterBox?.offsetX ?? 0),
+      imgOffsetYInches: isolateRasterFlip ? 0 : (rasterBox?.offsetY ?? 0),
+      imgWidthInches: isolateRasterFlip ? null : rasterBox?.width,
+      imgHeightInches: isolateRasterFlip ? null : rasterBox?.height,
+      // Cell STYLE_FLIPH/V is `cellfliph` / `cellflipv`. Image
+      // `flipH`/`flipV` leftover-bakes FlipX on a ForeignData child
+      // (`draw:mirror-*`). Do not OR the two onto the host — leftover
+      // XForm FlipX is what collectXFormData / applyXForm mirrors.
+      flipX: _stencilCellFlipH,
+      flipY: _stencilCellFlipV,
       richText: _stencilLabelRichText(),
     ));
   }
@@ -871,6 +887,11 @@ class _DrawioXmlShapeDecoder {
       // leftover FlipX/Y comes from `cellfliph` / `cellflipv`.
       // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
       // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
+      // Nested include-shape copies leftover inches (`w*sx, h*sy`) so
+      // variable aspect does not keep the nested source square.
+      // `image` flipH/flipV leftover-bakes FlipX on a ForeignData child
+      // (`draw:mirror-*`); host FlipX stays `cellfliph` so applyXForm
+      // does not mirror later Geometry.
       // `include-shape` follows drawNode stencil.drawShape into the
       // include box (NestedStencil already does). leftover merges
       // nested Geometry in that box so Draw collectGeometry paints it.
@@ -1017,14 +1038,24 @@ class _DrawioXmlShapeDecoder {
     if (nested._rasterPart != null) {
       _rasterPart = nested._rasterPart;
       _rasterMime = nested._rasterMime;
-      _rasterLeft = x0 + (nested._rasterLeft ?? 0) * sx;
-      _rasterTop = y0 + (nested._rasterTop ?? 0) * sy;
-      _rasterBoxW =
-          nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
-      _rasterBoxH =
-          nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
       _rasterFlipH = nested._rasterFlipH;
       _rasterFlipV = nested._rasterFlipV;
+      // Nested overlay already mapped geometry through leftover `_x`/`_y`.
+      // Official canvas.image is `w*sx, h*sy` in those canvas pixels.
+      // Convert nested leftover Img* back into host stencil units so
+      // host `_rasterImageBox` matches NestedStencil (variable aspect
+      // include-shape used to keep the nested 10×10 square).
+      final leftoverBox = nested._rasterImageBox();
+      if (leftoverBox != null) {
+        _setRasterBoxFromLeftover(leftoverBox);
+      } else {
+        _rasterLeft = x0 + (nested._rasterLeft ?? 0) * sx;
+        _rasterTop = y0 + (nested._rasterTop ?? 0) * sy;
+        _rasterBoxW =
+            nested._rasterBoxW == null ? null : nested._rasterBoxW! * sx;
+        _rasterBoxH =
+            nested._rasterBoxH == null ? null : nested._rasterBoxH! * sy;
+      }
     }
     // Official canvas is shared; nested setStrokeWidth / fillcolor stay.
     // leftover scale-dependent state is leftover inches on the nested
@@ -1135,6 +1166,21 @@ class _DrawioXmlShapeDecoder {
       width: width,
       height: height,
     );
+  }
+
+  /// Inverse of [_rasterImageBox]: leftover inches → this decoder's
+  /// stencil units. include-shape copies nested overlay leftover.
+  void _setRasterBoxFromLeftover(
+    ({double offsetX, double offsetY, double width, double height}) box,
+  ) {
+    _rasterLeft =
+        scaleX.abs() < 1e-12 ? 0.0 : (box.offsetX - _originX) / scaleX;
+    _rasterBoxW = scaleX.abs() < 1e-12 ? box.width : box.width / scaleX.abs();
+    _rasterBoxH = scaleY.abs() < 1e-12 ? box.height : box.height / scaleY.abs();
+    final bottomSrc = scaleY.abs() < 1e-12
+        ? sourceHeight
+        : sourceHeight - (box.offsetY - _originY) / scaleY;
+    _rasterTop = bottomSrc - (_rasterBoxH ?? 0);
   }
 
   _MxPaintState _snapshotPaint() => _MxPaintState(
@@ -2242,6 +2288,64 @@ class _DrawioXmlShapeDecoder {
           prompt: constraint.getAttribute('name'),
         ),
     ];
+  }
+
+  /// ForeignData child whose FlipX is canvas.image flipH, not host
+  /// STYLE_FLIPH. Img* fills the child XForm; collectForeignDataType
+  /// maps that box to svg:x/width and transformFlips to draw:mirror-*.
+  VsdxShape _rasterPictureShape({
+    required int id,
+    required ({
+      double offsetX,
+      double offsetY,
+      double width,
+      double height
+    }) box,
+  }) {
+    final width = box.width;
+    final height = box.height;
+    return VsdxShape(
+      id: id,
+      name: 'Sheet.$id',
+      pinX: box.offsetX + width / 2,
+      pinY: box.offsetY + height / 2,
+      width: width,
+      height: height,
+      locPinXInches: width / 2,
+      locPinYInches: height / 2,
+      flipX: _rasterFlipH,
+      flipY: _rasterFlipV,
+      fill: const VsdxFill(pattern: 0),
+      line: const VsdxLine(pattern: 0),
+      geometries: <VsdxGeometry>[
+        VsdxGeometry(
+          noFill: true,
+          noLine: true,
+          commands: <VsdxPathCommand>[
+            const MoveTo(0, 0),
+            LineTo(width, 0),
+            LineTo(width, height),
+            LineTo(0, height),
+            const LineTo(0, 0),
+          ],
+        ),
+      ],
+      imagePartName: _rasterPart,
+      foreignType: VsdxImage.foreignTypeFor(
+        mimeType: _rasterMime ?? '',
+        partName: _rasterPart!,
+      ),
+      foreignCompressionType: VsdxImage.compressionTypeFor(
+        mimeType: _rasterMime ?? '',
+        partName: _rasterPart!,
+      ),
+      imgWidthInches: width,
+      imgHeightInches: height,
+      richText: const VsdxRichText(
+        runs: <VsdxTextRun>[],
+        textBlock: VsdxTextBlock(hideText: true),
+      ),
+    );
   }
 
   VsdxShape _coloredShape({
