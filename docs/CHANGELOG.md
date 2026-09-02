@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape nested sketch for
+  LibreOffice. Official `mxStencil.drawNode` include-shape shares the
+  canvas; leftover `<sketch>` is mxSvgCanvas2D (NestedStencil has no
+  case) and `User.veSketch*` is not a token. leftover used decoder
+  sketch at `build()`, so a nested tile hatched host fills that already
+  painted (`tokens.txt` FillPattern; Draw `_fillAndShadowProperties`
+  `draw:fill=hatch`). leftover now freezes sketch per paint, matching
+  shared-canvas later host strokes. A second save keeps the unhatched
+  card.
 - draw.io leftover mxStencil include-shape nested disableShadow for
   LibreOffice. Official `mxStencil.drawShape` always paints nested
   foreground with `disableShadow` (`drawChildren(fgNode, true)`), even

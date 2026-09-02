@@ -327,6 +327,12 @@ class _DrawioXmlShapeDecoder {
   double? _sketchAngle;
   double? _sketchWeight;
   double? _sketchJiggle;
+  // First inherit `_finish` freezes sketch for the parent XForm.
+  // include-shape nested `<sketch>` stays on later paints (shared
+  // canvas) and on that tile's colored parts — not on host fills that
+  // already painted.
+  bool _capturedParentSketch = false;
+  _DrawioSketchState _parentSketch = const _DrawioSketchState();
   double _penX = 0;
   double _penY = 0;
   double _subX = 0;
@@ -568,48 +574,52 @@ class _DrawioXmlShapeDecoder {
     final hostBox =
         hostRasterEntry == null ? null : _rasterLeftoverBox(hostRasterEntry);
     final hostPart = hostRasterEntry?.part;
-    return _withLineUserCells(VsdxShape(
-      id: id,
-      name: 'Sheet.$id',
-      pinX: cx,
-      pinY: cy,
-      width: targetWidth,
-      height: targetHeight,
-      angleRad: _stencilCellRotationRad(),
-      geometries: List<VsdxGeometry>.unmodifiable(_geometries),
-      connectionPoints: _connectionPoints(),
-      children: children,
-      shapeKind: children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
-      fill: parentFill,
-      line: parentLine,
-      shadow: inheritFill
-          ? (_parentShadow ?? VsdxShadow.disabled)
-          : VsdxShadow.disabled,
-      imagePartName: hostPart,
-      foreignType: hostPart == null
-          ? null
-          : VsdxImage.foreignTypeFor(
-              mimeType: hostRasterEntry?.mime ?? '',
-              partName: hostPart,
-            ),
-      foreignCompressionType: hostPart == null
-          ? null
-          : VsdxImage.compressionTypeFor(
-              mimeType: hostRasterEntry?.mime ?? '',
-              partName: hostPart,
-            ),
-      imgOffsetXInches: hostBox?.offsetX ?? 0,
-      imgOffsetYInches: hostBox?.offsetY ?? 0,
-      imgWidthInches: hostBox?.width,
-      imgHeightInches: hostBox?.height,
-      // Cell STYLE_FLIPH/V is `cellfliph` / `cellflipv`. Image
-      // `flipH`/`flipV` leftover-bakes FlipX on a ForeignData child
-      // (`draw:mirror-*`). Do not OR the two onto the host — leftover
-      // XForm FlipX is what collectXFormData / applyXForm mirrors.
-      flipX: _stencilCellFlipH,
-      flipY: _stencilCellFlipV,
-      richText: _stencilLabelRichText(),
-    ));
+    return _withSketchUserCells(
+      _withLineUserCells(VsdxShape(
+        id: id,
+        name: 'Sheet.$id',
+        pinX: cx,
+        pinY: cy,
+        width: targetWidth,
+        height: targetHeight,
+        angleRad: _stencilCellRotationRad(),
+        geometries: List<VsdxGeometry>.unmodifiable(_geometries),
+        connectionPoints: _connectionPoints(),
+        children: children,
+        shapeKind:
+            children.isEmpty ? VsdxShapeKind.normal : VsdxShapeKind.group,
+        fill: parentFill,
+        line: parentLine,
+        shadow: inheritFill
+            ? (_parentShadow ?? VsdxShadow.disabled)
+            : VsdxShadow.disabled,
+        imagePartName: hostPart,
+        foreignType: hostPart == null
+            ? null
+            : VsdxImage.foreignTypeFor(
+                mimeType: hostRasterEntry?.mime ?? '',
+                partName: hostPart,
+              ),
+        foreignCompressionType: hostPart == null
+            ? null
+            : VsdxImage.compressionTypeFor(
+                mimeType: hostRasterEntry?.mime ?? '',
+                partName: hostPart,
+              ),
+        imgOffsetXInches: hostBox?.offsetX ?? 0,
+        imgOffsetYInches: hostBox?.offsetY ?? 0,
+        imgWidthInches: hostBox?.width,
+        imgHeightInches: hostBox?.height,
+        // Cell STYLE_FLIPH/V is `cellfliph` / `cellflipv`. Image
+        // `flipH`/`flipV` leftover-bakes FlipX on a ForeignData child
+        // (`draw:mirror-*`). Do not OR the two onto the host — leftover
+        // XForm FlipX is what collectXFormData / applyXForm mirrors.
+        flipX: _stencilCellFlipH,
+        flipY: _stencilCellFlipV,
+        richText: _stencilLabelRichText(),
+      )),
+      _parentSketch,
+    );
   }
 
   void _consume(XmlElement node, {bool disableShadow = false}) {
@@ -1834,6 +1844,7 @@ class _DrawioXmlShapeDecoder {
         fill: fill,
         line: _paintLine(stroke: doStroke),
         shadow: _shadow ?? VsdxShadow.disabled,
+        sketch: _currentSketch,
         // include-shape leftover already `_x`/`_y`'d vertices into the
         // include box. `_fillAndShadowProperties` interpolates
         // FillPattern 25–40 across the child's Width/Height, so a
@@ -1897,6 +1908,7 @@ class _DrawioXmlShapeDecoder {
         fill: partFill,
         line: _paintLine(stroke: doStroke),
         shadow: _shadow ?? VsdxShadow.disabled,
+        sketch: _currentSketch,
         // Host leftover already `_x`/`_y`'d vertices. libvisio
         // `_fillAndShadowProperties` interpolates FillPattern 25–34
         // across the child's Width/Height, so a small fillgradient
@@ -1945,6 +1957,10 @@ class _DrawioXmlShapeDecoder {
       _parentStrokeWeightInches ??= _strokeWeightInches;
     }
     if (_shadow != null) _parentShadow ??= _shadow;
+    if (!_capturedParentSketch) {
+      _capturedParentSketch = true;
+      _parentSketch = _currentSketch;
+    }
   }
 
   List<VsdxPathCommand> _decodePath(XmlElement path) {
@@ -2447,30 +2463,33 @@ class _DrawioXmlShapeDecoder {
         }
       }
     }
-    return _withLineUserCells(VsdxShape(
-      id: id,
-      name: 'Sheet.$id',
-      pinX: pinX,
-      pinY: pinY,
-      width: width,
-      height: height,
-      locPinXInches: width / 2,
-      locPinYInches: height / 2,
-      fill: part.fill,
-      line: part.line,
-      shadow: shadow,
-      geometries: <VsdxGeometry>[
-        VsdxGeometry(
-          noFill: !part.fill.hasFill,
-          noLine: !part.line.hasLine,
-          commands: commands,
+    return _withSketchUserCells(
+      _withLineUserCells(VsdxShape(
+        id: id,
+        name: 'Sheet.$id',
+        pinX: pinX,
+        pinY: pinY,
+        width: width,
+        height: height,
+        locPinXInches: width / 2,
+        locPinYInches: height / 2,
+        fill: part.fill,
+        line: part.line,
+        shadow: shadow,
+        geometries: <VsdxGeometry>[
+          VsdxGeometry(
+            noFill: !part.fill.hasFill,
+            noLine: !part.line.hasLine,
+            commands: commands,
+          ),
+        ],
+        richText: const VsdxRichText(
+          runs: <VsdxTextRun>[],
+          textBlock: VsdxTextBlock(hideText: true),
         ),
-      ],
-      richText: const VsdxRichText(
-        runs: <VsdxTextRun>[],
-        textBlock: VsdxTextBlock(hideText: true),
-      ),
-    ));
+      )),
+      part.sketch,
+    );
   }
 
   VsdxShape _withLineUserCells(VsdxShape shape) {
@@ -2484,25 +2503,39 @@ class _DrawioXmlShapeDecoder {
     if (custom != null && custom.isNotEmpty) {
       next = next.withDrawioDashPattern(custom, fixed: shape.line.fixedDash);
     }
-    return _withSketchUserCells(next);
-  }
-
-  VsdxShape _withSketchUserCells(VsdxShape shape) {
-    if (!_sketchEnabled) return shape;
-    var next = shape.withSketchEffect(true);
-    if (_sketchFill != null && _sketchFill!.isNotEmpty) {
-      next = next.withSketchFillStyle(VsdxSketchFillStyle.parse(_sketchFill));
-    }
-    if (_sketchGap != null) next = next.withSketchHachureGap(_sketchGap!);
-    if (_sketchAngle != null) {
-      next = next.withSketchHachureAngle(_sketchAngle!);
-    }
-    if (_sketchWeight != null && _sketchWeight! > 0) {
-      next = next.withSketchFillWeight(_sketchWeight!);
-    }
-    if (_sketchJiggle != null) next = next.withSketchJiggle(_sketchJiggle!);
     return next;
   }
+
+  /// mxSvgCanvas2D sketch is paint-local. leftover used decoder
+  /// `_sketchEnabled` at `build()`, so include-shape nested `<sketch>`
+  /// (shared canvas) hatched host fills that already painted.
+  /// `User.veSketch*` is not a token; leftover write maps hachure onto
+  /// FillPattern 2–24 (`draw:fill=hatch`).
+  VsdxShape _withSketchUserCells(VsdxShape shape, _DrawioSketchState sketch) {
+    if (!sketch.enabled) return shape;
+    var next = shape.withSketchEffect(true);
+    if (sketch.fill != null && sketch.fill!.isNotEmpty) {
+      next = next.withSketchFillStyle(VsdxSketchFillStyle.parse(sketch.fill));
+    }
+    if (sketch.gap != null) next = next.withSketchHachureGap(sketch.gap!);
+    if (sketch.angle != null) {
+      next = next.withSketchHachureAngle(sketch.angle!);
+    }
+    if (sketch.weight != null && sketch.weight! > 0) {
+      next = next.withSketchFillWeight(sketch.weight!);
+    }
+    if (sketch.jiggle != null) next = next.withSketchJiggle(sketch.jiggle!);
+    return next;
+  }
+
+  _DrawioSketchState get _currentSketch => _DrawioSketchState(
+        enabled: _sketchEnabled,
+        fill: _sketchFill,
+        gap: _sketchGap,
+        angle: _sketchAngle,
+        weight: _sketchWeight,
+        jiggle: _sketchJiggle,
+      );
 
   VsdxShape _labelShape({
     required int id,
@@ -2892,12 +2925,31 @@ class _DrawioStencilLabelRun {
   final VsdxColor? highlight;
 }
 
+class _DrawioSketchState {
+  const _DrawioSketchState({
+    this.enabled = false,
+    this.fill,
+    this.gap,
+    this.angle,
+    this.weight,
+    this.jiggle,
+  });
+
+  final bool enabled;
+  final String? fill;
+  final double? gap;
+  final double? angle;
+  final double? weight;
+  final double? jiggle;
+}
+
 class _DrawioColoredPart {
   const _DrawioColoredPart({
     required this.commands,
     required this.fill,
     required this.line,
     this.shadow = VsdxShadow.disabled,
+    this.sketch = const _DrawioSketchState(),
     this.fitBox = false,
   });
 
@@ -2905,6 +2957,7 @@ class _DrawioColoredPart {
   final VsdxFill fill;
   final VsdxLine line;
   final VsdxShadow shadow;
+  final _DrawioSketchState sketch;
 
   /// When true, [_DrawioXmlShapeDecoder._coloredShape] pins Width/Height
   /// to the path bbox so libvisio FillPattern 25–40 interpolates across

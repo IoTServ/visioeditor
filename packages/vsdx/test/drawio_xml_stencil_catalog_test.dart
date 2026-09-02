@@ -13205,6 +13205,109 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape nested sketch leftover keeps host fills unhatched for LibreOffice',
+    () {
+      VsdxShape? fillOf(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.foreground == color) return shape;
+        for (final child in shape.children) {
+          final nested = fillOf(child, color);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<background>'
+        '<fillcolor color="#cccccc"/>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</background>'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '<fillcolor color="#00aa00"/>'
+        '<rect x="0" y="80" w="20" h="20"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<sketch enabled="1" jiggle="4"/>'
+        '<fillcolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 466,
+      );
+      const grey = VsdxColor(0xFFCCCCCC);
+      const red = VsdxColor(0xFFFF0000);
+      const green = VsdxColor(0xFF00AA00);
+      expect(
+        host.sketchEffect,
+        isFalse,
+        reason: 'nested drawShape sketch is not host STYLE_SKETCH; leftover '
+            'must not veSketch the parent XForm',
+      );
+      expect(
+        fillOf(host, grey)!.sketchEffect,
+        isFalse,
+        reason: 'host background already painted before include-shape',
+      );
+      expect(
+        fillOf(host, red)!.sketchEffect,
+        isTrue,
+        reason: 'nested <sketch> stays on that tile paint',
+      );
+      expect(
+        fillOf(host, red)!.sketchJiggle,
+        closeTo(4, 1e-9),
+      );
+      expect(
+        fillOf(host, green)!.sketchEffect,
+        isTrue,
+        reason: 'mxStencil.drawNode include-shape shares the canvas; nested '
+            'sketch stays for later host paint',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        fillOf(leftover, grey)!.fill.pattern,
+        1,
+        reason: 'a second save must not hatch the host card '
+            '(tokens.txt FillPattern); User.veSketch is not collected',
+      );
+      expect(
+        fillOf(leftover, red)!.fill.pattern,
+        inInclusiveRange(2, 24),
+        reason: 'nested sketch leftover-bakes FillPattern 2–24 so Draw '
+            '_fillAndShadowProperties emits draw:fill=hatch',
+      );
+      expect(
+        fillOf(leftover, green)!.fill.pattern,
+        inInclusiveRange(2, 24),
+        reason: 'later host fillstroke keeps nested canvas sketch',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
