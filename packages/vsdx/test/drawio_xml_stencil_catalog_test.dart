@@ -16638,6 +16638,141 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text clip leftover keeps TxtWidth for LibreOffice',
+    () {
+      const str = 'MMMMMMMMMMMMMMMMMMMM';
+      const canvasScale = 1.5 / 100;
+      const boxW = 20.0;
+
+      VsdxShape? glyphShape(VsdxShape shape) {
+        if ((shape.text ?? '').contains('MMMM')) return shape;
+        for (final child in shape.children) {
+          final nested = glyphShape(child);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<VsdxShape> glyphs(VsdxShape shape) {
+        return <VsdxShape>[
+          if ((shape.text ?? '').contains('MMMM') && shape.children.isEmpty)
+            shape,
+          for (final child in shape.children) ...glyphs(child),
+        ];
+      }
+
+      double txtWidth(VsdxShape shape) =>
+          shape.richText.textBlock.widthInches ?? shape.width;
+
+      String textXml(String extra) =>
+          '<shape name="T" w="100" h="100" strokewidth="1">'
+          '<foreground>'
+          '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+          'align="left" valign="top" wrap="0"$extra/>'
+          '</foreground>'
+          '</shape>';
+
+      final overflow = decodeDrawioMxStencilXml(textXml(''), id: 491);
+      final overflowGlyph = glyphShape(overflow)!;
+      expect(
+        overflowGlyph.wordWrap,
+        isFalse,
+        reason: 'mxText wrap default false leftover-bakes veWordWrap=0 so '
+            'a save can expand TxtWidth',
+      );
+
+      final clipped = decodeDrawioMxStencilXml(textXml(' clip="1"'));
+      final clipGlyph = glyphShape(clipped)!;
+      expect(
+        clipGlyph.wordWrap,
+        isTrue,
+        reason: 'mxSvgCanvas2D.plainText clipPath keeps the cell box; leftover '
+            'must not withWordWrap(false) or a save expands TxtWidth '
+            '(`tokens.txt` has no veWordWrap; collectTextBlock svg:width '
+            'is TxtWidth)',
+      );
+      expect(
+        txtWidth(clipGlyph),
+        closeTo(boxW * canvasScale, 0.02),
+      );
+
+      final fillOverflow = decodeDrawioMxStencilXml(
+        textXml(' overflow="fill"'),
+      );
+      expect(
+        glyphShape(fillOverflow)!.wordWrap,
+        isTrue,
+        reason: 'overflow=fill also keeps the cell box',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0"/>'
+        '<text str="$str" x="0" y="30" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0" clip="1"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final laterGlyphs = glyphs(later);
+      expect(laterGlyphs, hasLength(2));
+      expect(laterGlyphs.first.wordWrap, isFalse);
+      expect(laterGlyphs.last.wordWrap, isTrue);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="20" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="20" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="20" h="20" '
+        'align="left" valign="top" wrap="0" clip="1"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(glyphShape(includeHost)!.wordWrap, isTrue);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final overflowId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(overflow.copyWith(id: overflowId)),
+      );
+      final clipId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(clipped.copyWith(id: clipId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverOverflow = glyphShape(
+        leftoverDoc.pages.first.findShapeById(overflowId)!,
+      )!;
+      expect(
+        txtWidth(leftoverOverflow),
+        greaterThan(boxW * canvasScale + 0.2),
+        reason: 'a save expands nowrap TxtWidth so Draw does not wrap',
+      );
+      final leftoverClip = glyphShape(
+        leftoverDoc.pages.first.findShapeById(clipId)!,
+      )!;
+      expect(
+        txtWidth(leftoverClip),
+        closeTo(boxW * canvasScale, 0.02),
+        reason: 'a second save keeps leftover clip TxtWidth Draw collects',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

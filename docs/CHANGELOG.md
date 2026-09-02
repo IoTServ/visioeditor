@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text clip leftover TxtWidth for
+  LibreOffice. Official `canvas.text(..., clip, overflow)` emits
+  `<text clip=` / `overflow=`; `mxSvgCanvas2D.plainText` clipPath /
+  overflow fill|width keep the cell box. leftover wrap=0 used
+  `withWordWrap(false)` so a save expanded TxtWidth (`tokens.txt`
+  has no veWordWrap; collectTextBlock `svg:width` is TxtWidth) and
+  Draw showed overflow. leftover now keeps the box, include-shape
+  copies that overlay, and a later clip leftover-bakes a sibling.
+  A second save keeps both.
 - draw.io leftover mxXmlCanvas2D image alpha leftover Transparency for
   LibreOffice. Official `mxSvgCanvas2D.image` sets SVG `opacity` to
   `s.alpha * s.fillAlpha` (`<alpha>` / `<fillalpha>`). libvisio

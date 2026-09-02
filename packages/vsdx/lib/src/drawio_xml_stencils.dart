@@ -990,6 +990,13 @@ class _DrawioXmlShapeDecoder {
             valign: node.getAttribute('valign') ?? 'top',
             vertical: node.getAttribute('vertical') == '1',
             wrap: node.getAttribute('wrap') == '1',
+            // mxXmlCanvas2D.text always writes clip; mxStencil.drawNode
+            // passes false. overflow fill|width|block also keep the cell
+            // box (plainText / createCss). leftover wrap=0 otherwise
+            // expands TxtWidth so Draw shows overflow (`tokens.txt`
+            // has no veWordWrap).
+            clip: node.getAttribute('clip') == '1',
+            overflow: node.getAttribute('overflow'),
             rotationDegrees: _number(node, 'rotation'),
             // mxStencil.drawNode: align-shape="0" ignores shape.rotation
             // when setting canvas.text rotation (still subtracts `rotation=`).
@@ -1098,6 +1105,12 @@ class _DrawioXmlShapeDecoder {
       // counters collectXFormData Angle so Draw keeps the glyph upright.
       // STYLE_FLIPH xor STYLE_FLIPV (one axis) adds Angle instead;
       // leftover FlipX/Y comes from `cellfliph` / `cellflipv`.
+      // `text` clip / overflow follow mxXmlCanvas2D.text onto leftover
+      // TxtWidth. mxSvgCanvas2D.plainText clipPath / overflow fill|width
+      // keep the cell box; wrap=0 leftover used to withWordWrap(false)
+      // so a save expanded TxtWidth (`tokens.txt` has no veWordWrap;
+      // collectTextBlock svg:width is TxtWidth). leftover now keeps the
+      // box so Draw wraps inside the clip frame instead of overflowing.
       // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
       // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
       // Nested include-shape copies leftover inches (`w*sx, h*sy`) so
@@ -3665,7 +3678,10 @@ class _DrawioXmlShapeDecoder {
     );
     // mxText.wrap default is false. veWordWrap is not a token; a save
     // expands TxtWidth so Draw does not wrap. Stencil glyphs stay default.
-    if (hasBox && !label.wrap) {
+    // mxXmlCanvas2D.text clip / overflow fill|width|block keep the cell
+    // box (`mxSvgCanvas2D.plainText` clipPath); leftover must not expand
+    // TxtWidth or Draw svg:width overflows the clip frame.
+    if (hasBox && !label.wrap && !label.keepsTxtBox) {
       shape = shape.withWordWrap(false);
     }
     if (label.border != null) {
@@ -3812,6 +3828,8 @@ class _DrawioXmlShapeDecoder {
       valign: label.valign,
       vertical: label.vertical,
       wrap: label.wrap,
+      clip: label.clip,
+      overflow: label.overflow,
       rotationDegrees: label.rotationDegrees,
       alignShape: label.alignShape,
       fontSize: label.fontSize * fontRatio,
@@ -3967,6 +3985,8 @@ class _DrawioStencilLabel {
     required this.valign,
     required this.vertical,
     this.wrap = false,
+    this.clip = false,
+    this.overflow,
     required this.rotationDegrees,
     this.alignShape = true,
     required this.fontSize,
@@ -4003,6 +4023,8 @@ class _DrawioStencilLabel {
   final String valign;
   final bool vertical;
   final bool wrap;
+  final bool clip;
+  final String? overflow;
   final double rotationDegrees;
   final bool alignShape;
   final double fontSize;
@@ -4025,6 +4047,14 @@ class _DrawioStencilLabel {
   final double? leftoverScaleY;
   final List<_DrawioStencilLabelRun> runs;
 
+  /// mxSvgCanvas2D.plainText clipPath / overflow fill|width|block keep
+  /// the cell box. leftover wrap=0 otherwise expands TxtWidth.
+  bool get keepsTxtBox {
+    if (clip) return true;
+    final overflow = this.overflow?.toLowerCase();
+    return overflow == 'fill' || overflow == 'width' || overflow == 'block';
+  }
+
   _DrawioStencilLabel copyWith({
     double? leftoverPinX,
     double? leftoverPinY,
@@ -4046,6 +4076,8 @@ class _DrawioStencilLabel {
         valign: valign,
         vertical: vertical,
         wrap: wrap,
+        clip: clip,
+        overflow: overflow,
         rotationDegrees: rotationDegrees,
         alignShape: alignShape,
         fontSize: fontSize,
