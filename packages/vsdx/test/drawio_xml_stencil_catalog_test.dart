@@ -15838,6 +15838,146 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D scale 0 leftover collapses Pin for LibreOffice',
+    () {
+      double extentX(VsdxShape shape) {
+        var minX = double.infinity;
+        var maxX = -double.infinity;
+        var any = false;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            final x = switch (command) {
+              MoveTo(:final x) => x,
+              LineTo(:final x) => x,
+              _ => null,
+            };
+            if (x == null) continue;
+            any = true;
+            minX = math.min(minX, x);
+            maxX = math.max(maxX, x);
+          }
+        }
+        return any ? maxX - minX : 0;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const full = 20 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<scale/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 498,
+      );
+      expect(
+        extentX(omitted),
+        closeTo(full, 0.02),
+        reason: 'omitted scale is a no-op; leftover keeps unscaled PinX',
+      );
+
+      final zero = decodeDrawioMxStencilXml(
+        '<shape name="Z" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<scale scale="0"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        extentX(zero),
+        lessThan(0.02),
+        reason: 'mxAbstractCanvas2D.scale *= 0 collapses addOp vertices; '
+            'leftover used to skip scale<=0 so Draw collectGeometry kept '
+            'the unscaled leftover inches (`tokens.txt` PinX / Width)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<scale scale="0"/>'
+        '<rect x="0" y="20" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        extentX(laterHost),
+        closeTo(full, 0.02),
+        reason: 'first inherit stroke keeps collectGeometry leftover inches',
+      );
+      expect(
+        laterHost.children.every((child) => extentX(child) < 0.02),
+        isTrue,
+        reason: 'later scale=0 leftover-bakes a collapsed sibling so Draw '
+            'does not paint a second unscaled rail (`tokens.txt` PinX)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="20" h="10" strokewidth="1">'
+        '<foreground>'
+        '<scale scale="0"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        extentX(includeHost),
+        closeTo(full, 0.02),
+        reason: 'host inherit stroke keeps unscaled PinX',
+      );
+      expect(
+        includeHost.children.every((child) => extentX(child) < 0.05),
+        isTrue,
+        reason: 'include-shape nested scale=0 leftover-bakes a collapsed '
+            'overlay so Draw does not paint the tile at host leftover inches',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        extentX(leftover),
+        closeTo(full, 0.02),
+        reason: 'a second save keeps the first unscaled Pin Draw paints',
+      );
+      expect(
+        leftover.children.every((child) => extentX(child) < 0.02),
+        isTrue,
+        reason: 'a second save keeps the later collapsed Pin Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D rotate leftover bakes PinX for LibreOffice',
     () {
       double minMoveX(VsdxShape shape) {

@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D scale 0 leftover Pin collapse for
+  LibreOffice. Official `mxAbstractCanvas2D.scale` is
+  `state.scale *= value`, and `setScale(0)` emits `<scale scale="0"/>`
+  so later `addOp` vertices sit at the origin. leftover `value > 0`
+  skipped 0, so Draw `collectGeometry` kept the unscaled leftover
+  inches (`tokens.txt` PinX / Width). leftover now multiplies by 0,
+  include-shape copies that overlay, and a later scale=0 leftover-bakes
+  a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D fontfamily CSS stack leftover Char.Font
   for LibreOffice. Official `setFontFamily` is CSS `font-family`;
   leftover took the first token, so `"open sans", arial, sans-serif`

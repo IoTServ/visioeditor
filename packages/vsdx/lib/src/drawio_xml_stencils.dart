@@ -794,10 +794,10 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'scale':
         // mxXmlCanvas2D.scale. mxAbstractCanvas2D.scale multiplies
-        // state.scale (addOp / getStrokeWidth / createDashPattern).
-        // leftover used to ignore the node, so later inherit stroke
-        // collectLine kept the first leftover inches (`tokens.txt`
-        // LineWeight / PinX).
+        // state.scale (addOp / getStrokeWidth / createDashPattern),
+        // including 0 so later vertices collapse. leftover `value > 0`
+        // skipped 0, so Draw collectGeometry kept the unscaled leftover
+        // inches (`tokens.txt` PinX / Width / LineWeight).
         _applyMxCanvasScale(_number(node, 'scale', fallback: 1));
         break;
       case 'rotate':
@@ -2657,7 +2657,12 @@ class _DrawioXmlShapeDecoder {
   }
 
   void _applyMxCanvasScale(double value) {
-    if (!(value > 0) || !value.isFinite) return;
+    // mxAbstractCanvas2D.scale is `state.scale *= value`. 0 is a
+    // legal XML `scale="0"` that collapses addOp vertices; negative
+    // is not a minScale and would flip leftover LineWeight through
+    // `max(0.001, …)` into a hairline Draw collectLine does not
+    // paint (`tokens.txt` LineWeight).
+    if (!value.isFinite || value < 0) return;
     _canvasUserScale *= value;
     if (_shadow != null) _rebuildEnabledShadow();
   }
