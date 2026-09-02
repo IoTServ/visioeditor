@@ -17387,6 +17387,119 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fontsize 0 leftover bakes Char Size floor for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      double fontInches(VsdxShape shape, String text) =>
+          glyphContaining(shape, text)!
+              .richText
+              .runs
+              .first
+              .charStyle
+              .fontSizeInches;
+
+      const canvasScale = 1.5 / 100;
+      const minSize = 0.5 / 72.0;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontsize size="24"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontsize/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 496,
+      );
+      expect(
+        fontInches(omitted, 'AB'),
+        closeTo(24 * canvasScale, 1e-6),
+      );
+      expect(
+        fontInches(omitted, 'CD'),
+        closeTo(24 * canvasScale, 1e-6),
+        reason: 'omitted size is a no-op; leftover keeps the previous '
+            'Char.Size leftover inches',
+      );
+
+      final zero = decodeDrawioMxStencilXml(
+        '<shape name="Z" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontsize size="24"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontsize size="0"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(fontInches(zero, 'AB'), closeTo(24 * canvasScale, 1e-6));
+      expect(
+        fontInches(zero, 'CD'),
+        closeTo(minSize, 1e-6),
+        reason: 'mxXmlCanvas2D.setFontSize(0); leftover used to skip size<=0 '
+            'so Draw collectCharIX kept the first leftover inches '
+            '(`tokens.txt` Size). leftover floors empty Size to 0.5pt',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontsize size="24"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontsize size="0"/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(fontInches(includeHost, 'AB'), closeTo(24 * canvasScale, 1e-6));
+      expect(
+        fontInches(includeHost, 'CD'),
+        closeTo(minSize, 1e-6),
+        reason: 'include-shape nested size=0 leftover-bakes the 0.5pt floor '
+            'so Draw does not paint the tile with host leftover inches',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final zeroId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(zero.copyWith(id: zeroId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(zeroId)!;
+      expect(fontInches(leftover, 'AB'), closeTo(24 * canvasScale, 1e-6));
+      expect(
+        fontInches(leftover, 'CD'),
+        closeTo(minSize, 1e-6),
+        reason: 'a second save keeps leftover 0.5pt Char.Size Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

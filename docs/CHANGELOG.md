@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fontsize 0 leftover Char Size floor for
+  LibreOffice. Official `setFontSize(0)` emits `<fontsize size="0"/>`.
+  leftover `size > 0` skipped 0, so Draw `collectCharIX` kept the
+  previous leftover inches (`tokens.txt` Size → `fo:font-size`).
+  leftover now honors 0 and floors empty Size to Visio's 0.5pt,
+  include-shape copies that overlay, and a later size=0 leftover-bakes
+  a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D roundrect dx leftover canvas radii for
   LibreOffice. Official `canvas.roundrect(..., dx, dy)` emits
   `<roundrect dx= dy=>`; `mxSvgCanvas2D.roundrect` sets SVG `rx`/`ry`

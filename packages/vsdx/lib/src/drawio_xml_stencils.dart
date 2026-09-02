@@ -895,8 +895,17 @@ class _DrawioXmlShapeDecoder {
         _applyMxFillStrokeColor(node);
         break;
       case 'fontsize':
-        final size = _number(node, 'size', fallback: _fontSize);
-        if (size > 0) _fontSize = size;
+        // mxXmlCanvas2D.setFontSize always writes size, including 0.
+        // leftover `size > 0` kept the previous Char.Size, so Draw
+        // collectCharIX painted later glyphs with the first leftover
+        // inches (`tokens.txt` Size → fo:font-size). Visio's 0.5pt
+        // floor rejects empty Size; leftover `_labelShape` already
+        // clamps to `_kMxMinCharSizeInches`.
+        final raw = node.getAttribute('size');
+        final size = double.tryParse(raw ?? '');
+        if (size != null && size.isFinite) {
+          _fontSize = size;
+        }
         break;
       case 'fontstyle':
         // mxXmlCanvas2D compressed setFontStyle, including 0 so a
@@ -1186,6 +1195,9 @@ class _DrawioXmlShapeDecoder {
       // setStrokeWidth / setFontSize; leftover converts those leftover
       // inches back into host stencil units so a later host stroke
       // collectLine matches NestedStencil.
+      // Later `<fontsize size="0"/>` leftover-bakes Visio's 0.5pt
+      // Char.Size floor because leftover used to skip size<=0
+      // (`tokens.txt` Size → collectCharIX fo:font-size).
       // Nested save/restore shares canvas.states; leftover seeds a
       // converted copy so nested restore can pop a host save. Unequal
       // counts reset to the entry snapshot (`drawShape` assigns
