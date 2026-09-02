@@ -374,14 +374,17 @@ class _DrawioXmlShapeDecoder {
       final section = element.getElement(sectionName);
       if (section == null) continue;
       // mxStencil.drawShape: background keeps the canvas shadow;
-      // foreground disableShadow calls setShadow(false) after each
+      // foreground disableShadow calls setShadow(false) after the first
       // fill/stroke. leftover bakes that as ShdwPattern 0 on later
       // siblings so Draw collectFillAndShadow does not offset glyphs.
       // JS Canvas captures flatten paintBackground+paintForeground into
       // one `<foreground>` and already emit `<shadow enabled="0"/>`;
-      // only real mxStencil XML with a background section uses this.
+      // only real mxStencil XML with a background section uses this on
+      // the host. include-shape nested.drawShape always passes true for
+      // nested foreground (`drawChildren(fgNode, true)`), even when the
+      // tile has no `<background>`.
       final disableShadow = sectionName == 'foreground' &&
-          element.getElement('background') != null;
+          (_includeDepth > 0 || element.getElement('background') != null);
       for (final child in section.childElements) {
         _consume(child, disableShadow: disableShadow);
       }

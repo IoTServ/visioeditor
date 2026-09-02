@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape nested disableShadow for
+  LibreOffice. Official `mxStencil.drawShape` always paints nested
+  foreground with `disableShadow` (`drawChildren(fgNode, true)`), even
+  when the tile has no `<background>`. leftover used to keep
+  `ShdwPattern` on later nested fills and on host paint after
+  include-shape, so Draw `_fillAndShadowProperties` offset those
+  plates (`tokens.txt` ShdwPattern). leftover now drops shadow after
+  the first nested foreground fill/stroke, matching NestedStencil. A
+  second save keeps the unshadowed siblings.
 - draw.io leftover mxStencil include-shape fontsize shared canvas for
   LibreOffice. Official `mxStencil.drawNode` include-shape calls nested
   `drawShape` on the same canvas, so host `setFontSize(size×minScale)`

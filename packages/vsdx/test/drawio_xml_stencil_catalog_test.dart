@@ -13102,6 +13102,109 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape nested foreground disableShadow leftover drops later ShdwPattern for LibreOffice',
+    () {
+      VsdxShape? fillOf(VsdxShape shape, VsdxColor color) {
+        if (shape.fill.foreground == color) return shape;
+        for (final child in shape.children) {
+          final nested = fillOf(child, color);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final host = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<background>'
+        '<shadow enabled="1" dx="4" dy="6" color="#808080"/>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</background>'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="40"/>'
+        '<fillcolor color="#00aa00"/>'
+        '<rect x="0" y="80" w="20" h="20"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<fillcolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="4" h="4"/>'
+        '<fillstroke/>'
+        '<fillcolor color="#0000ff"/>'
+        '<rect x="6" y="6" w="4" h="4"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 465,
+      );
+      const red = VsdxColor(0xFFFF0000);
+      const blue = VsdxColor(0xFF0000FF);
+      const green = VsdxColor(0xFF00AA00);
+      expect(
+        host.shadow.enabled && host.shadow.pattern == 1,
+        isTrue,
+        reason: 'host background fill keeps canvas shadow',
+      );
+      expect(
+        fillOf(host, red)!.shadow.enabled &&
+            fillOf(host, red)!.shadow.pattern == 1,
+        isTrue,
+        reason: 'nested drawShape disableShadow runs after the first nested '
+            'foreground fillstroke, so that plate still offsets',
+      );
+      expect(
+        fillOf(host, blue)!.shadow.enabled,
+        isFalse,
+        reason: 'nested drawShape always disableShadow on nested foreground, '
+            'even when the tile has no background section',
+      );
+      expect(
+        fillOf(host, green)!.shadow.enabled,
+        isFalse,
+        reason: 'nested first fillstroke left setShadow(false) on the shared '
+            'canvas; later host fillstroke must not keep ShdwPattern',
+      );
+
+      const writer = VsdxWriter();
+      const parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.shadow.enabled && leftover.shadow.pattern == 1,
+        isTrue,
+        reason: 'a second save keeps parent ShdwPattern (tokens.txt)',
+      );
+      expect(
+        fillOf(leftover, blue)!.shadow.enabled,
+        isFalse,
+        reason: 'a second save must not restore ShdwPattern on later nested '
+            'fillstroke',
+      );
+      expect(
+        fillOf(leftover, green)!.shadow.enabled,
+        isFalse,
+        reason: 'a second save must not restore ShdwPattern on later host '
+            'fillstroke after include-shape',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
