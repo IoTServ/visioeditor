@@ -14220,6 +14220,105 @@ void main() {
   );
 
   test(
+    'mxStencil later strokecolor leftover bakes LineColor sibling for LibreOffice',
+    () {
+      List<VsdxColor?> lineColors(VsdxShape shape) {
+        final colors = <VsdxColor?>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) colors.add(next.line.color);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return colors;
+      }
+
+      const red = VsdxColor(0xFFFF0000);
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="S" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<strokecolor color="#ff0000"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 475,
+      );
+      expect(
+        lineColors(host),
+        [isNull, red],
+        reason: 'libvisio collectLine is shape-level; leftover must bake the '
+            'later hex strokecolor fillstroke as a sibling so Draw does not '
+            'restore the first inherit LineColor onto both rails',
+      );
+      expect(host.fill.hasFill, isFalse);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        lineColors(includeHost).where((c) => c == red).length,
+        2,
+        reason: 'include-shape shares the canvas; nested setStrokeColor stays '
+            'for later host inherit fillstroke, which must not reuse the '
+            'first collectLine LineColor',
+      );
+      expect(
+        lineColors(includeHost).where((c) => c == null).length,
+        1,
+        reason: 'the first host inherit stroke keeps inherit LineColor',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      expect(
+        leftover.line.color,
+        isNull,
+        reason: 'a second save keeps the first inherit LineColor Draw paints',
+      );
+      expect(
+        leftover.children.any((child) => child.line.color == red),
+        isTrue,
+        reason: 'a second save keeps the later hex LineColor Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =

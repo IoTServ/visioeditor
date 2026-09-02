@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil later strokecolor LineColor sibling for
+  LibreOffice. Official `mxStencil.drawNode` `<strokecolor>` is
+  `canvas.setStrokeColor`; include-shape nested hex stays on the shared
+  canvas for later host fillstroke. leftover baked hex stroke-only as a
+  sibling (`!doFill`) but concatenated a later hex fillstroke onto the
+  parent, then build() restored the first inherit LineColor
+  (`tokens.txt` LineColor → svg:stroke-color). leftover now bakes a
+  sibling when leftover LineColor differs. A second save keeps both.
 - draw.io leftover mxStencil later sketch FillPattern hatch sibling
   for LibreOffice. Official NestedStencil `<sketch>` is `canvas.setSketch`;
   include-shape nested sketch stays on the shared canvas for later host

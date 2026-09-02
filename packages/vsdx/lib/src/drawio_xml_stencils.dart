@@ -1959,6 +1959,14 @@ class _DrawioXmlShapeDecoder {
     }
     final bakeFill = doFill && _fillColor != null;
     final bakeStroke = doStroke && _strokeColor != null && !doFill;
+    // collectLine is shape-level. A later hex `<strokecolor>` on a
+    // fillstroke (doFill blocks bakeStroke) must still be a sibling so
+    // `_lineProperties` can emit both LineColors. leftover used to
+    // concatenate onto the parent, then build() restored the first
+    // inherit LineColor (`tokens.txt` LineColor → svg:stroke-color).
+    final bakeStrokeColor = doStroke &&
+        _capturedParentStrokeColor &&
+        _strokeColor != _parentStrokeColor;
     // libvisio collectLine is shape-level. A dash after a solid paint
     // (EIP Detour diagonal) must be a sibling. A shape that is dashed
     // from the first paint (Availability Zone, Dashed Wire) keeps
@@ -2043,7 +2051,8 @@ class _DrawioXmlShapeDecoder {
                 bakeDashState ||
                 bakeStrokeTrans ||
                 bakeShadow ||
-                bakeSketch) &&
+                bakeSketch ||
+                bakeStrokeColor) &&
             doFill &&
             !bakeFill);
     if (bakeFill ||
@@ -2055,7 +2064,8 @@ class _DrawioXmlShapeDecoder {
         bakeWeight ||
         bakeStrokeTrans ||
         bakeShadow ||
-        bakeSketch) {
+        bakeSketch ||
+        bakeStrokeColor) {
       final partFill = inheritFillSibling
           ? VsdxFill(
               pattern: 1,
