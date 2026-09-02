@@ -1796,19 +1796,27 @@ class _DrawioXmlShapeDecoder {
     // canvas pixels. leftover cannot share host collectLine (include
     // box ≠ nested w0×h0), so bake LineWeight now.
     if (_includeDepth > 0 && (doFill || doStroke)) {
+      final fill = doFill
+          ? (_fillColor != null || _fillOverride != null
+              ? _paintFill()
+              : VsdxFill(
+                  pattern: 1,
+                  foreground: _styleFill,
+                  foregroundTransparency: _fillTransparency,
+                ))
+          : const VsdxFill(pattern: 0);
       _coloredParts.add(_DrawioColoredPart(
         commands: List<VsdxPathCommand>.unmodifiable(commands),
-        fill: doFill
-            ? (_fillColor != null || _fillOverride != null
-                ? _paintFill()
-                : VsdxFill(
-                    pattern: 1,
-                    foreground: _styleFill,
-                    foregroundTransparency: _fillTransparency,
-                  ))
-            : const VsdxFill(pattern: 0),
+        fill: fill,
         line: _paintLine(stroke: doStroke),
         shadow: _shadow ?? VsdxShadow.disabled,
+        // include-shape leftover already `_x`/`_y`'d vertices into the
+        // include box. `_fillAndShadowProperties` interpolates
+        // FillPattern 25–40 across the child's Width/Height, so a
+        // nested fillgradient on a host-sized sibling is a corner of
+        // a 1.5" wash. Fit only those gradient paints; solid/stroke
+        // leftovers stay in host leftover inches (arc / roundrect tests).
+        fitBox: fill.pattern >= 25 && fill.pattern <= 40,
       ));
       if (_shadow != null) _parentShadow ??= _shadow;
       return;
@@ -2377,17 +2385,45 @@ class _DrawioXmlShapeDecoder {
     required _DrawioColoredPart part,
     VsdxShadow shadow = VsdxShadow.disabled,
   }) {
-    final locX = targetWidth / 2;
-    final locY = targetHeight / 2;
+    var pinX = targetWidth / 2;
+    var pinY = targetHeight / 2;
+    var width = targetWidth;
+    var height = targetHeight;
+    var commands = part.commands;
+    if (part.fitBox) {
+      final box = geometryLocalBounds(
+        VsdxGeometry(commands: part.commands),
+        width: targetWidth,
+        height: targetHeight,
+      );
+      if (box != null) {
+        final boxW = box.maxX - box.minX;
+        final boxH = box.maxY - box.minY;
+        if (boxW > 1e-4 && boxH > 1e-4) {
+          width = boxW;
+          height = boxH;
+          pinX = box.minX + width / 2;
+          pinY = box.minY + height / 2;
+          commands = List<VsdxPathCommand>.unmodifiable([
+            for (final command in part.commands)
+              _translateLeftoverCommand(
+                command,
+                dx: -box.minX,
+                dy: -box.minY,
+              ),
+          ]);
+        }
+      }
+    }
     return _withLineUserCells(VsdxShape(
       id: id,
       name: 'Sheet.$id',
-      pinX: locX,
-      pinY: locY,
-      width: targetWidth,
-      height: targetHeight,
-      locPinXInches: locX,
-      locPinYInches: locY,
+      pinX: pinX,
+      pinY: pinY,
+      width: width,
+      height: height,
+      locPinXInches: width / 2,
+      locPinYInches: height / 2,
       fill: part.fill,
       line: part.line,
       shadow: shadow,
@@ -2395,7 +2431,7 @@ class _DrawioXmlShapeDecoder {
         VsdxGeometry(
           noFill: !part.fill.hasFill,
           noLine: !part.line.hasLine,
-          commands: part.commands,
+          commands: commands,
         ),
       ],
       richText: const VsdxRichText(
@@ -2830,12 +2866,82 @@ class _DrawioColoredPart {
     required this.fill,
     required this.line,
     this.shadow = VsdxShadow.disabled,
+    this.fitBox = false,
   });
 
   final List<VsdxPathCommand> commands;
   final VsdxFill fill;
   final VsdxLine line;
   final VsdxShadow shadow;
+
+  /// When true, [_DrawioXmlShapeDecoder._coloredShape] pins Width/Height
+  /// to the path bbox so libvisio FillPattern 25–40 interpolates across
+  /// the include-shape box, not the host card.
+  final bool fitBox;
+}
+
+/// Shift leftover-inch vertices so a fitted child's local origin is the
+/// path bbox min. Rel* rows stay as-is (the catalog decoder does not emit
+/// them; they would already be fractions of the destination XForm).
+VsdxPathCommand _translateLeftoverCommand(
+  VsdxPathCommand command, {
+  required double dx,
+  required double dy,
+}) {
+  return switch (command) {
+    MoveTo(:final x, :final y) => MoveTo(x + dx, y + dy),
+    LineTo(:final x, :final y) => LineTo(x + dx, y + dy),
+    CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2) =>
+      CubBezTo(
+        x: x + dx,
+        y: y + dy,
+        x1: x1 + dx,
+        y1: y1 + dy,
+        x2: x2 + dx,
+        y2: y2 + dy,
+      ),
+    QuadBezTo(:final x, :final y, :final x1, :final y1) => QuadBezTo(
+        x: x + dx,
+        y: y + dy,
+        x1: x1 + dx,
+        y1: y1 + dy,
+      ),
+    ArcTo(:final x, :final y, :final bow) =>
+      ArcTo(x: x + dx, y: y + dy, bow: bow),
+    EllipticalArcTo(
+      :final x,
+      :final y,
+      :final controlX,
+      :final controlY,
+      :final angle,
+      :final eccentricity,
+    ) =>
+      EllipticalArcTo(
+        x: x + dx,
+        y: y + dy,
+        controlX: controlX + dx,
+        controlY: controlY + dy,
+        angle: angle,
+        eccentricity: eccentricity,
+      ),
+    EllipseCmd(
+      :final cx,
+      :final cy,
+      :final aX,
+      :final aY,
+      :final bX,
+      :final bY,
+    ) =>
+      EllipseCmd(
+        cx: cx + dx,
+        cy: cy + dy,
+        aX: aX + dx,
+        aY: aY + dy,
+        bX: bX + dx,
+        bY: bY + dy,
+      ),
+    _ => command,
+  };
 }
 
 /// mxStencil.parseColor hex / rgb / CSS named colour. Official
