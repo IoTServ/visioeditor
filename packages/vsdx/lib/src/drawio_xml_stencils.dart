@@ -925,11 +925,13 @@ class _DrawioXmlShapeDecoder {
         // inches (`tokens.txt` Size → fo:font-size). Visio's 0.5pt
         // floor rejects empty Size; leftover `_labelShape` already
         // clamps to `_kMxMinCharSizeInches`.
+        // mxStencil.drawNode is Number(getAttribute('size'))*minScale;
+        // omitted is Number(null)=0. leftover tryParse skip kept the
+        // previous leftover inches, so Draw painted a 24pt glyph
+        // mxSvgCanvas2D.text (`fontSize > 0`) never paints.
         final raw = node.getAttribute('size');
-        final size = double.tryParse(raw ?? '');
-        if (size != null && size.isFinite) {
-          _fontSize = size;
-        }
+        final size = double.tryParse((raw ?? '').trim());
+        _fontSize = (size != null && size.isFinite) ? size : 0;
         break;
       case 'fontstyle':
         // mxXmlCanvas2D compressed setFontStyle, including 0 so a
@@ -1250,6 +1252,7 @@ class _DrawioXmlShapeDecoder {
       // Later `<fontsize size="0"/>` leftover-bakes Visio's 0.5pt
       // Char.Size floor because leftover used to skip size<=0
       // (`tokens.txt` Size → collectCharIX fo:font-size).
+      // Omitted `<fontsize/>` is Number(null)=0 the same way.
       // Nested save/restore shares canvas.states; leftover seeds a
       // converted copy so nested restore can pop a host save. Unequal
       // counts reset to the entry snapshot (`drawShape` assigns

@@ -18578,9 +18578,11 @@ void main() {
       );
       expect(
         fontInches(omitted, 'CD'),
-        closeTo(24 * canvasScale, 1e-6),
-        reason: 'omitted size is a no-op; leftover keeps the previous '
-            'Char.Size leftover inches',
+        closeTo(minSize, 1e-6),
+        reason: 'omitted size is Number(null)=0; leftover tryParse skip '
+            'kept the previous Char.Size so Draw collectCharIX painted '
+            'a 24pt glyph mxSvgCanvas2D.text never paints '
+            '(`tokens.txt` Size)',
       );
 
       final zero = decodeDrawioMxStencilXml(
@@ -18627,17 +18629,64 @@ void main() {
             'so Draw does not paint the tile with host leftover inches',
       );
 
+      final includeOmitted = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontsize size="24"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontsize/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(fontInches(includeOmitted, 'AB'), closeTo(24 * canvasScale, 1e-6));
+      expect(
+        fontInches(includeOmitted, 'CD'),
+        closeTo(minSize, 1e-6),
+        reason: 'include-shape nested omitted fontsize leftover-bakes the '
+            '0.5pt floor so Draw does not paint the tile with host leftover '
+            'inches',
+      );
+
       final writer = VsdxWriter();
       final parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
-      final zeroId = doc.pages.first.nextFreeShapeId();
+      final omittedId = doc.pages.first.nextFreeShapeId();
       doc = doc.replacePage(
         0,
-        doc.pages.first.addShape(zero.copyWith(id: zeroId)),
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final leftoverOmitted = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(omittedId)!;
+      expect(fontInches(leftoverOmitted, 'AB'), closeTo(24 * canvasScale, 1e-6));
+      expect(
+        fontInches(leftoverOmitted, 'CD'),
+        closeTo(minSize, 1e-6),
+        reason: 'a second save keeps leftover omitted 0.5pt Char.Size '
+            'Draw paints',
+      );
+
+      var zeroDoc = parser.parse(writer.emptyDocument());
+      final zeroId = zeroDoc.pages.first.nextFreeShapeId();
+      zeroDoc = zeroDoc.replacePage(
+        0,
+        zeroDoc.pages.first.addShape(zero.copyWith(id: zeroId)),
       );
       final leftover = parser
           .parse(
-            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+            writer.write(originalBytes: writer.emptyDocument(), edited: zeroDoc),
           )
           .pages
           .first

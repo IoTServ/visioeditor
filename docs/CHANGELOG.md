@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fontsize omitted leftover Char Size
+  floor for LibreOffice. Official `setFontSize(Number(null)*minScale)`
+  is 0; NestedStencil `attrNum` fallback is 0; `mxSvgCanvas2D.text`
+  skips when `fontSize > 0` is false. leftover `tryParse` skip kept
+  the previous leftover inches, so Draw `collectCharIX` painted a
+  large glyph (`tokens.txt` Size → `fo:font-size`). leftover now
+  snaps omitted to 0 and floors empty Size to Visio's 0.5pt,
+  include-shape copies that overlay, and a later omitted fontsize
+  leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D dashpattern omitted leftover
   authored array for LibreOffice. Official `setDashPattern` runs only
   when `pattern` is present; NestedStencil returns when both attrs
