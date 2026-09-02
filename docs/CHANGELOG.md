@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D scale negative leftover Pin flip for
+  LibreOffice. Official `mxAbstractCanvas2D.scale` is
+  `state.scale *= value`, and `setScale(-1)` emits `<scale scale="-1"/>`
+  so later `addOp` vertices mirror. leftover `value < 0` skipped the
+  multiply, so Draw `collectGeometry` kept the unflipped leftover
+  inches (`tokens.txt` PinX / Width). leftover now multiplies, uses
+  abs for LineWeight / Char.Size, include-shape copies that overlay,
+  and a later negative scale leftover-bakes a sibling. A second save
+  keeps both.
 - draw.io leftover mxXmlCanvas2D linejoin omitted leftover miter for
   LibreOffice. Official `setLineJoin` writes `<linejoin join=>`; omitted
   or empty join leaves `state.lineJoin` null and `mxSvgCanvas2D` skips

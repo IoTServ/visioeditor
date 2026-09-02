@@ -15978,6 +15978,143 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D scale negative leftover flips Pin for LibreOffice',
+    () {
+      double minMoveX(VsdxShape shape) {
+        var min = double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            final x = switch (command) {
+              MoveTo(:final x) => x,
+              LineTo(:final x) => x,
+              _ => null,
+            };
+            if (x == null) continue;
+            min = math.min(min, x);
+          }
+        }
+        return min.isFinite ? min : 0;
+      }
+
+      double minMoveXDeep(VsdxShape shape) {
+        var min = minMoveX(shape);
+        for (final child in shape.children) {
+          min = math.min(min, minMoveXDeep(child));
+        }
+        return min;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const full = 20 * canvasScale;
+
+      final flipped = decodeDrawioMxStencilXml(
+        '<shape name="F" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<scale scale="-1"/>'
+        '<rect x="20" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 502,
+      );
+      expect(
+        minMoveX(flipped),
+        closeTo(-40 * canvasScale, 0.02),
+        reason: 'mxAbstractCanvas2D.scale *= -1 mirrors addOp (x+dx)*scale; '
+            'leftover used to skip negative so Draw collectGeometry kept '
+            'the unflipped leftover inches (`tokens.txt` PinX / Width)',
+      );
+      expect(
+        flipped.line.weightInches,
+        closeTo(canvasScale, 0.002),
+        reason: 'getCurrentStrokeWidth floors negative width*scale to '
+            'minStrokeWidth; leftover LineWeight uses abs '
+            '(`tokens.txt` LineWeight)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="20" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<scale scale="-1"/>'
+        '<rect x="20" y="20" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(laterHost),
+        closeTo(full, 0.02),
+        reason: 'first inherit stroke keeps collectGeometry unflipped',
+      );
+      expect(
+        laterHost.children.any(
+          (child) => minMoveXDeep(child) < -20 * canvasScale,
+        ),
+        isTrue,
+        reason: 'later scale=-1 leftover-bakes a mirrored sibling so Draw '
+            'does not concatenate the flipped rail (`tokens.txt` PinX)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="20" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<scale scale="-1"/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="20" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="20" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(minMoveX(includeHost), closeTo(full, 0.02));
+      expect(
+        includeHost.children.any(
+          (child) => minMoveXDeep(child) < -10 * canvasScale,
+        ),
+        isTrue,
+        reason: 'include-shape nested leftover inches follow host scale=-1',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        minMoveX(leftover),
+        closeTo(full, 0.02),
+        reason: 'a second save keeps the first unflipped Pin Draw paints',
+      );
+      expect(
+        leftover.children.any(
+          (child) => minMoveXDeep(child) < -20 * canvasScale,
+        ),
+        isTrue,
+        reason: 'a second save keeps the later mirrored Pin Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

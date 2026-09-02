@@ -372,6 +372,8 @@ class _DrawioXmlShapeDecoder {
   double? _strokeWidth;
   bool _strokeWidthFixed = false;
   double? _parentStrokeWeightInches;
+  bool _capturedParentUserScale = false;
+  double? _parentCanvasUserScale;
   bool _capturedParentStrokeColor = false;
   VsdxColor? _parentStrokeColor;
   double? _parentFillTransparency;
@@ -795,9 +797,11 @@ class _DrawioXmlShapeDecoder {
       case 'scale':
         // mxXmlCanvas2D.scale. mxAbstractCanvas2D.scale multiplies
         // state.scale (addOp / getStrokeWidth / createDashPattern),
-        // including 0 so later vertices collapse. leftover `value > 0`
-        // skipped 0, so Draw collectGeometry kept the unscaled leftover
-        // inches (`tokens.txt` PinX / Width / LineWeight).
+        // including 0 so later vertices collapse and negative so
+        // addOp mirrors. leftover `value < 0` skipped the multiply,
+        // so Draw collectGeometry kept the unflipped leftover inches
+        // (`tokens.txt` PinX / Width). LineWeight still uses abs
+        // (`tokens.txt` LineWeight).
         _applyMxCanvasScale(_number(node, 'scale', fallback: 1));
         break;
       case 'rotate':
@@ -1769,8 +1773,8 @@ class _DrawioXmlShapeDecoder {
     late final double srcW;
     late final double srcH;
     if (boxW != null && boxH != null) {
-      width = boxW * scaleX.abs() * _canvasUserScale;
-      height = boxH * scaleY.abs() * _canvasUserScale;
+      width = boxW * scaleX.abs() * _canvasUserScale.abs();
+      height = boxH * scaleY.abs() * _canvasUserScale.abs();
       left = raster.left ?? 0;
       top = raster.top ?? 0;
       srcW = boxW;
@@ -1827,8 +1831,8 @@ class _DrawioXmlShapeDecoder {
   ) {
     final src = _sourceFromLeftover(box.offsetX, box.offsetY);
     final left = src.x;
-    final xUnit = scaleX.abs() * _canvasUserScale;
-    final yUnit = scaleY.abs() * _canvasUserScale;
+    final xUnit = scaleX.abs() * _canvasUserScale.abs();
+    final yUnit = scaleY.abs() * _canvasUserScale.abs();
     final boxW = xUnit < 1e-12 ? box.width : box.width / xUnit;
     final boxH = yUnit < 1e-12 ? box.height : box.height / yUnit;
     final bottomSrc = src.y;
@@ -2678,12 +2682,14 @@ class _DrawioXmlShapeDecoder {
   }
 
   void _applyMxCanvasScale(double value) {
-    // mxAbstractCanvas2D.scale is `state.scale *= value`. 0 is a
-    // legal XML `scale="0"` that collapses addOp vertices; negative
-    // is not a minScale and would flip leftover LineWeight through
-    // `max(0.001, …)` into a hairline Draw collectLine does not
-    // paint (`tokens.txt` LineWeight).
-    if (!value.isFinite || value < 0) return;
+    // mxAbstractCanvas2D.scale is `state.scale *= value`. 0 collapses
+    // addOp vertices; negative mirrors `(x+dx)*scale`. leftover
+    // `value < 0` skipped the multiply, so Draw collectGeometry kept
+    // the unflipped leftover inches (`tokens.txt` PinX / Width).
+    // LineWeight / Char.Size / ImgWidth still use abs so
+    // `max(0.001, negative)` does not hairline (`tokens.txt`
+    // LineWeight / Size).
+    if (!value.isFinite) return;
     _canvasUserScale *= value;
     if (_shadow != null) _rebuildEnabledShadow();
   }
@@ -2759,7 +2765,7 @@ class _DrawioXmlShapeDecoder {
     final scale = (_strokeWidthFixed
             ? _canvasScale
             : math.min(scaleX.abs(), scaleY.abs())) *
-        _canvasUserScale;
+        _canvasUserScale.abs();
     final canvas = width <= 0 ? 1.0 : width;
     return math.max(0.001, canvas * scale);
   }
@@ -2799,7 +2805,7 @@ class _DrawioXmlShapeDecoder {
     // weight-scaled dashes that look solid on a short rail.
     final source = raw ?? _dashPattern ?? _kMxDefaultDashPattern;
     if (source.isEmpty) return null;
-    final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale;
+    final scale = math.min(scaleX.abs(), scaleY.abs()) * _canvasUserScale.abs();
     // mxSvgCanvas2D.createDashPattern: `(fixDash ? 1 : strokeWidth)*scale`.
     // leftover tessellates those leftover inches (`tokens.txt` has no
     // fixDash). Omitted fixDash stays 1 so catalog MoveTo gaps match
@@ -2961,6 +2967,15 @@ class _DrawioXmlShapeDecoder {
     final bakeWeight = doStroke &&
         _parentStrokeWeightInches != null &&
         (_strokeWeightInches - _parentStrokeWeightInches!).abs() > 1e-6;
+    // collectGeometry is shape-level. A later `<scale scale="-1"/>`
+    // (or include-shape nested scale that stays on the shared canvas)
+    // must be a sibling so Draw does not concatenate the mirrored rail
+    // onto the first leftover inches (`tokens.txt` PinX / Width).
+    // LineWeight uses abs so bakeWeight does not fire for ±1.
+    final bakeUserScale = (doFill || doStroke) &&
+        _capturedParentUserScale &&
+        _parentCanvasUserScale != null &&
+        (_canvasUserScale - _parentCanvasUserScale!).abs() > 1e-12;
     // collectLine is shape-level. A later `<strokealpha>` (or include-shape
     // nested setStrokeAlpha that stays on the shared canvas) must be a
     // sibling so leftover can ribbon only the faded rail. `tokens.txt`
@@ -2992,6 +3007,7 @@ class _DrawioXmlShapeDecoder {
     final inheritFillSibling = extraInheritFill ||
         ((bakeLineStyle ||
                 bakeWeight ||
+                bakeUserScale ||
                 bakeDashState ||
                 bakeStrokeTrans ||
                 bakeShadow ||
@@ -3006,6 +3022,7 @@ class _DrawioXmlShapeDecoder {
         extraInheritFill ||
         bakeLineStyle ||
         bakeWeight ||
+        bakeUserScale ||
         bakeStrokeTrans ||
         bakeShadow ||
         bakeSketch ||
@@ -3095,6 +3112,10 @@ class _DrawioXmlShapeDecoder {
     }
     if (doStroke && _strokeWidth != null) {
       _parentStrokeWeightInches ??= _strokeWeightInches;
+    }
+    if ((doFill || doStroke) && !_capturedParentUserScale) {
+      _capturedParentUserScale = true;
+      _parentCanvasUserScale = _canvasUserScale;
     }
     if (!_capturedParentShadow && (doFill || doStroke)) {
       // First inherit paint owns collectFillAndShadow. Later `<shadow>`
@@ -3793,8 +3814,8 @@ class _DrawioXmlShapeDecoder {
   /// snapshots leftover-inch Pin / TxtAngle at emit so a later
   /// `<rotate>` cannot drag earlier glyphs (`tokens.txt` TxtAngle).
   _DrawioStencilLabel _snapshotLabelCanvas(_DrawioStencilLabel label) {
-    final scaleXAbs = scaleX.abs() * _canvasUserScale;
-    final scaleYAbs = scaleY.abs() * _canvasUserScale;
+    final scaleXAbs = scaleX.abs() * _canvasUserScale.abs();
+    final scaleYAbs = scaleY.abs() * _canvasUserScale.abs();
     final layout = _labelLeftoverLayout(
       label,
       scaleXAbs: scaleXAbs,
@@ -3869,8 +3890,10 @@ class _DrawioXmlShapeDecoder {
     required int id,
     required _DrawioStencilLabel label,
   }) {
-    final scaleXAbs = label.leftoverScaleX ?? (scaleX.abs() * _canvasUserScale);
-    final scaleYAbs = label.leftoverScaleY ?? (scaleY.abs() * _canvasUserScale);
+    final scaleXAbs =
+        label.leftoverScaleX ?? (scaleX.abs() * _canvasUserScale.abs());
+    final scaleYAbs =
+        label.leftoverScaleY ?? (scaleY.abs() * _canvasUserScale.abs());
     final scale = math.min(scaleXAbs, scaleYAbs);
     final fontInches = math.max(_kMxMinCharSizeInches, label.fontSize * scale);
     // mxXmlCanvas2D.text w/h is the cell box. Stencil glyphs pass 0 and
