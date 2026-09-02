@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillcolor=strokeColor FillForegnd sibling for
+  LibreOffice. Official `mxStencil.getColorValue('strokeColor')` is
+  `STYLE_STROKECOLOR` (iOS 7 Location 22 / Controls2); include-shape
+  nested setFillColor stays on the shared canvas. leftover treated the
+  cell key as inherit FillForegnd like `fillColor`, then
+  `applyStencilStyle` washed both rails with palette fill (`tokens.txt`
+  FillForegnd → svg:fill). leftover now follows `parseColor('stroke')` /
+  `parseColor('fill')` for `strokeColor` / `fillColor` aliases. A second
+  save keeps both.
 - draw.io leftover mxStencil fillcolor=stroke FillForegnd sibling for
   LibreOffice. Official `mxStencil.parseColor('stroke')` is `shape.stroke`;
   include-shape nested setFillColor stays on the shared canvas for later

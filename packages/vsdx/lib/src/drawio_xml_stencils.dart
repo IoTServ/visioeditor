@@ -1465,7 +1465,10 @@ class _DrawioXmlShapeDecoder {
     _fillFollowsStroke = false;
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
-    if (token.isEmpty || lower == 'fill' || lower == 'default') {
+    if (token.isEmpty ||
+        lower == 'fill' ||
+        lower == 'default' ||
+        token == 'fillColor') {
       _fillColor = null;
       _fillIsNone = false;
       return;
@@ -1475,11 +1478,13 @@ class _DrawioXmlShapeDecoder {
       _fillIsNone = true;
       return;
     }
-    if (lower == 'stroke') {
-      // mxStencil.parseColor('stroke') is shape.stroke. Catalog leftover
-      // has no cell style, so inherit LineColor stays null and a User
-      // row lets applyStencilStyle pin palette stroke. A prior hex
-      // `<strokecolor>` is the shared-canvas colour leftover bakes.
+    if (lower == 'stroke' || token == 'strokeColor') {
+      // mxStencil.parseColor('stroke') is shape.stroke.
+      // getColorValue('strokeColor') is STYLE_STROKECOLOR (iOS 7 Location
+      // 22 / Controls2). Catalog leftover has no cell style, so inherit
+      // LineColor stays null and a User row lets applyStencilStyle pin
+      // palette stroke. A prior hex `<strokecolor>` is the shared-canvas
+      // colour leftover bakes.
       _fillColor = _strokeColor;
       _fillIsNone = _strokeIsNone;
       _fillFollowsStroke = _strokeColor == null && !_strokeIsNone;
@@ -1625,7 +1630,10 @@ class _DrawioXmlShapeDecoder {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     _strokeFollowsFill = false;
-    if (token.isEmpty || lower == 'stroke' || lower == 'default') {
+    if (token.isEmpty ||
+        lower == 'stroke' ||
+        lower == 'default' ||
+        token == 'strokeColor') {
       _strokeColor = null;
       _strokeIsNone = false;
       return;
@@ -1635,10 +1643,12 @@ class _DrawioXmlShapeDecoder {
       _strokeIsNone = true;
       return;
     }
-    if (lower == 'fill') {
-      // mxStencil.parseColor('fill') is shape.fill. Inherit FillForegnd
-      // stays null so applyStencilStyle can pin palette fill onto
-      // collectLine LineColor (`tokens.txt`).
+    if (lower == 'fill' || token == 'fillColor') {
+      // mxStencil.parseColor('fill') is shape.fill.
+      // getColorValue('fillColor') is STYLE_FILLCOLOR (Cisco
+      // strokecolor fillColor). Inherit FillForegnd stays null so
+      // applyStencilStyle can pin palette fill onto collectLine
+      // LineColor (`tokens.txt`).
       _strokeColor = _fillColor;
       _strokeIsNone = _fillIsNone;
       _strokeFollowsFill = _fillColor == null && !_fillIsNone;
@@ -1666,11 +1676,11 @@ class _DrawioXmlShapeDecoder {
       _fontColor = null;
       return;
     }
-    if (lower == 'fill') {
+    if (lower == 'fill' || token == 'fillColor') {
       _fontColor = _fillColor;
       return;
     }
-    if (lower == 'stroke' || lower == 'font') {
+    if (lower == 'stroke' || lower == 'font' || token == 'strokeColor') {
       _fontColor = _strokeColor;
       return;
     }
@@ -2004,12 +2014,13 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     // collectFill is shape-level. A later `<fillcolor color="stroke"/>`
-    // (or include-shape nested setFillColor(shape.stroke)) must be a
-    // sibling so `_fillAndShadowProperties` can emit both FillForegnd
-    // values. leftover used to concatenate onto the parent, then
-    // applyStencilStyle washed both rails with palette fill
+    // / `color="strokeColor"` (or include-shape nested setFillColor)
+    // must be a sibling so `_fillAndShadowProperties` can emit both
+    // FillForegnd values. leftover used to concatenate onto the parent,
+    // then applyStencilStyle washed both rails with palette fill
     // (`tokens.txt` FillForegnd → svg:fill). Hex fillcolor already
-    // bakes because `_fillColor != null`.
+    // bakes because `_fillColor != null`. `strokeColor` is
+    // getColorValue STYLE_STROKECOLOR (iOS 7 Location 22).
     final bakeFill = doFill &&
         (_fillColor != null ||
             (_capturedParentFill &&
