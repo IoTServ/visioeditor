@@ -16212,6 +16212,129 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D linejoin omitted leftover bakes miter for LibreOffice',
+    () {
+      VsdxLineJoin? strokedJoin(VsdxShape shape) {
+        if (shape.line.hasLine) return shape.line.join;
+        return null;
+      }
+
+      bool hasJoin(VsdxShape shape, VsdxLineJoin join) {
+        if (shape.line.hasLine && shape.line.join == join) return true;
+        return shape.children.any((child) => hasJoin(child, join));
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<linecap cap="square"/>'
+        '<linejoin/>'
+        '<path><move x="0" y="10"/><line x="0" y="0"/><line x="40" y="0"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 501,
+      );
+      expect(
+        strokedJoin(omitted),
+        VsdxLineJoin.miter,
+        reason: 'omitted join is SVG miter; leftover used to keep a prior '
+            'round leftover so Draw collectLine filleted the elbow '
+            '(`tokens.txt` has no LineJoin)',
+      );
+      expect(
+        hasJoin(omitted, VsdxLineJoin.round),
+        isFalse,
+        reason: 'omitted linejoin must not paint round leftover fillets',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<linecap cap="square"/>'
+        '<linejoin join="round"/>'
+        '<path><move x="0" y="10"/><line x="0" y="0"/><line x="40" y="0"/></path>'
+        '<stroke/>'
+        '<linejoin/>'
+        '<path><move x="0" y="30"/><line x="0" y="20"/><line x="40" y="20"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.line.join,
+        VsdxLineJoin.round,
+        reason: 'first inherit stroke keeps collectLine round leftover',
+      );
+      expect(
+        laterHost.children.any(
+          (child) =>
+              child.line.hasLine && child.line.join == VsdxLineJoin.miter,
+        ),
+        isTrue,
+        reason: 'later omitted join leftover-bakes miter so Draw does '
+            'not fillet the second elbow (`tokens.txt` has no LineJoin)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<linecap cap="square"/>'
+        '<linejoin join="round"/>'
+        '<path><move x="0" y="10"/><line x="0" y="0"/><line x="40" y="0"/></path>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<linejoin/>'
+        '<path><move x="0" y="10"/><line x="0" y="0"/><line x="40" y="0"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(includeHost.line.join, VsdxLineJoin.round);
+      expect(
+        includeHost.children.any(
+          (child) =>
+              child.line.hasLine && child.line.join == VsdxLineJoin.miter,
+        ),
+        isTrue,
+        reason: 'include-shape nested omitted join leftover-bakes miter '
+            'so Draw does not fillet the tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(leftover.line.join, VsdxLineJoin.round);
+      expect(
+        leftover.children.any(
+          (child) =>
+              child.line.hasLine && child.line.join == VsdxLineJoin.miter,
+        ),
+        isTrue,
+        reason: 'a second save keeps leftover miter Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D rotate leftover bakes PinX for LibreOffice',
     () {
       double minMoveX(VsdxShape shape) {

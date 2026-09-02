@@ -842,15 +842,18 @@ class _DrawioXmlShapeDecoder {
         _lineCap = _mxLineCap(node.getAttribute('cap')) ?? LineCap.extended;
         break;
       case 'linejoin':
-        // mxStencil.drawNode always setLineJoin(join). XSD is miter /
-        // round / bevel; Arrow / Decider still write linecap tokens
-        // `flat` / `square`. mxSvgCanvas2D then sets stroke-linejoin
-        // to that string; SVG drops the invalid value and uses the
-        // CSS initial `miter`. VsdxLineJoin.parse maps those to null
-        // and would wipe createState miter (or a prior round) so a
-        // later round cap leftover-joins from LineCap.
-        final join = _mxLineJoin(node.getAttribute('join'));
-        if (join != null) _lineJoin = join;
+        // mxStencil.drawNode always setLineJoin(join). Omitted/empty
+        // is null; leftover treated that as a no-op so a later
+        // `<linejoin/>` kept the previous round/bevel. mxSvgCanvas2D
+        // skips stroke-linejoin when state.lineJoin is null; SVG
+        // default is miter. XSD is miter / round / bevel; Arrow /
+        // Decider still write linecap tokens `flat` / `square`.
+        // mxSvgCanvas2D then sets stroke-linejoin to that string;
+        // SVG drops the invalid value and uses the CSS initial
+        // `miter`. `tokens.txt` has no LineJoin; leftover bakes
+        // Rounding / RelQuadBezTo so Draw collectLine miters.
+        _lineJoin =
+            _mxLineJoin(node.getAttribute('join')) ?? VsdxLineJoin.miter;
         break;
       case 'miterlimit':
         final limit = _number(node, 'limit', fallback: 10);
@@ -1107,6 +1110,9 @@ class _DrawioXmlShapeDecoder {
       // arrays bake to a MoveTo ribbon because libvisio treats 0xfe as solid).
       // Omitted linecap cap snaps to LineCap 1 (SVG butt) so Draw does
       // not round (`tokens.txt` LineCap).
+      // Omitted linejoin join snaps to miter (SVG default) so Draw
+      // does not keep a prior round leftover (`tokens.txt` has no
+      // LineJoin; leftover Rounding / RelQuadBezTo).
       // `dashpattern pattern="none"` is NaN in official drawNode, so SVG
       // stroke-dasharray is invalid and Draw must stay solid (AWS 4
       // work package), not createState `3 3`. Cisco `dash="8 8"` (no
@@ -2772,10 +2778,10 @@ class _DrawioXmlShapeDecoder {
     // mx createState lineCap is flat. VsdxLine.defaultLine is Visio
     // factory round; a null canvas cap must not leak LineCap 0 into
     // collectLine (`tokens.txt` LineCap → svg:stroke-linecap=round).
-    line = line.copyWith(cap: _lineCap ?? LineCap.extended);
-    if (_lineJoin != null) {
-      line = line.copyWith(join: _lineJoin);
-    }
+    line = line.copyWith(
+      cap: _lineCap ?? LineCap.extended,
+      join: _lineJoin ?? VsdxLineJoin.miter,
+    );
     if (_miterLimit != null) {
       line = line.copyWith(miterLimit: _miterLimit);
     }
@@ -5155,9 +5161,9 @@ LineCap? _mxLineCap(String? raw) => switch ((raw ?? '').trim().toLowerCase()) {
       _ => null,
     };
 
-/// mxStencil.drawNode setLineJoin. Empty is a no-op like
-/// mxAbstractCanvas2D (`if (value != null)`). Invalid SVG joins
-/// (`flat` / `square` / `butt`) snap to the CSS initial `miter`.
+/// mxStencil.drawNode setLineJoin. Empty/omitted is null so the
+/// caller snaps to SVG's CSS initial `miter` (same as createState).
+/// Invalid SVG joins (`flat` / `square` / `butt`) also snap to miter.
 VsdxLineJoin? _mxLineJoin(String? raw) =>
     switch ((raw ?? '').trim().toLowerCase()) {
       '' => null,

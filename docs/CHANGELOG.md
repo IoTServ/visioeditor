@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D linejoin omitted leftover miter for
+  LibreOffice. Official `setLineJoin` writes `<linejoin join=>`; omitted
+  or empty join leaves `state.lineJoin` null and `mxSvgCanvas2D` skips
+  `stroke-linejoin` (SVG default miter). leftover treated that as a
+  no-op, so Draw `collectLine` kept a prior round leftover
+  (`tokens.txt` has no LineJoin; leftover Rounding / RelQuadBezTo).
+  leftover now snaps to miter, include-shape copies that overlay, and
+  a later omitted join leftover-bakes a sibling. A second save keeps
+  both.
 - draw.io leftover mxXmlCanvas2D shadow omitted leftover ShdwPattern 0
   for LibreOffice. Official `setShadow` writes `<shadow enabled="1|0"/>`;
   NestedStencil enables only `enabled === '1'`. leftover treated omitted
