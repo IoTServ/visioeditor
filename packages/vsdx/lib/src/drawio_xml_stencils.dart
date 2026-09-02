@@ -294,6 +294,7 @@ class _DrawioXmlShapeDecoder {
   double? _parentStrokeTransparency;
   bool _dashed = false;
   bool _solidPaintBeforeDash = false;
+  bool _capturedParentDashState = false;
   bool _parentDashed = false;
   List<double>? _parentDashPattern;
   List<double>? _dashPattern;
@@ -1956,6 +1957,19 @@ class _DrawioXmlShapeDecoder {
     // from the first paint (Availability Zone, Dashed Wire) keeps
     // LinePattern on the parent so applyStencilStyle can still recolor it.
     final bakeDash = doStroke && _dashed && _solidPaintBeforeDash;
+    // The inverse: later `<dashed dashed="0"/>` or a later `<dashpattern>`
+    // on an inherit stroke. leftover used to concatenate onto the parent,
+    // so Draw `_lineProperties` (and leftover MoveTo gaps) dashed the
+    // later rail with the first collectLine pattern (`tokens.txt` has
+    // LinePattern but 0xfe custom arrays paint solid).
+    final bakeDashState = doStroke &&
+        _capturedParentDashState &&
+        (_dashed != _parentDashed ||
+            (_dashed &&
+                !_dashPatternsEqual(
+                  _dashPattern ?? _kMxDefaultDashPattern,
+                  _parentDashPattern,
+                )));
     // collectGeometry concatenates every NoFill=0 section into one
     // evenodd path (`_fillAndShadowProperties` svg:fill-rule=evenodd).
     // A second inherit-fill (AWS Cloud puffs, Citrix server blobs)
@@ -1989,10 +2003,11 @@ class _DrawioXmlShapeDecoder {
         _parentStrokeWeightInches != null &&
         (_strokeWeightInches - _parentStrokeWeightInches!).abs() > 1e-6;
     final inheritFillSibling = extraInheritFill ||
-        ((bakeLineStyle || bakeWeight) && doFill && !bakeFill);
+        ((bakeLineStyle || bakeWeight || bakeDashState) && doFill && !bakeFill);
     if (bakeFill ||
         bakeStroke ||
         bakeDash ||
+        bakeDashState ||
         extraInheritFill ||
         bakeLineStyle ||
         bakeWeight) {
@@ -2053,9 +2068,14 @@ class _DrawioXmlShapeDecoder {
       _capturedParentStrokeColor = true;
       _parentStrokeColor = _strokeColor;
     }
-    if (doStroke && _dashed) {
-      _parentDashed = true;
-      _parentDashPattern ??= _dashPattern ?? _kMxDefaultDashPattern;
+    if (doStroke && !_capturedParentDashState) {
+      // First inherit stroke owns collectLine dash. Later `<dashed>` /
+      // `<dashpattern>` belong on siblings so Draw can emit both.
+      _capturedParentDashState = true;
+      _parentDashed = _dashed;
+      if (_dashed) {
+        _parentDashPattern = _dashPattern ?? _kMxDefaultDashPattern;
+      }
     }
     if (doStroke && _strokeWidth != null) {
       _parentStrokeWeightInches ??= _strokeWeightInches;
@@ -3398,6 +3418,16 @@ String? _mxFontFamily(String? raw) {
     'helvetica' => 'Helvetica',
     _ => token,
   };
+}
+
+bool _dashPatternsEqual(List<double>? a, List<double>? b) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return false;
+  if (a.length != b.length) return false;
+  for (var i = 0; i < a.length; i++) {
+    if ((a[i] - b[i]).abs() > 1e-9) return false;
+  }
+  return true;
 }
 
 /// mxStencil.drawNode dashpattern.

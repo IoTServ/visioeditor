@@ -13686,6 +13686,177 @@ void main() {
   );
 
   test(
+    'mxStencil later dashed leftover bakes LinePattern sibling for LibreOffice',
+    () {
+      ({int dashed, int solid}) dashCounts(VsdxShape shape) {
+        var dashed = 0;
+        var solid = 0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            final custom = next.line.customDashPattern;
+            if (custom != null && custom.isNotEmpty) {
+              dashed++;
+            } else {
+              solid++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (dashed: dashed, solid: solid);
+      }
+
+      List<double> firstDash(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          final custom = next.line.customDashPattern;
+          if (next.line.hasLine && custom != null && custom.isNotEmpty) {
+            values.add(custom.first);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const dashUnit = 1 / 96;
+      final host = decodeDrawioMxStencilXml(
+        '<shape name="D" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/><dashpattern pattern="8 8"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<dashed dashed="0"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 471,
+      );
+      expect(
+        dashCounts(host),
+        (dashed: 1, solid: 1),
+        reason: 'libvisio collectLine is shape-level; leftover must bake the '
+            'later dashed="0" inherit stroke as a sibling so Draw does not '
+            'dash both rails',
+      );
+      expect(
+        firstDash(host).single,
+        closeTo(8 * canvasScale / dashUnit, 1e-6),
+      );
+
+      final patternHost = decodeDrawioMxStencilXml(
+        '<shape name="P" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/><dashpattern pattern="8 8"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<dashpattern pattern="2 2"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dashCounts(patternHost),
+        (dashed: 2, solid: 0),
+        reason: 'a later dashpattern must not reuse the first collectLine array',
+      );
+      expect(
+        firstDash(patternHost),
+        [
+          closeTo(2 * canvasScale / dashUnit, 1e-6),
+          closeTo(8 * canvasScale / dashUnit, 1e-6),
+        ],
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/><dashpattern pattern="8 8"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '<rect x="0" y="80" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="0"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        dashCounts(includeHost),
+        (dashed: 1, solid: 2),
+        reason: 'include-shape shares the canvas; nested dashed="0" stays for '
+            'later host inherit stroke, which must not reuse the first '
+            'collectLine dash',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final id = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(host.copyWith(id: id)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(id)!;
+      var leftoverDashedMoves = 0;
+      var leftoverSolidMoves = 0;
+      void leftoverWalk(VsdxShape next) {
+        if (next.line.hasLine) {
+          final moves = next.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          final custom = next.line.customDashPattern;
+          if ((custom != null && custom.isNotEmpty) || moves >= 2) {
+            leftoverDashedMoves += moves;
+          } else {
+            leftoverSolidMoves += moves;
+          }
+        }
+        for (final child in next.children) {
+          leftoverWalk(child);
+        }
+      }
+
+      leftoverWalk(leftover);
+      expect(
+        leftoverDashedMoves,
+        greaterThan(1),
+        reason: 'leftover write tessellates the first 8 8 dash into MoveTo gaps',
+      );
+      expect(
+        leftoverSolidMoves,
+        greaterThan(0),
+        reason: 'a second save keeps the later solid rail Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil image flipH leftover keeps ForeignData FlipX off host Geometry for LibreOffice',
     () {
       const png =
