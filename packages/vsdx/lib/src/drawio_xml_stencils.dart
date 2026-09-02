@@ -148,6 +148,9 @@ Map<String, XmlElement> _mxStencilRegistry(
 /// defaultVertex still pins cell labels at 12 via applyTextStyle.
 const double _kMxDefaultFontSize = 11;
 
+/// html.spec UA `padding-inline-start` on `<ul>` / `<ol>`, mxGraph px.
+const double _kMxHtmlListPadPx = 40;
+
 /// mxConstants.DEFAULT_FONTFAMILY first face (`Arial,Helvetica`).
 /// defaultVertex still pins cell labels at Helvetica via applyTextStyle.
 const String _kMxDefaultFontFamily = 'Arial';
@@ -1103,6 +1106,14 @@ class _DrawioXmlShapeDecoder {
       // TextPosAfterBullet (leftover bakes U+2022 because Draw never
       // paints text:bullet-char). `<ol><li>` prefixes "1. " in the
       // Character text (tokens.txt has no decimal list).
+      // `text` format=html leftover-parses mxXmlCanvas2D `str` HTML
+      // (`canvas.text(..., format)`). mxStencil.drawNode always
+      // passes format=''; JS capture rewrites html=1 into `<run>`
+      // children and never writes the attr. leftover used to treat
+      // the markup as one collectText string, so Draw painted `<b>`
+      // tags (`tokens.txt` Character is collectText; Style.bold is
+      // collectCharIX). leftover now walks `<b>`/`<font>`/`<ul>`
+      // like NestedStencil parseHtmlLabel.
       // `labelBounds` follows draw.io mxStencil.getLabelBounds (boundedLbl)
       // onto TxtPin / TxtWidth / TxtHeight that collectTextBlock maps
       // below the stacked Multi-Document sheet.
@@ -2286,7 +2297,8 @@ class _DrawioXmlShapeDecoder {
   }
 
   /// mxText html=1: `<run>` children are extra Character rows. A bare
-  /// `str=` label stays a single collectCharIX run.
+  /// `str=` label stays a single collectCharIX run unless
+  /// `format="html"` — mxXmlCanvas2D.text then stores markup in `str`.
   ///
   /// mxSvgCanvas2D.text sets `opacity=state.alpha`. leftover
   /// `textopacity` is STYLE_TEXT_OPACITY percent; canvas `<alpha>` must
@@ -2328,11 +2340,17 @@ class _DrawioXmlShapeDecoder {
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (raw.isNotEmpty) return _bakeDrawioLabelRuns(raw);
-    final str = textForLibvisioWrite(node.getAttribute('str') ?? '');
-    if (str.isEmpty) return const <_DrawioStencilLabelRun>[];
+    final str = node.getAttribute('str') ?? '';
+    if ((node.getAttribute('format') ?? '').trim().toLowerCase() == 'html') {
+      return _bakeDrawioLabelRuns(
+        _parseMxHtmlLabel(str, textOpacity: parentOpacity),
+      );
+    }
+    final baked = textForLibvisioWrite(str);
+    if (baked.isEmpty) return const <_DrawioStencilLabelRun>[];
     return <_DrawioStencilLabelRun>[
       _DrawioStencilLabelRun(
-        text: str,
+        text: baked,
         fontSize: _fontSize,
         fontStyle: _fontStyle,
         fontFamily: _fontFamily,
@@ -2377,6 +2395,168 @@ class _DrawioXmlShapeDecoder {
       );
     }
     return List<_DrawioStencilLabelRun>.unmodifiable(out);
+  }
+
+  /// mxXmlCanvas2D.text format='html' / NestedStencil parseHtmlLabel.
+  /// `<b>`/`<font>`/`<ul>` become extra collectCharIX / collectParaIX
+  /// rows. `tokens.txt` Character is collectText — leftover must not
+  /// leave markup in `str`.
+  List<_DrawioStencilLabelRun> _parseMxHtmlLabel(
+    String html, {
+    required double textOpacity,
+  }) {
+    final stack = <_MxHtmlStyle>[
+      _MxHtmlStyle(
+        fontStyle: _fontStyle,
+        fontColor: _fontColor,
+        fontSize: _fontSize,
+        fontFamily: _fontFamily,
+        textOpacity: textOpacity,
+      ),
+    ];
+    final runs = <_DrawioStencilLabelRun>[];
+    var pendingBlockMarginAfter = 0.0;
+    _MxHtmlStyle current() => stack.last;
+
+    void pushRun(String text) {
+      if (text.isEmpty) return;
+      final style = current();
+      if (style.olNeedPrefix && style.olIndex > 0 && text != '\n') {
+        text = '${style.olIndex}. $text';
+        style.olNeedPrefix = false;
+      }
+      final emit = style.clone();
+      emit.olNeedPrefix = false;
+      if (!style.paraStart) emit.marginTop = 0;
+      emit.marginBottom = 0;
+      if (text == '\n') {
+        emit.marginTop = 0;
+        emit.marginBottom = 0;
+      }
+      if (runs.isNotEmpty && emit.samePaintAs(runs.last)) {
+        final last = runs.removeLast();
+        runs.add(last.withText('${last.text}$text'));
+      } else {
+        runs.add(emit.toRun(text));
+      }
+      for (final frame in stack) {
+        frame.paraStart = false;
+      }
+    }
+
+    final tokenRe = RegExp(
+      r'<!--[\s\S]*?-->|(?<!<)<(/)?([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+|<)',
+    );
+    for (final match in tokenRe.allMatches(html)) {
+      final token = match.group(0)!;
+      if (token.startsWith('<!--')) continue;
+      final textToken = match.group(4);
+      if (textToken != null) {
+        pushRun(
+          _mxHtmlCollapseWhitespace(_mxHtmlDecodeEntities(textToken)),
+        );
+        continue;
+      }
+      final tag = match.group(2)!.toLowerCase();
+      final attrs = match.group(3) ?? '';
+      final closing =
+          match.group(1) != null || RegExp(r'/\s*$').hasMatch(attrs);
+      final block = tag == 'p' ||
+          tag == 'div' ||
+          tag == 'tr' ||
+          tag == 'li' ||
+          RegExp(r'^h[1-6]$').hasMatch(tag);
+      if (tag == 'br' || tag == 'hr') {
+        pushRun('\n');
+        continue;
+      }
+      if (match.group(1) != null) {
+        if (block && runs.isNotEmpty) {
+          pendingBlockMarginAfter = current().marginBottom;
+          if (!runs.last.text.endsWith('\n')) {
+            pushRun('\n');
+          }
+        }
+        if (stack.length > 1) stack.removeLast();
+        continue;
+      }
+      if (closing) continue;
+      final next = current().clone();
+      if (block && runs.isNotEmpty && !runs.last.text.endsWith('\n')) {
+        pushRun('\n');
+      }
+      if (tag == 'b' || tag == 'strong') {
+        next.fontStyle |= 1;
+      } else if (tag == 'i' || tag == 'em') {
+        next.fontStyle |= 2;
+      } else if (tag == 'u') {
+        next.fontStyle |= 4;
+      } else if (tag == 's' || tag == 'strike' || tag == 'del') {
+        next.fontStyle |= 8;
+      } else if (tag == 'sup') {
+        next.position = 1;
+      } else if (tag == 'sub') {
+        next.position = 2;
+      } else if (tag == 'ul') {
+        next.listKind = 'ul';
+        next.bullet = 1;
+        next.listPad += _kMxHtmlListPadPx;
+        next.olIndex = 0;
+        next.olNeedPrefix = false;
+      } else if (tag == 'ol') {
+        next.listKind = 'ol';
+        next.bullet = 0;
+        next.listPad += _kMxHtmlListPadPx;
+        next.olIndex = 0;
+        next.olNeedPrefix = false;
+      } else if (tag == 'li') {
+        if (next.listKind == 'ol') {
+          final parent = current();
+          parent.olIndex += 1;
+          next.olIndex = parent.olIndex;
+          next.olNeedPrefix = true;
+          next.bullet = 0;
+          next.marginLeft +=
+              next.listPad > 0 ? next.listPad : _kMxHtmlListPadPx;
+        } else if (next.listKind == 'ul') {
+          next.bullet = 1;
+          next.textPosAfterBullet =
+              next.listPad > 0 ? next.listPad : _kMxHtmlListPadPx;
+          next.olNeedPrefix = false;
+        }
+      }
+      _mxHtmlApplyCss(next, attrs, tag, resolveColor: _mxRunFontColor);
+      if (block && pendingBlockMarginAfter != 0) {
+        next.marginTop = math.max(next.marginTop, pendingBlockMarginAfter);
+        pendingBlockMarginAfter = 0;
+      }
+      stack.add(next);
+    }
+    if (pendingBlockMarginAfter != 0) {
+      for (var i = runs.length - 1; i >= 0; i--) {
+        if (runs[i].text != '\n') {
+          runs[i] = runs[i].withMargins(marginBottom: pendingBlockMarginAfter);
+          break;
+        }
+      }
+    }
+    while (runs.isNotEmpty) {
+      final last = runs.last;
+      if (last.text == '\n') {
+        runs.removeLast();
+        continue;
+      }
+      if (last.text.endsWith('\n')) {
+        final trimmed = last.text.replaceFirst(RegExp(r'\n+$'), '');
+        if (trimmed.isEmpty) {
+          runs.removeLast();
+          continue;
+        }
+        runs[runs.length - 1] = last.withText(trimmed);
+      }
+      break;
+    }
+    return List<_DrawioStencilLabelRun>.unmodifiable(runs);
   }
 
   /// mxShape.configureCanvas setShadow + mxSvgCanvas2D.createShadow.
@@ -4181,6 +4361,150 @@ class _DrawioStencilLabelRun {
   /// by libvisio `readCharIX`; leftover still leftover-bakes the hex so
   /// `bakeMixedHighlightForLibvisioWrite` can emit FillForegnd plates.
   final VsdxColor? highlight;
+
+  _DrawioStencilLabelRun withText(String text) => _DrawioStencilLabelRun(
+        text: text,
+        fontSize: fontSize,
+        fontStyle: fontStyle,
+        fontFamily: fontFamily,
+        color: color,
+        textOpacity: textOpacity,
+        position: position,
+        align: align,
+        marginLeft: marginLeft,
+        marginRight: marginRight,
+        marginTop: marginTop,
+        marginBottom: marginBottom,
+        bullet: bullet,
+        textPosAfterBullet: textPosAfterBullet,
+        lineHeight: lineHeight,
+        highlight: highlight,
+      );
+
+  _DrawioStencilLabelRun withMargins({double? marginBottom}) =>
+      _DrawioStencilLabelRun(
+        text: text,
+        fontSize: fontSize,
+        fontStyle: fontStyle,
+        fontFamily: fontFamily,
+        color: color,
+        textOpacity: textOpacity,
+        position: position,
+        align: align,
+        marginLeft: marginLeft,
+        marginRight: marginRight,
+        marginTop: marginTop,
+        marginBottom: marginBottom ?? this.marginBottom,
+        bullet: bullet,
+        textPosAfterBullet: textPosAfterBullet,
+        lineHeight: lineHeight,
+        highlight: highlight,
+      );
+}
+
+class _MxHtmlStyle {
+  _MxHtmlStyle({
+    this.fontStyle = 0,
+    this.fontColor,
+    this.fontSize = _kMxDefaultFontSize,
+    this.fontFamily,
+    this.textOpacity = 100,
+    this.position = 0,
+    this.align,
+    this.marginTop = 0,
+    this.marginRight = 0,
+    this.marginBottom = 0,
+    this.marginLeft = 0,
+    this.paraStart = false,
+    this.bullet = 0,
+    this.listKind,
+    this.listPad = 0,
+    this.olIndex = 0,
+    this.olNeedPrefix = false,
+    this.textPosAfterBullet = 0,
+    this.lineHeight = 1,
+    this.highlight,
+  });
+
+  int fontStyle;
+  VsdxColor? fontColor;
+  double fontSize;
+  String? fontFamily;
+  double textOpacity;
+  int position;
+  String? align;
+  double marginTop;
+  double marginRight;
+  double marginBottom;
+  double marginLeft;
+  bool paraStart;
+  int bullet;
+  String? listKind;
+  double listPad;
+  int olIndex;
+  bool olNeedPrefix;
+  double textPosAfterBullet;
+  double lineHeight;
+  VsdxColor? highlight;
+
+  _MxHtmlStyle clone() => _MxHtmlStyle(
+        fontStyle: fontStyle,
+        fontColor: fontColor,
+        fontSize: fontSize,
+        fontFamily: fontFamily,
+        textOpacity: textOpacity,
+        position: position,
+        align: align,
+        marginTop: marginTop,
+        marginRight: marginRight,
+        marginBottom: marginBottom,
+        marginLeft: marginLeft,
+        paraStart: paraStart,
+        bullet: bullet,
+        listKind: listKind,
+        listPad: listPad,
+        olIndex: olIndex,
+        olNeedPrefix: olNeedPrefix,
+        textPosAfterBullet: textPosAfterBullet,
+        lineHeight: lineHeight,
+        highlight: highlight,
+      );
+
+  bool samePaintAs(_DrawioStencilLabelRun run) =>
+      fontStyle == run.fontStyle &&
+      fontColor?.value == run.color?.value &&
+      fontSize == run.fontSize &&
+      fontFamily == run.fontFamily &&
+      textOpacity == run.textOpacity &&
+      position == run.position &&
+      align == run.align &&
+      marginTop == run.marginTop &&
+      marginRight == run.marginRight &&
+      marginBottom == run.marginBottom &&
+      marginLeft == run.marginLeft &&
+      bullet == run.bullet &&
+      textPosAfterBullet == run.textPosAfterBullet &&
+      lineHeight == run.lineHeight &&
+      highlight?.value == run.highlight?.value;
+
+  _DrawioStencilLabelRun toRun(String text) => _DrawioStencilLabelRun(
+        text: text,
+        fontSize: fontSize,
+        fontStyle: fontStyle,
+        fontFamily: fontFamily,
+        color: fontColor,
+        textOpacity: textOpacity,
+        position: position,
+        align: align,
+        marginLeft: marginLeft,
+        marginRight: marginRight,
+        marginTop: marginTop,
+        marginBottom: marginBottom,
+        bullet: bullet,
+        textPosAfterBullet: textPosAfterBullet,
+        lineHeight: lineHeight,
+        highlight: highlight,
+      );
 }
 
 class _DrawioSketchState {
@@ -4908,6 +5232,440 @@ List<VsdxPathCommand> _closedPolylineFromMoveOnly(
     return (bytes: bytes, mime: mime);
   } catch (_) {
     return null;
+  }
+}
+
+/// NestedStencil parseHtmlLabel / html.spec named character references.
+const Map<String, String> _kMxHtmlNamedEntities = <String, String>{
+  'nbsp': '\u00A0',
+  'iexcl': '¡',
+  'cent': '¢',
+  'pound': '£',
+  'curren': '¤',
+  'yen': '¥',
+  'brvbar': '¦',
+  'sect': '§',
+  'uml': '¨',
+  'copy': '©',
+  'ordf': 'ª',
+  'laquo': '«',
+  'not': '¬',
+  'shy': '\u00AD',
+  'reg': '®',
+  'macr': '¯',
+  'deg': '°',
+  'plusmn': '±',
+  'sup2': '²',
+  'sup3': '³',
+  'acute': '´',
+  'micro': 'µ',
+  'para': '¶',
+  'middot': '·',
+  'cedil': '¸',
+  'sup1': '¹',
+  'ordm': 'º',
+  'raquo': '»',
+  'frac14': '¼',
+  'frac12': '½',
+  'frac34': '¾',
+  'iquest': '¿',
+  'times': '×',
+  'divide': '÷',
+  'ndash': '–',
+  'mdash': '—',
+  'hellip': '…',
+  'bull': '•',
+  'trade': '™',
+  'lsquo': '‘',
+  'rsquo': '’',
+  'ldquo': '“',
+  'rdquo': '”',
+  'apos': "'",
+};
+
+String _mxHtmlDecodeEntities(String value) {
+  var s = value.replaceAll('&#10;', '\n');
+  s = s.replaceAllMapped(RegExp(r'&#x([0-9a-f]+);', caseSensitive: false), (
+    match,
+  ) {
+    final code = int.tryParse(match.group(1)!, radix: 16);
+    if (code == null) return match.group(0)!;
+    return String.fromCharCode(code);
+  });
+  s = s.replaceAllMapped(RegExp(r'&#(\d+);'), (match) {
+    final code = int.tryParse(match.group(1)!);
+    if (code == null) return match.group(0)!;
+    return String.fromCharCode(code);
+  });
+  s = s.replaceAllMapped(RegExp(r'&([a-zA-Z][a-zA-Z0-9]+);'), (match) {
+    final key = match.group(1)!.toLowerCase();
+    if (key == 'amp' || key == 'lt' || key == 'gt' || key == 'quot') {
+      return match.group(0)!;
+    }
+    return _kMxHtmlNamedEntities[key] ?? match.group(0)!;
+  });
+  return s
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"');
+}
+
+String _mxHtmlCollapseWhitespace(String text) =>
+    text.replaceAll(RegExp(r'[\t\f\v\r ]+'), ' ');
+
+String? _mxHtmlAttr(String attrs, String name) {
+  final match = RegExp(
+    '(?:^|\\s)${RegExp.escape(name)}\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))',
+    caseSensitive: false,
+  ).firstMatch(attrs);
+  if (match == null) return null;
+  return match.group(1) ?? match.group(2) ?? match.group(3);
+}
+
+String? _mxHtmlStyleProp(String attrs, String prop) {
+  final style = _mxHtmlDecodeEntities(_mxHtmlAttr(attrs, 'style') ?? '');
+  final match = RegExp(
+    '(?:^|;)\\s*${RegExp.escape(prop)}\\s*:\\s*([^;]+)',
+    caseSensitive: false,
+  ).firstMatch(style);
+  if (match == null) return null;
+  return match.group(1)!.trim();
+}
+
+String? _mxHtmlCssFontFamily(String raw) {
+  const named = <String, String>{
+    'arial': 'Arial',
+    'helvetica': 'Helvetica',
+    'times new roman': 'Times New Roman',
+    'times': 'Times New Roman',
+    'courier new': 'Courier New',
+    'courier': 'Courier New',
+    'calibri': 'Calibri',
+    'verdana': 'Verdana',
+    'georgia': 'Georgia',
+    'tahoma': 'Tahoma',
+    'comic sans ms': 'Comic Sans MS',
+  };
+  const generics = <String, String>{
+    'sans-serif': 'Arial',
+    'serif': 'Times New Roman',
+    'monospace': 'Courier New',
+  };
+  String? fallback;
+  for (final part in _mxHtmlDecodeEntities(raw).split(',')) {
+    var name = part.trim();
+    if (name.length >= 2 &&
+        ((name.startsWith('"') && name.endsWith('"')) ||
+            (name.startsWith("'") && name.endsWith("'")))) {
+      name = name.substring(1, name.length - 1).trim();
+    }
+    if (name.isEmpty) continue;
+    final key = name.toLowerCase();
+    final mapped = named[key];
+    if (mapped != null) return mapped;
+    final generic = generics[key];
+    if (generic != null) {
+      fallback ??= generic;
+    }
+  }
+  return fallback;
+}
+
+String? _mxHtmlAlignToken(String? raw) {
+  final v = (raw ?? '').trim().toLowerCase();
+  if (v == 'center' || v == 'middle') return 'center';
+  if (v == 'right' || v == 'end') return 'right';
+  if (v == 'justify') return 'justify';
+  if (v == 'left' || v == 'start') return 'left';
+  return null;
+}
+
+double? _mxHtmlCssPx(String? raw) {
+  final token = (raw ?? '').trim();
+  if (token.isEmpty ||
+      token == 'auto' ||
+      token == 'inherit' ||
+      token == 'none') {
+    return null;
+  }
+  return double.tryParse(
+      RegExp(r'^-?[0-9]*\.?[0-9]+').stringMatch(token) ?? '');
+}
+
+const Map<String, double> _kMxCssAbsoluteFontSizePx = <String, double>{
+  'xx-small': 9,
+  'x-small': 10,
+  'small': 13,
+  'medium': 16,
+  'large': 18,
+  'x-large': 24,
+  'xx-large': 32,
+  'xxx-large': 48,
+};
+
+const List<double> _kMxHtmlFontSizePx = <double>[
+  0,
+  10,
+  13,
+  16,
+  18,
+  24,
+  32,
+  48,
+];
+
+double _mxHtmlFontSizeTablePx(int index) {
+  final i = index.clamp(1, 7);
+  return _kMxHtmlFontSizePx[i];
+}
+
+int _mxHtmlFontSizeIndexFromPx(double px) {
+  var best = 3;
+  var dist = double.infinity;
+  for (var i = 1; i <= 7; i++) {
+    final d = (_kMxHtmlFontSizePx[i] - px).abs();
+    if (d < dist) {
+      dist = d;
+      best = i;
+    }
+  }
+  return best;
+}
+
+double? _mxHtmlCssFontSizePx(String raw, double currentPx) {
+  final token = raw.trim();
+  if (token.isEmpty ||
+      token == 'auto' ||
+      token == 'inherit' ||
+      token == 'none') {
+    return null;
+  }
+  final keyword = _kMxCssAbsoluteFontSizePx[token.toLowerCase()];
+  if (keyword != null) return keyword;
+  if (RegExp(r'^smaller$', caseSensitive: false).hasMatch(token)) {
+    return currentPx > 0 ? currentPx / 1.2 : null;
+  }
+  if (RegExp(r'^larger$', caseSensitive: false).hasMatch(token)) {
+    return currentPx > 0 ? currentPx * 1.2 : null;
+  }
+  final lower = token.toLowerCase();
+  if (lower.endsWith('rem')) {
+    final n = double.tryParse(token.substring(0, token.length - 3));
+    return n == null ? null : n * 16;
+  }
+  if (lower.endsWith('em')) {
+    final n = double.tryParse(token.substring(0, token.length - 2));
+    return n != null && currentPx > 0 ? n * currentPx : null;
+  }
+  if (token.endsWith('%')) {
+    final n = double.tryParse(token.substring(0, token.length - 1));
+    return n != null && currentPx > 0 ? n * currentPx / 100 : null;
+  }
+  return _mxHtmlCssPx(token);
+}
+
+double? _mxHtmlFontSizeAttrPx(String raw, double currentPx) {
+  final token = raw.trim();
+  if (token.isEmpty) return null;
+  final rel = RegExp(r'^([+-])(\d+)$').firstMatch(token);
+  if (rel != null) {
+    final delta = int.parse(rel.group(2)!) * (rel.group(1) == '-' ? -1 : 1);
+    return _mxHtmlFontSizeTablePx(
+        _mxHtmlFontSizeIndexFromPx(currentPx) + delta);
+  }
+  final n = double.tryParse(token);
+  if (n == null || n < 1 || n > 7 || n != n.roundToDouble()) return null;
+  return _mxHtmlFontSizeTablePx(n.round());
+}
+
+double? _mxHtmlCssLineHeight(String raw, double fontPx) {
+  final token = raw.trim().toLowerCase();
+  if (token.isEmpty ||
+      token == 'normal' ||
+      token == 'inherit' ||
+      token == 'initial' ||
+      token == 'unset') {
+    return null;
+  }
+  if (token.endsWith('%')) {
+    final n = double.tryParse(token.substring(0, token.length - 1));
+    return n != null && n > 0 ? n / 100 : null;
+  }
+  if (token.endsWith('em') && !token.endsWith('rem')) {
+    final n = double.tryParse(token.substring(0, token.length - 2));
+    return n != null && n > 0 ? n : null;
+  }
+  if (token.endsWith('px')) {
+    final n = double.tryParse(token.substring(0, token.length - 2));
+    return n != null && n > 0 && fontPx > 0 ? n / fontPx : null;
+  }
+  if (RegExp(r'[a-z%]').hasMatch(token)) return null;
+  final n = double.tryParse(token);
+  return n != null && n > 0 ? n : null;
+}
+
+const Map<String, ({double sizeEm, double marginEm})> _kMxHtmlHeadingUa =
+    <String, ({double sizeEm, double marginEm})>{
+  'h1': (sizeEm: 2, marginEm: 0.67),
+  'h2': (sizeEm: 1.5, marginEm: 0.83),
+  'h3': (sizeEm: 1.17, marginEm: 1),
+  'h4': (sizeEm: 1, marginEm: 1.33),
+  'h5': (sizeEm: 0.83, marginEm: 1.67),
+  'h6': (sizeEm: 0.67, marginEm: 2.33),
+};
+
+void _mxHtmlUaHeadingDefaults(_MxHtmlStyle next, String tag) {
+  final heading = _kMxHtmlHeadingUa[tag];
+  if (heading == null) return;
+  final base = next.fontSize > 0 ? next.fontSize : _kMxDefaultFontSize;
+  next.fontSize = base * heading.sizeEm;
+  next.fontStyle |= 1;
+}
+
+void _mxHtmlUaBlockMargins(_MxHtmlStyle next, String tag) {
+  final base = next.fontSize > 0 ? next.fontSize : _kMxDefaultFontSize;
+  final heading = _kMxHtmlHeadingUa[tag];
+  if (heading != null) {
+    final m = base * heading.marginEm;
+    next.marginTop = m;
+    next.marginBottom = m;
+    return;
+  }
+  if (tag == 'p') {
+    next.marginTop = base;
+    next.marginBottom = base;
+  }
+}
+
+void _mxHtmlApplyMargins(_MxHtmlStyle next, String attrs) {
+  final box = (_mxHtmlStyleProp(attrs, 'margin') ?? '').trim();
+  if (box.isNotEmpty) {
+    final parts = [
+      for (final token in box.split(RegExp(r'\s+'))) _mxHtmlCssPx(token),
+    ];
+    if (parts.isNotEmpty && parts.every((v) => v != null)) {
+      final values = [for (final v in parts) v!];
+      if (values.length == 1) {
+        next.marginTop =
+            next.marginRight = next.marginBottom = next.marginLeft = values[0];
+      } else if (values.length == 2) {
+        next.marginTop = next.marginBottom = values[0];
+        next.marginRight = next.marginLeft = values[1];
+      } else if (values.length == 3) {
+        next.marginTop = values[0];
+        next.marginRight = next.marginLeft = values[1];
+        next.marginBottom = values[2];
+      } else {
+        next.marginTop = values[0];
+        next.marginRight = values[1];
+        next.marginBottom = values[2];
+        next.marginLeft = values[3];
+      }
+    }
+  }
+  final mt = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-top'));
+  if (mt != null) next.marginTop = mt;
+  final mr = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-right'));
+  if (mr != null) next.marginRight = mr;
+  final mb = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-bottom'));
+  if (mb != null) next.marginBottom = mb;
+  final ml = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-left'));
+  if (ml != null) next.marginLeft = ml;
+}
+
+void _mxHtmlApplyCss(
+  _MxHtmlStyle next,
+  String attrs,
+  String tag, {
+  required VsdxColor? Function(String? raw) resolveColor,
+}) {
+  _mxHtmlUaHeadingDefaults(next, tag);
+  final color = _mxHtmlAttr(attrs, 'color') ?? _mxHtmlStyleProp(attrs, 'color');
+  if (color != null) next.fontColor = resolveColor(color);
+  final bgRaw = _mxHtmlStyleProp(attrs, 'background-color') ??
+      _mxHtmlStyleProp(attrs, 'background');
+  if (bgRaw != null) {
+    final token = bgRaw.trim();
+    if (RegExp(r'^(none|transparent|initial|unset)$', caseSensitive: false)
+        .hasMatch(token)) {
+      next.highlight = null;
+    } else {
+      next.highlight = _mxGraphPaintColor(token);
+    }
+  }
+  final cssSize = _mxHtmlStyleProp(attrs, 'font-size');
+  if (cssSize != null) {
+    final size = _mxHtmlCssFontSizePx(cssSize, next.fontSize);
+    if (size != null && size > 0) next.fontSize = size;
+  } else {
+    final htmlSize = _mxHtmlAttr(attrs, 'size');
+    if (htmlSize != null) {
+      final mapped = _mxHtmlFontSizeAttrPx(htmlSize, next.fontSize);
+      if (mapped != null) next.fontSize = mapped;
+    }
+  }
+  final weight = _mxHtmlStyleProp(attrs, 'font-weight');
+  if (weight != null) {
+    if (RegExp(r'^(bold|bolder|[7-9]00)$', caseSensitive: false)
+        .hasMatch(weight)) {
+      next.fontStyle |= 1;
+    } else if (RegExp(r'^(normal|lighter|[1-4]00)$', caseSensitive: false)
+        .hasMatch(weight)) {
+      next.fontStyle &= ~1;
+    }
+  }
+  final italic = _mxHtmlStyleProp(attrs, 'font-style');
+  if (italic != null) {
+    if (RegExp('italic|oblique', caseSensitive: false).hasMatch(italic)) {
+      next.fontStyle |= 2;
+    } else if (RegExp(r'^normal$', caseSensitive: false).hasMatch(italic)) {
+      next.fontStyle &= ~2;
+    }
+  }
+  final deco = _mxHtmlStyleProp(attrs, 'text-decoration');
+  if (deco != null) {
+    if (RegExp('underline', caseSensitive: false).hasMatch(deco)) {
+      next.fontStyle |= 4;
+    }
+    if (RegExp('line-through', caseSensitive: false).hasMatch(deco)) {
+      next.fontStyle |= 8;
+    }
+  }
+  final family =
+      _mxHtmlStyleProp(attrs, 'font-family') ?? _mxHtmlAttr(attrs, 'face');
+  if (family != null) {
+    final mapped = _mxHtmlCssFontFamily(family);
+    if (mapped != null) next.fontFamily = mapped;
+  }
+  final bb = _mxHtmlStyleProp(attrs, 'border-bottom') ??
+      _mxHtmlStyleProp(attrs, 'border-bottom-style');
+  if (bb != null && RegExp('solid', caseSensitive: false).hasMatch(bb)) {
+    next.fontStyle |= 4;
+  }
+  if (tag == 'p' ||
+      tag == 'div' ||
+      tag == 'td' ||
+      tag == 'th' ||
+      tag == 'li' ||
+      RegExp(r'^h[1-6]$').hasMatch(tag)) {
+    final ta = _mxHtmlAlignToken(
+      _mxHtmlStyleProp(attrs, 'text-align') ?? _mxHtmlAttr(attrs, 'align'),
+    );
+    if (ta != null) next.align = ta;
+  }
+  if (tag == 'p' ||
+      tag == 'div' ||
+      tag == 'li' ||
+      RegExp(r'^h[1-6]$').hasMatch(tag)) {
+    _mxHtmlUaBlockMargins(next, tag);
+    _mxHtmlApplyMargins(next, attrs);
+    next.paraStart = true;
+  }
+  final lh = _mxHtmlStyleProp(attrs, 'line-height');
+  if (lh != null) {
+    final parsed = _mxHtmlCssLineHeight(lh, next.fontSize);
+    if (parsed != null) next.lineHeight = parsed;
   }
 }
 

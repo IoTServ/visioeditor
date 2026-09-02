@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text format=html leftover Character
+  Style for LibreOffice. Official `canvas.text(..., format)` emits
+  `<text format= str=>`; `mxSvgCanvas2D.text` html paints `<b>` /
+  `<font>` / `<ul>` as separate SVG runs. mxStencil.drawNode always
+  passes format='', and JS capture rewrites html=1 into `<run>`
+  children. leftover treated markup as one collectText string, so
+  Draw painted `<b>` tags (`tokens.txt` Character is collectText;
+  Style.bold is collectCharIX). leftover now walks the HTML like
+  NestedStencil parseHtmlLabel, include-shape copies that overlay,
+  and a later format=html leftover-bakes a sibling. A second save
+  keeps both.
 - draw.io leftover mxXmlCanvas2D text dir leftover Paragraph Flags for
   LibreOffice. Official `canvas.text(..., dir)` emits `<text dir=>`;
   `mxSvgCanvas2D.plainText` sets SVG `direction` / vertical-*

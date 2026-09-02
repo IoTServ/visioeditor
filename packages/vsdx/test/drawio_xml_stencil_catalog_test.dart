@@ -16924,6 +16924,195 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text format=html leftover bakes Character Style for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="P" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="&lt;b&gt;AB&lt;/b&gt;" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 493,
+      );
+      expect(
+        glyphContaining(omitted, '<b>AB</b>')!.text,
+        '<b>AB</b>',
+        reason: 'mxStencil.drawNode format is empty; leftover keeps markup '
+            'as collectText',
+      );
+
+      final html = decodeDrawioMxStencilXml(
+        '<shape name="H" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text format="html" str="&lt;b&gt;AB&lt;/b&gt;CD" x="0" y="0" '
+        'w="80" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final htmlGlyph = glyphContaining(html, 'AB')!;
+      expect(htmlGlyph.text, 'ABCD');
+      expect(
+        runContaining(htmlGlyph, 'AB')!.charStyle.style.bold,
+        isTrue,
+        reason: 'mxXmlCanvas2D.text format=html leftover-parses <b> onto '
+            'collectCharIX Style.bold (`tokens.txt` Character)',
+      );
+      expect(
+        runContaining(htmlGlyph, 'CD')!.charStyle.style.bold,
+        isFalse,
+        reason: 'text after </b> stays roman so Draw fo:font-weight is not '
+            'bold on both runs',
+      );
+
+      final colored = decodeDrawioMxStencilXml(
+        '<shape name="C" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text format="html" '
+        'str="&lt;font color=&quot;#10739E&quot;&gt;AB&lt;/font&gt;" '
+        'x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        runContaining(colored, 'AB')!.charStyle.color?.value,
+        VsdxColor(0xFF10739E).value,
+        reason: 'html <font color> leftover-bakes Char.Color collectCharIX '
+            'maps to fo:color',
+      );
+
+      final list = decodeDrawioMxStencilXml(
+        '<shape name="U" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text format="html" '
+        'str="&lt;ul&gt;&lt;li&gt;Value 1&lt;/li&gt;&lt;/ul&gt;" '
+        'x="0" y="0" w="80" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        runContaining(list, 'Value 1')!.paraStyle.bullet,
+        1,
+        reason: 'html.spec UA ul disc is collectParaIX Bullet 1 (U+2022)',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text format="html" str="&lt;b&gt;CD&lt;/b&gt;" x="0" y="30" '
+        'w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        runContaining(glyphContaining(later, 'AB')!, 'AB')!
+            .charStyle
+            .style
+            .bold,
+        isFalse,
+      );
+      expect(
+        runContaining(glyphContaining(later, 'CD')!, 'CD')!
+            .charStyle
+            .style
+            .bold,
+        isTrue,
+        reason: 'later format=html leftover-bakes Style.bold on a sibling so '
+            'Draw does not bold both glyphs',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text format="html" str="&lt;b&gt;AB&lt;/b&gt;" x="0" y="0" '
+        'w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        runContaining(includeHost, 'AB')!.charStyle.style.bold,
+        isTrue,
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final htmlId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(html.copyWith(id: htmlId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final listId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(list.copyWith(id: listId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverHtml = glyphContaining(
+        leftoverDoc.pages.first.findShapeById(htmlId)!,
+        'AB',
+      )!;
+      expect(runContaining(leftoverHtml, 'AB')!.charStyle.style.bold, isTrue);
+      expect(runContaining(leftoverHtml, 'CD')!.charStyle.style.bold, isFalse);
+      expect(
+        runContaining(
+          leftoverDoc.pages.first.findShapeById(laterId)!,
+          'CD',
+        )!
+            .charStyle
+            .style
+            .bold,
+        isTrue,
+        reason: 'a second save keeps leftover Style.bold Draw paints',
+      );
+      expect(
+        glyphContaining(
+          leftoverDoc.pages.first.findShapeById(listId)!,
+          'Value 1',
+        )!
+            .text,
+        contains('\u2022'),
+        reason: 'Draw never paints text:bullet-char; leftover bakes U+2022',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(
