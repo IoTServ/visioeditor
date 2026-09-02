@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D dashpattern omitted leftover
+  authored array for LibreOffice. Official `setDashPattern` runs only
+  when `pattern` is present; NestedStencil returns when both attrs
+  are missing. leftover assigned null so `_lineWithDash` substituted
+  createState `3 3`, and Draw leftover MoveTo reused the default gaps
+  (`tokens.txt` has no custom dash). leftover now keeps the previous
+  array, include-shape copies that overlay, and a later omitted
+  dashpattern does not leftover-bake a `3 3` sibling. A second save
+  keeps the authored gaps.
 - draw.io leftover mxXmlCanvas2D dashed omitted fixDash leftover
   LineWeight dash for LibreOffice. Official `setDashed(value)` leaves
   `state.fixDash` false; `mxSvgCanvas2D.createDashPattern` then

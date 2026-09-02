@@ -16499,6 +16499,140 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D dashpattern omitted leftover keeps authored array for LibreOffice',
+    () {
+      List<double> firstDash(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          final custom = next.line.customDashPattern;
+          if (next.line.hasLine && custom != null && custom.isNotEmpty) {
+            values.add(custom.first);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const dashUnit = 1 / 96;
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '<dashpattern pattern="8 8"/>'
+        '<dashpattern/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 506,
+      );
+      expect(
+        firstDash(omitted).single,
+        closeTo(8 * canvasScale / dashUnit, 1e-6),
+        reason: 'omitted dashpattern is a no-op; leftover assigned null so '
+            'Draw leftover MoveTo reused createState 3 3 '
+            '(`tokens.txt` has no custom dash)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '<dashpattern pattern="8 8"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<dashpattern/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstDash(laterHost),
+        everyElement(closeTo(8 * canvasScale / dashUnit, 1e-6)),
+        reason: 'later omitted dashpattern must not leftover-bake createState '
+            '3 3 so Draw leftover MoveTo keeps the authored 8 8',
+      );
+      expect(firstDash(laterHost), isNotEmpty);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '<dashpattern pattern="8 8"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<dashpattern/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        firstDash(includeHost),
+        everyElement(closeTo(8 * canvasScale / dashUnit, 1e-6)),
+        reason: 'include-shape shares the canvas; nested omitted dashpattern '
+            'keeps host 8 8 for later inherit stroke',
+      );
+      expect(firstDash(includeHost), isNotEmpty);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      var leftoverDashed = 0;
+      void leftoverWalk(VsdxShape next) {
+        if (next.line.hasLine) {
+          final moves = next.geometries
+              .expand((geometry) => geometry.commands)
+              .whereType<MoveTo>()
+              .length;
+          final custom = next.line.customDashPattern;
+          if ((custom != null && custom.isNotEmpty) || moves >= 2) {
+            leftoverDashed++;
+          }
+        }
+        for (final child in next.children) {
+          leftoverWalk(child);
+        }
+      }
+
+      leftoverWalk(leftover);
+      expect(
+        leftoverDashed,
+        greaterThan(0),
+        reason: 'a second save keeps leftover 8 8 MoveTo gaps Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

@@ -832,9 +832,14 @@ class _DrawioXmlShapeDecoder {
         // ISDN Switch write `dash="8 8"` / `dash="12 4"` instead; official
         // getAttribute('pattern') is null and createState `3 3` would
         // paint. Honour `dash` so leftover MoveTo gaps match the XML.
-        _dashPattern = _parseMxDashPattern(
-          node.getAttribute('pattern') ?? node.getAttribute('dash'),
-        );
+        // Official `if (value != null)` skips omitted attrs; NestedStencil
+        // returns. leftover assigned null so `_lineWithDash` substituted
+        // createState `3 3`, Draw leftover MoveTo reused the default
+        // gaps instead of the previous authored array (`tokens.txt`
+        // has no custom dash).
+        final raw = node.getAttribute('pattern') ?? node.getAttribute('dash');
+        if (raw == null) break;
+        _dashPattern = _parseMxDashPattern(raw);
         // `pattern="none"` is an empty list: mxStencil.js still
         // setDashPattern(Number('none')*minScale → NaN). createDashPattern
         // then writes stroke-dasharray="NaN", which SVG paints solid.
@@ -1133,6 +1138,8 @@ class _DrawioXmlShapeDecoder {
       // stroke-dasharray is invalid and Draw must stay solid (AWS 4
       // work package), not createState `3 3`. Cisco `dash="8 8"` (no
       // `pattern`) is the authored array leftover bakes to MoveTo gaps.
+      // Omitted `<dashpattern/>` is a no-op like official `if (value
+      // != null)` so Draw leftover MoveTo keeps the previous array.
       // Omitted `<dashed>` fixDash snaps to createState false
       // (× LineWeight) so Draw leftover MoveTo does not keep a prior
       // canvas-pixel gap (`tokens.txt` has no fixDash).
