@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text dir leftover Paragraph Flags for
+  LibreOffice. Official `canvas.text(..., dir)` emits `<text dir=>`;
+  `mxSvgCanvas2D.plainText` sets SVG `direction` / vertical-*
+  writing-mode. leftover ignored it, so Draw
+  `_fillParagraphProperties` kept LTR `fo:text-align` (`tokens.txt`
+  Flags swaps left↔end when nonzero). leftover now bakes Flags=1
+  for `rtl` and TextDirection=1 for `vertical-*`, include-shape
+  copies that overlay, and a later dir leftover-bakes a sibling. A
+  second save keeps both.
 - draw.io leftover mxXmlCanvas2D text clip leftover TxtWidth for
   LibreOffice. Official `canvas.text(..., clip, overflow)` emits
   `<text clip=` / `overflow=`; `mxSvgCanvas2D.plainText` clipPath /

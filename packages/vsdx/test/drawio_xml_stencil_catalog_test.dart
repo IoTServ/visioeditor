@@ -16773,6 +16773,157 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text dir leftover bakes Paragraph Flags for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      int flagsOf(VsdxShape shape) =>
+          shape.richText.runs.first.paraStyle.flags;
+
+      final ltr = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 492,
+      );
+      expect(flagsOf(glyphContaining(ltr, 'AB')!), 0);
+
+      final rtl = decodeDrawioMxStencilXml(
+        '<shape name="R" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top" dir="rtl"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final rtlGlyph = glyphContaining(rtl, 'AB')!;
+      expect(
+        flagsOf(rtlGlyph),
+        1,
+        reason: 'mxSvgCanvas2D.plainText direction=rtl; leftover Paragraph '
+            'Flags so Draw `_fillParagraphProperties` swaps left to end '
+            '(`tokens.txt` Flags)',
+      );
+      expect(
+        rtlGlyph.richText.runs.first.paraStyle.horizontalAlign,
+        VsdxHorzAlign.left,
+      );
+      expect(
+        rtlGlyph.richText.runs.first.paraStyle.effectiveHorizontalAlign,
+        VsdxHorzAlign.right,
+      );
+
+      final vertical = decodeDrawioMxStencilXml(
+        '<shape name="V" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="V" x="0" y="0" w="20" h="40" '
+        'align="left" valign="top" dir="vertical-lr"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphContaining(vertical, 'V')!.richText.textBlock.textDirection,
+        1,
+        reason: 'mxSvgCanvas2D dir vertical-* is writing-mode; leftover '
+            'TextDirection collectTextBlock maps to vertical',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" '
+        'align="left" valign="top" dir="rtl"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(flagsOf(glyphContaining(later, 'AB')!), 0);
+      expect(
+        flagsOf(glyphContaining(later, 'CD')!),
+        1,
+        reason: 'later dir leftover-bakes Flags on a sibling so Draw does '
+            'not RTL both glyphs',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top" dir="rtl"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(flagsOf(glyphContaining(includeHost, 'AB')!), 1);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final ltrId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(ltr.copyWith(id: ltrId)),
+      );
+      final rtlId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(rtl.copyWith(id: rtlId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        flagsOf(
+          glyphContaining(
+            leftoverDoc.pages.first.findShapeById(ltrId)!,
+            'AB',
+          )!,
+        ),
+        0,
+      );
+      expect(
+        flagsOf(
+          glyphContaining(
+            leftoverDoc.pages.first.findShapeById(rtlId)!,
+            'AB',
+          )!,
+        ),
+        1,
+        reason: 'a second save keeps leftover Paragraph Flags Draw paints',
+      );
+      expect(
+        flagsOf(
+          glyphContaining(
+            leftoverDoc.pages.first.findShapeById(laterId)!,
+            'CD',
+          )!,
+        ),
+        1,
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

@@ -988,7 +988,12 @@ class _DrawioXmlShapeDecoder {
             spacingBottom: _number(node, 'spacing-bottom'),
             align: node.getAttribute('align') ?? 'left',
             valign: node.getAttribute('valign') ?? 'top',
-            vertical: node.getAttribute('vertical') == '1',
+            // mxXmlCanvas2D.text dir vertical-* is SVG writing-mode.
+            // mxStencil.drawNode uses vertical="1" instead.
+            vertical: node.getAttribute('vertical') == '1' ||
+                (node.getAttribute('dir') ?? '')
+                    .toLowerCase()
+                    .startsWith('vertical-'),
             wrap: node.getAttribute('wrap') == '1',
             // mxXmlCanvas2D.text always writes clip; mxStencil.drawNode
             // passes false. overflow fill|width|block also keep the cell
@@ -997,6 +1002,10 @@ class _DrawioXmlShapeDecoder {
             // has no veWordWrap).
             clip: node.getAttribute('clip') == '1',
             overflow: node.getAttribute('overflow'),
+            // mxXmlCanvas2D.text dir=rtl. leftover Paragraph Flags so
+            // `_fillParagraphProperties` swaps left↔end (`tokens.txt`
+            // Flags). mxStencil.drawNode never passes dir.
+            rtl: (node.getAttribute('dir') ?? '').toLowerCase() == 'rtl',
             rotationDegrees: _number(node, 'rotation'),
             // mxStencil.drawNode: align-shape="0" ignores shape.rotation
             // when setting canvas.text rotation (still subtracts `rotation=`).
@@ -1111,6 +1120,12 @@ class _DrawioXmlShapeDecoder {
       // so a save expanded TxtWidth (`tokens.txt` has no veWordWrap;
       // collectTextBlock svg:width is TxtWidth). leftover now keeps the
       // box so Draw wraps inside the clip frame instead of overflowing.
+      // `text` dir follows mxXmlCanvas2D.text onto leftover Paragraph
+      // Flags / TextDirection. mxSvgCanvas2D.plainText sets SVG
+      // `direction` / vertical-* writing-mode; leftover used to ignore
+      // it, so Draw `_fillParagraphProperties` kept LTR fo:text-align
+      // (`tokens.txt` Flags swaps left↔end when nonzero). leftover now
+      // bakes Flags=1 for rtl and TextDirection=1 for vertical-*.
       // `image` x/y/w/h follow mxStencil.drawNode onto ImgOffset /
       // ImgWidth that collectForeignDataType maps to svg:x / svg:width.
       // Nested include-shape copies leftover inches (`w*sx, h*sy`) so
@@ -3646,6 +3661,7 @@ class _DrawioXmlShapeDecoder {
                 lineSpacing: run.lineHeight > 0 ? run.lineHeight : 1.0,
                 bullet: run.bullet,
                 textPosAfterBulletInches: run.textPosAfterBullet * scale,
+                flags: label.rtl ? 1 : 0,
               ),
             ),
         ],
@@ -3830,6 +3846,7 @@ class _DrawioXmlShapeDecoder {
       wrap: label.wrap,
       clip: label.clip,
       overflow: label.overflow,
+      rtl: label.rtl,
       rotationDegrees: label.rotationDegrees,
       alignShape: label.alignShape,
       fontSize: label.fontSize * fontRatio,
@@ -3987,6 +4004,7 @@ class _DrawioStencilLabel {
     this.wrap = false,
     this.clip = false,
     this.overflow,
+    this.rtl = false,
     required this.rotationDegrees,
     this.alignShape = true,
     required this.fontSize,
@@ -4025,6 +4043,7 @@ class _DrawioStencilLabel {
   final bool wrap;
   final bool clip;
   final String? overflow;
+  final bool rtl;
   final double rotationDegrees;
   final bool alignShape;
   final double fontSize;
@@ -4078,6 +4097,7 @@ class _DrawioStencilLabel {
         wrap: wrap,
         clip: clip,
         overflow: overflow,
+        rtl: rtl,
         rotationDegrees: rotationDegrees,
         alignShape: alignShape,
         fontSize: fontSize,
