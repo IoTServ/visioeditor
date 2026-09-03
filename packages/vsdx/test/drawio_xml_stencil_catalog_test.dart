@@ -43097,6 +43097,406 @@ void main() {
   );
 
   test(
+    'mxStencil html CSS padding-right omitted leftover IndRight for LibreOffice',
+    () {
+      List<double> indents(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.indentRightInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final pad = 8 * canvasScale;
+      const keepT =
+          '<text str="&lt;p style=&quot;padding-right:8px&quot;&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;padding-right:8px&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;padding-right:8px&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 672,
+      );
+      expect(
+        indents(omitted),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'omitted html CSS padding-right is 0; leftover must not keep '
+            'IndRight so Draw collectParaIX does not inset the later glyph '
+            '(`tokens.txt` IndRight → fo:margin-right)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        indents(keep),
+        everyElement(closeTo(pad, 1e-9)),
+        reason: 'without omitted CSS padding-right leftover keeps IndRight',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        indents(later),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'later CSS padding-right leftover-bakes a sibling IndRight',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        indents(includeHost),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'include-shape nested omitted CSS padding-right leftover-bakes '
+            '0 so Draw does not inherit host fo:margin-right',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        indents(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'a second save keeps leftover IndRight Draw paints',
+      );
+      expect(
+        indents(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'a second save keeps the later leftover IndRight sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS padding-top omitted leftover SpBefore for LibreOffice',
+    () {
+      List<double> spaces(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.spaceBeforeInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final ua = 11 * canvasScale;
+      final padded = ua + 8 * canvasScale;
+      const keepT =
+          '<text str="&lt;p style=&quot;padding-top:8px&quot;&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;padding-top:8px&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;padding-top:8px&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 673,
+      );
+      expect(
+        spaces(omitted),
+        [closeTo(padded, 1e-9), closeTo(ua, 1e-9)],
+        reason: 'omitted html CSS padding-top keeps UA p margin; leftover '
+            'must not keep the extra SpBefore so Draw collectParaIX does '
+            'not inset the later glyph (`tokens.txt` SpBefore → '
+            'fo:margin-top)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        spaces(keep),
+        everyElement(closeTo(padded, 1e-9)),
+        reason: 'without omitted CSS padding-top leftover keeps SpBefore',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        spaces(later),
+        [closeTo(ua, 1e-9), closeTo(padded, 1e-9)],
+        reason: 'later CSS padding-top leftover-bakes a sibling SpBefore',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        spaces(includeHost),
+        [closeTo(padded, 1e-9), closeTo(ua, 1e-9)],
+        reason: 'include-shape nested omitted CSS padding-top leftover-bakes '
+            'UA p margin so Draw does not inherit host fo:margin-top',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        spaces(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(padded, 1e-9), closeTo(ua, 1e-9)],
+        reason: 'a second save keeps leftover SpBefore Draw paints',
+      );
+      expect(
+        spaces(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(ua, 1e-9), closeTo(padded, 1e-9)],
+        reason: 'a second save keeps the later leftover SpBefore sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS padding-bottom omitted leftover SpAfter for LibreOffice',
+    () {
+      List<double> spaces(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.spaceAfterInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final ua = 11 * canvasScale;
+      final padded = ua + 8 * canvasScale;
+      const keepT =
+          '<text str="&lt;p style=&quot;padding-bottom:8px&quot;&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;padding-bottom:8px&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;padding-bottom:8px&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 674,
+      );
+      expect(
+        spaces(omitted),
+        [closeTo(padded, 1e-9), closeTo(ua, 1e-9)],
+        reason: 'omitted html CSS padding-bottom keeps UA p margin; leftover '
+            'must not keep the extra SpAfter so Draw collectParaIX does '
+            'not inset the later glyph (`tokens.txt` SpAfter → '
+            'fo:margin-bottom)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        spaces(keep),
+        everyElement(closeTo(padded, 1e-9)),
+        reason: 'without omitted CSS padding-bottom leftover keeps SpAfter',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        spaces(later),
+        [closeTo(ua, 1e-9), closeTo(padded, 1e-9)],
+        reason: 'later CSS padding-bottom leftover-bakes a sibling SpAfter',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        spaces(includeHost),
+        [closeTo(padded, 1e-9), closeTo(ua, 1e-9)],
+        reason: 'include-shape nested omitted CSS padding-bottom leftover-bakes '
+            'UA p margin so Draw does not inherit host fo:margin-bottom',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        spaces(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(padded, 1e-9), closeTo(ua, 1e-9)],
+        reason: 'a second save keeps leftover SpAfter Draw paints',
+      );
+      expect(
+        spaces(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(ua, 1e-9), closeTo(padded, 1e-9)],
+        reason: 'a second save keeps the later leftover SpAfter sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
