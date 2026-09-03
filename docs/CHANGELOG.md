@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text omitted leftover dir Flags
+  for LibreOffice. Official `canvas.text` writes `dir` when
+  `dir!=null`; mxStencil.drawNode never passes it. leftover reads
+  dir per glyph so a later omitted sibling does not keep Paragraph
+  Flags or TextDirection (`tokens.txt` Flags swaps left↔end;
+  TextDirection). Draw `_fillParagraphProperties` maps Flags to
+  `fo:text-align` end. leftover now snaps omitted to LTR,
+  include-shape nested omitted dir leftover-bakes LTR, and a later
+  omitted vertical dir leftover-bakes a sibling. A second save
+  keeps both. `dir="rtl"` / `vertical-*` still leftover-bakes.
 - draw.io leftover mxXmlCanvas2D text omitted leftover wrap/clip
   TxtWidth for LibreOffice. Official `canvas.text` always writes
   `wrap`; `clip` when `clip!=null` (mxStencil.drawNode always

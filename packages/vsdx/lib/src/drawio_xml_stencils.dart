@@ -1149,8 +1149,13 @@ class _DrawioXmlShapeDecoder {
             spacingBottom: _number(node, 'spacing-bottom'),
             align: node.getAttribute('align') ?? 'left',
             valign: node.getAttribute('valign') ?? 'top',
-            // mxXmlCanvas2D.text dir vertical-* is SVG writing-mode.
-            // mxStencil.drawNode uses vertical="1" instead.
+            // mxXmlCanvas2D.text writes dir when dir!=null.
+            // mxStencil.drawNode never passes dir; NestedStencil capture
+            // omits it. leftover reads dir per glyph so a later omitted
+            // sibling does not keep Paragraph Flags / TextDirection
+            // (`tokens.txt` Flags swaps left↔end; TextDirection).
+            // vertical="1" is mxStencil.drawNode; dir vertical-* is SVG
+            // writing-mode.
             vertical: node.getAttribute('vertical') == '1' ||
                 (node.getAttribute('dir') ?? '')
                     .toLowerCase()
@@ -1165,9 +1170,9 @@ class _DrawioXmlShapeDecoder {
             // overflow fill|width|block keep the cell box.
             clip: node.getAttribute('clip') == '1',
             overflow: node.getAttribute('overflow'),
-            // mxXmlCanvas2D.text dir=rtl. leftover Paragraph Flags so
-            // `_fillParagraphProperties` swaps left↔end (`tokens.txt`
-            // Flags). mxStencil.drawNode never passes dir.
+            // Per-glyph, not leftover canvas state. Official writes dir
+            // only when dir!=null; omitted / missing is LTR so a later
+            // glyph does not inherit Flags=1 or TextDirection=1.
             rtl: (node.getAttribute('dir') ?? '').toLowerCase() == 'rtl',
             rotationDegrees: _number(node, 'rotation'),
             // mxStencil.drawNode: align-shape="0" ignores shape.rotation

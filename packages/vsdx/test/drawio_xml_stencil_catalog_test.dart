@@ -21863,6 +21863,186 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text omitted leftover dir Flags for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      int flagsOf(VsdxShape shape) => shape.richText.runs.first.paraStyle.flags;
+
+      int dirOf(VsdxShape shape) => shape.richText.textBlock.textDirection;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top" dir="rtl"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" '
+        'align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 528,
+      );
+      expect(
+        flagsOf(glyphContaining(omitted, 'AB')!),
+        1,
+        reason: 'first canvas.text dir=rtl leftover-bakes Paragraph Flags '
+            'so Draw `_fillParagraphProperties` swaps left to end '
+            '(`tokens.txt` Flags)',
+      );
+      expect(
+        flagsOf(glyphContaining(omitted, 'CD')!),
+        0,
+        reason: 'omitted dir is not leftover canvas state; leftover must '
+            'not keep Flags on the later glyph Draw paints',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(flagsOf(glyphContaining(keep, 'AB')!), 0);
+      expect(
+        flagsOf(glyphContaining(keep, 'CD')!),
+        0,
+        reason: 'without dir leftover stays LTR Paragraph Flags',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="20" h="40" '
+        'align="left" valign="top" dir="vertical-lr"/>'
+        '<text str="CD" x="0" y="50" w="40" h="20" '
+        'align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dirOf(glyphContaining(laterHost, 'AB')!),
+        1,
+        reason: 'first canvas.text dir vertical-* leftover-bakes '
+            'TextDirection so Draw collectTextBlock is vertical',
+      );
+      expect(
+        dirOf(glyphContaining(laterHost, 'CD')!),
+        0,
+        reason: 'later omitted dir leftover-bakes LTR TextDirection so '
+            'Draw does not vertical both glyphs (`tokens.txt` '
+            'TextDirection)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top" dir="rtl"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(flagsOf(glyphContaining(includeHost, 'AB')!), 1);
+      expect(
+        flagsOf(glyphContaining(includeHost, 'CD')!),
+        0,
+        reason: 'include-shape nested omitted dir does not inherit host '
+            'Paragraph Flags Draw `_fillParagraphProperties`',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        flagsOf(
+          glyphContaining(
+            leftoverDoc.pages.first.findShapeById(omittedId)!,
+            'AB',
+          )!,
+        ),
+        1,
+        reason: 'a second save keeps leftover Paragraph Flags Draw paints',
+      );
+      expect(
+        flagsOf(
+          glyphContaining(
+            leftoverDoc.pages.first.findShapeById(omittedId)!,
+            'CD',
+          )!,
+        ),
+        0,
+        reason: 'a second save keeps the later omitted-dir sibling',
+      );
+      expect(
+        dirOf(
+          glyphContaining(
+            leftoverDoc.pages.first.findShapeById(laterId)!,
+            'AB',
+          )!,
+        ),
+        0,
+        reason: 'a save bakes TextDirection so canvas reopen does not '
+            'rotate twice',
+      );
+      expect(
+        glyphContaining(
+          leftoverDoc.pages.first.findShapeById(laterId)!,
+          'AB',
+        )!
+            .richText
+            .textBlock
+            .angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save keeps leftover TxtAngle Draw '
+            'librevenge:rotate paints (`tokens.txt` TxtAngle)',
+      );
+      expect(
+        glyphContaining(
+          leftoverDoc.pages.first.findShapeById(laterId)!,
+          'CD',
+        )!
+            .richText
+            .textBlock
+            .angleRad
+            .abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps the later omitted-vertical sibling '
+            'unrotated',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
