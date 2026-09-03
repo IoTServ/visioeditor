@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil sketch omitted leftover fill FillPattern
+  for LibreOffice. NestedStencil `setSketch` writes `fill` only when
+  non-empty; omitted is auto. leftover now snaps omitted per node so
+  Draw collectFillAndShadow does not reuse FillPattern 23
+  (`tokens.txt` FillPattern → draw:fill=hatch). include-shape nested
+  omitted fill leftover-bakes auto, and a later explicit cross-hatch
+  leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil fillgradient omitted leftover stops
   FillPattern for LibreOffice. NestedStencil capture writes packed
   `stops`; omitted is the two-color south ramp. leftover now snaps

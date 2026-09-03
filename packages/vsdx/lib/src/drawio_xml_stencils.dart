@@ -1060,17 +1060,25 @@ class _DrawioXmlShapeDecoder {
         // FillPattern 2–24 hatch mxRoughCanvas2D never painted
         // (`tokens.txt` FillPattern → draw:fill=hatch). Same === '1'
         // as leftover `<shadow>` / NestedStencil setShadow.
+        // NestedStencil setSketch is a per-call snapshot: gap/weight/
+        // jiggle are written only when > 0, angle when finite, fill
+        // when non-empty. leftover used to keep the previous leftover
+        // User.veSketch* so Draw collectFillAndShadow reused hatch
+        // (`tokens.txt` FillPattern). Omitted extras snap to null
+        // (draw.io defaults) per node.
         _sketchEnabled = node.getAttribute('enabled') == '1';
         final fill = node.getAttribute('fill');
-        if (fill != null && fill.isNotEmpty) _sketchFill = fill;
+        _sketchFill = (fill != null && fill.isNotEmpty) ? fill : null;
         final gap = double.tryParse(node.getAttribute('gap') ?? '');
-        if (gap != null && gap.isFinite) _sketchGap = gap;
+        _sketchGap = (gap != null && gap.isFinite && gap > 0) ? gap : null;
         final angle = double.tryParse(node.getAttribute('angle') ?? '');
-        if (angle != null && angle.isFinite) _sketchAngle = angle;
+        _sketchAngle = (angle != null && angle.isFinite) ? angle : null;
         final weight = double.tryParse(node.getAttribute('weight') ?? '');
-        if (weight != null && weight.isFinite) _sketchWeight = weight;
+        _sketchWeight =
+            (weight != null && weight.isFinite && weight > 0) ? weight : null;
         final jiggle = double.tryParse(node.getAttribute('jiggle') ?? '');
-        if (jiggle != null && jiggle.isFinite) _sketchJiggle = jiggle;
+        _sketchJiggle =
+            (jiggle != null && jiggle.isFinite && jiggle > 0) ? jiggle : null;
         break;
       case 'strokecolor':
         // mxXmlCanvas2D.setStrokeColor(null) writes color="none".
