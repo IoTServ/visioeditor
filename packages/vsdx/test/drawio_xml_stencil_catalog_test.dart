@@ -22043,6 +22043,146 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text omitted leftover rotation TxtAngle for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '') == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      double angleOf(VsdxShape shape, String text) =>
+          glyphContaining(shape, text)!.richText.textBlock.angleRad;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top" rotation="90"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" '
+        'align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 529,
+      );
+      expect(
+        angleOf(omitted, 'AB'),
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'first canvas.text rotation leftover-bakes TxtAngle so Draw '
+            '_flushText librevenge:rotate stands the glyph '
+            '(`tokens.txt` TxtAngle)',
+      );
+      expect(
+        angleOf(omitted, 'CD').abs(),
+        lessThan(0.05),
+        reason: 'omitted rotation is not leftover canvas state; leftover '
+            'must not keep TxtAngle on the later glyph Draw paints',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(angleOf(keep, 'AB').abs(), lessThan(0.05));
+      expect(
+        angleOf(keep, 'CD').abs(),
+        lessThan(0.05),
+        reason: 'without rotation leftover stays TxtAngle 0',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" '
+        'align="left" valign="top" rotation="90"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        angleOf(laterHost, 'AB').abs(),
+        lessThan(0.05),
+        reason: 'first canvas.text keeps collectTextBlock unrotated',
+      );
+      expect(
+        angleOf(laterHost, 'CD'),
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'later rotation leftover-bakes TxtAngle so Draw does not '
+            'leave both glyphs upright (`tokens.txt` TxtAngle)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="left" valign="top" rotation="90"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(angleOf(includeHost, 'AB'), closeTo(-math.pi / 2, 0.05));
+      expect(
+        angleOf(includeHost, 'CD').abs(),
+        lessThan(0.05),
+        reason: 'include-shape nested omitted rotation does not inherit '
+            'host TxtAngle Draw _flushText',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        angleOf(leftoverDoc.pages.first.findShapeById(omittedId)!, 'AB'),
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save keeps leftover TxtAngle Draw paints',
+      );
+      expect(
+        angleOf(leftoverDoc.pages.first.findShapeById(omittedId)!, 'CD').abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps the later omitted-rotation sibling',
+      );
+      expect(
+        angleOf(leftoverDoc.pages.first.findShapeById(laterId)!, 'AB').abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps the first unrotated TxtAngle',
+      );
+      expect(
+        angleOf(leftoverDoc.pages.first.findShapeById(laterId)!, 'CD'),
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save keeps leftover later TxtAngle Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

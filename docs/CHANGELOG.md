@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text omitted leftover rotation
+  TxtAngle for LibreOffice. Official `canvas.text` writes
+  `rotation` when `rotation!=null`; mxStencil.drawNode subtracts
+  `getAttribute('rotation')` (null coerces to 0). leftover
+  `_number` 0 per glyph so a later omitted sibling does not keep
+  TxtAngle (`tokens.txt` TxtAngle). Draw `_flushText` maps that
+  to `librevenge:rotate`. leftover now snaps omitted to 0,
+  include-shape nested omitted rotation leftover-bakes upright,
+  and a later omitted rotation leftover-bakes a sibling. A second
+  save keeps both. `rotation="90"` still leftover-bakes −π/2.
 - draw.io leftover mxXmlCanvas2D text omitted leftover dir Flags
   for LibreOffice. Official `canvas.text` writes `dir` when
   `dir!=null`; mxStencil.drawNode never passes it. leftover reads

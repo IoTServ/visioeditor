@@ -1174,6 +1174,12 @@ class _DrawioXmlShapeDecoder {
             // only when dir!=null; omitted / missing is LTR so a later
             // glyph does not inherit Flags=1 or TextDirection=1.
             rtl: (node.getAttribute('dir') ?? '').toLowerCase() == 'rtl',
+            // mxXmlCanvas2D.text writes rotation when rotation!=null
+            // (0 still writes rotation="0"). mxStencil.drawNode always
+            // subtracts getAttribute('rotation') (null coerces to 0).
+            // leftover `_number` 0 per glyph so a later omitted sibling
+            // does not keep TxtAngle (`tokens.txt` TxtAngle;
+            // _flushText librevenge:rotate).
             rotationDegrees: _number(node, 'rotation'),
             // mxStencil.drawNode: align-shape="0" ignores shape.rotation
             // when setting canvas.text rotation (still subtracts `rotation=`).
