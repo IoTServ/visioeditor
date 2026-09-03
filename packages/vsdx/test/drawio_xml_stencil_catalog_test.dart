@@ -25724,6 +25724,123 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover x TxtPinX for LibreOffice',
+    () {
+      List<double> glyphPinXs(VsdxShape shape) {
+        final xs = <double>[];
+        void walk(VsdxShape next) {
+          if ((next.text ?? '').isNotEmpty) xs.add(next.pinX);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        xs.sort();
+        return xs;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final originPin = 20 * canvasScale;
+      final shiftedPin = 60 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="40" y="0" w="40" h="20"/>'
+        '<text str="CD" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+        id: 554,
+      );
+      expect(
+        glyphPinXs(omitted),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'omitted text x is Number(null)=0; leftover must not keep '
+            'TxtPinX so Draw collectTextBlock does not paint the first '
+            'glyph (`tokens.txt` TxtPinX → svg:x)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="40" y="0" w="40" h="20"/>'
+        '<text str="CD" x="40" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphPinXs(keep),
+        everyElement(closeTo(shiftedPin, 1e-6)),
+        reason: 'without omitted x leftover keeps TxtPinX',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" y="0" w="40" h="20"/>'
+        '<text str="CD" x="40" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphPinXs(later),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'later explicit x leftover-bakes a sibling TxtPinX',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="40" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="100" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="40" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphPinXs(includeHost),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'include-shape nested omitted x leftover-bakes PinX at w/2 so '
+            'Draw does not inherit host TxtPinX',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        glyphPinXs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'a second save keeps leftover TxtPinX Draw paints',
+      );
+      expect(
+        glyphPinXs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'a second save keeps the later explicit TxtPinX sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
