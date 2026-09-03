@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover align HorzAlign
+  for LibreOffice. Official omitted run `align` falls through to the
+  glyph left default; leftover now snaps per `<run>` so Draw
+  collectParaIX does not center a later glyph (`tokens.txt` HorzAlign →
+  fo:text-align). include-shape nested omitted leftover-bakes left, and
+  a later explicit `align="center"` leftover-bakes a sibling. A second
+  save keeps both.
 - draw.io leftover mxStencil text run omitted leftover fontstyle
   Char.Style for LibreOffice. Official omitted `fontstyle` is canvas 0;
   leftover now snaps per `<run>` so Draw collectCharIX does not bold a

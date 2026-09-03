@@ -37227,6 +37227,131 @@ void main() {
   );
 
   test(
+    'mxStencil text run omitted leftover align HorzAlign for LibreOffice',
+    () {
+      List<VsdxHorzAlign> aligns(VsdxShape shape) {
+        final values = <VsdxHorzAlign>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.horizontalAlign);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text x="0" y="0" w="80" h="20"><run str="AB" align="center"/></text>';
+      const omittedT =
+          '<text x="0" y="30" w="80" h="20"><run str="CD"/></text>';
+      const keepT2 =
+          '<text x="0" y="30" w="80" h="20"><run str="CD" align="center"/></text>';
+      const omittedFirst =
+          '<text x="0" y="0" w="80" h="20"><run str="AB"/></text>';
+      const keepSecond =
+          '<text x="0" y="30" w="80" h="20"><run str="CD" align="center"/></text>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 635,
+      );
+      expect(
+        aligns(omitted),
+        [VsdxHorzAlign.center, VsdxHorzAlign.left],
+        reason: 'omitted run align is the glyph left default; leftover must '
+            'not keep HorzAlign center so Draw collectParaIX does not '
+            'center the later glyph (`tokens.txt` HorzAlign → fo:text-align)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        aligns(keep),
+        everyElement(VsdxHorzAlign.center),
+        reason: 'without omitted align leftover keeps HorzAlign center',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        aligns(later),
+        [VsdxHorzAlign.left, VsdxHorzAlign.center],
+        reason: 'later align leftover-bakes a sibling HorzAlign center',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20"><run str="CD"/></text>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        aligns(includeHost),
+        [VsdxHorzAlign.center, VsdxHorzAlign.left],
+        reason: 'include-shape nested omitted align leftover-bakes left so '
+            'Draw does not inherit host fo:text-align',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        aligns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [VsdxHorzAlign.center, VsdxHorzAlign.left],
+        reason: 'a second save keeps leftover HorzAlign Draw paints',
+      );
+      expect(
+        aligns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [VsdxHorzAlign.left, VsdxHorzAlign.center],
+        reason: 'a second save keeps the later leftover HorzAlign sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
