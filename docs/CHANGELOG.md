@@ -582,6 +582,27 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D gradient omitted leftover c2
+  FillPattern for LibreOffice. Official omitted `c2` is setGradient
+  skip / solid color1; leftover now snaps per `<gradient>` so Draw
+  collectFillAndShadow does not keep the previous south ramp
+  (`tokens.txt` FillPattern → draw:fill). include-shape nested omitted
+  leftover-bakes solid, and a later explicit c2 leftover-bakes a
+  sibling. A second save keeps both.
+- draw.io leftover mxXmlCanvas2D gradient omitted leftover c1
+  FillPattern for LibreOffice. Official omitted `c1` is
+  isNoneColor(null) → none fill; leftover now snaps per `<gradient>` so
+  Draw collectFillAndShadow does not keep the previous south ramp
+  (`tokens.txt` FillPattern → draw:fill=gradient). include-shape nested
+  omitted leftover-bakes none, and a later explicit c1 leftover-bakes a
+  sibling. A second save keeps both.
+- draw.io leftover mxXmlCanvas2D gradient omitted leftover direction
+  FillPattern for LibreOffice. Official omitted `direction` is south;
+  leftover now snaps per `<gradient c1 c2>` so Draw
+  collectFillAndShadow does not reuse east (`tokens.txt` FillPattern →
+  draw:angle 90deg then 180deg). include-shape nested omitted leftover-
+  bakes south, and a later explicit `direction="east"` leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil fillgradient omitted leftover color1
   FillPattern for LibreOffice. Official omitted `color1` is NestedStencil
   isNoneColor(null) → none fill; leftover now snaps per node so Draw
