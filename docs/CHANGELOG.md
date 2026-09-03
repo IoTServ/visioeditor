@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil labelBounds omitted leftover y TxtPinY for
+  LibreOffice. Official Shapes.js uses `Number(y||0)`; omitted is 0.
+  leftover `_number` 0 per labelBounds so a later omitted sibling does
+  not keep TxtPinY (`tokens.txt` TxtPinY → `svg:y`). leftover now snaps
+  omitted to stencil-top, include-shape nested omitted y leftover-bakes
+  no nested TxtPin (official include-shape only paints), and a later
+  explicit y leftover-bakes a sibling. A second save keeps both. Draw
+  fodg has no Character so TxtPin is vsdx-round-trip.
 - draw.io leftover mxStencil roundrect omitted leftover y MoveTo for
   LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted
