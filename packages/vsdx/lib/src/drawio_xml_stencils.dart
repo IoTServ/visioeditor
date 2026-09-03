@@ -3021,7 +3021,9 @@ class _DrawioXmlShapeDecoder {
     // Official rotate does not append identity. leftover `_number`
     // omitted theta is 0; early-return keeps leftover inches so Draw
     // collectGeometry does not un-rotate a later sibling
-    // (`tokens.txt` PinX / Angle).
+    // (`tokens.txt` PinX / Angle). Official flipH/flipV is `=== '1'`;
+    // omitted is false so a later omitted sibling does not keep the
+    // previous mirror (`tokens.txt` PinX).
     if (theta.abs() < 1e-12 && !flipH && !flipV) return;
     // mxSvgCanvas2D.rotate: cx += dx; cy += dy; cx *= scale. leftover
     // stores that centre in leftover inches so include-shape nested

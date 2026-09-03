@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil rotate omitted leftover flipH PinX for
+  LibreOffice. Official `rotate` uses `flipH === '1'`; omitted is false.
+  leftover now snaps omitted to unmirrored leftover inches so Draw
+  collectGeometry does not reuse the previous Flip (`tokens.txt` PinX).
+  include-shape nested omitted flipH leftover-bakes the unmirrored
+  PinX, and a later explicit flipH leftover-bakes a sibling. A second
+  save keeps both.
 - draw.io leftover mxStencil roundrect omitted leftover dy CubBezTo
   copies rx for LibreOffice. Official mxSvgCanvas2D.roundrect omits `ry`
   when dy is 0; SVG copies the specified `rx` onto `ry`. leftover now
