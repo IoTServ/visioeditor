@@ -3754,6 +3754,9 @@ class _DrawioXmlShapeDecoder {
     }
     // mxStencil.drawNode: Number(arcsize)==0 uses
     // RECTANGLE_ROUNDING_FACTOR * 100 (15). Omitted also defaults to 15.
+    // leftover `_number` 15 per node so a later omitted sibling does
+    // not keep the previous leftover radius Draw collectGeometry
+    // maps to RelCubBezTo (`tokens.txt` CubBezTo).
     // Canvas roundrect(r=0) is captured as <rect>, not arcsize="0".
     var arcSize = _number(rect, 'arcsize', fallback: 15);
     if (arcSize <= 0) arcSize = 15;

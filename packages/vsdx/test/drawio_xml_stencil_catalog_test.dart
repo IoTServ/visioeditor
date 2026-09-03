@@ -23856,6 +23856,143 @@ void main() {
   );
 
   test(
+    'mxStencil roundrect omitted leftover arcsize CubBezTo for LibreOffice',
+    () {
+      List<double> firstMoveXs(VsdxShape shape) {
+        final xs = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            if (geometry.noShow) continue;
+            for (final command in geometry.commands) {
+              if (command is MoveTo) {
+                xs.add(command.x);
+                break;
+              }
+              if (command is RelMoveTo) {
+                xs.add(command.fx * next.width);
+                break;
+              }
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        xs.sort();
+        return xs;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final r50 = 0.5 * 20 * canvasScale;
+      final r15 = 0.15 * 20 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20" arcsize="50"/>'
+        '<fillstroke/>'
+        '<roundrect x="0" y="30" w="40" h="20"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 541,
+      );
+      expect(
+        firstMoveXs(omitted),
+        [closeTo(r15, 1e-6), closeTo(r50, 1e-6)],
+        reason: 'omitted arcsize is Number(null)=0 then 15%; leftover must '
+            'not keep the 50% fillet Draw collectGeometry maps to '
+            'RelCubBezTo (`tokens.txt` CubBezTo)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20" arcsize="50"/>'
+        '<fillstroke/>'
+        '<roundrect x="0" y="30" w="40" h="20" arcsize="50"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstMoveXs(keep),
+        everyElement(closeTo(r50, 1e-6)),
+        reason: 'without omitted arcsize leftover keeps the 50% fillet',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20"/>'
+        '<fillstroke/>'
+        '<roundrect x="0" y="30" w="40" h="20" arcsize="50"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstMoveXs(later),
+        [closeTo(r15, 1e-6), closeTo(r50, 1e-6)],
+        reason: 'later arcsize leftover-bakes a 50% sibling fillet',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20" arcsize="50"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="0" y="0" w="40" h="20"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        firstMoveXs(includeHost),
+        [closeTo(r15, 1e-6), closeTo(r50, 1e-6)],
+        reason: 'include-shape nested omitted arcsize leftover-bakes 15% so '
+            'Draw does not inherit host 50% fillets',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        firstMoveXs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(r15, 1e-6), closeTo(r50, 1e-6)],
+        reason: 'a second save keeps leftover CubBezTo fillets Draw paints',
+      );
+      expect(
+        firstMoveXs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(r15, 1e-6), closeTo(r50, 1e-6)],
+        reason: 'a second save keeps the later leftover 50% sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
