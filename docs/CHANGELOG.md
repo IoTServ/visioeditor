@@ -583,6 +583,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 - draw.io leftover mxStencil mxXmlCanvas2D shadowoffset omitted leftover
+  dy ShapeShdwOffsetY for LibreOffice. Official `setShadowOffset` uses
+  `Number(dy)`; omitted is `Number(null)=0`. leftover now snaps omitted
+  to the −0.03in floor so Draw collectFillAndShadow does not reuse the
+  previous leftover inches (`tokens.txt` → draw:shadow-offset-y).
+  include-shape nested omitted dy leftover-bakes 0, and a later explicit
+  dy leftover-bakes a sibling. A second save keeps both.
+- draw.io leftover mxStencil mxXmlCanvas2D shadowoffset omitted leftover
   dx ShapeShdwOffsetX for LibreOffice. Official `setShadowOffset` uses
   `Number(dx)`; omitted is `Number(null)=0`. leftover now snaps omitted
   to the 0.02in floor so Draw collectFillAndShadow does not reuse the

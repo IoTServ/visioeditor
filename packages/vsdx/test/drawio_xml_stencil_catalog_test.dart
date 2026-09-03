@@ -33720,6 +33720,155 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D shadowoffset omitted leftover dy ShapeShdwOffsetY for LibreOffice',
+    () {
+      List<double> shadowOffsetYs(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled && (next.fill.hasFill || next.line.hasLine)) {
+            values.add(next.shadow.offsetYInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const catalog = 1.5 / 100;
+      const omittedFloor = -0.03;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowoffset dx="8" dy="12"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<shadowoffset dx="8"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 609,
+      );
+      expect(
+        shadowOffsetYs(omitted),
+        [closeTo(-12 * catalog, 1e-6), closeTo(omittedFloor, 1e-6)],
+        reason: 'omitted shadowoffset dy is Number(null)=0; leftover must '
+            'not keep ShapeShdwOffsetY so Draw collectFillAndShadow does '
+            'not reuse the first leftover inches (`tokens.txt` → '
+            'draw:shadow-offset-y). leftover floors 0 to -0.03in',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowoffset dx="8" dy="12"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<shadowoffset dx="8" dy="12"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        shadowOffsetYs(keep),
+        everyElement(closeTo(-12 * catalog, 1e-6)),
+        reason: 'without omitted dy leftover keeps ShapeShdwOffsetY',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowoffset dx="8"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<shadowoffset dx="8" dy="12"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        shadowOffsetYs(laterHost),
+        [closeTo(omittedFloor, 1e-6), closeTo(-12 * catalog, 1e-6)],
+        reason: 'later explicit dy leftover-bakes a sibling so Draw does '
+            'not reuse the zero-offset rail',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowoffset dx="8" dy="12"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<shadowoffset dx="8"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        shadowOffsetYs(includeHost),
+        [
+          closeTo(-12 * catalog, 1e-6),
+          closeTo(omittedFloor, 1e-6),
+        ],
+        reason: 'include-shape nested omitted dy leftover-bakes 0 so Draw '
+            'does not inherit host ShapeShdwOffsetY',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        leftover.shadow.enabled &&
+            (leftover.shadow.offsetYInches - omittedFloor).abs() < 1e-6,
+        isTrue,
+        reason: 'a second save keeps leftover zero-offset Draw paints',
+      );
+      expect(
+        leftover.children.any(
+          (child) =>
+              child.shadow.enabled &&
+              (child.shadow.offsetYInches + 12 * catalog).abs() < 1e-6,
+        ),
+        isTrue,
+        reason: 'a second save keeps the later leftover ShapeShdwOffsetY '
+            'sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
