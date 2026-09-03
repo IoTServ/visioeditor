@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil restore omitted leftover empty stack
+  LineColor for LibreOffice. Official `canvas.restore()` on an empty
+  stack is a no-op. leftover skips so a later omitted save does not
+  snap LineColor none (`tokens.txt` LineColor → `svg:stroke-color`).
+  leftover now keeps the previous leftover hex, include-shape nested
+  omitted restore leftover-bakes the nested hex, and a later
+  save/restore leftover-bakes a sibling. A second save keeps both.
+  Matched restore still pops.
 - draw.io leftover mxStencil path omitted leftover close LineTo for
   LibreOffice. Official `drawNode` `canvas.close()` is this subpath.
   leftover LineTo the start so a later omitted sibling stays open

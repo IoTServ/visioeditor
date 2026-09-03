@@ -24931,6 +24931,133 @@ void main() {
   );
 
   test(
+    'mxStencil restore omitted leftover empty stack LineColor for LibreOffice',
+    () {
+      Set<int> strokeRgb(VsdxShape shape) {
+        final colors = <int>{};
+        void walk(VsdxShape next) {
+          if (next.line.hasLine && next.line.color != null) {
+            colors.add(next.line.color!.value & 0x00FFFFFF);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return colors;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#ff0000"/>'
+        '<restore/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 548,
+      );
+      expect(
+        strokeRgb(omitted),
+        {0xFF0000},
+        reason: 'omitted save then restore is mxAbstractCanvas2D empty-stack '
+            'no-op; leftover must keep LineColor so Draw collectLine does '
+            'not snap none (`tokens.txt` LineColor → svg:stroke-color)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        strokeRgb(keep),
+        {0xFF0000},
+        reason: 'without restore leftover keeps LineColor',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#ff0000"/>'
+        '<save/>'
+        '<strokecolor color="#0000ff"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '<rect x="30" y="30" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        strokeRgb(later),
+        {0x0000FF, 0xFF0000},
+        reason: 'later matched restore leftover-bakes the popped hex sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokecolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="30" y="30" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="20" h="10" strokewidth="1">'
+        '<foreground>'
+        '<restore/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        strokeRgb(includeHost),
+        {0xFF0000},
+        reason: 'include-shape nested omitted restore leftover-bakes host hex '
+            'so Draw does not snap nested LineColor none',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        strokeRgb(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        {0xFF0000},
+        reason: 'a second save keeps leftover LineColor Draw paints',
+      );
+      expect(
+        strokeRgb(leftoverDoc.pages.first.findShapeById(laterId)!),
+        {0x0000FF, 0xFF0000},
+        reason: 'a second save keeps leftover save/restore sibling colors',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

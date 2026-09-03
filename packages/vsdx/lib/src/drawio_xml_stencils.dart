@@ -1250,7 +1250,8 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'restore':
         // mxStencil.drawNode canvas.restore(). Empty stack is a no-op
-        // like mxAbstractCanvas2D.
+        // like mxAbstractCanvas2D so a later omitted save does not snap
+        // LineColor none (`tokens.txt` LineColor → svg:stroke-color).
         if (_saveStack.isNotEmpty) _restorePaint(_saveStack.removeLast());
         break;
       case 'labelBounds':
