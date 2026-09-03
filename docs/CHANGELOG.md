@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover align-shape
+  TxtAngle for LibreOffice. Official `drawNode` uses this node's
+  `align-shape=="0"` to counter `shape.rotation`. leftover reads it
+  per glyph so a later omitted sibling does not keep TxtAngle
+  (`tokens.txt` TxtAngle; `_flushText` `librevenge:rotate`). leftover
+  now follows parent Angle when omitted, include-shape nested
+  omitted align-shape leftover-bakes follow, and a later
+  `align-shape="0"` leftover-bakes a sibling. A second save keeps
+  both. `align-shape="0"` still leftover-bakes the counter-rotate.
 - draw.io leftover NestedStencil fillstrokecolor omitted leftover
   FillForegnd for LibreOffice. Official `drawNode` has no case
   (skip); NestedStencil skips empty / `currentColor` like

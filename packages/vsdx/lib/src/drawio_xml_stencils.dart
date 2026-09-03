@@ -1204,6 +1204,10 @@ class _DrawioXmlShapeDecoder {
             rotationDegrees: _number(node, 'rotation'),
             // mxStencil.drawNode: align-shape="0" ignores shape.rotation
             // when setting canvas.text rotation (still subtracts `rotation=`).
+            // leftover reads it per glyph so a later omitted sibling
+            // follows parent Angle (`tokens.txt` TxtAngle;
+            // _flushText librevenge:rotate) instead of keeping the
+            // counter-rotate leftover.
             alignShape: node.getAttribute('align-shape') != '0',
             // mxXmlCanvas2D.text rotation is STYLE_ROTATION; decoder
             // negates into TxtAngle that LibreOffice librevenge:rotate

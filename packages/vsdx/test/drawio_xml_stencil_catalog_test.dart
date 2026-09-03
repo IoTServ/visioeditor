@@ -22958,6 +22958,147 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover align-shape TxtAngle for LibreOffice',
+    () {
+      VsdxShape? glyphShape(VsdxShape shape, String text) {
+        if (shape.text == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyphShape(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="40" cellrotation="-90" strokewidth="1">'
+        '<foreground>'
+        '<text x="20" y="20" str="A" align="center" valign="middle" '
+        'align-shape="0"/>'
+        '<text x="70" y="20" str="B" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+        id: 535,
+      );
+      expect(omitted.angleRad, closeTo(math.pi / 2, 0.05));
+      expect(
+        glyphShape(omitted, 'A')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+      );
+      expect(
+        glyphShape(omitted, 'B')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'omitted align-shape rotates with parent Angle; leftover '
+            'must not keep the first leftover TxtAngle Draw _flushText '
+            'maps to librevenge:rotate (`tokens.txt` TxtAngle)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="40" cellrotation="-90" strokewidth="1">'
+        '<foreground>'
+        '<text x="20" y="20" str="A" align="center" valign="middle"/>'
+        '<text x="70" y="20" str="B" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphShape(keep, 'A')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+      );
+      expect(
+        glyphShape(keep, 'B')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'without align-shape leftover follows parent Angle',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="40" cellrotation="-90" strokewidth="1">'
+        '<foreground>'
+        '<text x="20" y="20" str="A" align="center" valign="middle"/>'
+        '<text x="70" y="20" str="B" align="center" valign="middle" '
+        'align-shape="0"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphShape(later, 'A')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+      );
+      expect(
+        glyphShape(later, 'B')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'later align-shape leftover-bakes a counter-rotate sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="40" cellrotation="-90" strokewidth="1">'
+        '<foreground>'
+        '<text x="20" y="20" str="A" align="center" valign="middle" '
+        'align-shape="0"/>'
+        '<include-shape name="mxgraph.test.tile" x="50" y="0" w="50" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="50" h="40" cellrotation="-90" strokewidth="1">'
+        '<foreground>'
+        '<text x="25" y="20" str="B" align="center" valign="middle"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphShape(includeHost, 'A')!.richText.textBlock.angleRad,
+        closeTo(-math.pi / 2, 0.05),
+      );
+      expect(
+        glyphShape(includeHost, 'B')!.richText.textBlock.angleRad.abs(),
+        lessThan(0.05),
+        reason: 'include-shape nested omitted align-shape leftover-bakes '
+            'follow parent Angle so Draw does not inherit host TxtAngle',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        glyphShape(
+          leftoverDoc.pages.first.findShapeById(omittedId)!,
+          'B',
+        )!
+            .richText
+            .textBlock
+            .angleRad
+            .abs(),
+        lessThan(0.05),
+        reason: 'a second save keeps leftover omitted-align-shape TxtAngle',
+      );
+      expect(
+        glyphShape(
+          leftoverDoc.pages.first.findShapeById(laterId)!,
+          'B',
+        )!
+            .richText
+            .textBlock
+            .angleRad,
+        closeTo(-math.pi / 2, 0.05),
+        reason: 'a second save keeps leftover align-shape="0" TxtAngle',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
