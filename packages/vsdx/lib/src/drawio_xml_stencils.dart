@@ -3953,14 +3953,16 @@ class _DrawioXmlShapeDecoder {
   VsdxRichText _stencilLabelRichText() {
     final node = element.getElement('labelBounds');
     if (node == null) return VsdxRichText.empty;
-    // Shapes.js getLabelMargins: Number(w || stencil.w0); omitted is the
-    // stencil source width, not 0. leftover must not skip TxtWidth so
-    // Draw collectTextBlock paints the w0 rail (`tokens.txt` TxtWidth →
-    // svg:width). Explicit "0" stays 0 and leftover skips the
-    // degenerate box. Official include-shape only paints; nested
-    // labelBounds stay on the nested stencil and are not merged.
+    // Shapes.js getLabelMargins: Number(w || stencil.w0) /
+    // Number(h || stencil.h0); omitted is the stencil source box, not
+    // 0. leftover must not skip TxtWidth / TxtHeight so Draw
+    // collectTextBlock paints the w0/h0 rail (`tokens.txt` TxtWidth →
+    // svg:width; TxtHeight → svg:height). Explicit "0" stays 0 and
+    // leftover skips the degenerate box. Official include-shape only
+    // paints; nested labelBounds stay on the nested stencil and are
+    // not merged.
     final boxW = _labelBoundExtent(node, 'w', sourceWidth);
-    final boxH = _number(node, 'h');
+    final boxH = _labelBoundExtent(node, 'h', sourceHeight);
     if (boxW <= 1e-9 || boxH <= 1e-9) return VsdxRichText.empty;
     final width = boxW * scaleX.abs();
     final height = boxH * scaleY.abs();

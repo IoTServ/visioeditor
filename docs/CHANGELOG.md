@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil labelBounds omitted leftover h TxtHeight for
+  LibreOffice. Official Shapes.js `getLabelMargins` uses
+  `Number(h || stencil.h0)`; omitted is the stencil source height, not 0.
+  leftover now snaps omitted to `h0` so Draw collectTextBlock paints
+  TxtHeight / TxtPinY (`tokens.txt` TxtHeight → svg:height). include-shape
+  nested omitted h leftover-bakes no nested TxtHeight, and a later
+  explicit h leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil labelBounds omitted leftover w TxtWidth for
   LibreOffice. Official Shapes.js `getLabelMargins` uses
   `Number(w || stencil.w0)`; omitted is the stencil source width, not 0.
