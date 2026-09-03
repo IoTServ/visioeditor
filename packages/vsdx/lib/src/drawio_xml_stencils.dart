@@ -3976,8 +3976,8 @@ class _DrawioXmlShapeDecoder {
     if (connections == null) return const <VsdxConnectionPoint>[];
     // mxStencil.parseConstraint: Number(x)/Number(y); omitted is
     // Number(null)=0. leftover `_number` 0 per constraint so a later
-    // omitted sibling does not keep X (`tokens.txt` X). Official y=0
-    // is stencil-top; leftover (1-y)*Height is Visio Y-up.
+    // omitted sibling does not keep X / Y (`tokens.txt` X / Y). Official
+    // y=0 is stencil-top; leftover (1-y)*Height is Visio Y-up.
     return <VsdxConnectionPoint>[
       for (final constraint in connections.findElements('constraint'))
         VsdxConnectionPoint(

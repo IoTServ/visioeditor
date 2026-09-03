@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil constraint omitted leftover y Connection
+  for LibreOffice. Official `parseConstraint` uses `Number(y)`; omitted
+  is `Number(null)=0` (stencil-top). leftover `_number` 0 per constraint
+  so a later omitted sibling does not keep Y (`tokens.txt` Y). leftover
+  now snaps omitted to Height (Visio Y-up), include-shape nested omitted
+  y leftover-bakes host Y Height, and a later explicit y leftover-bakes
+  a sibling. A second save keeps both. Draw fodg has no glue-points.
 - draw.io leftover mxStencil labelBounds omitted leftover y TxtPinY for
   LibreOffice. Official Shapes.js uses `Number(y||0)`; omitted is 0.
   leftover `_number` 0 per labelBounds so a later omitted sibling does
