@@ -968,15 +968,21 @@ class _DrawioXmlShapeDecoder {
         _fontStyle = _number(node, 'style').round();
         break;
       case 'fontfamily':
-        // mxXmlCanvas2D.setFontFamily is CSS font-family. leftover
-        // first-token froze "open sans" so Draw collectCharIX missed
-        // Arial (`tokens.txt` Font → style:font-name). Walk the stack
-        // like NestedStencil htmlFontFamily; omitted family is a no-op.
+        // mxStencil.drawNode always setFontFamily(family).
+        // NestedStencil skips omitted family so leftover kept the
+        // previous Char.Font. Official setFontFamily(null);
+        // parseCssFontFamily(null) writes no usable font-family.
+        // collectCharIX empty Font is Arial (`tokens.txt` Font →
+        // style:font-name). leftover first-token froze "open sans"
+        // so Draw missed Arial; walk the stack like NestedStencil
+        // htmlFontFamily when family is present.
         final raw = node.getAttribute('family');
-        if (raw != null) {
-          final mapped = _mxFontFamily(raw);
-          if (mapped != null) _fontFamily = mapped;
+        if (raw == null || raw.trim().isEmpty) {
+          _fontFamily = _kMxDefaultFontFamily;
+          break;
         }
+        final mapped = _mxFontFamily(raw);
+        if (mapped != null) _fontFamily = mapped;
         break;
       case 'fillcolor':
         // mxXmlCanvas2D.setFillColor(null) writes color="none".

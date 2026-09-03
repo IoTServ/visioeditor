@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fontfamily omitted leftover Char
+  Font Arial for LibreOffice. Official `setFontFamily(null)` always
+  runs; NestedStencil skips omitted `family` so leftover kept
+  Helvetica. `parseCssFontFamily(null)` writes no usable
+  `font-family`; collectCharIX empty Font is Arial (`tokens.txt`
+  Font → `style:font-name`). leftover now snaps omitted / empty
+  family to createState Arial, include-shape copies that overlay,
+  and a later omitted fontfamily leftover-bakes a sibling. A
+  second save keeps both. No `<fontfamily>` node still stays the
+  previous face. CSS stacks still walk to Arial.
 - draw.io leftover mxXmlCanvas2D shadowcolor omitted leftover
   ShdwPattern 0 for LibreOffice. Official `setShadowColor(null)`
   writes `none`; `mxSvgCanvas2D.createShadow` fill is null.

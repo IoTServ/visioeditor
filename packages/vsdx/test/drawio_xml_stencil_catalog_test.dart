@@ -20053,7 +20053,7 @@ void main() {
   );
 
   test(
-    'mxStencil mxXmlCanvas2D fontfamily CSS stack leftover bakes Char.Font for LibreOffice',
+    'mxStencil mxXmlCanvas2D fontfamily omitted leftover bakes Char.Font Arial for LibreOffice',
     () {
       String? glyphFont(VsdxShape shape, String text) {
         if ((shape.text ?? '').contains(text) &&
@@ -20081,9 +20081,46 @@ void main() {
       expect(glyphFont(omitted, 'AB'), 'Helvetica');
       expect(
         glyphFont(omitted, 'CD'),
+        'Arial',
+        reason: 'omitted family is setFontFamily(null); NestedStencil skip '
+            'kept Helvetica so Draw collectCharIX reused the previous '
+            'Char.Font (`tokens.txt` Font → style:font-name). collectCharIX '
+            'empty Font is Arial',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="Helvetica"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphFont(keep, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(keep, 'CD'),
         'Helvetica',
-        reason: 'omitted family is a no-op; leftover keeps the previous '
-            'Char.Font Draw collectCharIX maps to style:font-name',
+        reason: 'without a fontfamily node leftover keeps the previous '
+            'Char.Font',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="Helvetica"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontfamily/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphFont(laterHost, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(laterHost, 'CD'),
+        'Arial',
+        reason: 'later omitted fontfamily leftover-bakes Arial so Draw '
+            'does not keep Helvetica',
       );
 
       final stack = decodeDrawioMxStencilXml(
@@ -20130,6 +20167,31 @@ void main() {
             'Draw does not paint the tile with host Helvetica',
       );
 
+      final includeOmitted = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily family="Helvetica"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontfamily/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(glyphFont(includeOmitted, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(includeOmitted, 'CD'),
+        'Arial',
+        reason: 'include-shape shares the canvas; nested omitted '
+            'fontfamily leftover-bakes Arial',
+      );
+
       final writer = VsdxWriter();
       final parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
@@ -20150,6 +20212,29 @@ void main() {
         glyphFont(leftover, 'CD'),
         'Arial',
         reason: 'a second save keeps leftover Char.Font Arial Draw paints',
+      );
+
+      var laterDoc = parser.parse(writer.emptyDocument());
+      final laterId = laterDoc.pages.first.nextFreeShapeId();
+      laterDoc = laterDoc.replacePage(
+        0,
+        laterDoc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverLater = parser
+          .parse(
+            writer.write(
+              originalBytes: writer.emptyDocument(),
+              edited: laterDoc,
+            ),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(glyphFont(leftoverLater, 'AB'), 'Helvetica');
+      expect(
+        glyphFont(leftoverLater, 'CD'),
+        'Arial',
+        reason: 'a second save keeps leftover omitted Arial Draw paints',
       );
     },
   );
