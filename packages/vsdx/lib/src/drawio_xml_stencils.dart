@@ -304,8 +304,6 @@ class _DrawioXmlShapeDecoder {
   final Map<String, VsdxColor> _libraryStyleKeyDefaults;
   final Map<String, XmlElement> _stencilByName;
   final int _includeDepth;
-  late final Map<String, VsdxColor> _shapeStyleKeyDefaults =
-      _mxStencilStyleKeyDefaults(element);
 
   late final double sourceWidth = _number(element, 'w', fallback: 100);
   late final double sourceHeight = _number(element, 'h', fallback: 100);
@@ -2281,15 +2279,23 @@ class _DrawioXmlShapeDecoder {
       _fillIsNone = false;
       return;
     }
-    // mxStencil.getColorValue: missing style key uses `default`, then
-    // a unique library default (Networks2 hub `neutralFill`).
+    // mxStencil.getColorValue is per-node `default`, then a unique
+    // library default (Networks2 hub `neutralFill` / Sidebar `sn`).
     // Android Keyboard fillColor3=none must not inherit the palette fill.
+    // A later sibling that omits `default` must not reuse this shape's
+    // earlier default (`tokens.txt` FillForegnd → svg:fill).
     if (_styleKeyIsNone(token, fallback)) {
       _fillColor = null;
       _fillIsNone = true;
       return;
     }
-    _fillColor = _styleKeyColor(token, fallback);
+    final resolved = _styleKeyColor(token, fallback);
+    if (resolved == null) {
+      _fillColor = null;
+      _fillIsNone = true;
+      return;
+    }
+    _fillColor = resolved;
     _fillIsNone = false;
   }
 
@@ -2513,7 +2519,13 @@ class _DrawioXmlShapeDecoder {
       _strokeIsNone = true;
       return;
     }
-    _strokeColor = _styleKeyColor(token, fallback);
+    final resolved = _styleKeyColor(token, fallback);
+    if (resolved == null) {
+      _strokeColor = null;
+      _strokeIsNone = true;
+      return;
+    }
+    _strokeColor = resolved;
     _strokeIsNone = false;
   }
 
@@ -2633,14 +2645,15 @@ class _DrawioXmlShapeDecoder {
     _fontBorder = _styleKeyColor(token, fallback);
   }
 
-  /// mxStencil.getColorValue: cell style, then node `default`, then a
-  /// `default` already seen on this shape, then a unique default from
-  /// another stencil in the same XML library (Networks2 `neutralFill`).
+  /// mxStencil.getColorValue: cell style, then this node's `default`,
+  /// then a unique default from another stencil in the same XML library
+  /// (Networks2 `neutralFill` / Sidebar-Network2.js `sn`). Catalog
+  /// leftover has no graph, so library unique stands in for the cell
+  /// style. A later sibling on this shape that omits `default` must
+  /// not reuse an earlier node's default (`tokens.txt` FillForegnd).
   VsdxColor? _styleKeyColor(String token, String? fallback) {
     if (token.isEmpty || _mxIsCellStyleColorKey(token)) return null;
-    return _mxGraphPaintColor(fallback) ??
-        _shapeStyleKeyDefaults[token] ??
-        _libraryStyleKeyDefaults[token];
+    return _mxGraphPaintColor(fallback) ?? _libraryStyleKeyDefaults[token];
   }
 
   bool _styleKeyIsNone(String token, String? fallback) {

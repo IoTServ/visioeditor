@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillcolor omitted leftover default
+  FillForegnd for LibreOffice. Official getColorValue is per-node
+  `default` (then a unique library default for Networks2
+  `neutralFill`); leftover no longer reuses an earlier sibling's
+  default so Draw collectFillAndShadow does not paint a later plate
+  (`tokens.txt` FillForegnd → svg:fill). include-shape nested omitted
+  leftover-bakes none, and a later explicit default leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D gradient omitted leftover alpha2
   FillForegndTrans for LibreOffice. Official omitted `alpha2` is 1;
   leftover now snaps per `<gradient>` so Draw collectFillAndShadow does

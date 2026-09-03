@@ -39470,6 +39470,200 @@ void main() {
   );
 
   test(
+    'mxStencil fillcolor omitted leftover default FillForegnd for LibreOffice',
+    () {
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<double> filledMoveY(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) {
+            for (final geometry in next.geometries) {
+              for (final command in geometry.commands) {
+                if (command is MoveTo) {
+                  values.add(command.y);
+                  return;
+                }
+              }
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      bool hasStrokeOnly(VsdxShape shape) {
+        if (shape.line.hasLine && !shape.fill.hasFill) return true;
+        return shape.children.any(hasStrokeOnly);
+      }
+
+      const keepC = '<fillcolor color="hubFill" default="#1565c0"/>';
+      const omittedC = '<fillcolor color="hubFill"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepC'
+        '$r1'
+        '$omittedC'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 651,
+      );
+      expect(
+        fillPatterns(omitted),
+        [1],
+        reason: 'omitted fillcolor default is mxStencil.getColorValue '
+            'per-node; leftover must not reuse the first hubFill default '
+            'so Draw collectFillAndShadow does not paint a later plate '
+            '(`tokens.txt` FillForegnd → svg:fill)',
+      );
+      expect(
+        hasStrokeOnly(omitted),
+        isTrue,
+        reason: 'the omitted-default plate leftover-bakes a stroke-only '
+            'sibling Draw paints as draw:fill=none',
+      );
+      expect(
+        filledMoveY(omitted),
+        [closeTo(1.5, 1e-6)],
+        reason: 'the remaining FillForegnd is the first rect',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepC'
+        '$r1'
+        '$keepC'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(keep),
+        [1, 1],
+        reason: 'without omitted default leftover keeps both FillForegnd',
+      );
+      expect(
+        filledMoveY(keep),
+        [closeTo(1.5, 1e-6), closeTo(1.2, 1e-6)],
+        reason: 'both rects stay solid hubFill',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '$r1'
+        '$keepC'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(later),
+        [1],
+        reason: 'later explicit default leftover-bakes a sibling FillForegnd',
+      );
+      expect(
+        filledMoveY(later),
+        [closeTo(1.2, 1e-6)],
+        reason: 'the later FillForegnd is the second rect',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillcolor color="#1565c0"/>'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fillPatterns(includeHost),
+        [1],
+        reason: 'include-shape nested omitted default leftover-bakes none '
+            'so Draw does not inherit host FillForegnd',
+      );
+      expect(
+        hasStrokeOnly(includeHost),
+        isTrue,
+        reason: 'nested omitted hubFill leftover-bakes a stroke-only tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [1],
+        reason: 'a second save keeps leftover FillForegnd Draw paints',
+      );
+      expect(
+        filledMoveY(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(1.5, 1e-6)],
+        reason: 'a second save keeps the first-rect FillForegnd',
+      );
+      expect(
+        hasStrokeOnly(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        isTrue,
+        reason: 'a second save keeps the later stroke-only rail Draw paints',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [1],
+        reason: 'a second save keeps the later leftover FillForegnd sibling',
+      );
+      expect(
+        filledMoveY(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(1.2, 1e-6)],
+        reason: 'a second save keeps the later second-rect FillForegnd',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
