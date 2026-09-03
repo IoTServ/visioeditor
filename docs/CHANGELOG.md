@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fillcolor omitted leftover
+  FillPattern 0 for LibreOffice. Official `setFillColor(null)`
+  writes `none`; NestedStencil `mxStencilColor(null)` is none.
+  leftover empty token inherited FillForegnd, so Draw
+  `collectFillAndShadow` painted palette fill
+  (`tokens.txt` → `svg:fill`). leftover now snaps omitted to
+  none, include-shape copies that overlay, and a later omitted
+  fillcolor leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D shadowoffset omitted leftover
   ShapeShdwOffset 0 for LibreOffice. Official `setShadowOffset`
   writes dx/dy; NestedStencil `Number(null)` is 0. leftover

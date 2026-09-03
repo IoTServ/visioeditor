@@ -16906,6 +16906,154 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fillcolor omitted leftover bakes FillPattern 0 for LibreOffice',
+    () {
+      bool hasFill(VsdxShape shape) {
+        if (shape.fill.hasFill) return true;
+        return shape.children.any(hasFill);
+      }
+
+      int fillCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) n++;
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillcolor/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 509,
+      );
+      expect(
+        hasFill(omitted),
+        isFalse,
+        reason: 'omitted fillcolor is setFillColor(null)/none; leftover '
+            'empty token inherited FillForegnd so Draw painted palette '
+            'fill (`tokens.txt` FillForegnd → svg:fill)',
+      );
+      expect(omitted.line.hasLine, isTrue);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        keep.fill.hasFill,
+        isTrue,
+        reason: 'without a fillcolor node leftover keeps inherit FillForegnd',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillcolor color="#1565c0"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<fillcolor/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillCount(laterHost),
+        1,
+        reason: 'later omitted fillcolor leftover-bakes a sibling so Draw '
+            'does not inherit FillForegnd on the second rail',
+      );
+      expect(
+        laterHost.children.any(
+          (child) => child.fill.hasFill && child.line.hasLine,
+        ),
+        isTrue,
+        reason: 'first hex fillstroke keeps FillForegnd Draw paints',
+      );
+      expect(
+        laterHost.line.hasLine && !laterHost.fill.hasFill ||
+            laterHost.children.any(
+              (child) => child.line.hasLine && !child.fill.hasFill,
+            ),
+        isTrue,
+        reason: 'later omitted fillcolor fillstroke stays stroke-only',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillcolor color="#1565c0"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<fillcolor/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fillCount(includeHost),
+        1,
+        reason: 'include-shape shares the canvas; nested omitted fillcolor '
+            'turns FillPattern 0 for the tile and later host fillstroke',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        leftover.fill.hasFill ||
+            leftover.children.any((child) => child.fill.hasFill),
+        isTrue,
+        reason: 'a second save keeps the first FillForegnd Draw paints',
+      );
+      expect(
+        leftover.line.hasLine && !leftover.fill.hasFill ||
+            leftover.children.any(
+              (child) => child.line.hasLine && !child.fill.hasFill,
+            ),
+        isTrue,
+        reason: 'a second save keeps the later stroke-only rail Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

@@ -600,8 +600,12 @@ class _DrawioXmlShapeDecoder {
     // FillForegndTrans at the inherit fill like _parentStrokeWeightInches.
     // collectFillAndShadow → _fillAndShadowProperties pattern==1 emits
     // draw:opacity = 1 − FillForegndTrans (Networks2 hub shadow 0.25).
+    // NoFill=1 rails (fillcolor=none / omitted setFillColor(null))
+    // must not inherit FillForegnd on the host. leftover used to keep
+    // defaultFill when children were empty, so Draw painted palette
+    // fill (`tokens.txt` FillForegnd → svg:fill).
     final parentFillTrans = _parentFillTransparency ?? 0.0;
-    final parentFill = pictureFrameOnly || (!inheritFill && children.isNotEmpty)
+    final parentFill = pictureFrameOnly || !inheritFill
         ? const VsdxFill(pattern: 0)
         : (_styleFill != null
             ? VsdxFill(
@@ -954,10 +958,22 @@ class _DrawioXmlShapeDecoder {
         }
         break;
       case 'fillcolor':
-        _applyMxFill(
-          node.getAttribute('color'),
-          fallback: node.getAttribute('default'),
-        );
+        // mxXmlCanvas2D.setFillColor(null) writes color="none".
+        // NestedStencil mxStencilColor(null) returns null; isNoneColor
+        // clears fill. leftover empty token inherited FillForegnd so
+        // Draw painted palette fill (`tokens.txt` FillForegnd → svg:fill).
+        final fillColor = node.getAttribute('color');
+        if (fillColor == null) {
+          _fillOverride = null;
+          _fillFollowsStroke = false;
+          _fillColor = null;
+          _fillIsNone = true;
+        } else {
+          _applyMxFill(
+            fillColor,
+            fallback: node.getAttribute('default'),
+          );
+        }
         break;
       case 'fillgradient':
       case 'gradient':
@@ -1123,6 +1139,8 @@ class _DrawioXmlShapeDecoder {
         break;
       // Hex fillcolor / strokecolor / fontcolor are consumed above so
       // Draw can paint them as sibling shapes (one FillForegnd each).
+      // Omitted `<fillcolor/>` color is setFillColor(null) / none so
+      // Draw does not inherit FillForegnd (`tokens.txt` → svg:fill).
       // `fillgradient` / mxXmlCanvas2D `<gradient c1= c2=>` bake
       // FillPattern 25–34 so libvisio's two-stop linear
       // (`_fillAndShadowProperties`) keeps AWS brand ramps;
