@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover color2
+  FillPattern for LibreOffice. Official `setGradient` requires color2.
+  leftover `_applyMxFill(color1)` per node so a later omitted sibling
+  does not keep FillPattern 28 (`tokens.txt` FillPattern →
+  `draw:fill`). leftover now snaps omitted to solid 1, include-shape
+  nested omitted color2 leftover-bakes solid, and a later explicit
+  color2 leftover-bakes a sibling. A second save keeps both.
+  `color2=` still leftover-bakes FillPattern 28.
 - draw.io leftover mxStencil image omitted leftover y PinY for
   LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
   `Number(null)=0`. leftover `_number` 0 per image so a later omitted

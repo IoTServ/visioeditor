@@ -2350,6 +2350,10 @@ class _DrawioXmlShapeDecoder {
     // Same RGB with different alphas is a fade Draw cannot store in
     // FillPattern 25–40 (`librevenge:*-opacity` is ignored). Keep the
     // two Trans cells so leftover bakes SoftEdges PNG.
+    // mxXmlCanvas2D.setGradient requires color2; omitted / null is
+    // solid color1. leftover `_applyMxFill` per node so a later omitted
+    // sibling does not keep FillPattern 28 (`tokens.txt` FillPattern →
+    // draw:fill).
     if (end == null || (start == end && (alpha1 - alpha2).abs() <= 1e-9)) {
       _applyMxFill(
         color1,
