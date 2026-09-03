@@ -582,6 +582,49 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover
+  text-pos-after-bullet IndLeft for LibreOffice. Official omitted
+  `text-pos-after-bullet` is 0; leftover now snaps per `<run>` so Draw
+  collectParaIX does not hang-indent a later glyph past the default
+  0.25″ label (`tokens.txt` Bullet → fo:margin-left hanging indent). A
+  save prefixes `•`, folds the width into IndLeft, and drops
+  TextPosAfterBullet. include-shape nested omitted leftover-bakes 0,
+  and a later explicit `text-pos-after-bullet="20"` leftover-bakes a
+  sibling. A second save keeps both.
+- draw.io leftover mxStencil text run omitted leftover margin-bottom
+  SpAfter for LibreOffice. Official omitted `margin-bottom` is 0;
+  leftover now snaps per `<run>` so Draw collectParaIX does not pad a
+  later glyph (`tokens.txt` SpAfter → fo:margin-bottom). include-shape
+  nested omitted leftover-bakes 0, and a later explicit
+  `margin-bottom="10"` leftover-bakes a sibling. A second save keeps
+  both.
+- draw.io leftover mxStencil text run omitted leftover margin-top
+  SpBefore for LibreOffice. Official omitted `margin-top` is 0;
+  leftover now snaps per `<run>` so Draw collectParaIX does not pad a
+  later glyph (`tokens.txt` SpBefore → fo:margin-top). include-shape
+  nested omitted leftover-bakes 0, and a later explicit
+  `margin-top="10"` leftover-bakes a sibling. A second save keeps both.
+- draw.io leftover mxStencil text run omitted leftover margin-right
+  IndRight for LibreOffice. Official omitted `margin-right` is 0;
+  leftover now snaps per `<run>` so Draw collectParaIX does not pad a
+  later glyph (`tokens.txt` IndRight → fo:margin-right). include-shape
+  nested omitted leftover-bakes 0, and a later explicit
+  `margin-right="10"` leftover-bakes a sibling. A second save keeps
+  both.
+- draw.io leftover mxStencil text run omitted leftover textopacity
+  Char.ColorTrans for LibreOffice. Official omitted `textopacity` is
+  parent 100; leftover now snaps per `<run>` so Draw collectCharIX does
+  not fade a later glyph (`tokens.txt` has no ColorTrans; mixed leftover
+  bakes Color into `#808080`). include-shape nested omitted leftover-
+  bakes 0, and a later explicit `textopacity="50"` leftover-bakes a
+  sibling. A second save keeps both.
+- draw.io leftover mxStencil text run omitted leftover fontfamily
+  Char.Font for LibreOffice. Official omitted `fontfamily` is canvas
+  Arial; leftover now snaps per `<run>` so Draw collectCharIX does not
+  paint a later glyph Courier (`tokens.txt` Font → style:font-name).
+  include-shape nested omitted leftover-bakes Arial, and a later
+  explicit `fontfamily="Courier New"` leftover-bakes a sibling. A
+  second save keeps both.
 - draw.io leftover mxStencil text run omitted leftover fontcolor
   Char.Color for LibreOffice. Official omitted `fontcolor` is canvas
   black; leftover now snaps per `<run>` so Draw collectCharIX does not
