@@ -582,6 +582,23 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS opacity omitted leftover
+  ColorTrans for LibreOffice. mxSvgCanvas2D HTML paints CSS `opacity`;
+  leftover ignored it so collectCharIX ColorTrans stayed 0 and Draw
+  painted opaque `fo:color` (`tokens.txt` has no ColorTrans). leftover
+  now multiplies the inherited textOpacity percent. include-shape nested
+  omitted leftover-bakes 1, and a later explicit opacity leftover-bakes
+  a sibling. A second save leftover-bakes Color `#808080`.
+
+- draw.io leftover mxStencil mxXmlCanvas2D `<gradient>` omitted leftover
+  default packed stops FillPattern for LibreOffice. NestedStencil
+  getColorValue is per-node `default`; the shared packed-stop decoder
+  now leftover-bakes the two-color south ramp when `hubFill@0` has no
+  default (`tokens.txt` FillPattern → SoftEdges PNG). include-shape
+  nested omitted leftover-bakes the two-color ramp, and a later
+  explicit default leftover-bakes packed rows. A second save leftover-
+  bakes SoftEdges PNG vs FillPattern 28.
+
 - draw.io leftover mxStencil fillgradient omitted leftover default
   packed stops FillPattern for LibreOffice. NestedStencil
   getColorValue is per-node `default`; leftover `_mxGraphPaintColor`

@@ -6159,6 +6159,26 @@ double? _mxHtmlCssPx(String? raw) {
       RegExp(r'^-?[0-9]*\.?[0-9]+').stringMatch(token) ?? '');
 }
 
+/// CSS `opacity` → 0–1 factor. Percent is 0–100. Invalid / inherit skip.
+double? _mxHtmlCssOpacityFactor(String? raw) {
+  final token = (raw ?? '').trim().toLowerCase();
+  if (token.isEmpty ||
+      token == 'inherit' ||
+      token == 'initial' ||
+      token == 'unset' ||
+      token == 'revert') {
+    return null;
+  }
+  if (token.endsWith('%')) {
+    final n = double.tryParse(token.substring(0, token.length - 1).trim());
+    if (n == null || !n.isFinite) return null;
+    return (n / 100).clamp(0.0, 1.0);
+  }
+  final n = double.tryParse(token);
+  if (n == null || !n.isFinite) return null;
+  return n.clamp(0.0, 1.0);
+}
+
 const Map<String, double> _kMxCssAbsoluteFontSizePx = <String, double>{
   'xx-small': 9,
   'x-small': 10,
@@ -6432,6 +6452,18 @@ void _mxHtmlApplyCss(
   if (lh != null) {
     final parsed = _mxHtmlCssLineHeight(lh, next.fontSize);
     if (parsed != null) next.lineHeight = parsed;
+  }
+  // CSS opacity on <span>/<font> (mxSvgCanvas2D HTML). leftover
+  // ignored it so collectCharIX ColorTrans stayed 0 and Draw painted
+  // opaque fo:color (`tokens.txt` has no ColorTrans). Multiply the
+  // inherited textOpacity percent so a later omitted sibling does not
+  // keep the fade.
+  final opacityRaw = _mxHtmlStyleProp(attrs, 'opacity');
+  if (opacityRaw != null) {
+    final factor = _mxHtmlCssOpacityFactor(opacityRaw);
+    if (factor != null) {
+      next.textOpacity = (next.textOpacity * factor).clamp(0.0, 100.0);
+    }
   }
 }
 

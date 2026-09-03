@@ -7769,6 +7769,16 @@ function applyHtmlCss(next, attrs, tag) {
     const parsed = htmlCssLineHeight(lh, next.fontSize);
     if (parsed != null) next.lineHeight = parsed;
   }
+  // CSS opacity on <span>/<font>. leftover ignored it so collectCharIX
+  // ColorTrans stayed 0 (`tokens.txt` has no ColorTrans). Multiply the
+  // inherited textOpacity percent.
+  const opacityRaw = htmlStyleProp(attrs, 'opacity');
+  if (opacityRaw) {
+    const factor = htmlCssOpacityFactor(opacityRaw);
+    if (factor != null) {
+      next.textOpacity = Math.max(0, Math.min(100, Number(next.textOpacity) * factor));
+    }
+  }
 }
 
 function htmlCssPx(raw) {
@@ -7778,6 +7788,20 @@ function htmlCssPx(raw) {
   }
   const n = parseFloat(token);
   return Number.isFinite(n) ? n : null;
+}
+
+function htmlCssOpacityFactor(raw) {
+  const token = String(raw || '').trim().toLowerCase();
+  if (!token || token === 'inherit' || token === 'initial' ||
+      token === 'unset' || token === 'revert') {
+    return null;
+  }
+  if (/%$/.test(token)) {
+    const n = parseFloat(token);
+    return Number.isFinite(n) ? Math.max(0, Math.min(1, n / 100)) : null;
+  }
+  const n = parseFloat(token);
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : null;
 }
 
 // CSS line-height: 114% / 1.14 / 1.14em → Visio SpLine multiplier
