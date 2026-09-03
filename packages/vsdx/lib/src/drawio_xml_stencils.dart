@@ -1263,6 +1263,11 @@ class _DrawioXmlShapeDecoder {
             fontBorderFromFill: _fontBorderFollowsFill,
             runs: runs,
           )));
+          // NestedStencil paintHtmlBorderBottom: CSS dotted/dashed
+          // border-bottom is not Char Style 0x4 (solid underline).
+          // leftover-bake a collectLine sibling so Draw paints dots
+          // (`tokens.txt` LinePattern / veDashPattern).
+          _paintMxHtmlBorderBottom(node, runs);
         }
         break;
       case 'image':
@@ -2838,10 +2843,80 @@ class _DrawioXmlShapeDecoder {
                 textPosAfterBullet: run.textPosAfterBullet,
                 lineHeight: run.lineHeight,
                 highlight: run.highlight,
+                borderBottom: run.borderBottom,
               ),
       );
     }
     return List<_DrawioStencilLabelRun>.unmodifiable(out);
+  }
+
+  /// NestedStencil `paintHtmlBorderBottom`. Char Style 0x4 is a solid
+  /// underline in collectCharIX; dotted/dashed leftover-bakes a dashed
+  /// Line sibling (LinePattern / veDashPattern) under the glyph box.
+  void _paintMxHtmlBorderBottom(
+    XmlElement node,
+    List<_DrawioStencilLabelRun> runs,
+  ) {
+    final marked = [
+      for (final run in runs)
+        if (run.borderBottom == 'dotted' || run.borderBottom == 'dashed') run,
+    ];
+    if (marked.isEmpty) return;
+    final boxW = _number(node, 'w');
+    final boxH = _number(node, 'h');
+    if (!(boxW > 0 && boxH > 0)) return;
+    final fallback = _fontSize > 0 ? _fontSize : _kMxDefaultFontSize;
+    var textW = 0.0;
+    var textH = 0.0;
+    for (final run in marked) {
+      final size = run.fontSize > 0 ? run.fontSize : fallback;
+      textW += run.text.length * size * 0.6;
+      textH = math.max(textH, size * 1.2);
+    }
+    if (textW < 1) return;
+    final x = _number(node, 'x');
+    final y = _number(node, 'y');
+    final horiz = (node.getAttribute('align') ?? 'left').toLowerCase();
+    final vert = (node.getAttribute('valign') ?? 'top').toLowerCase();
+    final cx = horiz.contains('center')
+        ? x + boxW / 2
+        : horiz.contains('right')
+            ? x + boxW - textW / 2
+            : x + textW / 2;
+    final cy = vert.contains('middle')
+        ? y + boxH / 2
+        : vert.contains('bottom')
+            ? y + boxH - textH / 2
+            : y + textH / 2;
+    final color = marked.first.color ?? _fontColor;
+    if (color != null) {
+      _strokeColor = color;
+      _strokeIsNone = false;
+    } else {
+      _applyMxStroke('#000000');
+    }
+    _strokeWidth = 1;
+    _dashed = true;
+    _dashPattern = _parseMxDashPattern(
+      marked.first.borderBottom == 'dashed' ? '6 3' : '1 2',
+    );
+    // mxAbstractCanvas2D.begin discards the unpainted path.
+    _pending = null;
+    _resetPen();
+    final x1 = cx - textW / 2;
+    final y1 = cy + textH / 2;
+    final x2 = cx + textW / 2;
+    _penX = x1;
+    _penY = y1;
+    _setPending(<VsdxPathCommand>[
+      MoveTo(_x(x1, y1), _y(x1, y1)),
+      LineTo(_x(x2, y1), _y(x2, y1)),
+    ]);
+    _penX = x2;
+    _penY = y1;
+    _finish(fill: false, stroke: true);
+    _dashed = false;
+    _dashPattern = const <double>[];
   }
 
   /// mxXmlCanvas2D.text format='html' / NestedStencil parseHtmlLabel.
@@ -4758,6 +4833,7 @@ class _DrawioXmlShapeDecoder {
             textPosAfterBullet: run.textPosAfterBullet * fontRatio,
             lineHeight: run.lineHeight,
             highlight: run.highlight,
+            borderBottom: run.borderBottom,
           ),
       ],
     );
@@ -5012,6 +5088,7 @@ class _DrawioStencilLabelRun {
     this.textPosAfterBullet = 0,
     this.lineHeight = 1,
     this.highlight,
+    this.borderBottom,
   });
 
   final String text;
@@ -5054,6 +5131,10 @@ class _DrawioStencilLabelRun {
   /// `bakeMixedHighlightForLibvisioWrite` can emit FillForegnd plates.
   final VsdxColor? highlight;
 
+  /// CSS `border-bottom` dotted/dashed. Char Style 0x4 is always a solid
+  /// underline in collectCharIX; leftover paints a dashed Line sibling.
+  final String? borderBottom;
+
   _DrawioStencilLabelRun withText(String text) => _DrawioStencilLabelRun(
         text: text,
         fontSize: fontSize,
@@ -5071,6 +5152,7 @@ class _DrawioStencilLabelRun {
         textPosAfterBullet: textPosAfterBullet,
         lineHeight: lineHeight,
         highlight: highlight,
+        borderBottom: borderBottom,
       );
 
   _DrawioStencilLabelRun withMargins({double? marginBottom}) =>
@@ -5091,6 +5173,7 @@ class _DrawioStencilLabelRun {
         textPosAfterBullet: textPosAfterBullet,
         lineHeight: lineHeight,
         highlight: highlight,
+        borderBottom: borderBottom,
       );
 }
 
@@ -5116,6 +5199,7 @@ class _MxHtmlStyle {
     this.textPosAfterBullet = 0,
     this.lineHeight = 1,
     this.highlight,
+    this.borderBottom,
   });
 
   int fontStyle;
@@ -5138,6 +5222,7 @@ class _MxHtmlStyle {
   double textPosAfterBullet;
   double lineHeight;
   VsdxColor? highlight;
+  String? borderBottom;
 
   _MxHtmlStyle clone() => _MxHtmlStyle(
         fontStyle: fontStyle,
@@ -5160,6 +5245,7 @@ class _MxHtmlStyle {
         textPosAfterBullet: textPosAfterBullet,
         lineHeight: lineHeight,
         highlight: highlight,
+        borderBottom: borderBottom,
       );
 
   bool samePaintAs(_DrawioStencilLabelRun run) =>
@@ -5177,7 +5263,8 @@ class _MxHtmlStyle {
       bullet == run.bullet &&
       textPosAfterBullet == run.textPosAfterBullet &&
       lineHeight == run.lineHeight &&
-      highlight?.value == run.highlight?.value;
+      highlight?.value == run.highlight?.value &&
+      borderBottom == run.borderBottom;
 
   _DrawioStencilLabelRun toRun(String text) => _DrawioStencilLabelRun(
         text: text,
@@ -5196,6 +5283,7 @@ class _MxHtmlStyle {
         textPosAfterBullet: textPosAfterBullet,
         lineHeight: lineHeight,
         highlight: highlight,
+        borderBottom: borderBottom,
       );
 }
 
@@ -6147,6 +6235,25 @@ String? _mxHtmlAlignToken(String? raw) {
   return null;
 }
 
+/// NestedStencil `htmlBorderBottomKind`. Solid is Char Style 0x4;
+/// dotted/dashed leftover-bake a dashed Line sibling.
+String? _mxHtmlBorderBottomKind(String? raw) {
+  final token = raw ?? '';
+  if (RegExp('none|0px', caseSensitive: false).hasMatch(token)) {
+    return null;
+  }
+  if (RegExp('dotted', caseSensitive: false).hasMatch(token)) {
+    return 'dotted';
+  }
+  if (RegExp('dashed', caseSensitive: false).hasMatch(token)) {
+    return 'dashed';
+  }
+  if (RegExp('solid', caseSensitive: false).hasMatch(token)) {
+    return 'solid';
+  }
+  return null;
+}
+
 double? _mxHtmlCssPx(String? raw) {
   final token = (raw ?? '').trim();
   if (token.isEmpty ||
@@ -6489,8 +6596,13 @@ void _mxHtmlApplyCss(
   }
   final bb = _mxHtmlStyleProp(attrs, 'border-bottom') ??
       _mxHtmlStyleProp(attrs, 'border-bottom-style');
-  if (bb != null && RegExp('solid', caseSensitive: false).hasMatch(bb)) {
-    next.fontStyle |= 4;
+  if (bb != null) {
+    final kind = _mxHtmlBorderBottomKind(bb);
+    if (kind == 'solid') {
+      next.fontStyle |= 4;
+    } else if (kind == 'dotted' || kind == 'dashed') {
+      next.borderBottom = kind;
+    }
   }
   if (tag == 'p' ||
       tag == 'div' ||
