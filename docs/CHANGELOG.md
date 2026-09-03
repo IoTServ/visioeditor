@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover color1
+  FillPattern for LibreOffice. Official omitted `color1` is NestedStencil
+  isNoneColor(null) → none fill; leftover now snaps per node so Draw
+  collectFillAndShadow does not keep the previous south ramp
+  (`tokens.txt` FillPattern → draw:fill=gradient). include-shape nested
+  omitted leftover-bakes none, and a later explicit color1 leftover-
+  bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil text omitted leftover spacing-bottom
   BottomMargin for LibreOffice. Official omitted `spacing-bottom` is
   0; leftover now snaps per glyph so Draw collectTextBlock does not
