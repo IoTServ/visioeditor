@@ -878,8 +878,19 @@ class _DrawioXmlShapeDecoder {
             _mxLineJoin(node.getAttribute('join')) ?? VsdxLineJoin.miter;
         break;
       case 'miterlimit':
-        final limit = _number(node, 'limit', fallback: 10);
-        if (limit >= 1) _miterLimit = limit;
+        // mxStencil.drawNode always setMiterLimit(Number(limit)).
+        // Omitted is Number(null)=0. mxAbstractCanvas2D stores 0;
+        // mxSvgCanvas2D writes stroke-miterlimit="0" which CSS rejects,
+        // so the initial 4 applies. leftover `_number` fallback 10 kept
+        // createState, so Draw leftover-baked a spike ribbon
+        // (`tokens.txt` has no miterlimit; `_lineProperties` never
+        // emits svg:stroke-miterlimit; ODF default 4). NestedStencil
+        // setMiterLimit n<1 returns; official SVG still bevels at 4.
+        final parsed = double.tryParse(
+          (node.getAttribute('limit') ?? '').trim(),
+        );
+        _miterLimit =
+            (parsed != null && parsed.isFinite && parsed >= 1) ? parsed : 4;
         break;
       case 'shadow':
         _applyMxShadow(node);

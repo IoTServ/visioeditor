@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D miterlimit omitted leftover CSS
+  initial 4 for LibreOffice. Official `setMiterLimit(Number(null))`
+  is 0; `mxSvgCanvas2D` writes `stroke-miterlimit="0"` which CSS
+  rejects, so the initial 4 applies. leftover `_number` fallback
+  10 kept createState, so Draw leftover-baked a spike ribbon
+  (`tokens.txt` has no miterlimit; `_lineProperties` never emits
+  `svg:stroke-miterlimit`; ODF default 4). leftover now snaps
+  omitted to 4, include-shape copies that overlay, and a later
+  omitted miterlimit leftover-bakes a sibling. A second save
+  keeps both.
 - draw.io leftover mxXmlCanvas2D strokewidth omitted leftover
   LineWeight hairline for LibreOffice. Official `setStrokeWidth`
   writes `width`; NestedStencil `Number(null)*minScale` is 0;

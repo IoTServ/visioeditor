@@ -489,9 +489,7 @@ void main() {
     final x = 80.33 * scaleX;
     final y = (33 - 2) * scaleY;
     bool isCrease(VsdxPathCommand cmd) =>
-        cmd is LineTo &&
-        (cmd.x - x).abs() < 0.03 &&
-        (cmd.y - y).abs() < 0.03;
+        cmd is LineTo && (cmd.x - x).abs() < 0.03 && (cmd.y - y).abs() < 0.03;
     expect(
       descendantGeometries(truck).expand((g) => g.commands).any(isCrease),
       isTrue,
@@ -1032,8 +1030,7 @@ void main() {
             'Trans is already captured on the parent',
       );
       expect(
-        cortana.line.hasLine &&
-            (cortana.line.transparency - 0.6).abs() < 0.02,
+        cortana.line.hasLine && (cortana.line.transparency - 0.6).abs() < 0.02,
         isTrue,
         reason: 'the same fillstroke must capture LineColorTrans at '
             '_finish; restore pops overallAlpha before parent Line is '
@@ -1798,11 +1795,11 @@ void main() {
 
       final gateways = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Azure2 / Azure / Networking',
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Networking',
           )
           .stencils
-          .singleWhere((entry) => entry.name == 'Application Gateway Containers')
+          .singleWhere(
+              (entry) => entry.name == 'Application Gateway Containers')
           .build(46, 3, 3);
       expect(
         hasFill(gateways, cssGray),
@@ -1820,8 +1817,7 @@ void main() {
 
       final sap = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / SAP / SAP / Build Workzone',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Build Workzone',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Unnamed Shape (7)')
@@ -1901,8 +1897,7 @@ void main() {
 
       final stepper = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Gmdl / GMDL / Steppers',
+            (group) => group.name == 'Draw.io JS / Gmdl / GMDL / Steppers',
           )
           .stencils
           .singleWhere(
@@ -2259,7 +2254,8 @@ void main() {
         }
       }
 
-      bool hasJoin(VsdxShape shape, VsdxLineJoin join) => descendants(shape).any(
+      bool hasJoin(VsdxShape shape, VsdxLineJoin join) =>
+          descendants(shape).any(
             (child) => child.line.hasLine && child.line.join == join,
           );
 
@@ -2404,7 +2400,8 @@ void main() {
           edited: leftoverDoc,
         ),
       );
-      final twice = descendants(second.pages.first.findShapeById(id)!).firstWhere(
+      final twice =
+          descendants(second.pages.first.findShapeById(id)!).firstWhere(
         (child) =>
             child.line.hasLine &&
             child.geometries.any(
@@ -2470,7 +2467,8 @@ void main() {
       expect(
         monitor.line.cap,
         LineCap.round,
-        reason: 'Sheet.1 also fillets the chassis L→L as RelQuadBezTo; leftover '
+        reason:
+            'Sheet.1 also fillets the chassis L→L as RelQuadBezTo; leftover '
             'must still write LineCap 0 so Draw round-joins the monitor cubics',
       );
       expect(
@@ -2487,7 +2485,8 @@ void main() {
           edited: leftoverDoc,
         ),
       );
-      final twice = descendants(second.pages.first.findShapeById(id)!).firstWhere(
+      final twice =
+          descendants(second.pages.first.findShapeById(id)!).firstWhere(
         (child) =>
             child.line.hasLine &&
             child.geometries.any(
@@ -2559,14 +2558,17 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        descendants(twice).firstWhere(
-          (child) =>
-              child.line.hasLine &&
-              child.geometries.any(
-                (geometry) =>
-                    geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
-              ),
-        ).line.cap,
+        descendants(twice)
+            .firstWhere(
+              (child) =>
+                  child.line.hasLine &&
+                  child.geometries.any(
+                    (geometry) =>
+                        geometry.commands.whereType<RelCubBezTo>().isNotEmpty,
+                  ),
+            )
+            .line
+            .cap,
         LineCap.round,
         reason: 'a second save must keep LineCap 0',
       );
@@ -2616,8 +2618,7 @@ void main() {
 
   test('mxStencil default miterlimit is 10 for LibreOffice', () {
     bool hasMiter10(VsdxShape shape) {
-      if (shape.line.hasLine &&
-          (shape.line.miterLimit - 10.0).abs() < 1e-6) {
+      if (shape.line.hasLine && (shape.line.miterLimit - 10.0).abs() < 1e-6) {
         return true;
       }
       return shape.children.any(hasMiter10);
@@ -2766,7 +2767,8 @@ void main() {
       expect(leftover.geometries.single.commands.length, 4);
 
       final leftover2Doc = parser.parse(
-        writer.write(originalBytes: writer.emptyDocument(), edited: leftoverDoc),
+        writer.write(
+            originalBytes: writer.emptyDocument(), edited: leftoverDoc),
       );
       final leftover2 = leftover2Doc.pages.first.findShapeById(id)!;
       expect(leftover2.line.hasLine, isTrue);
@@ -3424,8 +3426,7 @@ void main() {
       expect(
         partition.angleRad,
         closeTo(3.141592653589793 / 2, 0.05),
-        reason:
-            'rotation=-90 leftover-bakes Visio Angle that collectXFormData '
+        reason: 'rotation=-90 leftover-bakes Visio Angle that collectXFormData '
             'maps to draw:rotate; NestedStencil never called updateTransform',
       );
       expect(
@@ -3806,8 +3807,7 @@ void main() {
 
       final field = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Gmdl / GMDL / Text Fields',
+            (group) => group.name == 'Draw.io JS / Gmdl / GMDL / Text Fields',
           )
           .stencils
           .singleWhere(
@@ -5020,8 +5020,7 @@ void main() {
       }
 
       bool hasHighlightPlate(VsdxShape shape, VsdxColor color) {
-        if (isLibvisioHighlightPlate(shape) &&
-            shape.fill.foreground == color) {
+        if (isLibvisioHighlightPlate(shape) && shape.fill.foreground == color) {
           return true;
         }
         for (final child in shape.children) {
@@ -7454,14 +7453,10 @@ void main() {
       expect(
         descendantFills(pki).where((fill) {
           final color = fill.foreground;
-          if (color == null ||
-              fill.pattern != 1 ||
-              fill.gradient != null) {
+          if (color == null || fill.pattern != 1 || fill.gradient != null) {
             return false;
           }
-          return color.red < 40 &&
-              color.green > 100 &&
-              color.blue > 240;
+          return color.red < 40 && color.green > 100 && color.blue > 240;
         }).length,
         greaterThanOrEqualTo(4),
         reason: 'diamond url(#linear-gradient) is ~10° off ODF 135°; '
@@ -7472,9 +7467,7 @@ void main() {
       expect(
         descendantFills(pki).where((fill) {
           final color = fill.foreground;
-          if (color == null ||
-              fill.pattern != 1 ||
-              fill.gradient != null) {
+          if (color == null || fill.pattern != 1 || fill.gradient != null) {
             return false;
           }
           return color.red < 40 && color.green < 90 && color.blue > 120;
@@ -7539,9 +7532,7 @@ void main() {
       expect(
         descendantFills(globe).where((fill) {
           final color = fill.foreground;
-          if (color == null ||
-              fill.pattern != 1 ||
-              fill.gradient != null) {
+          if (color == null || fill.pattern != 1 || fill.gradient != null) {
             return false;
           }
           return color.red < 110 &&
@@ -7798,9 +7789,7 @@ void main() {
         if (color == null || fill.pattern != 1 || fill.gradient != null) {
           return false;
         }
-        return color.red < 30 &&
-            color.green < 90 &&
-            color.blue > 130;
+        return color.red < 30 && color.green < 90 && color.blue > 130;
       }
 
       int lineCommands(VsdxShape shape) {
@@ -7814,8 +7803,7 @@ void main() {
 
       final login = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / SAP / SAP / Foundational',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Foundational',
           )
           .stencils
           .singleWhere(
@@ -7873,11 +7861,13 @@ void main() {
           .singleWhere((entry) => entry.name == 'SAP Task Center')
           .build(177, 3, 3);
       expect(
-        descendants(ticks).where(
-          (shape) =>
-              shape.fill.pattern == 40 &&
-              shape.fill.foreground == VsdxColor.tryParse('#00BBFF'),
-        ).length,
+        descendants(ticks)
+            .where(
+              (shape) =>
+                  shape.fill.pattern == 40 &&
+                  shape.fill.foreground == VsdxColor.tryParse('#00BBFF'),
+            )
+            .length,
         greaterThanOrEqualTo(4),
         reason: 'Task Center radial stroke ticks stay native FillPattern 40',
       );
@@ -8228,7 +8218,8 @@ void main() {
       expect(
         powerBi.children.any((child) => isFadedBlack(child, 0.80)),
         isTrue,
-        reason: 'PowerBI.svg fill-opacity="0.2" must reach collectFillAndShadow '
+        reason:
+            'PowerBI.svg fill-opacity="0.2" must reach collectFillAndShadow '
             'as FillForegndTrans 0.80, not an opaque black overlay',
       );
       expect(
@@ -8292,8 +8283,14 @@ void main() {
         for (final geometry in shape.geometries) {
           for (final command in geometry.commands) {
             switch (command) {
-              case EllipseCmd(:final cx, :final cy, :final aX, :final aY,
-                    :final bX, :final bY):
+              case EllipseCmd(
+                  :final cx,
+                  :final cy,
+                  :final aX,
+                  :final aY,
+                  :final bX,
+                  :final bY
+                ):
                 point(cx, cy);
                 point(aX, aY);
                 point(bX, bY);
@@ -8301,8 +8298,14 @@ void main() {
                 point(x, y);
               case LineTo(:final x, :final y):
                 point(x, y);
-              case CubBezTo(:final x, :final y, :final x1, :final y1,
-                    :final x2, :final y2):
+              case CubBezTo(
+                  :final x,
+                  :final y,
+                  :final x1,
+                  :final y1,
+                  :final x2,
+                  :final y2
+                ):
                 point(x, y);
                 point(x1, y1);
                 point(x2, y2);
@@ -8334,8 +8337,8 @@ void main() {
 
       final topics = dynamic
           .singleWhere(
-            (group) => group.name ==
-                'Draw.io JS / MSCAE / CAE / Integration Service',
+            (group) =>
+                group.name == 'Draw.io JS / MSCAE / CAE / Integration Service',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Event Grid Topics')
@@ -8370,8 +8373,7 @@ void main() {
 
       final micro = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / IBM / IBM / Miscellaneous',
+            (group) => group.name == 'Draw.io JS / IBM / IBM / Miscellaneous',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Microservices Application')
@@ -8419,8 +8421,14 @@ void main() {
         for (final geometry in shape.geometries) {
           for (final command in geometry.commands) {
             switch (command) {
-              case EllipseCmd(:final cx, :final cy, :final aX, :final aY,
-                    :final bX, :final bY):
+              case EllipseCmd(
+                  :final cx,
+                  :final cy,
+                  :final aX,
+                  :final aY,
+                  :final bX,
+                  :final bY
+                ):
                 point(cx, cy);
                 point(aX, aY);
                 point(bX, bY);
@@ -8499,8 +8507,7 @@ void main() {
       for (final child in meridians) {
         for (final point in geometryPoints(child)) {
           final dist = math.sqrt(
-            math.pow(point.x - cx, 2) +
-                math.pow(point.y - cy, 2),
+            math.pow(point.x - cx, 2) + math.pow(point.y - cy, 2),
           );
           expect(
             dist,
@@ -8526,7 +8533,8 @@ void main() {
           .build(146, 3, 3);
       expect(
         cosmos.children
-            .where((child) => child.fill.foreground == const VsdxColor(0xFFF2F2F2))
+            .where(
+                (child) => child.fill.foreground == const VsdxColor(0xFFF2F2F2))
             .every((child) => lineCommands(child) > 8),
         isTrue,
         reason: 'Cosmos DB gray clouds are clip-path intersected with the '
@@ -8535,8 +8543,7 @@ void main() {
 
       final embedded = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Azure2 / Azure / Analytics',
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Analytics',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Power BI Embedded')
@@ -8557,8 +8564,7 @@ void main() {
 
       final vuln = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / SAP / SAP / Foundational',
+            (group) => group.name == 'Draw.io JS / SAP / SAP / Foundational',
           )
           .stencils
           .singleWhere(
@@ -8655,17 +8661,15 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == 'SAP Build')
           .build(149, 3, 3);
-      final blobs = sapBuild.children
-          .where((child) {
-            final color = child.fill.foreground;
-            if (color == null ||
-                child.fill.pattern != 1 ||
-                lineCommands(child) <= 8) {
-              return false;
-            }
-            return color.blue > 200 && color.red < 40;
-          })
-          .toList();
+      final blobs = sapBuild.children.where((child) {
+        final color = child.fill.foreground;
+        if (color == null ||
+            child.fill.pattern != 1 ||
+            lineCommands(child) <= 8) {
+          return false;
+        }
+        return color.blue > 200 && color.red < 40;
+      }).toList();
       expect(
         blobs.length,
         greaterThanOrEqualTo(3),
@@ -8719,13 +8723,11 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        leftover.children
-            .where((child) {
-              final color = child.fill.foreground;
-              if (color == null || child.fill.pattern != 1) return false;
-              return color.blue > 200 && color.red < 40;
-            })
-            .every((child) => lineCommands(child) > 8),
+        leftover.children.where((child) {
+          final color = child.fill.foreground;
+          if (color == null || child.fill.pattern != 1) return false;
+          return color.blue > 200 && color.red < 40;
+        }).every((child) => lineCommands(child) > 8),
         isTrue,
         reason: 'a second save must keep SAP Build mask polygons',
       );
@@ -8780,19 +8782,17 @@ void main() {
           .stencils
           .singleWhere((entry) => entry.name == 'Secure Building')
           .build(152, 3, 3);
-      final bushes = building.children
-          .where((child) {
-            final color = child.fill.foreground;
-            if (color == null ||
-                child.fill.pattern != 1 ||
-                lineCommands(child) <= 20) {
-              return false;
-            }
-            final delta = (color.red - color.green).abs() +
-                (color.green - color.blue).abs();
-            return delta < 20 && color.red > 150 && color.red < 240;
-          })
-          .toList();
+      final bushes = building.children.where((child) {
+        final color = child.fill.foreground;
+        if (color == null ||
+            child.fill.pattern != 1 ||
+            lineCommands(child) <= 20) {
+          return false;
+        }
+        final delta =
+            (color.red - color.green).abs() + (color.green - color.blue).abs();
+        return delta < 20 && color.red > 150 && color.red < 240;
+      }).toList();
       expect(
         bushes,
         isNotEmpty,
@@ -8820,8 +8820,7 @@ void main() {
       expect(
         leftover.children
             .where(
-              (child) =>
-                  child.fill.foreground == grey && child.fill.hasFill,
+              (child) => child.fill.foreground == grey && child.fill.hasFill,
             )
             .where((child) => lineCommands(child) > 6)
             .length,
@@ -8861,8 +8860,7 @@ void main() {
       const handle = VsdxColor(0xFF198AB3);
       final handleKids = search.children
           .where(
-            (child) =>
-                child.fill.foreground == handle && child.fill.hasFill,
+            (child) => child.fill.foreground == handle && child.fill.hasFill,
           )
           .toList();
       expect(handleKids, isNotEmpty);
@@ -8914,8 +8912,7 @@ void main() {
           .findShapeById(id)!;
       expect(
         leftover.children.any(
-          (child) =>
-              child.fill.foreground == handle && cubics(child) >= 4,
+          (child) => child.fill.foreground == handle && cubics(child) >= 4,
         ),
         isTrue,
         reason: 'a second save must keep Search handle CubBezTo corners',
@@ -8926,7 +8923,8 @@ void main() {
             child.fill.pattern == 1 &&
             child.fill.foreground == VsdxColor.white &&
             child.geometries.any(
-              (geometry) => geometry.commands.any((command) => command is EllipseCmd),
+              (geometry) =>
+                  geometry.commands.any((command) => command is EllipseCmd),
             ),
       );
       expect(
@@ -8936,7 +8934,8 @@ void main() {
             'bands plus a white EllipseCmd; FillPattern 40 would 0→1 a '
             'circle that covers the handle',
       );
-      final ellipse = lens.first.geometries.first.commands.whereType<EllipseCmd>().first;
+      final ellipse =
+          lens.first.geometries.first.commands.whereType<EllipseCmd>().first;
       final cx = ellipse.cx;
       final cy = ellipse.cy;
       final rx = (ellipse.aX - cx).abs();
@@ -8974,8 +8973,7 @@ void main() {
 
       List<VsdxShape> disks(VsdxShape shape) => shape.children
           .where(
-            (child) =>
-                child.fill.foreground == orange && child.fill.hasFill,
+            (child) => child.fill.foreground == orange && child.fill.hasFill,
           )
           .toList();
 
@@ -8992,8 +8990,14 @@ void main() {
         for (final geometry in disk.geometries) {
           for (final command in geometry.commands) {
             switch (command) {
-              case EllipseCmd(:final cx, :final cy, :final aX, :final aY,
-                    :final bX, :final bY):
+              case EllipseCmd(
+                  :final cx,
+                  :final cy,
+                  :final aX,
+                  :final aY,
+                  :final bX,
+                  :final bY
+                ):
                 point(cx, cy);
                 point(aX, aY);
                 point(bX, bY);
@@ -9085,7 +9089,8 @@ void main() {
       final tunnelPeak = VsdxColor.tryParse('#B9DCFB')!;
       final tunnelEdge = VsdxColor.tryParse('#090A9E')!;
 
-      bool isAxialWash(VsdxFill fill, VsdxColor peak, VsdxColor edge, int pattern) {
+      bool isAxialWash(
+          VsdxFill fill, VsdxColor peak, VsdxColor edge, int pattern) {
         if (!fill.hasFill || fill.pattern != pattern) return false;
         return fill.foreground == peak && fill.background == edge;
       }
@@ -9109,9 +9114,7 @@ void main() {
       expect(
         descendantFills(phone).where((fill) {
           final color = fill.foreground;
-          if (color == null ||
-              fill.pattern != 1 ||
-              fill.gradient != null) {
+          if (color == null || fill.pattern != 1 || fill.gradient != null) {
             return false;
           }
           return color.red > 160 &&
@@ -9159,7 +9162,8 @@ void main() {
       const parser = DocumentParser();
       var doc = parser.parse(writer.emptyDocument());
       final phoneId = doc.pages.first.nextFreeShapeId();
-      var page = doc.pages.first.addShape(ad('Cell Phone').build(phoneId, 3, 3));
+      var page =
+          doc.pages.first.addShape(ad('Cell Phone').build(phoneId, 3, 3));
       final tunnelId = page.nextFreeShapeId();
       page = page.addShape(ad('Tunnel').build(tunnelId, 3, 3));
       final arcId = page.nextFreeShapeId();
@@ -9182,9 +9186,7 @@ void main() {
       expect(
         descendantFills(leftover.findShapeById(phoneId)!).where((fill) {
           final color = fill.foreground;
-          if (color == null ||
-              fill.pattern != 1 ||
-              fill.gradient != null) {
+          if (color == null || fill.pattern != 1 || fill.gradient != null) {
             return false;
           }
           return color.red > 160 &&
@@ -9352,8 +9354,7 @@ void main() {
 
       final powerBi = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Azure2 / Azure / Analytics',
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Analytics',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Power BI Embedded')
@@ -9437,7 +9438,8 @@ void main() {
 
       final applied = dynamic
           .singleWhere(
-            (group) => group.name ==
+            (group) =>
+                group.name ==
                 'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
           )
           .stencils
@@ -9464,8 +9466,7 @@ void main() {
 
       final cosmos = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Azure2 / Azure / Databases',
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Databases',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Cosmos DB')
@@ -9555,11 +9556,13 @@ void main() {
           .first
           .findShapeById(tickId)!;
       expect(
-        descendants(tickLeftover).where(
-          (shape) =>
-              shape.fill.pattern == 40 &&
-              shape.fill.foreground == VsdxColor.tryParse('#00BBFF'),
-        ).length,
+        descendants(tickLeftover)
+            .where(
+              (shape) =>
+                  shape.fill.pattern == 40 &&
+                  shape.fill.foreground == VsdxColor.tryParse('#00BBFF'),
+            )
+            .length,
         greaterThanOrEqualTo(4),
         reason: 'Task Center two-stop 0→1 radials stay native FillPattern 40',
       );
@@ -9645,16 +9648,13 @@ void main() {
             'bake a circular FillGradient PNG',
       );
       expect(
-        descendants(leftover)
-            .where((shape) => shape.fill.pattern == 1)
-            .length,
+        descendants(leftover).where((shape) => shape.fill.pattern == 1).length,
         greaterThanOrEqualTo(8),
         reason: 'a second save must keep the tessellated FillForegnd discs',
       );
       expect(
         descendants(leftover).any(
-          (shape) =>
-              shape.fill.pattern == 40 && shape.fill.foreground == disc,
+          (shape) => shape.fill.pattern == 40 && shape.fill.foreground == disc,
         ),
         isTrue,
         reason: 'a second save must keep circular blob D as FillPattern 40',
@@ -9682,7 +9682,8 @@ void main() {
 
       final openai = dynamic
           .singleWhere(
-            (group) => group.name ==
+            (group) =>
+                group.name ==
                 'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
           )
           .stencils
@@ -9697,8 +9698,7 @@ void main() {
       );
       expect(
         descendants(openai).any(
-          (shape) =>
-              shape.fill.pattern == 1 && shape.fill.foreground == azure,
+          (shape) => shape.fill.pattern == 1 && shape.fill.foreground == azure,
         ),
         isTrue,
         reason: 'the outer band must keep stop-color #0078d4',
@@ -9721,10 +9721,12 @@ void main() {
           .singleWhere((entry) => entry.name == 'SAP Task Center')
           .build(169, 3, 3);
       expect(
-        descendants(ticks).where(
-          (shape) =>
-              shape.fill.pattern == 40 && shape.fill.foreground == tick,
-        ).length,
+        descendants(ticks)
+            .where(
+              (shape) =>
+                  shape.fill.pattern == 40 && shape.fill.foreground == tick,
+            )
+            .length,
         greaterThanOrEqualTo(4),
         reason: 'Task Center stroke ticks stay native FillPattern 40',
       );
@@ -9947,7 +9949,8 @@ void main() {
 
       final translator = dynamic
           .singleWhere(
-            (group) => group.name ==
+            (group) =>
+                group.name ==
                 'Draw.io JS / Azure2 / Azure / AI and Machine Learning',
           )
           .stencils
@@ -10270,15 +10273,12 @@ void main() {
             fill.foregroundTransparency > 0.2) {
           return false;
         }
-        return color.red > 180 &&
-            color.green > 210 &&
-            color.blue > 240;
+        return color.red > 180 && color.green > 210 && color.blue > 240;
       }
 
       final updates = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Azure2 / Azure / Intune',
+            (group) => group.name == 'Draw.io JS / Azure2 / Azure / Intune',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Software Updates')
@@ -11053,8 +11053,7 @@ void main() {
         reason: 'each arrow is its own contour',
       );
 
-      final listener =
-          stencil(vpc, 'Load Balancer Listener').build(402, 3, 3);
+      final listener = stencil(vpc, 'Load Balancer Listener').build(402, 3, 3);
       expect(
         whiteFills(listener).any((shape) => moveCount(shape) >= 2),
         isTrue,
@@ -11187,16 +11186,18 @@ void main() {
       );
       expect(
         descendants(attract).any(
-          (shape) => isBlurHalo(shape) && shape.fill.foregroundTransparency > 0.92,
+          (shape) =>
+              isBlurHalo(shape) && shape.fill.foregroundTransparency > 0.92,
         ),
         isTrue,
-        reason: 'outer blur bands are more transparent than the g opacity=.16 core',
+        reason:
+            'outer blur bands are more transparent than the g opacity=.16 core',
       );
 
       final copilot = dynamic
           .singleWhere(
-            (group) => group.name ==
-                'Draw.io JS / Azure2 / Azure / Power Platform',
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Power Platform',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Copilot Studio')
@@ -11255,8 +11256,8 @@ void main() {
 
       final dataverse = dynamic
           .singleWhere(
-            (group) => group.name ==
-                'Draw.io JS / Azure2 / Azure / Power Platform',
+            (group) =>
+                group.name == 'Draw.io JS / Azure2 / Azure / Power Platform',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Dataverse')
@@ -11944,7 +11945,8 @@ void main() {
       final jsFlipFlop = dynamic
           .singleWhere(
             (group) =>
-                group.name == 'Draw.io JS / Electrical / Electrical / Logic Gates',
+                group.name ==
+                'Draw.io JS / Electrical / Electrical / Logic Gates',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'D Type Flip-Flop')
@@ -12079,7 +12081,8 @@ void main() {
       expect(
         countType<QuadBezTo>(rounded),
         greaterThan(0),
-        reason: 'mxStencil.drawNode rounded="1" calls addPoints → canvas.quadTo. '
+        reason:
+            'mxStencil.drawNode rounded="1" calls addPoints → canvas.quadTo. '
             'leftover must keep those QuadBezTo so Draw round-joins the '
             'RelQuadBezTo path (tokens.txt has no LineJoin)',
       );
@@ -12123,7 +12126,8 @@ void main() {
       expect(
         countType<RelQuadBezTo>(leftover) + countType<QuadBezTo>(leftover),
         greaterThan(0),
-        reason: 'a second save keeps RelQuadBezTo (tokens.txt has no QuadBezTo)',
+        reason:
+            'a second save keeps RelQuadBezTo (tokens.txt has no QuadBezTo)',
       );
     },
   );
@@ -12591,7 +12595,8 @@ void main() {
         reason: 'leftover drops the User row after baking the plate',
       );
       final plate = plateOf(leftover, leftoverGlyph.id);
-      expect(plate, isNotNull, reason: 'Draw collectLine needs the NoFill sibling');
+      expect(plate, isNotNull,
+          reason: 'Draw collectLine needs the NoFill sibling');
       expect(plate!.fill.pattern, 0);
       expect(plate.line.pattern, 1);
       expect(plate.line.color, border);
@@ -13179,12 +13184,7 @@ void main() {
           .first
           .findShapeById(id)!;
       expect(
-        glyphShape(leftover, 'A')!
-            .richText
-            .runs
-            .first
-            .charStyle
-            .fontSizeInches,
+        glyphShape(leftover, 'A')!.richText.runs.first.charStyle.fontSizeInches,
         closeTo(12 * canvasScale, 0.01),
         reason: 'a second save keeps shared-canvas Char size',
       );
@@ -13652,7 +13652,9 @@ void main() {
       const nestedMinScale = 40 / 10 * canvasScale;
       final includeWeights = lineWeights(includeHost)..sort();
       expect(
-        includeWeights.where((w) => (w - nestedMinScale * 4).abs() < 0.01).length,
+        includeWeights
+            .where((w) => (w - nestedMinScale * 4).abs() < 0.01)
+            .length,
         greaterThanOrEqualTo(2),
         reason: 'include-shape shares the canvas; later host inherit stroke '
             'must keep nested setStrokeWidth leftover inches',
@@ -13772,7 +13774,8 @@ void main() {
       expect(
         dashCounts(patternHost),
         (dashed: 2, solid: 0),
-        reason: 'a later dashpattern must not reuse the first collectLine array',
+        reason:
+            'a later dashpattern must not reuse the first collectLine array',
       );
       expect(
         firstDash(patternHost),
@@ -13850,7 +13853,8 @@ void main() {
       expect(
         leftoverDashedMoves,
         greaterThan(1),
-        reason: 'leftover write tessellates the first 8 8 dash into MoveTo gaps',
+        reason:
+            'leftover write tessellates the first 8 8 dash into MoveTo gaps',
       );
       expect(
         leftoverSolidMoves,
@@ -14557,7 +14561,8 @@ void main() {
       expect(
         fillColors(host),
         [fillBlue, strokeBlue],
-        reason: 'mxStencil.parseColor(stroke) is shape.stroke; applyStencilStyle '
+        reason:
+            'mxStencil.parseColor(stroke) is shape.stroke; applyStencilStyle '
             'pins leftover inherit fillcolor=stroke to palette LineColor '
             '(tokens.txt FillForegnd → svg:fill)',
       );
@@ -14857,8 +14862,7 @@ void main() {
 
       bool fromFill(VsdxShape shape) => shape.userCells.any(
             (cell) =>
-                cell.name == VsdxShape.userMxFontFromFill &&
-                cell.value == '1',
+                cell.name == VsdxShape.userMxFontFromFill && cell.value == '1',
           );
 
       VsdxShape? glyph(VsdxShape shape, String text) {
@@ -15222,8 +15226,7 @@ void main() {
       List<VsdxColor?> shadowColors(VsdxShape shape) {
         final values = <VsdxColor?>[];
         void walk(VsdxShape next) {
-          if (next.shadow.enabled &&
-              (next.fill.hasFill || next.line.hasLine)) {
+          if (next.shadow.enabled && (next.fill.hasFill || next.line.hasLine)) {
             values.add(next.shadow.color);
           }
           for (final child in next.children) {
@@ -16761,8 +16764,7 @@ void main() {
       List<double> shadowOffsetXs(VsdxShape shape) {
         final values = <double>[];
         void walk(VsdxShape next) {
-          if (next.shadow.enabled &&
-              (next.fill.hasFill || next.line.hasLine)) {
+          if (next.shadow.enabled && (next.fill.hasFill || next.line.hasLine)) {
             values.add(next.shadow.offsetXInches);
           }
           for (final child in next.children) {
@@ -17206,8 +17208,7 @@ void main() {
       List<double> shadowTrans(VsdxShape shape) {
         final values = <double>[];
         void walk(VsdxShape next) {
-          if (next.shadow.enabled &&
-              (next.fill.hasFill || next.line.hasLine)) {
+          if (next.shadow.enabled && (next.fill.hasFill || next.line.hasLine)) {
             values.add(next.shadow.transparency);
           }
           for (final child in next.children) {
@@ -17396,7 +17397,8 @@ void main() {
       expect(
         lineWeights(keep),
         everyElement(closeTo(canvasScale, 1e-6)),
-        reason: 'without a strokewidth node leftover keeps drawShape 1×minScale',
+        reason:
+            'without a strokewidth node leftover keeps drawShape 1×minScale',
       );
 
       final laterHost = decodeDrawioMxStencilXml(
@@ -17470,6 +17472,168 @@ void main() {
         lineWeights(leftover),
         [closeTo(hairline, 1e-6), closeTo(4 * canvasScale, 1e-6)],
         reason: 'a second save keeps leftover minStrokeWidth Draw paints',
+      );
+    },
+  );
+
+  test(
+    'mxStencil mxXmlCanvas2D miterlimit omitted leftover bakes CSS 4 for LibreOffice',
+    () {
+      double? strokedMiter(VsdxShape shape) {
+        if (shape.line.hasLine) return shape.line.miterLimit;
+        return null;
+      }
+
+      bool hasMiter(VsdxShape shape, double limit) {
+        if (shape.line.hasLine &&
+            (shape.line.miterLimit - limit).abs() < 1e-6) {
+          return true;
+        }
+        return shape.children.any((child) => hasMiter(child, limit));
+      }
+
+      bool needsSpike(VsdxShape shape) {
+        if (shapeNeedsLibvisioMiterSpikeBake(shape)) return true;
+        return shape.children.any(needsSpike);
+      }
+
+      bool hasFilledRibbon(VsdxShape shape) {
+        if (shape.fill.hasFill && !shape.line.hasLine) return true;
+        if (isLibvisioStrokeRibbonPlate(shape)) return true;
+        return shape.children.any(hasFilledRibbon);
+      }
+
+      const hairpin =
+          '<path><move x="2" y="10"/><line x="40" y="10"/><line x="2" y="14.5"/></path>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<miterlimit/>'
+        '$hairpin'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 513,
+      );
+      expect(
+        strokedMiter(omitted),
+        closeTo(4, 1e-6),
+        reason: 'omitted miterlimit is Number(null)=0; CSS rejects <1 so '
+            'the initial 4 applies. leftover fallback 10 leftover-baked a '
+            'spike ribbon Draw paints (`tokens.txt` has no miterlimit; '
+            '_lineProperties never emits svg:stroke-miterlimit)',
+      );
+      expect(
+        needsSpike(omitted),
+        isFalse,
+        reason: 'ODF default miterlimit is already 4; leftover must not '
+            'bake a createState-10 spike',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$hairpin'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        strokedMiter(keep),
+        closeTo(10, 1e-6),
+        reason: 'without a miterlimit node leftover keeps createState 10',
+      );
+      expect(
+        needsSpike(keep),
+        isTrue,
+        reason: 'createState 10 leftover-bakes the hairpin Draw would '
+            'bevel at ODF 4',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<miterlimit limit="20"/>'
+        '$hairpin'
+        '<stroke/>'
+        '<miterlimit/>'
+        '<path><move x="2" y="30"/><line x="40" y="30"/><line x="2" y="34.5"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.line.miterLimit,
+        closeTo(20, 1e-6),
+        reason: 'first inherit stroke keeps collectLine miter 20',
+      );
+      expect(
+        laterHost.children.any(
+          (child) =>
+              child.line.hasLine && (child.line.miterLimit - 4).abs() < 1e-6,
+        ),
+        isTrue,
+        reason: 'later omitted miterlimit leftover-bakes CSS 4 so Draw '
+            'does not leftover-bake a createState-10 spike ribbon',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<miterlimit limit="20"/>'
+        '$hairpin'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<miterlimit/>'
+        '<path><move x="2" y="2"/><line x="38" y="2"/><line x="2" y="8"/></path>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.line.miterLimit,
+        closeTo(20, 1e-6),
+        reason: 'the first host inherit stroke keeps leftover miter 20',
+      );
+      expect(
+        hasMiter(includeHost, 4),
+        isTrue,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'miterlimit leftover-bakes CSS 4',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        hasFilledRibbon(leftover),
+        isTrue,
+        reason: 'a second save keeps leftover miter-20 spike as a filled '
+            'ribbon Draw paints (`tokens.txt` has no miterlimit)',
+      );
+      expect(
+        hasMiter(leftover, 4),
+        isTrue,
+        reason: 'a second save keeps leftover CSS 4 Draw paints',
       );
     },
   );
@@ -18255,7 +18419,8 @@ void main() {
       expect(
         pic!.flipX,
         isTrue,
-        reason: 'collectForeignDataType transformFlips → draw:mirror-horizontal',
+        reason:
+            'collectForeignDataType transformFlips → draw:mirror-horizontal',
       );
       const canvasScale = 1.5 / 100;
       expect(pic.imgWidthInches, closeTo(80 * canvasScale, 0.02));
@@ -18778,8 +18943,7 @@ void main() {
         return null;
       }
 
-      int flagsOf(VsdxShape shape) =>
-          shape.richText.runs.first.paraStyle.flags;
+      int flagsOf(VsdxShape shape) => shape.richText.runs.first.paraStyle.flags;
 
       final ltr = decodeDrawioMxStencilXml(
         '<shape name="L" w="100" h="100" strokewidth="1">'
@@ -19179,7 +19343,8 @@ void main() {
       expect(
         lineWeights(shapeAttr),
         everyElement(closeTo(hairline, 1e-6)),
-        reason: 'mxStencil.drawShape Number(0)*minScale still setStrokeWidth(0); '
+        reason:
+            'mxStencil.drawShape Number(0)*minScale still setStrokeWidth(0); '
             'leftover floors to mxSvgCanvas2D.minStrokeWidth 1 canvas pixel',
       );
 
@@ -19513,7 +19678,8 @@ void main() {
           .pages
           .first
           .findShapeById(omittedId)!;
-      expect(fontInches(leftoverOmitted, 'AB'), closeTo(24 * canvasScale, 1e-6));
+      expect(
+          fontInches(leftoverOmitted, 'AB'), closeTo(24 * canvasScale, 1e-6));
       expect(
         fontInches(leftoverOmitted, 'CD'),
         closeTo(minSize, 1e-6),
@@ -19529,7 +19695,8 @@ void main() {
       );
       final leftover = parser
           .parse(
-            writer.write(originalBytes: writer.emptyDocument(), edited: zeroDoc),
+            writer.write(
+                originalBytes: writer.emptyDocument(), edited: zeroDoc),
           )
           .pages
           .first
@@ -20000,7 +20167,8 @@ void main() {
       expect(
         decoded.dx,
         closeTo(expected, 1e-6),
-        reason: 'r = 15% of min(include w, include h) in catalog leftover inches',
+        reason:
+            'r = 15% of min(include w, include h) in catalog leftover inches',
       );
 
       final writer = VsdxWriter();
@@ -20192,7 +20360,8 @@ void main() {
         (child) => child.fill.foreground == const VsdxColor(0xFF00AA00),
       );
       expect(
-        leftoverGreen, isNotEmpty,
+        leftoverGreen,
+        isNotEmpty,
         reason: 'a second save keeps the unshadowed green plate',
       );
       expect(
@@ -20501,8 +20670,7 @@ void main() {
     'mxAbstractCanvas2D createState miterLimit 10 stays on JS canvas fills',
     () {
       bool leakedMiter4(VsdxShape shape) {
-        if (shape.line.hasLine &&
-            (shape.line.miterLimit - 4).abs() < 1e-6) {
+        if (shape.line.hasLine && (shape.line.miterLimit - 4).abs() < 1e-6) {
           return true;
         }
         return shape.children.any(leakedMiter4);
@@ -20555,8 +20723,7 @@ void main() {
       final leftoverDoc = parser.parse(
         writer.write(originalBytes: writer.emptyDocument(), edited: doc),
       );
-      final leftoverButton =
-          leftoverDoc.pages.first.findShapeById(buttonId)!;
+      final leftoverButton = leftoverDoc.pages.first.findShapeById(buttonId)!;
       final leftoverMenu = leftoverDoc.pages.first.findShapeById(menuId)!;
       expect(
         leakedMiter4(leftoverButton),
@@ -21130,10 +21297,8 @@ void main() {
       // 160×40 cell, catalog scale 1.5/160. Unfitted fontSize=25 is 16.875pt.
       const titleScale = 1.5 / 160;
       final title = stencil('Autosize Title').build(530, 3, 3);
-      final titlePt = runContaining(title, 'Autosize Title')!
-          .charStyle
-          .fontSizeInches *
-          72;
+      final titlePt =
+          runContaining(title, 'Autosize Title')!.charStyle.fontSizeInches * 72;
       expect(
         titlePt,
         lessThan(25 * titleScale * 72 - 1),
@@ -21154,8 +21319,8 @@ void main() {
             note,
             'The size of the font in this note will change',
           )!
-          .charStyle
-          .fontSizeInches *
+              .charStyle
+              .fontSizeInches *
           72;
       expect(
         notePt,
@@ -21284,7 +21449,8 @@ void main() {
       expect(
         rules4.last - rules4.first,
         lessThan(class4.height * 0.25),
-        reason: 'the 2px spacer between rules is a thin band, not half the cell',
+        reason:
+            'the 2px spacer between rules is a thin band, not half the cell',
       );
 
       const writer = VsdxWriter();
@@ -21609,8 +21775,7 @@ void main() {
         reason: 'part2 65% arc stays opaque on top of the track',
       );
       expect(
-        (dial.text ?? '') +
-            dial.children.map((c) => c.text ?? '').join(),
+        (dial.text ?? '') + dial.children.map((c) => c.text ?? '').join(),
         contains('65%'),
       );
 
@@ -21753,8 +21918,7 @@ void main() {
 
       final athena = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / AWS4b / AWS18 / Analytics',
+            (group) => group.name == 'Draw.io JS / AWS4b / AWS18 / Analytics',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Unnamed Shape')
@@ -21820,12 +21984,10 @@ void main() {
           .pages
           .first
           .findShapeById(id)!;
-      final leftoverDark = leftover.children
-          .where((s) => isFill(s, '#232F3E'))
-          .toList();
-      final leftoverWhite = leftover.children
-          .where((s) => isFill(s, '#FFFFFF'))
-          .toList();
+      final leftoverDark =
+          leftover.children.where((s) => isFill(s, '#232F3E')).toList();
+      final leftoverWhite =
+          leftover.children.where((s) => isFill(s, '#FFFFFF')).toList();
       expect(leftoverDark, isNotEmpty);
       expect(leftoverWhite, isNotEmpty);
       expect(
@@ -21869,8 +22031,7 @@ void main() {
 
       final ruler = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Mockup / Mockup Misc',
+            (group) => group.name == 'Draw.io JS / Mockup / Mockup Misc',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Horizontal Ruler')
@@ -21943,8 +22104,7 @@ void main() {
 
       final pagination = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Mockup / Mockup Navigation',
+            (group) => group.name == 'Draw.io JS / Mockup / Mockup Navigation',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Pagination')
@@ -22219,7 +22379,14 @@ void main() {
                 acc(x, y);
               case LineTo(:final x, :final y):
                 acc(x, y);
-              case CubBezTo(:final x, :final y, :final x1, :final y1, :final x2, :final y2):
+              case CubBezTo(
+                  :final x,
+                  :final y,
+                  :final x1,
+                  :final y1,
+                  :final x2,
+                  :final y2
+                ):
                 acc(x, y);
                 acc(x1, y1);
                 acc(x2, y2);
@@ -22263,14 +22430,16 @@ void main() {
       expect(chairs, hasLength(4));
       final boxes = chairs.map(bbox).toList();
       ({double minX, double minY, double maxX, double maxY}) pick(
-        double Function(({double minX, double minY, double maxX, double maxY}) b)
+        double Function(
+                ({double minX, double minY, double maxX, double maxY}) b)
             key,
       ) {
         return boxes.reduce((a, b) => key(a) <= key(b) ? a : b);
       }
 
       ({double minX, double minY, double maxX, double maxY}) pickMax(
-        double Function(({double minX, double minY, double maxX, double maxY}) b)
+        double Function(
+                ({double minX, double minY, double maxX, double maxY}) b)
             key,
       ) {
         return boxes.reduce((a, b) => key(a) >= key(b) ? a : b);
@@ -22363,8 +22532,7 @@ void main() {
         final start = geometry.commands.first;
         final end = geometry.commands.last;
         if (start is! MoveTo || end is! LineTo) return false;
-        return (start.x - end.x).abs() < 1e-6 &&
-            (start.y - end.y).abs() < 1e-6;
+        return (start.x - end.x).abs() < 1e-6 && (start.y - end.y).abs() < 1e-6;
       }
 
       bool hasDegenerateStroke(VsdxShape shape) {
@@ -22374,14 +22542,12 @@ void main() {
 
       final alnum = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Mockup / Mockup Text',
+            (group) => group.name == 'Draw.io JS / Mockup / Mockup Text',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Alphanumeric')
           .build(1, 3, 3);
-      const alphabet =
-          '0-9 A B C D E F G H I J K L M N O P Q R S T U V X Y Z';
+      const alphabet = '0-9 A B C D E F G H I J K L M N O P Q R S T U V X Y Z';
       final run = runContaining(alnum, alphabet);
       expect(
         run,
@@ -22448,8 +22614,7 @@ void main() {
 
       final chevron = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Infographic / Infographic',
+            (group) => group.name == 'Draw.io JS / Infographic / Infographic',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Chevron list')
@@ -22525,12 +22690,12 @@ void main() {
           .where((entry) => entry.name.startsWith('Abstract Definition'))
           .map((entry) => entry.build(1, 3, 3))
           .firstWhere((shape) {
-            final named = nameShape(shape);
-            if (named == null) return false;
-            final t = named.text ?? '';
-            return !t.contains('abstract') &&
-                !named.richText.runs.any((run) => run.text.contains('abstract'));
-          });
+        final named = nameShape(shape);
+        if (named == null) return false;
+        final t = named.text ?? '';
+        return !t.contains('abstract') &&
+            !named.richText.runs.any((run) => run.text.contains('abstract'));
+      });
       final inMemory = nameShape(abstract)!;
       expect(
         inMemory.text,
@@ -22732,10 +22897,11 @@ void main() {
   test(
     'mxGraph Lollipop Notation leftover keeps the oval at the junction for LibreOffice',
     () {
-      List<EllipseCmd> ellipsesOf(VsdxShape shape) => descendantGeometries(shape)
-          .expand((geometry) => geometry.commands)
-          .whereType<EllipseCmd>()
-          .toList();
+      List<EllipseCmd> ellipsesOf(VsdxShape shape) =>
+          descendantGeometries(shape)
+              .expand((geometry) => geometry.commands)
+              .whereType<EllipseCmd>()
+              .toList();
 
       final group = dynamic.singleWhere(
         (g) => g.name == 'Draw.io JS / UML / uml',
@@ -23116,8 +23282,7 @@ void main() {
 
       final bullseye = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Sysml / SysML / Activities',
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Activities',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Activity Final')
@@ -23794,8 +23959,7 @@ void main() {
               shape.line.hasLine &&
               shape.line.color == VsdxColor.white &&
               shape.geometries.any(
-                (geometry) =>
-                    geometry.commands.whereType<LineTo>().length >= 2,
+                (geometry) => geometry.commands.whereType<LineTo>().length >= 2,
               ),
         ),
         isTrue,
@@ -24016,7 +24180,8 @@ void main() {
       expect(
         descendants(scrubber).any(isFillTrack),
         isTrue,
-        reason: 'mxShapeAndroidProgressScrubberPressed setStrokeColor(fillColor) '
+        reason:
+            'mxShapeAndroidProgressScrubberPressed setStrokeColor(fillColor) '
             'then strokes 0..dx. paintToken collapsed that hex to inherit '
             'fill so decoder LineColor copied null FillForegnd and '
             'applyStencilStyle washed the track the palette; leftover then '
@@ -24242,7 +24407,8 @@ void main() {
       final xfmr = dynamic
           .singleWhere(
             (group) =>
-                group.name == 'Draw.io JS / Electrical / Electrical / Inductors',
+                group.name ==
+                'Draw.io JS / Electrical / Electrical / Inductors',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Transformer')
@@ -24288,7 +24454,8 @@ void main() {
         reason: 'a second save must keep RelCubBezTo coils, not a fill ribbon',
       );
       expect(
-        leftover.geometries.any((geometry) => geometry.noFill && !geometry.noLine),
+        leftover.geometries
+            .any((geometry) => geometry.noFill && !geometry.noLine),
         isTrue,
       );
     },
@@ -24319,8 +24486,7 @@ void main() {
           .stencils
           .singleWhere(
             (entry) =>
-                entry.name ==
-                'Screening Device, Sieve, Strainer (Basket Reel)',
+                entry.name == 'Screening Device, Sieve, Strainer (Basket Reel)',
           )
           .build(1, 3, 3);
       expect(basket.children, isNotEmpty);
@@ -24423,8 +24589,7 @@ void main() {
 
       final node = dynamic
           .singleWhere(
-            (group) =>
-                group.name == 'Draw.io JS / Sysml / SysML / Activities',
+            (group) => group.name == 'Draw.io JS / Sysml / SysML / Activities',
           )
           .stencils
           .singleWhere((entry) => entry.name == 'Object Node')
@@ -24657,7 +24822,8 @@ void main() {
       expect(
         hasIsometricBend(edge1),
         isTrue,
-        reason: 'Sidebar isometricEdgeStyle uses mxEdgeStyle.IsometricConnector '
+        reason:
+            'Sidebar isometricEdgeStyle uses mxEdgeStyle.IsometricConnector '
             'rotated by toRadians(-30). Capture used to paint the 50×100 '
             'template as one RelLineTo diagonal; leftover collectGeometry '
             'must keep the 30° zigzag Draw paints as svg:d',
