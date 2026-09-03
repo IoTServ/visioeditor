@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover highlight
+  Char.Highlight for LibreOffice. Official omitted highlight is none;
+  leftover now snaps per `<run>` so Draw collectCharIX does not plate a
+  later sibling (`tokens.txt` has no Highlight; mixed leftover-bakes
+  FillForegnd plates). include-shape nested omitted leftover-bakes
+  none, and a later explicit highlight leftover-bakes a sibling. A
+  second save keeps both.
 - draw.io leftover mxStencil text run omitted leftover pos Char.Pos for
   LibreOffice. Official omitted `pos` is 0 (baseline); leftover now
   snaps per `<run>` so Draw collectCharIX does not subscript a later

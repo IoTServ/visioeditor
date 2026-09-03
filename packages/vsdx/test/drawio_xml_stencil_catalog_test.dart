@@ -36428,6 +36428,131 @@ void main() {
   );
 
   test(
+    'mxStencil text run omitted leftover highlight Char.Highlight for LibreOffice',
+    () {
+      List<VsdxColor?> highlights(VsdxShape shape) {
+        final values = <VsdxColor?>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.highlight);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      final yellow = VsdxColor.tryParse('#ffff00')!;
+      const keepH = '<run str="AB" highlight="#ffff00"/>';
+      const omittedH = '<run str="CD"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">'
+        '$keepH'
+        '$omittedH'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+        id: 629,
+      );
+      expect(
+        highlights(omitted),
+        [yellow, null],
+        reason: 'omitted run highlight is none; leftover must not keep '
+            'Char.Highlight so Draw collectCharIX does not plate the later '
+            'sibling (`tokens.txt` has no Highlight; mixed leftover-bakes '
+            'FillForegnd plates)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">'
+        '$keepH'
+        '<run str="CD" highlight="#ffff00"/>'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        highlights(keep),
+        everyElement(yellow),
+        reason: 'without omitted highlight leftover keeps Char.Highlight',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">'
+        '$omittedH'
+        '$keepH'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        highlights(later),
+        [null, yellow],
+        reason: 'later highlight leftover-bakes a sibling Char.Highlight',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">$keepH</text>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">$omittedH</text>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        highlights(includeHost),
+        [yellow, null],
+        reason: 'include-shape nested omitted highlight leftover-bakes none '
+            'so Draw does not inherit host FillForegnd plates',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        highlights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [yellow, null],
+        reason: 'a second save keeps leftover Char.Highlight Draw paints',
+      );
+      expect(
+        highlights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [null, yellow],
+        reason: 'a second save keeps the later leftover highlight sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
