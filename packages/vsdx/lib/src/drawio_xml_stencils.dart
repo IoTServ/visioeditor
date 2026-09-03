@@ -2360,7 +2360,15 @@ class _DrawioXmlShapeDecoder {
     // leftover falls through to the two-color south ramp and a later
     // omitted sibling does not keep three FillGradient rows
     // (`tokens.txt` FillPattern → SoftEdges PNG).
-    final packedStops = _parseMxGradientStops(node.getAttribute('stops'));
+    // NestedStencil getColorValue is per-node `default`. leftover
+    // `_mxGraphPaintColor` skipped an unresolved style-key stop and
+    // kept the remaining hex pair, so Draw leftover-baked SoftEdges
+    // PNG instead of the two-color south ramp. An unresolved packed
+    // stop now drops the packed wash.
+    final packedStops = _parseMxGradientStops(
+      node.getAttribute('stops'),
+      resolveColor: (token) => _mxGradientStopColor(token, fallback),
+    );
     if (packedStops.length >= 2) {
       // NestedStencil capture writes angle as leftover radians
       // (`state.gradientAngle`) when packed stops are present. Omitted
@@ -5705,7 +5713,10 @@ double _mxFillGradientAngleRad(String dir) => switch (dir) {
     };
 
 /// `stops="#f2580a@0,#fea15f@0.413,#a11a00@1"` (optional `/alpha`).
-List<VsdxGradientStop> _parseMxGradientStops(String? raw) {
+List<VsdxGradientStop> _parseMxGradientStops(
+  String? raw, {
+  VsdxColor? Function(String token)? resolveColor,
+}) {
   final text = (raw ?? '').trim();
   if (text.isEmpty) return const <VsdxGradientStop>[];
   final out = <VsdxGradientStop>[];
@@ -5724,9 +5735,15 @@ List<VsdxGradientStop> _parseMxGradientStops(String? raw) {
     }
     final at = colorPos.lastIndexOf('@');
     if (at <= 0) continue;
-    final color = _mxGraphPaintColor(colorPos.substring(0, at));
+    final color =
+        (resolveColor ?? _mxGraphPaintColor)(colorPos.substring(0, at));
     final pos = double.tryParse(colorPos.substring(at + 1));
-    if (color == null || pos == null || !pos.isFinite) continue;
+    if (pos == null || !pos.isFinite) continue;
+    // NestedStencil getColorValue is per-node `default`. leftover
+    // skipped an unresolved style-key stop and kept the remaining
+    // hex pair, so Draw leftover-baked SoftEdges PNG instead of the
+    // two-color south ramp (`tokens.txt` FillPattern → SoftEdges PNG).
+    if (color == null) return const <VsdxGradientStop>[];
     out.add(
       VsdxGradientStop(
         position: pos.clamp(0.0, 1.0),

@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover default
+  packed stops FillPattern for LibreOffice. NestedStencil
+  getColorValue is per-node `default`; leftover `_mxGraphPaintColor`
+  skipped `hubFill@0` and kept the remaining hex pair so Draw
+  leftover-baked SoftEdges PNG instead of the two-color south ramp
+  (`tokens.txt` FillPattern). An unresolved packed stop now drops
+  the packed wash. include-shape nested omitted leftover-bakes the
+  two-color ramp, and a later explicit default leftover-bakes packed
+  rows. A second save leftover-bakes SoftEdges PNG vs FillPattern 28.
+
 - draw.io leftover mxStencil text run omitted leftover default
   highlight / fontcolor for LibreOffice. NestedStencil getColorValue
   is per-node `default`; leftover `_mxGraphPaintColor` ignored
