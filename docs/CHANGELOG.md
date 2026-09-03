@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil constraint omitted leftover x Connection
+  for LibreOffice. Official `parseConstraint` uses `Number(x)`; omitted
+  is `Number(null)=0`. leftover `_number` 0 per constraint so a later
+  omitted sibling does not keep X (`tokens.txt` X). leftover now snaps
+  omitted to the origin, include-shape nested omitted x leftover-bakes
+  host X 0, and a later explicit x leftover-bakes a sibling. A second
+  save keeps both. Official omitted y is stencil-top (Visio Y-up Height).
 - draw.io leftover mxStencil image omitted leftover src skip for
   LibreOffice. Official `drawNode` always writes `src`. leftover
   `_dataUriImage` null skips so a later omitted sibling does not reuse

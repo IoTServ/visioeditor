@@ -25302,6 +25302,135 @@ void main() {
   );
 
   test(
+    'mxStencil constraint omitted leftover x Connection for LibreOffice',
+    () {
+      List<double> connXs(VsdxShape shape) {
+        final xs = [for (final point in shape.connectionPoints) point.x];
+        xs.sort();
+        return xs;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final originX = 0.0;
+      final shiftedX = 100 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="1" y="0.5" name="E"/>'
+        '<constraint y="0.5" name="omitted"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 552,
+      );
+      expect(
+        connXs(omitted),
+        [closeTo(originX, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'omitted constraint x is Number(null)=0; leftover must not '
+            'keep X so Draw does not glue the first leftover point '
+            '(`tokens.txt` X)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="1" y="0.5" name="E"/>'
+        '<constraint x="1" y="0.5" name="E2"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        connXs(keep),
+        everyElement(closeTo(shiftedX, 1e-6)),
+        reason: 'without omitted x leftover keeps Connections.X',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint y="0.5" name="omitted"/>'
+        '<constraint x="1" y="0.5" name="E"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        connXs(later),
+        [closeTo(originX, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'later explicit x leftover-bakes a sibling Connections.X',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint y="0.5" name="omitted"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="1" y="0.5" name="E"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        connXs(includeHost),
+        [closeTo(originX, 1e-6)],
+        reason: 'include-shape nested omitted x leftover-bakes host X 0 so '
+            'Draw does not inherit nested Connections.X 1',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        connXs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(originX, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'a second save keeps leftover Connections.X Draw glues',
+      );
+      expect(
+        connXs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(originX, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'a second save keeps the later explicit Connections.X sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil roundrect omitted leftover x MoveTo for LibreOffice',
     () {
       List<double> firstMoveXs(VsdxShape shape) {
