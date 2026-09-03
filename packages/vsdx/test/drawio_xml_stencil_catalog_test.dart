@@ -34979,6 +34979,144 @@ void main() {
   );
 
   test(
+    'mxStencil sketch omitted leftover dots FillPattern for LibreOffice',
+    () {
+      List<VsdxSketchFillStyle> fills(VsdxShape shape) {
+        final values = <VsdxSketchFillStyle>[];
+        void walk(VsdxShape next) {
+          if (next.sketchEffect) values.add(next.sketchFillStyle);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepS = '<sketch enabled="1" fill="dots"/>';
+      const omittedS = '<sketch enabled="1"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 618,
+      );
+      expect(
+        fills(omitted),
+        [VsdxSketchFillStyle.dots, VsdxSketchFillStyle.auto],
+        reason: 'omitted sketch fill is NestedStencil empty; leftover must '
+            'not keep dots so Draw collectFillAndShadow does not reuse '
+            'FillPattern 8 (`tokens.txt` FillPattern → draw:fill=hatch)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fills(keep),
+        everyElement(VsdxSketchFillStyle.dots),
+        reason: 'without omitted fill leftover keeps dots',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fills(later),
+        [VsdxSketchFillStyle.auto, VsdxSketchFillStyle.dots],
+        reason: 'later explicit dots leftover-bakes a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fills(includeHost),
+        [VsdxSketchFillStyle.dots, VsdxSketchFillStyle.auto],
+        reason: 'include-shape nested omitted fill leftover-bakes auto so '
+            'Draw does not inherit host dots',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [8, 15],
+        reason: 'a second save keeps leftover default-fill FillPattern 15',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [15, 8],
+        reason: 'a second save keeps the later leftover dots sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
