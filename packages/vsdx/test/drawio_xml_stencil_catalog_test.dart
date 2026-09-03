@@ -39147,6 +39147,329 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D gradient omitted leftover alpha1 FillBkgndTrans for LibreOffice',
+    () {
+      List<double> bgTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) {
+            values.add(next.fill.backgroundTransparency);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      int imageCount(VsdxShape shape) {
+        var n = shape.hasImage ? 1 : 0;
+        for (final child in shape.children) {
+          n += imageCount(child);
+        }
+        return n;
+      }
+
+      const keepG =
+          '<gradient c1="#1565c0" c2="#bbdefb" alpha1="0"/>';
+      const omittedG = '<gradient c1="#1565c0" c2="#bbdefb"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$omittedG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 649,
+      );
+      expect(
+        bgTrans(omitted),
+        [closeTo(1, 1e-6), closeTo(0, 1e-6)],
+        reason: 'omitted mxXmlCanvas2D gradient alpha1 defaults to 1; leftover '
+            'must not keep FillBkgndTrans 1 so Draw collectFillAndShadow '
+            'does not reuse transparent c1 (`tokens.txt` FillBkgndTrans)',
+      );
+      expect(fillPatterns(omitted), [28, 28]);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        bgTrans(keep),
+        everyElement(closeTo(1, 1e-6)),
+        reason: 'without omitted alpha1 leftover keeps FillBkgndTrans 1',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        bgTrans(later),
+        [closeTo(0, 1e-6), closeTo(1, 1e-6)],
+        reason: 'later explicit alpha1 leftover-bakes a sibling Trans',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        bgTrans(includeHost),
+        [closeTo(1, 1e-6), closeTo(0, 1e-6)],
+        reason: 'include-shape nested omitted alpha1 leftover-bakes '
+            'FillBkgndTrans 0 so Draw does not inherit host Trans',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [28],
+        reason: 'a second save keeps the opaque omitted-alpha1 FillPattern; '
+            'FillBkgndTrans 1 sibling leftover-bakes SoftEdges PNG',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'Draw paints the faded plate as SoftEdges PNG and the '
+            'omitted-alpha1 sibling as FillPattern 28',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28],
+        reason: 'a second save keeps the later explicit FillPattern sibling',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(laterId)!),
+        1,
+        reason: 'a second save leftover-bakes the later faded plate PNG',
+      );
+    },
+  );
+
+  test(
+    'mxStencil mxXmlCanvas2D gradient omitted leftover alpha2 FillForegndTrans for LibreOffice',
+    () {
+      List<double> fgTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) {
+            values.add(next.fill.foregroundTransparency);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      int imageCount(VsdxShape shape) {
+        var n = shape.hasImage ? 1 : 0;
+        for (final child in shape.children) {
+          n += imageCount(child);
+        }
+        return n;
+      }
+
+      const keepG =
+          '<gradient c1="#1565c0" c2="#bbdefb" alpha2="0"/>';
+      const omittedG = '<gradient c1="#1565c0" c2="#bbdefb"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$omittedG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 650,
+      );
+      expect(
+        fgTrans(omitted),
+        [closeTo(1, 1e-6), closeTo(0, 1e-6)],
+        reason: 'omitted mxXmlCanvas2D gradient alpha2 defaults to 1; leftover '
+            'must not keep FillForegndTrans 1 so Draw collectFillAndShadow '
+            'does not reuse transparent c2 (`tokens.txt` FillForegndTrans)',
+      );
+      expect(fillPatterns(omitted), [28, 28]);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fgTrans(keep),
+        everyElement(closeTo(1, 1e-6)),
+        reason: 'without omitted alpha2 leftover keeps FillForegndTrans 1',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fgTrans(later),
+        [closeTo(0, 1e-6), closeTo(1, 1e-6)],
+        reason: 'later explicit alpha2 leftover-bakes a sibling Trans',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fgTrans(includeHost),
+        [closeTo(1, 1e-6), closeTo(0, 1e-6)],
+        reason: 'include-shape nested omitted alpha2 leftover-bakes '
+            'FillForegndTrans 0 so Draw does not inherit host Trans',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [28],
+        reason: 'a second save keeps the opaque omitted-alpha2 FillPattern; '
+            'FillForegndTrans 1 sibling leftover-bakes SoftEdges PNG',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'Draw paints the faded plate as SoftEdges PNG',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28],
+        reason: 'a second save keeps the later explicit FillPattern sibling',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(laterId)!),
+        1,
+        reason: 'a second save leftover-bakes the later faded plate PNG',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

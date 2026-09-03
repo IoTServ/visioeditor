@@ -582,6 +582,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D gradient omitted leftover alpha2
+  FillForegndTrans for LibreOffice. Official omitted `alpha2` is 1;
+  leftover now snaps per `<gradient>` so Draw collectFillAndShadow does
+  not fade a later plate (`tokens.txt` FillForegndTrans). A save leftover-
+  bakes Trans 1 into SoftEdges PNG. include-shape nested omitted leftover-
+  bakes Trans 0, and a later explicit `alpha2="0"` leftover-bakes a
+  sibling. A second save keeps both.
+- draw.io leftover mxXmlCanvas2D gradient omitted leftover alpha1
+  FillBkgndTrans for LibreOffice. Official omitted `alpha1` is 1;
+  leftover now snaps per `<gradient>` so Draw collectFillAndShadow does
+  not fade a later plate (`tokens.txt` FillBkgndTrans). A save leftover-
+  bakes Trans 1 into SoftEdges PNG. include-shape nested omitted leftover-
+  bakes Trans 0, and a later explicit `alpha1="0"` leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxXmlCanvas2D gradient omitted leftover c2
   FillPattern for LibreOffice. Official omitted `c2` is setGradient
   skip / solid color1; leftover now snaps per `<gradient>` so Draw
