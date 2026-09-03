@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text omitted leftover format
+  Character Style for LibreOffice. Official `canvas.text` always
+  writes `format` (empty when mxStencil.drawNode passes `''`).
+  leftover reads it per glyph so a later omitted sibling does not
+  keep Style.bold (`tokens.txt` Character Style → fo:font-weight).
+  leftover now keeps omitted markup as collectText, include-shape
+  nested omitted format leftover-bakes markup, and a later
+  `format="html"` leftover-bakes a sibling. A second save keeps
+  both. `format="html"` still leftover-parses `<b>`.
 - draw.io leftover mxStencil strokewidth omitted leftover fixed
   LineWeight for LibreOffice. Official `drawNode` uses `fixed=="1"`
   for width×1 else ×minScale. leftover `_strokeWidthFixed` is this

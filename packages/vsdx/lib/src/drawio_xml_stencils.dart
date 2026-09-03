@@ -2591,6 +2591,10 @@ class _DrawioXmlShapeDecoder {
   /// mxText html=1: `<run>` children are extra Character rows. A bare
   /// `str=` label stays a single collectCharIX run unless
   /// `format="html"` — mxXmlCanvas2D.text then stores markup in `str`.
+  /// Official always writes `format` (empty when drawNode passes `''`).
+  /// leftover reads it per glyph so a later omitted / empty sibling
+  /// does not keep Style.bold (`tokens.txt` Character Style →
+  /// fo:font-weight). NestedStencil capture omits empty format.
   ///
   /// mxSvgCanvas2D.text sets `opacity=state.alpha`. leftover
   /// `textopacity` is STYLE_TEXT_OPACITY percent; canvas `<alpha>` must
