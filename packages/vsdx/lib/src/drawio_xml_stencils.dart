@@ -2307,6 +2307,9 @@ class _DrawioXmlShapeDecoder {
       );
       return;
     }
+    // mxXmlCanvas2D.setGradient default direction is south. leftover
+    // `?? 'south'` per node so a later omitted sibling does not keep
+    // FillPattern 27 (`tokens.txt` FillPattern → draw:angle).
     final dir = (node.getAttribute('direction') ?? 'south').toLowerCase();
     final alpha1 = node.getAttribute('alpha1') == null
         ? 1.0

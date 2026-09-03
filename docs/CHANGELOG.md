@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover direction
+  FillPattern for LibreOffice. Official `setGradient` default direction
+  is south. leftover `?? 'south'` per node so a later omitted sibling
+  does not keep FillPattern 27 (`tokens.txt` FillPattern →
+  `draw:angle`). leftover now snaps omitted to south 28, include-shape
+  nested omitted leftover-bakes 28, and a later `direction="east"`
+  leftover-bakes a sibling. A second save keeps both. `direction="east"`
+  still leftover-bakes FillPattern 27.
 - draw.io leftover mxStencil text omitted leftover vertical
   TextDirection for LibreOffice. Official `drawNode` uses
   `vertical=="1"` rotation −90; omitted is not `"1"`. leftover reads
