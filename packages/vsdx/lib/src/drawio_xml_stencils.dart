@@ -1151,9 +1151,10 @@ class _DrawioXmlShapeDecoder {
         if (runs.isNotEmpty) {
           _labels.add(_snapshotLabelCanvas(_DrawioStencilLabel(
             text: runs.map((run) => run.text).join(),
-            // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
-            // leftover `_number` 0 per glyph so a later omitted sibling
-            // does not keep TxtPinX (`tokens.txt` TxtPinX → svg:x).
+            // mxStencil.drawNode: Number(x)*sx / Number(y)*sy; omitted is
+            // Number(null)=0. leftover `_number` 0 per glyph so a later
+            // omitted sibling does not keep TxtPinX / TxtPinY
+            // (`tokens.txt` TxtPinX → svg:x; TxtPinY → svg:y).
             x: _number(node, 'x'),
             y: _number(node, 'y'),
             // mxStencil.drawNode: Number(w)*sx / Number(h)*sy; omitted is

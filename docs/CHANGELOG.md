@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover y TxtPinY for
+  LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per glyph so a later omitted
+  sibling does not keep TxtPinY (`tokens.txt` TxtPinY → `svg:y`).
+  leftover now snaps omitted to the origin box, include-shape nested
+  omitted y leftover-bakes PinY at stencil-top, and a later explicit y
+  leftover-bakes a sibling. A second save keeps both. Empty `str`
+  still skips the glyph.
 - draw.io leftover mxStencil rotate omitted leftover cy PinY for
   LibreOffice. Official `Number(cy)`; omitted is `Number(null)=0`.
   leftover `_number` 0 per rotate so a later omitted sibling does not
