@@ -3579,6 +3579,10 @@ class _DrawioXmlShapeDecoder {
   void _decodePathNode(XmlElement command, List<VsdxPathCommand> commands) {
     switch (command.name.local) {
       case 'move':
+        // mxStencil.drawNode: Number(getAttribute('x'))*sx; omitted is
+        // Number(null)=0. leftover `_number` 0 per node so a later
+        // omitted sibling does not keep lastX MoveTo (`tokens.txt`
+        // Line → RelMoveTo).
         _penX = _number(command, 'x');
         _penY = _number(command, 'y');
         _subX = _penX;
