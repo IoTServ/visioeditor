@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover quad x1 QuadBezTo for
+  LibreOffice. Official `drawNode` uses `Number(x1)*sx`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per node so a later omitted
+  sibling does not keep last control X (`tokens.txt` RelQuadBezTo). leftover
+  now snaps omitted to stencil-left, include-shape nested omitted x1 leftover-bakes
+  QuadBezTo stencil-left, and a later explicit x1 leftover-bakes a sibling.
+  A second save keeps both.
 - draw.io leftover mxStencil path omitted leftover curve x2 CubBezTo for
   LibreOffice. Official `drawNode` uses `Number(x2)*sx`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted
