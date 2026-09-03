@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text omitted leftover align
+  HorzAlign for LibreOffice. Official `canvas.text` writes
+  `align`/`valign` when set; mxStencil.drawNode always passes
+  `|| 'left'` / `|| 'top'`. leftover reads them per glyph so a
+  later omitted sibling does not keep HorzAlign / VerticalAlign
+  (`tokens.txt` HorzAlign → `fo:text-align`; VerticalAlign →
+  `draw:textarea-vertical-align`). leftover now snaps omitted to
+  left/top, include-shape nested omitted align leftover-bakes
+  left, and a later omitted valign leftover-bakes a sibling. A
+  second save keeps both. `align="center"` / `valign="middle"`
+  still leftover-bakes.
 - draw.io leftover mxXmlCanvas2D text omitted leftover rotation
   TxtAngle for LibreOffice. Official `canvas.text` writes
   `rotation` when `rotation!=null`; mxStencil.drawNode subtracts

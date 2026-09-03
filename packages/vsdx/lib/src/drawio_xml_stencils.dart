@@ -1147,6 +1147,12 @@ class _DrawioXmlShapeDecoder {
             spacingRight: _number(node, 'spacing-right'),
             spacingTop: _number(node, 'spacing-top'),
             spacingBottom: _number(node, 'spacing-bottom'),
+            // mxXmlCanvas2D.text writes align/valign when !=null.
+            // mxStencil.drawNode always passes `|| 'left'` / `|| 'top'`.
+            // leftover reads them per glyph so a later omitted sibling
+            // does not keep HorzAlign / VerticalAlign (`tokens.txt`
+            // HorzAlign → fo:text-align; VerticalAlign →
+            // draw:textarea-vertical-align).
             align: node.getAttribute('align') ?? 'left',
             valign: node.getAttribute('valign') ?? 'top',
             // mxXmlCanvas2D.text writes dir when dir!=null.

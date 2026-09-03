@@ -22183,6 +22183,156 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text omitted leftover align HorzAlign for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '') == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxHorzAlign horzOf(VsdxShape shape, String text) =>
+          glyphContaining(shape, text)!
+              .richText
+              .runs
+              .first
+              .paraStyle
+              .horizontalAlign;
+
+      VsdxVertAlign vertOf(VsdxShape shape, String text) =>
+          glyphContaining(shape, text)!.richText.textBlock.verticalAlign;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="center" valign="middle"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+        id: 530,
+      );
+      expect(
+        horzOf(omitted, 'AB'),
+        VsdxHorzAlign.center,
+        reason: 'first canvas.text align leftover-bakes HorzAlign so Draw '
+            '_fillParagraphProperties emits fo:text-align=center '
+            '(`tokens.txt` HorzAlign)',
+      );
+      expect(vertOf(omitted, 'AB'), VsdxVertAlign.middle);
+      expect(
+        horzOf(omitted, 'CD'),
+        VsdxHorzAlign.left,
+        reason: 'omitted align is not leftover canvas state; leftover must '
+            'not keep HorzAlign on the later glyph Draw paints',
+      );
+      expect(vertOf(omitted, 'CD'), VsdxVertAlign.top);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(horzOf(keep, 'AB'), VsdxHorzAlign.left);
+      expect(
+        vertOf(keep, 'CD'),
+        VsdxVertAlign.top,
+        reason: 'without align leftover stays left / top',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" valign="bottom"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        vertOf(laterHost, 'AB'),
+        VsdxVertAlign.bottom,
+        reason: 'first canvas.text valign leftover-bakes VerticalAlign so '
+            'Draw collectTextBlock is textarea-vertical-align=bottom '
+            '(`tokens.txt` VerticalAlign)',
+      );
+      expect(
+        vertOf(laterHost, 'CD'),
+        VsdxVertAlign.top,
+        reason: 'later omitted valign leftover-bakes top so Draw does not '
+            'bottom-align both glyphs',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" '
+        'align="center" valign="middle"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(horzOf(includeHost, 'AB'), VsdxHorzAlign.center);
+      expect(
+        horzOf(includeHost, 'CD'),
+        VsdxHorzAlign.left,
+        reason: 'include-shape nested omitted align does not inherit host '
+            'HorzAlign Draw _fillParagraphProperties',
+      );
+      expect(vertOf(includeHost, 'CD'), VsdxVertAlign.top);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        horzOf(leftoverDoc.pages.first.findShapeById(omittedId)!, 'AB'),
+        VsdxHorzAlign.center,
+        reason: 'a second save keeps leftover HorzAlign Draw paints',
+      );
+      expect(
+        horzOf(leftoverDoc.pages.first.findShapeById(omittedId)!, 'CD'),
+        VsdxHorzAlign.left,
+        reason: 'a second save keeps the later omitted-align sibling',
+      );
+      expect(
+        vertOf(leftoverDoc.pages.first.findShapeById(laterId)!, 'AB'),
+        VsdxVertAlign.bottom,
+        reason: 'a second save keeps leftover VerticalAlign Draw paints',
+      );
+      expect(
+        vertOf(leftoverDoc.pages.first.findShapeById(laterId)!, 'CD'),
+        VsdxVertAlign.top,
+        reason: 'a second save keeps the later omitted-valign sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
