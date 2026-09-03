@@ -3654,9 +3654,10 @@ class _DrawioXmlShapeDecoder {
         commands.add(LineTo(_x(_penX, _penY), _y(_penX, _penY)));
         break;
       case 'curve':
-        // mxStencil.drawNode: Number(x3)*sx; omitted is Number(null)=0.
-        // leftover `_number` 0 per node so a later omitted sibling does
-        // not keep last CubBezTo (`tokens.txt` CubBezTo → RelCubBezTo).
+        // mxStencil.drawNode: Number(x3)*sx / Number(y3)*sy; omitted is
+        // Number(null)=0. leftover `_number` 0 per node so a later
+        // omitted sibling does not keep last CubBezTo (`tokens.txt`
+        // CubBezTo → RelCubBezTo).
         _ensurePathStart(commands);
         final x1 = _number(command, 'x1');
         final y1 = _number(command, 'y1');
