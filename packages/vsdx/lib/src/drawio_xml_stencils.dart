@@ -3013,7 +3013,10 @@ class _DrawioXmlShapeDecoder {
     if (theta.abs() < 1e-12 && !flipH && !flipV) return;
     // mxSvgCanvas2D.rotate: cx += dx; cy += dy; cx *= scale. leftover
     // stores that centre in leftover inches so include-shape nested
-    // overlay (already leftover inches) can reuse it.
+    // overlay (already leftover inches) can reuse it. Official
+    // Number(cx); omitted is Number(null)=0 so a later omitted
+    // sibling rotates about the origin, not the previous centre
+    // (`tokens.txt` PinX / Angle).
     final centre = _leftoverUnrotated(
       _number(node, 'cx'),
       _number(node, 'cy'),

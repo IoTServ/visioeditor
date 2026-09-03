@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil rotate omitted leftover cx PinX for
+  LibreOffice. Official `Number(cx)`; omitted is `Number(null)=0`.
+  leftover `_number` 0 per rotate so a later omitted sibling does not
+  keep the previous centre (`tokens.txt` PinX / Angle). leftover now
+  rotates omitted about the origin, include-shape nested omitted cx
+  leftover-bakes origin, and a later explicit cx leftover-bakes a
+  sibling. A second save keeps both. Identity `theta==0` still skips.
 - draw.io leftover mxStencil fillgradient omitted leftover direction
   FillPattern for LibreOffice. Official `setGradient` default direction
   is south. leftover `?? 'south'` per node so a later omitted sibling

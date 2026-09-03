@@ -26764,6 +26764,166 @@ void main() {
   );
 
   test(
+    'mxStencil rotate omitted leftover cx PinX for LibreOffice',
+    () {
+      List<double> firstMoveXs(VsdxShape shape) {
+        final xs = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            if (geometry.noShow) continue;
+            for (final command in geometry.commands) {
+              if (command is MoveTo) {
+                xs.add(command.x);
+                break;
+              }
+              if (command is RelMoveTo) {
+                xs.add(command.fx * next.width);
+                break;
+              }
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return xs;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final pivotX = 60 * canvasScale;
+      final originX = -40 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<rotate theta="90" cx="50" cy="50"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '<save/>'
+        '<rotate theta="90"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '</foreground>'
+        '</shape>',
+        id: 562,
+      );
+      expect(
+        firstMoveXs(omitted),
+        [closeTo(pivotX, 1e-6), closeTo(originX, 1e-6)],
+        reason: 'omitted rotate cx is Number(null)=0; leftover must not '
+            'keep the previous centre so Draw collectGeometry does not '
+            'reuse PinX (`tokens.txt` PinX / Angle)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<rotate theta="90" cx="50" cy="50"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '<save/>'
+        '<rotate theta="90" cx="50" cy="50"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstMoveXs(keep),
+        everyElement(closeTo(pivotX, 1e-6)),
+        reason: 'without omitted cx leftover keeps the pivot centre',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<rotate theta="90"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '<save/>'
+        '<rotate theta="90" cx="50" cy="50"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstMoveXs(later),
+        [closeTo(originX, 1e-6), closeTo(pivotX, 1e-6)],
+        reason: 'later explicit cx leftover-bakes a sibling PinX',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<rotate theta="90" cx="50" cy="50"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<save/>'
+        '<rotate theta="90"/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<restore/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        firstMoveXs(includeHost),
+        [closeTo(pivotX, 1e-6), closeTo(originX, 1e-6)],
+        reason: 'include-shape nested omitted cx leftover-bakes origin '
+            'so Draw does not inherit host rotate centre',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        firstMoveXs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(pivotX, 1e-6), closeTo(originX, 1e-6)],
+        reason: 'a second save keeps leftover PinX Draw paints',
+      );
+      expect(
+        firstMoveXs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(originX, 1e-6), closeTo(pivotX, 1e-6)],
+        reason: 'a second save keeps the later explicit cx sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
