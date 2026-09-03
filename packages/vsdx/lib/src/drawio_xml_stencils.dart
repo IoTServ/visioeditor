@@ -891,8 +891,12 @@ class _DrawioXmlShapeDecoder {
         _applyMxShadowColor(node.getAttribute('color'));
         break;
       case 'shadowalpha':
-        // mxXmlCanvas2D.setShadowAlpha. ShdwForegndTrans is not a
-        // token; leftover write premultiplies RGB that Draw paints.
+        // mxXmlCanvas2D.setShadowAlpha always writes alpha.
+        // NestedStencil Number(null)=0. leftover tryParse skip snapped
+        // to SHADOW_OPACITY 1, so Draw collectFillAndShadow painted an
+        // opaque rail mxSvgCanvas2D.createShadow opacity 0 never painted
+        // (`tokens.txt` has no ShdwForegndTrans; ShdwPattern →
+        // draw:shadow). Invalid CSS opacity stays opaque 1.
         _applyMxShadowAlpha(node.getAttribute('alpha'));
         break;
       case 'shadowoffset':
@@ -2741,10 +2745,19 @@ class _DrawioXmlShapeDecoder {
   }
 
   void _applyMxShadowAlpha(String? raw, {bool rebuild = true}) {
-    final parsed = double.tryParse((raw ?? '').trim());
-    _shadowAlpha = (parsed == null || !parsed.isFinite)
-        ? _kMxDefaultShadowAlpha
-        : parsed.clamp(0.0, 1.0).toDouble();
+    final token = (raw ?? '').trim();
+    if (token.isEmpty) {
+      // NestedStencil Number(null)=0; mxSvgCanvas2D.createShadow
+      // opacity is then 0. leftover default 1 painted an opaque
+      // collectFillAndShadow rail (`tokens.txt` has no
+      // ShdwForegndTrans).
+      _shadowAlpha = 0;
+    } else {
+      final parsed = double.tryParse(token);
+      _shadowAlpha = (parsed == null || !parsed.isFinite)
+          ? _kMxDefaultShadowAlpha
+          : parsed.clamp(0.0, 1.0).toDouble();
+    }
     if (rebuild) _rebuildEnabledShadow();
   }
 
@@ -2834,6 +2847,11 @@ class _DrawioXmlShapeDecoder {
   bool get _canvasXorFlipY => _rotFlipV && !_rotFlipH;
 
   VsdxShadow _shadowFromCanvas() {
+    // mxSvgCanvas2D.createShadow opacity is shadowAlpha. Number(null)=0
+    // is invisible. `tokens.txt` has no ShdwForegndTrans, so leftover
+    // turns ShdwPattern 0 instead of premultiplying RGB to white that
+    // Draw still paints as draw:shadow (`tokens.txt` ShdwPattern).
+    if (_shadowAlpha <= 1e-9) return VsdxShadow.disabled;
     var offsetX = _shadowDx * scaleX * _canvasUserScale;
     var offsetY = -_shadowDy * scaleY * _canvasUserScale;
     if (offsetX.abs() < 1e-9) offsetX = 0.02;

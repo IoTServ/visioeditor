@@ -17201,6 +17201,152 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D shadowalpha omitted leftover bakes ShdwPattern 0 for LibreOffice',
+    () {
+      List<double> shadowTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled &&
+              (next.fill.hasFill || next.line.hasLine)) {
+            values.add(next.shadow.transparency);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      bool hasDisabledShadowFill(VsdxShape shape) {
+        if (shape.fill.hasFill && !shape.shadow.enabled) return true;
+        return shape.children.any(hasDisabledShadowFill);
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowalpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 511,
+      );
+      expect(
+        omitted.shadow.enabled,
+        isFalse,
+        reason: 'omitted shadowalpha is Number(null)=0; leftover default 1 '
+            'painted an opaque collectFillAndShadow rail mxSvgCanvas2D '
+            'createShadow opacity 0 never painted (`tokens.txt` has no '
+            'ShdwForegndTrans; ShdwPattern → draw:shadow)',
+      );
+      expect(omitted.fill.hasFill, isTrue);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        shadowTrans(keep),
+        [closeTo(0, 1e-6)],
+        reason: 'without a shadowalpha node leftover keeps SHADOW_OPACITY 1',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<shadowalpha/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        shadowTrans(laterHost),
+        [closeTo(0, 1e-6)],
+        reason: 'first inherit fillstroke keeps collectFill opaque shadow',
+      );
+      expect(
+        hasDisabledShadowFill(laterHost),
+        isTrue,
+        reason: 'later omitted shadowalpha leftover-bakes ShdwPattern 0 so '
+            'Draw does not offset the second rail (`tokens.txt` has no '
+            'ShdwForegndTrans)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<shadowalpha/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        shadowTrans(includeHost),
+        [closeTo(0, 1e-6)],
+        reason: 'the first host inherit fillstroke keeps SHADOW_OPACITY 1',
+      );
+      expect(
+        hasDisabledShadowFill(includeHost),
+        isTrue,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'shadowalpha turns ShdwPattern 0 for the tile fillstroke',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        leftover.shadow.enabled && leftover.shadow.transparency.abs() < 1e-6,
+        isTrue,
+        reason: 'a second save keeps the first opaque shadow Draw paints',
+      );
+      expect(
+        hasDisabledShadowFill(leftover),
+        isTrue,
+        reason: 'a second save keeps leftover ShdwPattern 0 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {
