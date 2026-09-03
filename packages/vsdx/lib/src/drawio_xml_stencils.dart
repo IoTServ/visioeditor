@@ -797,9 +797,12 @@ class _DrawioXmlShapeDecoder {
         _resetPen();
         break;
       case 'translate':
-        // mxXmlCanvas2D.translate. leftover used to ignore the node,
-        // so later inherit fill extraInheritFill siblings sat on the
-        // same Pin (`tokens.txt` PinX; collectGeometry has no canvas).
+        // mxXmlCanvas2D.translate always writes dx/dy via format().
+        // format(null) is NaN and addOp collapses vertices. leftover
+        // `_number` snaps omitted / invalid to 0 (+=0) so Draw
+        // collectGeometry does not wipe PinX (`tokens.txt` PinX).
+        // A later `<translate/>` does not reset leftover inches;
+        // omitted dx on a later dy still keeps the previous PinX.
         _canvasDx += _number(node, 'dx');
         _canvasDy += _number(node, 'dy');
         if (_shadow != null) _rebuildEnabledShadow();

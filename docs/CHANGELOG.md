@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D translate omitted leftover PinX for
+  LibreOffice. Official `format(null)` is NaN and `addOp` collapses
+  vertices; leftover `_number` snaps omitted / invalid `dx`/`dy` to
+  0 (`+=0`) so Draw `collectGeometry` does not wipe PinX
+  (`tokens.txt` PinX). leftover now keeps previous leftover inches
+  on a later `<translate/>`, include-shape copies that overlay, and
+  omitted dx on a later dy leftover-bakes a sibling. A second save
+  keeps both. No `<translate>` node still stays unshifted.
 - draw.io leftover mxXmlCanvas2D fontbordercolor omitted leftover
   drops the label-border plate for LibreOffice. Official
   `setFontBorderColor(null)` writes `none`; NestedStencil

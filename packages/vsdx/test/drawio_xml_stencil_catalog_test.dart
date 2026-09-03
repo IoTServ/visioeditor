@@ -20853,6 +20853,178 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D translate omitted leftover bakes PinX for LibreOffice',
+    () {
+      double minMoveX(VsdxShape shape) {
+        var min = double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is MoveTo) min = math.min(min, command.x);
+          }
+        }
+        return min;
+      }
+
+      double minMoveY(VsdxShape shape) {
+        var min = double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is MoveTo) min = math.min(min, command.y);
+          }
+        }
+        return min;
+      }
+
+      double minMoveXDeep(VsdxShape shape) {
+        var min = minMoveX(shape);
+        for (final child in shape.children) {
+          min = math.min(min, minMoveXDeep(child));
+        }
+        return min;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<translate/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 522,
+      );
+      expect(
+        minMoveX(omitted),
+        closeTo(0, 0.02),
+        reason: 'omitted dx/dy is format(null)=NaN; leftover `_number` '
+            'snaps to +=0 so Draw collectGeometry does not collapse PinX '
+            '(`tokens.txt` PinX)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(keep),
+        closeTo(0, 0.02),
+        reason: 'without a translate node leftover stays unshifted',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<translate dx="30"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '<translate/>'
+        '<rect x="0" y="20" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(laterHost),
+        closeTo(30 * canvasScale, 0.02),
+        reason: 'later omitted translate is +=0 so Draw keeps the first '
+            'leftover PinX (`tokens.txt` PinX)',
+      );
+      expect(
+        laterHost.children.any(
+          (child) => (minMoveX(child) - 30 * canvasScale).abs() < 0.02,
+        ),
+        isTrue,
+        reason: 'later omitted translate leftover-bakes a sibling that '
+            'stays on the previous leftover inches',
+      );
+
+      final dyHost = decodeDrawioMxStencilXml(
+        '<shape name="D" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<translate dx="30"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '<translate dy="10"/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(minMoveX(dyHost), closeTo(30 * canvasScale, 0.02));
+      expect(
+        dyHost.children.any(
+          (child) =>
+              (minMoveX(child) - 30 * canvasScale).abs() < 0.02 &&
+              (minMoveY(child) - (minMoveY(dyHost) - 10 * canvasScale)).abs() <
+                  0.02,
+        ),
+        isTrue,
+        reason: 'omitted dx on a later dy leftover-bakes a sibling so Draw '
+            'keeps previous PinX while applying dy (`tokens.txt` PinX)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<translate dx="30"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<translate/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.children.any(
+          (child) => minMoveXDeep(child) > 35 * canvasScale,
+        ),
+        isTrue,
+        reason: 'include-shape nested omitted translate is +=0 so host '
+            'dx leftover inches stay (10+30)*catalog scale',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        minMoveX(leftover),
+        closeTo(30 * canvasScale, 0.02),
+        reason: 'a second save keeps leftover PinX Draw paints',
+      );
+      expect(
+        leftover.children.any(
+          (child) => (minMoveX(child) - 30 * canvasScale).abs() < 0.02,
+        ),
+        isTrue,
+        reason: 'a second save keeps the later omitted-translate sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
