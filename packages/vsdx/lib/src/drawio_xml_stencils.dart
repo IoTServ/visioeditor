@@ -1052,6 +1052,13 @@ class _DrawioXmlShapeDecoder {
         }
         break;
       case 'fontcolor':
+        // mxStencil.drawNode: parseColor → setFontColor.
+        // mxXmlCanvas2D.setFontColor(null) writes color="none".
+        // NestedStencil mxStencilColor(null) returns null; setFontColor
+        // emits none. leftover Color null omitted the Color cell, so
+        // collectCharIX defaulted fo:color black (`tokens.txt` Color).
+        // ColorTrans is not a token; `_labelShape` bakes trans=1 over
+        // the backdrop so Draw does not paint that black.
         _applyMxFont(
           node.getAttribute('color'),
           fallback: node.getAttribute('default'),
@@ -1172,6 +1179,9 @@ class _DrawioXmlShapeDecoder {
       // Draw does not inherit FillForegnd (`tokens.txt` → svg:fill).
       // Omitted `<strokecolor/>` color is setStrokeColor(null) / none so
       // Draw does not inherit LineColor (`tokens.txt` → svg:stroke).
+      // Omitted `<fontcolor/>` color is setFontColor(null) / none so
+      // Draw does not collectCharIX default black (`tokens.txt` Color
+      // → fo:color); leftover ColorTrans-bakes the transparent glyph.
       // `fillgradient` / mxXmlCanvas2D `<gradient c1= c2=>` bake
       // FillPattern 25–34 so libvisio's two-stop linear
       // (`_fillAndShadowProperties`) keeps AWS brand ramps;
@@ -2266,6 +2276,23 @@ class _DrawioXmlShapeDecoder {
   /// STYLE_TEXT_OPACITY percent × canvas setAlpha (`<alpha>`).
   double _opacityPercentWithCanvasAlpha(double percent) =>
       (percent * _overallAlpha.clamp(0.0, 1.0)).clamp(0.0, 100.0);
+
+  /// Char ColorTrans leftover for canvas fontcolor none.
+  ///
+  /// Official `setFontColor(null)` is `none`; `getLightDarkColor(null)`
+  /// is `fill: transparent`. leftover Color null omits the Color cell;
+  /// collectCharIX then uses default black fo:color (`tokens.txt`
+  /// Color). ColorTrans is not a token; leftover bakes trans=1 over
+  /// the backdrop so Draw does not paint that black. Inherit
+  /// fontcolor=stroke|fill stays Color null for applyStencilStyle.
+  double _mxCanvasFontTransparency({
+    required VsdxColor? color,
+    required double textOpacity,
+    required bool inherit,
+  }) {
+    if (color == null && !inherit) return 1;
+    return ((100 - textOpacity) / 100).clamp(0.0, 1.0);
+  }
 
   void _applyMxStroke(String? raw, {String? fallback}) {
     final token = (raw ?? '').trim();
@@ -4095,7 +4122,11 @@ class _DrawioXmlShapeDecoder {
                 underline: (run.fontStyle & 4) != 0,
                 strikethrough: (run.fontStyle & 8) != 0,
                 color: run.color ?? label.color,
-                transparency: ((100 - run.textOpacity) / 100).clamp(0.0, 1.0),
+                transparency: _mxCanvasFontTransparency(
+                  color: run.color ?? label.color,
+                  textOpacity: run.textOpacity,
+                  inherit: label.fontFromStroke || label.fontFromFill,
+                ),
                 position: switch (run.position) {
                   1 => VsdxTextPosition.superscript,
                   2 => VsdxTextPosition.subscript,

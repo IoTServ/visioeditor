@@ -17639,6 +17639,191 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fontcolor omitted leftover bakes Char ColorTrans for LibreOffice',
+    () {
+      VsdxTextRun? glyphRun(VsdxShape shape, String text) {
+        if (shape.text == text && shape.richText.runs.isNotEmpty) {
+          return shape.richText.runs.first;
+        }
+        for (final child in shape.children) {
+          final nested = glyphRun(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool hasHexGlyph(VsdxShape shape) {
+        bool walk(VsdxShape next) {
+          for (final candidate in next.richText.runs) {
+            if (candidate.charStyle.color?.value == 0xFF1565C0 &&
+                candidate.charStyle.transparency < 1e-6) {
+              return true;
+            }
+          }
+          return next.children.any(walk);
+        }
+
+        return walk(shape);
+      }
+
+      bool isBackdropGlyph(VsdxCharStyle style) {
+        if (style.transparency > 0.5) return true;
+        final color = style.color;
+        if (color == null) return true;
+        if (color.value == 0xFF1565C0) return false;
+        if (color.value == 0xFF000000) return false;
+        return color.red > 200 && color.green > 200 && color.blue > 200;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontcolor/>'
+        '<text str="N" x="0" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+        id: 514,
+      );
+      expect(
+        glyphRun(omitted, 'N')!.charStyle.color,
+        isNull,
+        reason: 'omitted fontcolor is setFontColor(null)/none; leftover '
+            'Color null omitted the Color cell so Draw collectCharIX '
+            'painted default black (`tokens.txt` Color → fo:color)',
+      );
+      expect(
+        glyphRun(omitted, 'N')!.charStyle.transparency,
+        closeTo(1, 1e-6),
+        reason: 'ColorTrans is not a token; leftover bakes trans=1 over '
+            'the backdrop so Draw does not paint that black. Official '
+            'getLightDarkColor(null) is fill:transparent',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="K" x="0" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphRun(keep, 'K')!.charStyle.color,
+        VsdxColor.black,
+        reason: 'without a fontcolor node leftover keeps createState '
+            '#000000',
+      );
+      expect(
+        glyphRun(keep, 'K')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontcolor color="#1565c0"/>'
+        '<text str="A" x="0" y="0" w="40" h="20"/>'
+        '<fontcolor/>'
+        '<text str="B" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphRun(laterHost, 'A')!.charStyle.color?.value,
+        0xFF1565C0,
+        reason: 'first hex fontcolor keeps collectCharIX Color',
+      );
+      expect(
+        glyphRun(laterHost, 'A')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+      );
+      expect(
+        glyphRun(laterHost, 'B')!.charStyle.color,
+        isNull,
+      );
+      expect(
+        glyphRun(laterHost, 'B')!.charStyle.transparency,
+        closeTo(1, 1e-6),
+        reason: 'later omitted fontcolor leftover-bakes ColorTrans 1 so '
+            'Draw does not keep the previous hex fo:color',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontcolor color="#1565c0"/>'
+        '<text str="H" x="0" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontcolor/>'
+        '<text str="N" x="0" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphRun(includeHost, 'H')!.charStyle.color?.value,
+        0xFF1565C0,
+        reason: 'the first host glyph keeps leftover hex Color',
+      );
+      expect(
+        glyphRun(includeHost, 'N')!.charStyle.transparency,
+        closeTo(1, 1e-6),
+        reason: 'include-shape shares the canvas; nested omitted '
+            'fontcolor leftover-bakes ColorTrans 1',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        hasHexGlyph(leftover),
+        isTrue,
+        reason: 'a second save keeps leftover hex Color Draw paints',
+      );
+      final leftoverNone = glyphRun(leftover, 'B')!.charStyle;
+      expect(
+        leftoverNone.transparency,
+        closeTo(0, 1e-6),
+        reason: 'ColorTrans is not a token; the bake writes 0',
+      );
+      expect(
+        leftoverNone.color,
+        isNotNull,
+        reason: 'leftover must emit Color so collectCharIX does not '
+            'default fo:color black',
+      );
+      expect(
+        isBackdropGlyph(leftoverNone),
+        isTrue,
+        reason: 'a second save ColorTrans-bakes the none glyph over the '
+            'page backdrop so Draw does not paint default black '
+            '(`tokens.txt` has no ColorTrans)',
+      );
+      expect(
+        leftoverNone.color?.value,
+        isNot(0xFF000000),
+        reason: 'leftover must not freeze omitted fontcolor to black',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

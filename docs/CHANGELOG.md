@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fontcolor omitted leftover Char
+  ColorTrans for LibreOffice. Official `setFontColor(null)` writes
+  `none`; `mxUtils.getLightDarkColor(null)` is `fill: transparent`.
+  leftover Color null omitted the Color cell, so Draw
+  `collectCharIX` painted default black (`tokens.txt` Color →
+  `fo:color`; ColorTrans is not a token). leftover now bakes
+  trans=1 over the backdrop, include-shape copies that overlay,
+  and a later omitted fontcolor leftover-bakes a sibling. A
+  second save keeps both. No `<fontcolor>` node still stays
+  createState `#000000`.
 - draw.io leftover mxXmlCanvas2D miterlimit omitted leftover CSS
   initial 4 for LibreOffice. Official `setMiterLimit(Number(null))`
   is 0; `mxSvgCanvas2D` writes `stroke-miterlimit="0"` which CSS
