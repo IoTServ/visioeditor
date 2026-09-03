@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover arc ry LineTo for
+  LibreOffice. Official `drawNode` uses `Number(ry)*sy`; omitted is
+  `Number(null)=0` and SVG collapses the arc to a line even when x/y/rx
+  remain. leftover `_number` 0 per node so a later omitted sibling does
+  not keep CubBezTo (`tokens.txt` CubBezTo → RelCubBezTo). leftover now
+  snaps omitted to LineTo the authored end, include-shape nested omitted
+  ry leftover-bakes LineTo, and a later explicit ry leftover-bakes CubBezTo.
+  A second save keeps both.
 - draw.io leftover mxStencil path omitted leftover arc rx LineTo for
   LibreOffice. Official `drawNode` uses `Number(rx)*sx`; omitted is
   `Number(null)=0` and SVG collapses the arc to a line even when x/y/ry
