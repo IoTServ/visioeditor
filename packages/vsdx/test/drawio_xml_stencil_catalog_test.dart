@@ -36304,6 +36304,130 @@ void main() {
   );
 
   test(
+    'mxStencil text run omitted leftover pos Char.Pos for LibreOffice',
+    () {
+      List<VsdxTextPosition> positions(VsdxShape shape) {
+        final values = <VsdxTextPosition>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.position);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepRun = '<run str="AB" pos="2"/>';
+      const omittedRun = '<run str="CD"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">'
+        '$keepRun'
+        '$omittedRun'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+        id: 628,
+      );
+      expect(
+        positions(omitted),
+        [VsdxTextPosition.subscript, VsdxTextPosition.normal],
+        reason: 'omitted run pos is 0; leftover must not keep Char.Pos 2 '
+            'so Draw collectCharIX does not subscript the later sibling '
+            '(`tokens.txt` Pos → style:text-position)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">'
+        '$keepRun'
+        '<run str="CD" pos="2"/>'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        positions(keep),
+        everyElement(VsdxTextPosition.subscript),
+        reason: 'without omitted pos leftover keeps Char.Pos 2',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">'
+        '$omittedRun'
+        '$keepRun'
+        '</text>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        positions(later),
+        [VsdxTextPosition.normal, VsdxTextPosition.subscript],
+        reason: 'later pos="2" leftover-bakes a sibling Char.Pos 2',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">$keepRun</text>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20">$omittedRun</text>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        positions(includeHost),
+        [VsdxTextPosition.subscript, VsdxTextPosition.normal],
+        reason: 'include-shape nested omitted pos leftover-bakes Char.Pos 0 '
+            'so Draw does not inherit host subscript '
+            '(`tokens.txt` Pos → style:text-position)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        positions(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [VsdxTextPosition.subscript, VsdxTextPosition.normal],
+        reason: 'a second save keeps leftover Char.Pos Draw paints',
+      );
+      expect(
+        positions(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [VsdxTextPosition.normal, VsdxTextPosition.subscript],
+        reason: 'a second save keeps the later leftover subscript sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

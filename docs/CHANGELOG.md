@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover pos Char.Pos for
+  LibreOffice. Official omitted `pos` is 0 (baseline); leftover now
+  snaps per `<run>` so Draw collectCharIX does not subscript a later
+  sibling (`tokens.txt` Pos → style:text-position). include-shape
+  nested omitted leftover-bakes Char.Pos 0, and a later explicit
+  `pos="2"` leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil mxXmlCanvas2D scale omitted leftover after
   negative keeps PinX for LibreOffice. Official omitted scale is
   fallback 1 (no-op multiply); after `scale="-1"` that keeps the
