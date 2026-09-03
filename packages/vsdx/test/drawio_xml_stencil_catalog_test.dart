@@ -21174,6 +21174,176 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D begin leftover discards unpainted path and resets lastX for LibreOffice',
+    () {
+      int commandCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            n += geometry.commands.length;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      bool hasMoveThenLine(VsdxShape shape) {
+        for (final geometry in shape.geometries) {
+          if (geometry.commands.length >= 2 &&
+              geometry.commands.first is MoveTo &&
+              geometry.commands[1] is LineTo) {
+            return true;
+          }
+        }
+        return shape.children.any(hasMoveThenLine);
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<begin/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 524,
+      );
+      expect(
+        commandCount(omitted),
+        5,
+        reason: 'mxSvgCanvas2D.begin discards the unpainted path; leftover '
+            'must not concatenate the dropped rect onto collectGeometry '
+            'evenodd (`tokens.txt` FillForegnd)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        commandCount(keep),
+        10,
+        reason: 'without a begin leftover concatenates both rects so Draw '
+            'collectGeometry evenodd-paints both (`tokens.txt` FillForegnd)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<rect x="50" y="0" w="40" h="10"/>'
+        '<begin/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.geometries.where((g) => !g.noFill).length,
+        1,
+        reason: 'first inherit fill stays after later begin discards the '
+            'unpainted middle rect',
+      );
+      expect(
+        laterHost.geometries.where((g) => !g.noLine).length,
+        1,
+        reason: 'later begin leftover does not glue the dropped rect onto '
+            'the inherit stroke Draw collectLine paints (`tokens.txt` Line)',
+      );
+
+      final pen = decodeDrawioMxStencilXml(
+        '<shape name="P" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<move x="40" y="0"/>'
+        '<begin/>'
+        '<line x="0" y="20"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        hasMoveThenLine(pen),
+        isTrue,
+        reason: 'official begin lastX/lastY is 0; leftover leftover-bakes '
+            'MoveTo at the pen so Draw collectGeometry does not skip a '
+            'LineTo-only section (`tokens.txt` Line)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<begin/>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.geometries.where((g) => !g.noFill).length,
+        1,
+        reason: 'host inherit fill stays; nested begin does not drop it',
+      );
+      expect(
+        includeHost.children.any(
+          (child) =>
+              child.geometries.any((g) => !g.noLine) &&
+              child.geometries.every((g) => g.noFill),
+        ),
+        isTrue,
+        reason: 'include-shape nested begin leftover-discards the tile '
+            'unpainted rect so Draw collectLine strokes only the later rail',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        leftover.geometries.where((g) => !g.noFill).length,
+        1,
+        reason: 'a second save keeps the first inherit fill Draw paints',
+      );
+      expect(
+        leftover.geometries.where((g) => !g.noLine).length,
+        1,
+        reason: 'a second save keeps the later inherit stroke Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

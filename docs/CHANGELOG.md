@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D begin leftover lastX/lastY 0 for
+  LibreOffice. Official `begin` discards the unpainted path and
+  resets `lastX`/`lastY` to 0; leftover used to concatenate onto
+  the next fill/stroke so Draw `collectGeometry` evenodd-punched
+  or skipped a LineTo-only section (`tokens.txt` Line /
+  FillForegnd). leftover now clears `_pending` and leftover-bakes
+  MoveTo at the pen, include-shape nested begin discards only the
+  tile path, and a later begin leftover-bakes a sibling. A second
+  save keeps both. Without `<begin/>` leftover still concatenates.
 - draw.io leftover mxXmlCanvas2D rotate omitted leftover PinX for
   LibreOffice. Official `rotate` skips identity (`theta==0 && !flipH
   && !flipV`); mxSvgCanvas2D does not write a transform. leftover

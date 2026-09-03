@@ -788,11 +788,13 @@ class _DrawioXmlShapeDecoder {
         _appendImplicitPathNode(node);
         break;
       case 'begin':
-        // mxXmlCanvas2D.begin / mxSvgCanvas2D.begin discards the
-        // unpainted path (AWS EMR leftover after fill). leftover used
-        // to concatenate onto the next fill/stroke, so Draw
-        // collectGeometry evenodd-punched or stroked the dropped
-        // contour (`tokens.txt` Line / FillForegnd).
+        // mxXmlCanvas2D.begin / mxSvgCanvas2D.begin / mxAbstractCanvas2D
+        // begin discards the unpainted path and resets lastX/lastY to 0
+        // (AWS EMR leftover after fill). leftover used to concatenate
+        // onto the next fill/stroke, so Draw collectGeometry evenodd-
+        // punched or stroked the dropped contour (`tokens.txt` Line /
+        // FillForegnd). leftover now clears `_pending` and the pen so
+        // a later `<line>` starts at the origin like official lastX=0.
         _pending = null;
         _resetPen();
         break;
@@ -2107,6 +2109,18 @@ class _DrawioXmlShapeDecoder {
     _subX = 0;
     _subY = 0;
     _hasSub = false;
+  }
+
+  /// mxAbstractCanvas2D.begin lastX/lastY is 0; the next lineTo/curveTo
+  /// addOp starts there. leftover `_pending` after `<begin/>` is empty,
+  /// so a bare drawing op leftover-bakes MoveTo at the pen or Draw
+  /// collectGeometry skips a LineTo-only section (`tokens.txt` Line).
+  void _ensurePathStart(List<VsdxPathCommand> commands) {
+    if (commands.isNotEmpty) return;
+    commands.add(MoveTo(_x(_penX, _penY), _y(_penX, _penY)));
+    _subX = _penX;
+    _subY = _penY;
+    _hasSub = true;
   }
 
   void _setPending(List<VsdxPathCommand> commands) {
@@ -3511,11 +3525,18 @@ class _DrawioXmlShapeDecoder {
         commands.add(MoveTo(_x(_penX, _penY), _y(_penX, _penY)));
         break;
       case 'line':
+        // mxAbstractCanvas2D.begin resets lastX/lastY to 0; lineTo then
+        // addOp from the origin. leftover `_pending` after `<begin/>` is
+        // empty, so a bare `<line>` must leftover-bake MoveTo at the pen
+        // or Draw collectGeometry skips a LineTo-only section
+        // (`tokens.txt` Line).
+        _ensurePathStart(commands);
         _penX = _number(command, 'x');
         _penY = _number(command, 'y');
         commands.add(LineTo(_x(_penX, _penY), _y(_penX, _penY)));
         break;
       case 'curve':
+        _ensurePathStart(commands);
         final x1 = _number(command, 'x1');
         final y1 = _number(command, 'y1');
         final x2 = _number(command, 'x2');
@@ -3532,6 +3553,7 @@ class _DrawioXmlShapeDecoder {
         ));
         break;
       case 'quad':
+        _ensurePathStart(commands);
         final x1 = _number(command, 'x1');
         final y1 = _number(command, 'y1');
         _penX = _number(command, 'x2');
@@ -3544,6 +3566,7 @@ class _DrawioXmlShapeDecoder {
         ));
         break;
       case 'arc':
+        _ensurePathStart(commands);
         final endX = _number(command, 'x');
         final endY = _number(command, 'y');
         // mxStencil.drawNode canvas.arcTo(rx*sx, ry*sy, φ, large, sweep,
