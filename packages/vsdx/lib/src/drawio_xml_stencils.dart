@@ -1156,6 +1156,10 @@ class _DrawioXmlShapeDecoder {
             // does not keep TxtPinX (`tokens.txt` TxtPinX → svg:x).
             x: _number(node, 'x'),
             y: _number(node, 'y'),
+            // mxStencil.drawNode: Number(w)*sx; omitted is Number(null)=0.
+            // leftover `_number` 0 per glyph so a later omitted sibling
+            // does not keep TxtWidth (`tokens.txt` TxtWidth → svg:width).
+            // w==0 is a tight pin, not the previous leftover cell box.
             boxWidth: _number(node, 'w'),
             boxHeight: _number(node, 'h'),
             // NestedStencil leftover extras; mxXmlCanvas2D.text does not

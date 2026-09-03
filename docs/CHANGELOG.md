@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover w TxtWidth for
+  LibreOffice. Official `drawNode` uses `Number(w)*sx`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per glyph so a later omitted
+  sibling does not keep TxtWidth (`tokens.txt` TxtWidth → `svg:width`).
+  leftover now snaps omitted to a tight pin, include-shape nested omitted
+  w leftover-bakes the tight box, and a later explicit w leftover-bakes
+  a sibling. A second save keeps both. `w=` still leftover-bakes the
+  cell box.
 - draw.io leftover mxStencil text omitted leftover str skip for
   LibreOffice. Official `mxXmlCanvas2D.text` skips `str==null`. leftover
   empty runs skip so a later omitted sibling does not reuse the previous

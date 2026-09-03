@@ -26235,6 +26235,128 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover w TxtWidth for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '') == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<double> glyphWidths(VsdxShape shape) {
+        final widths = <double>[
+          for (final text in <String>['AB', 'CD'])
+            glyphContaining(shape, text)!.width,
+        ];
+        widths.sort();
+        return widths;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final fontInches = 11 * canvasScale;
+      final tightW = math.max(fontInches * 1.2, 2 * fontInches * 0.62);
+      final cellW = 40 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" h="20"/>'
+        '</foreground>'
+        '</shape>',
+        id: 558,
+      );
+      expect(
+        glyphWidths(omitted),
+        [closeTo(tightW, 1e-6), closeTo(cellW, 1e-6)],
+        reason: 'omitted text w is Number(null)=0; leftover must not keep '
+            'TxtWidth so Draw collectTextBlock does not clip the later '
+            'glyph (`tokens.txt` TxtWidth → svg:width)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphWidths(keep),
+        everyElement(closeTo(cellW, 1e-6)),
+        reason: 'without omitted w leftover keeps the cell TxtWidth',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphWidths(later),
+        [closeTo(tightW, 1e-6), closeTo(cellW, 1e-6)],
+        reason: 'later explicit w leftover-bakes a sibling cell TxtWidth',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="100" h="40"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="40" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphWidths(includeHost),
+        [closeTo(tightW, 1e-6), closeTo(cellW, 1e-6)],
+        reason: 'include-shape nested omitted w leftover-bakes a tight pin so '
+            'Draw does not inherit host TxtWidth',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        glyphWidths(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(tightW, 1e-6), closeTo(cellW, 1e-6)],
+        reason: 'a second save keeps leftover TxtWidth Draw paints',
+      );
+      expect(
+        glyphWidths(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(tightW, 1e-6), closeTo(cellW, 1e-6)],
+        reason: 'a second save keeps the later explicit TxtWidth sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
