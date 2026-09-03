@@ -3592,6 +3592,9 @@ class _DrawioXmlShapeDecoder {
         // empty, so a bare `<line>` must leftover-bake MoveTo at the pen
         // or Draw collectGeometry skips a LineTo-only section
         // (`tokens.txt` Line).
+        // mxStencil.drawNode: Number(getAttribute('x'))*sx; omitted is
+        // Number(null)=0. leftover `_number` 0 per node so a later
+        // omitted sibling does not keep lastX LineTo (`tokens.txt` Line).
         _ensurePathStart(commands);
         _penX = _number(command, 'x');
         _penY = _number(command, 'y');

@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover line LineTo for
+  LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per node so a later omitted
+  sibling does not keep lastX (`tokens.txt` Line → RelLineTo). leftover
+  now snaps omitted to the origin, include-shape nested omitted line
+  leftover-bakes LineTo 0, and a later explicit line leftover-bakes a
+  sibling. A second save keeps both. `line x=` still leftover-bakes.
 - draw.io leftover NestedStencil text omitted leftover textopacity
   ColorTrans for LibreOffice. Official `canvas.text` does not write
   `textopacity`; mxText.apply default is 100. leftover `_number`
