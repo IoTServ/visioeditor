@@ -2315,6 +2315,9 @@ class _DrawioXmlShapeDecoder {
     // mxXmlCanvas2D.setGradient default direction is south. leftover
     // `?? 'south'` per node so a later omitted sibling does not keep
     // FillPattern 27 (`tokens.txt` FillPattern → draw:angle).
+    // Official omitted alpha1/alpha2 default 1. leftover 1.0 per node
+    // so a later omitted sibling does not keep FillBkgndTrans /
+    // FillForegndTrans (`tokens.txt` FillBkgndTrans).
     final dir = (node.getAttribute('direction') ?? 'south').toLowerCase();
     final alpha1 = node.getAttribute('alpha1') == null
         ? 1.0

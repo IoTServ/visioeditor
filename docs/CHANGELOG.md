@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover alpha1
+  FillBkgndTrans for LibreOffice. Official `setGradient` omitted
+  alpha1 defaults to 1. leftover 1.0 per node so a later omitted
+  sibling does not keep FillBkgndTrans 1 (`tokens.txt` FillBkgndTrans).
+  leftover now snaps omitted to opaque color1, include-shape nested
+  omitted alpha1 leftover-bakes FillBkgndTrans 0, and a later explicit
+  alpha1 leftover-bakes a sibling. A second save keeps the opaque
+  FillPattern 28 rail (FillBkgndTrans 1 leftover-bakes SoftEdges PNG).
 - draw.io leftover mxStencil path omitted leftover arc y CubBezTo for
   LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted
