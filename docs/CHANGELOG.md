@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover arc large-arc-flag
+  CubBezTo for LibreOffice. Official `drawNode` uses
+  `Number(large-arc-flag)`; omitted is `Number(null)=0`. leftover `_flag`
+  false per node so a later omitted sibling does not keep the previous
+  large arc (`tokens.txt` CubBezTo). leftover now snaps omitted to the
+  small-arc rail, include-shape nested omitted large-arc leftover-bakes
+  the small CubBezTo, and a later explicit large-arc leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil path omitted leftover arc sweep-flag CubBezTo
   for LibreOffice. Official `drawNode` uses `Number(sweep-flag)`; omitted
   is `Number(null)=0`. leftover `_flag` false per node so a later omitted
