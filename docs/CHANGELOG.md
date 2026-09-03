@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover default
+  highlight / fontcolor for LibreOffice. NestedStencil getColorValue
+  is per-node `default`; leftover `_mxGraphPaintColor` ignored
+  `highlight="hubFill"` / `fontcolor="hubFont"` so Draw collectCharIX
+  reused canvas black and skipped mixed FillForegnd plates
+  (`tokens.txt` has no Highlight; Color → fo:color). leftover now
+  resolves the run `default` like canvas `<fontcolor>`. include-shape
+  nested omitted leftover-bakes none / black, and a later explicit
+  default leftover-bakes a sibling. A second save keeps both.
+
 - draw.io leftover mxStencil dashpattern single leftover veDashPattern
   for LibreOffice. Official `setDashPattern("8")` is CSS
   `stroke-dasharray` repeating that length; leftover `length >= 2`

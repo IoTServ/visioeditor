@@ -2689,13 +2689,35 @@ class _DrawioXmlShapeDecoder {
   /// `_mxGraphPaintColor` leaves null so `run.color ?? label.color`
   /// rides the previous sibling's hex (Roadmap Lorem after Label).
   /// Omitted attr still inherits the canvas `<fontcolor>` token.
-  VsdxColor? _mxRunFontColor(String? raw) {
+  /// Style-key tokens use this run's `default` like canvas
+  /// `<fontcolor>` / NestedStencil getColorValue (`tokens.txt` Color).
+  VsdxColor? _mxRunFontColor(String? raw, {String? fallback}) {
     if (raw == null) return _fontColor;
     final token = raw.trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'none') return _fontColor;
     if (lower == 'default' || lower == 'font') return _kMxDefaultFontColor;
-    return _mxGraphPaintColor(token) ?? _fontColor;
+    final parsed = _mxGraphPaintColor(token);
+    if (parsed != null) return parsed;
+    if (_styleKeyIsNone(token, fallback)) return _fontColor;
+    return _styleKeyColor(token, fallback) ?? _fontColor;
+  }
+
+  /// mxText html `<run highlight>`. Omitted / none is no Char.Highlight.
+  /// Style-key tokens use this run's `default` like fillcolor /
+  /// NestedStencil getColorValue so Draw leftover-bakes mixed
+  /// FillForegnd plates (`tokens.txt` has no Highlight).
+  VsdxColor? _mxRunHighlight(String? raw, {String? fallback}) {
+    if (raw == null) return null;
+    final token = raw.trim();
+    final lower = token.toLowerCase();
+    if (token.isEmpty || lower == 'none' || lower == 'transparent') {
+      return null;
+    }
+    final parsed = _mxGraphPaintColor(token);
+    if (parsed != null) return parsed;
+    if (_styleKeyIsNone(token, fallback)) return null;
+    return _styleKeyColor(token, fallback);
   }
 
   /// mxText html=1: `<run>` children are extra Character rows. A bare
@@ -2731,7 +2753,10 @@ class _DrawioXmlShapeDecoder {
             ).round(),
             fontFamily:
                 _mxFontFamily(el.getAttribute('fontfamily')) ?? _fontFamily,
-            color: _mxRunFontColor(el.getAttribute('fontcolor')),
+            color: _mxRunFontColor(
+              el.getAttribute('fontcolor'),
+              fallback: el.getAttribute('default'),
+            ),
             textOpacity: _opacityPercentWithCanvasAlpha(
               el.getAttribute('textopacity') == null
                   ? parentRaw
@@ -2747,7 +2772,10 @@ class _DrawioXmlShapeDecoder {
             bullet: _number(el, 'bullet').round(),
             textPosAfterBullet: _number(el, 'text-pos-after-bullet'),
             lineHeight: _number(el, 'line-height', fallback: 1),
-            highlight: _mxGraphPaintColor(el.getAttribute('highlight')),
+            highlight: _mxRunHighlight(
+              el.getAttribute('highlight'),
+              fallback: el.getAttribute('default'),
+            ),
           ),
     ].where((run) => run.text.isNotEmpty).toList(growable: false);
     if (raw.isNotEmpty) return _bakeDrawioLabelRuns(raw);
