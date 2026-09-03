@@ -30946,6 +30946,147 @@ void main() {
   );
 
   test(
+    'mxStencil roundrect omitted leftover h CubBezTo for LibreOffice',
+    () {
+      List<double> geomMinYs(VsdxShape shape) {
+        final ys = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            if (geometry.noShow) continue;
+            double? minY;
+            for (final command in geometry.commands) {
+              double? y;
+              if (command is MoveTo) y = command.y;
+              if (command is RelMoveTo) y = command.fy * next.height;
+              if (command is LineTo) y = command.y;
+              if (command is RelLineTo) y = command.fy * next.height;
+              if (command is CubBezTo) y = command.y;
+              if (command is RelCubBezTo) y = command.fy * next.height;
+              if (y != null) {
+                minY = minY == null ? y : (y < minY ? y : minY);
+              }
+            }
+            if (minY != null) ys.add(minY);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        ys.sort();
+        return ys;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final originY = 50 * canvasScale;
+      final shiftedY = 20 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="10" y="10" w="40" h="30"/>'
+        '<stroke/>'
+        '<roundrect x="10" y="10" w="40"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 591,
+      );
+      expect(
+        geomMinYs(omitted),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'omitted roundrect h is Number(null)=0; leftover must not keep '
+            'Height so Draw collectGeometry does not RelCubBezTo the first '
+            'plate (`tokens.txt` CubBezTo)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="10" y="10" w="40" h="30"/>'
+        '<stroke/>'
+        '<roundrect x="10" y="10" w="40" h="30"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        geomMinYs(keep),
+        everyElement(closeTo(shiftedY, 1e-6)),
+        reason: 'without omitted h leftover keeps Height CubBezTo',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="10" y="10" w="40"/>'
+        '<stroke/>'
+        '<roundrect x="10" y="10" w="40" h="30"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        geomMinYs(later),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'later explicit h leftover-bakes a sibling CubBezTo',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="10" y="10" w="40" h="30"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="60"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<roundrect x="10" y="10" w="40"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        geomMinYs(includeHost),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'include-shape nested omitted h leftover-bakes top so Draw '
+            'does not inherit host Height',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        geomMinYs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'a second save keeps leftover CubBezTo Draw paints',
+      );
+      expect(
+        geomMinYs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'a second save keeps the later explicit CubBezTo sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
