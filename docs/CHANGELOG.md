@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS font-size / font-family / color /
+  background-color omitted leftover Char.Size / Font / Color /
+  Highlight for LibreOffice. mxSvgCanvas2D HTML paints those CSS
+  properties on `<span>`; leftover ignored them so Draw collectCharIX
+  reused canvas 11pt Arial black with no mark (`tokens.txt` Size /
+  Font / Color; Highlight → fo:background-color on a uniform glyph).
+  leftover already maps those CSS properties. include-shape nested
+  omitted leftover-bakes the canvas defaults, and a later explicit
+  rule leftover-bakes a sibling. A second save keeps Size / Font /
+  Color / Highlight.
+
 - draw.io leftover mxStencil html CSS font-weight / font-style /
   text-decoration omitted leftover Char.Style for LibreOffice.
   mxSvgCanvas2D HTML paints CSS `font-weight:bold` / `font-style:italic`
