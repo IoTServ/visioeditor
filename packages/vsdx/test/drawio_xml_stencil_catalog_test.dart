@@ -27046,6 +27046,131 @@ void main() {
   );
 
   test(
+    'mxStencil image omitted leftover h ImgHeight for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        return <VsdxShape>[
+          if (shape.hasImage && shape.children.isEmpty) shape,
+          for (final child in shape.children) ...imageShapes(child),
+        ];
+      }
+
+      List<double> imageHeights(VsdxShape shape) {
+        final heights = [for (final pic in imageShapes(shape)) pic.height];
+        heights.sort();
+        return heights;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final boxedH = 10 * canvasScale;
+      const stretchedH = 1.5;
+      final includeStretch = 50 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" x="50" y="0" w="20"/>'
+        '</foreground>'
+        '</shape>',
+        id: 564,
+      );
+      expect(
+        imageHeights(omitted),
+        [closeTo(boxedH, 1e-6), closeTo(stretchedH, 1e-6)],
+        reason: 'omitted image h is not leftover canvas state; leftover '
+            'must stretch over the XForm so Draw collectForeignDataType '
+            'does not keep ImgHeight (`tokens.txt` ImgHeight → svg:height)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        imageHeights(keep),
+        everyElement(closeTo(boxedH, 1e-6)),
+        reason: 'without omitted h leftover keeps ImgHeight',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="0" y="0" w="20"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        imageHeights(later),
+        [closeTo(boxedH, 1e-6), closeTo(stretchedH, 1e-6)],
+        reason: 'later explicit h leftover-bakes a sibling ImgHeight',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="20" h="10"/>'
+        '<include-shape name="mxgraph.test.tile" x="50" y="0" w="50" h="50"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="50" h="50" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" x="0" y="0" w="20"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        imageHeights(includeHost),
+        [closeTo(boxedH, 1e-6), closeTo(includeStretch, 1e-6)],
+        reason: 'include-shape nested omitted h leftover-bakes the include '
+            'box so Draw does not inherit host ImgHeight',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        imageHeights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(boxedH, 1e-6), closeTo(stretchedH, 1e-6)],
+        reason: 'a second save keeps leftover ImgHeight Draw paints',
+      );
+      expect(
+        imageHeights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(boxedH, 1e-6), closeTo(stretchedH, 1e-6)],
+        reason: 'a second save keeps the later explicit ImgHeight sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil image omitted leftover h ImgHeight for
+  LibreOffice. Official `drawNode` uses `Number(h)*sy`; omitted is
+  `Number(null)=0`. leftover null boxH stretches over the XForm so a
+  later omitted sibling does not keep ImgHeight (`tokens.txt`
+  ImgHeight → `svg:height`). leftover now stretches omitted,
+  include-shape nested omitted h leftover-bakes the include box, and a
+  later explicit h leftover-bakes a sibling. A second save keeps both.
+  NestedStencil omitted w/h still stretches IBM Floating IP.
 - draw.io leftover mxStencil text omitted leftover h TxtHeight for
   LibreOffice. Official `drawNode` uses `Number(h)*sy`; omitted is
   `Number(null)=0`. leftover `_number` 0 per glyph so a later omitted

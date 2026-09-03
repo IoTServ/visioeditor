@@ -1519,8 +1519,9 @@ class _DrawioXmlShapeDecoder {
       // maps ImgOffsetX/Y + ImgWidth/Height to svg:x/y/width/height.
       // A missing box stretches the PNG over the XForm (IBM Floating IP
       // is a mid-band icon on a 60×60 cell). leftover null boxW/boxH per
-      // image so a later omitted sibling does not keep ImgWidth
-      // (`tokens.txt` ImgWidth → svg:width).
+      // image so a later omitted sibling does not keep ImgWidth /
+      // ImgHeight (`tokens.txt` ImgWidth → svg:width; ImgHeight →
+      // svg:height).
       left: left,
       top: top,
       boxW: boxW > 1e-9 ? boxW : null,
