@@ -888,11 +888,14 @@ class _DrawioXmlShapeDecoder {
         _applyMxShadowAlpha(node.getAttribute('alpha'));
         break;
       case 'shadowoffset':
-        // mxXmlCanvas2D.setShadowOffset. ShapeShdwOffsetX/Y are
-        // tokens `_fillAndShadowProperties` maps to draw:shadow-offset-*.
+        // mxXmlCanvas2D.setShadowOffset always writes dx/dy.
+        // NestedStencil Number(null)=0. leftover tryParse skip kept
+        // the previous leftover inches, so Draw collectFillAndShadow
+        // reused ShapeShdwOffsetX (`tokens.txt` → draw:shadow-offset-x).
         _applyMxShadowOffset(
           node.getAttribute('dx'),
           node.getAttribute('dy'),
+          snapOmittedToZero: true,
         );
         break;
       case 'fill':
@@ -1163,6 +1166,8 @@ class _DrawioXmlShapeDecoder {
       // inherit paint leftover-bakes a sibling because collectFillAndShadow
       // is shape-level. ShdwForegndTrans is not a token, so a save
       // premultiplies RGB.
+      // Omitted `<shadowoffset/>` dx/dy is Number(null)=0 so Draw
+      // does not reuse the previous leftover inches.
       // `fontfamily` follows mxStencil.drawNode / mxXmlCanvas2D
       // setFontFamily onto Char.Font that collectCharIX maps to
       // style:font-name. CSS stacks skip webfonts so `"open sans", arial`
@@ -2712,11 +2717,21 @@ class _DrawioXmlShapeDecoder {
     String? dxRaw,
     String? dyRaw, {
     bool rebuild = true,
+    bool snapOmittedToZero = false,
   }) {
     final dx = double.tryParse((dxRaw ?? '').trim());
     final dy = double.tryParse((dyRaw ?? '').trim());
-    if (dx != null && dx.isFinite) _shadowDx = dx;
-    if (dy != null && dy.isFinite) _shadowDy = dy;
+    if (dx != null && dx.isFinite) {
+      _shadowDx = dx;
+    } else if (snapOmittedToZero && (dxRaw == null || dxRaw.trim().isEmpty)) {
+      // NestedStencil Number(null)=0; Number('foo') is NaN keep.
+      _shadowDx = 0;
+    }
+    if (dy != null && dy.isFinite) {
+      _shadowDy = dy;
+    } else if (snapOmittedToZero && (dyRaw == null || dyRaw.trim().isEmpty)) {
+      _shadowDy = 0;
+    }
     if (rebuild) _rebuildEnabledShadow();
   }
 

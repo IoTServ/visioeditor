@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D shadowoffset omitted leftover
+  ShapeShdwOffset 0 for LibreOffice. Official `setShadowOffset`
+  writes dx/dy; NestedStencil `Number(null)` is 0. leftover
+  `tryParse` skip kept the previous leftover inches, so Draw
+  `collectFillAndShadow` reused `ShapeShdwOffsetX`
+  (`tokens.txt` → `draw:shadow-offset-x`). leftover now snaps
+  omitted to 0, include-shape copies that overlay, and a later
+  omitted offset leftover-bakes a sibling. A second save keeps
+  both.
 - draw.io leftover mxXmlCanvas2D sketch omitted leftover FillPattern
   hatch off for LibreOffice. NestedStencil `setSketch` always writes
   `enabled="1"`; Graph wraps mxRoughCanvas2D only when `sketch==1`.
