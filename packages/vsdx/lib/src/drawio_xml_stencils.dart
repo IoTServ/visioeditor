@@ -3953,7 +3953,13 @@ class _DrawioXmlShapeDecoder {
   VsdxRichText _stencilLabelRichText() {
     final node = element.getElement('labelBounds');
     if (node == null) return VsdxRichText.empty;
-    final boxW = _number(node, 'w');
+    // Shapes.js getLabelMargins: Number(w || stencil.w0); omitted is the
+    // stencil source width, not 0. leftover must not skip TxtWidth so
+    // Draw collectTextBlock paints the w0 rail (`tokens.txt` TxtWidth →
+    // svg:width). Explicit "0" stays 0 and leftover skips the
+    // degenerate box. Official include-shape only paints; nested
+    // labelBounds stay on the nested stencil and are not merged.
+    final boxW = _labelBoundExtent(node, 'w', sourceWidth);
     final boxH = _number(node, 'h');
     if (boxW <= 1e-9 || boxH <= 1e-9) return VsdxRichText.empty;
     final width = boxW * scaleX.abs();
@@ -3962,8 +3968,7 @@ class _DrawioXmlShapeDecoder {
     // Shapes.js getLabelMargins: Number(x||0)/Number(y||0); omitted is
     // 0. leftover `_number` 0 per labelBounds so a later omitted sibling
     // does not keep TxtPinX / TxtPinY (`tokens.txt` TxtPinX → svg:x;
-    // TxtPinY → svg:y). Official include-shape only paints; nested
-    // labelBounds stay on the nested stencil and are not merged.
+    // TxtPinY → svg:y).
     return VsdxRichText(
       runs: const <VsdxTextRun>[],
       textBlock: VsdxTextBlock(
@@ -5726,6 +5731,14 @@ int _mxMod(int n, int m) {
 double _number(XmlElement element, String name, {double fallback = 0}) {
   final value = double.tryParse(element.getAttribute(name) ?? '');
   return value?.isFinite == true ? value! : fallback;
+}
+
+/// Shapes.js getLabelMargins: `Number(attr || stencil.w0/h0)`. Omitted
+/// or empty is the stencil source box; an explicit `"0"` stays 0.
+double _labelBoundExtent(XmlElement node, String name, double stencilSize) {
+  final raw = node.getAttribute(name);
+  if (raw == null || raw.isEmpty) return stencilSize;
+  return _number(node, name);
 }
 
 /// mxGraph `rect()` + stroke is four corners. Some JS captures (mockup

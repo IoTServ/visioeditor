@@ -32555,6 +32555,152 @@ void main() {
   );
 
   test(
+    'mxStencil labelBounds omitted leftover w TxtWidth for LibreOffice',
+    () {
+      const canvasScale = 1.5 / 100;
+      final originPin = 60 * canvasScale;
+      final shiftedPin = 35 * canvasScale;
+      final originWidth = 100 * canvasScale;
+      final shiftedWidth = 50 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<labelBounds x="10" y="10" h="20"/>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 601,
+      );
+      expect(
+        omitted.richText.textBlock.pinXInches,
+        closeTo(originPin, 1e-6),
+        reason: 'omitted labelBounds w is Number(w||w0)=w0; leftover must '
+            'not skip TxtPinX so Draw collectTextBlock paints the stencil '
+            'width rail (`tokens.txt` TxtPinX → svg:x)',
+      );
+      expect(
+        omitted.richText.textBlock.widthInches,
+        closeTo(originWidth, 1e-6),
+        reason: 'omitted labelBounds w leftover-bakes TxtWidth from stencil '
+            'w0 (`tokens.txt` TxtWidth → svg:width)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<labelBounds x="10" y="10" w="50" h="20"/>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        keep.richText.textBlock.pinXInches,
+        closeTo(shiftedPin, 1e-6),
+        reason: 'without omitted w leftover keeps TxtPinX',
+      );
+      expect(
+        keep.richText.textBlock.widthInches,
+        closeTo(shiftedWidth, 1e-6),
+        reason: 'without omitted w leftover keeps TxtWidth',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<labelBounds x="10" y="10" w="50" h="20"/>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        later.richText.textBlock.widthInches,
+        closeTo(shiftedWidth, 1e-6),
+        reason: 'later explicit w leftover-bakes a sibling TxtWidth',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<labelBounds x="10" y="10" w="50" h="20"/>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<labelBounds x="10" y="10" h="20"/>'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.richText.textBlock.widthInches,
+        closeTo(shiftedWidth, 1e-6),
+        reason: 'include-shape nested omitted w leftover-bakes no nested '
+            'TxtWidth so Draw does not inherit host collectTextBlock',
+      );
+      expect(
+        includeHost.children.single.richText.textBlock.widthInches,
+        isNull,
+        reason: 'official include-shape only paints; nested labelBounds '
+            'are not merged onto the tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        leftoverDoc.pages.first
+            .findShapeById(omittedId)!
+            .richText
+            .textBlock
+            .widthInches,
+        closeTo(originWidth, 1e-6),
+        reason: 'a second save keeps leftover TxtWidth Draw paints',
+      );
+      expect(
+        leftoverDoc.pages.first
+            .findShapeById(omittedId)!
+            .richText
+            .textBlock
+            .pinXInches,
+        closeTo(originPin, 1e-6),
+        reason: 'a second save keeps leftover TxtPinX Draw paints',
+      );
+      expect(
+        leftoverDoc.pages.first
+            .findShapeById(laterId)!
+            .richText
+            .textBlock
+            .widthInches,
+        closeTo(shiftedWidth, 1e-6),
+        reason: 'a second save keeps the later explicit TxtWidth sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

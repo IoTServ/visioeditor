@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil labelBounds omitted leftover w TxtWidth for
+  LibreOffice. Official Shapes.js `getLabelMargins` uses
+  `Number(w || stencil.w0)`; omitted is the stencil source width, not 0.
+  leftover now snaps omitted to `w0` so Draw collectTextBlock paints
+  TxtWidth / TxtPinX (`tokens.txt` TxtWidth → svg:width). include-shape
+  nested omitted w leftover-bakes no nested TxtWidth, and a later
+  explicit w leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil path omitted leftover arc x-axis-rotation
   CubBezTo for LibreOffice. Official `drawNode` uses
   `Number(x-axis-rotation)`; omitted is `Number(null)=0`. leftover
