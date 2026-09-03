@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil rotate omitted leftover cy PinY for
+  LibreOffice. Official `Number(cy)`; omitted is `Number(null)=0`.
+  leftover `_number` 0 per rotate so a later omitted sibling does not
+  keep the previous centre (`tokens.txt` PinY / Angle). leftover now
+  rotates omitted about cy=0, include-shape nested omitted cy
+  leftover-bakes origin, and a later explicit cy leftover-bakes a
+  sibling. A second save keeps both. Identity `theta==0` still skips.
 - draw.io leftover mxStencil image omitted leftover h ImgHeight for
   LibreOffice. Official `drawNode` uses `Number(h)*sy`; omitted is
   `Number(null)=0`. leftover null boxH stretches over the XForm so a
