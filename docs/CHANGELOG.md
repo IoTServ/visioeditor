@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover line-height
+  SpLine for LibreOffice. Official omitted `line-height` is 1; leftover
+  now snaps per `<run>` so Draw collectParaIX does not double-space a
+  later glyph (`tokens.txt` SpLine → fo:line-height). include-shape
+  nested omitted leftover-bakes SpLine 1, and a later explicit
+  `line-height="2"` leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil text run omitted leftover highlight
   Char.Highlight for LibreOffice. Official omitted highlight is none;
   leftover now snaps per `<run>` so Draw collectCharIX does not plate a

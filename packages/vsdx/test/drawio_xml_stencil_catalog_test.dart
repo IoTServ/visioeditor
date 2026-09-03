@@ -36553,6 +36553,131 @@ void main() {
   );
 
   test(
+    'mxStencil text run omitted leftover line-height SpLine for LibreOffice',
+    () {
+      List<double> lineHeights(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.lineSpacing);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text x="0" y="0" w="80" h="20"><run str="AB" line-height="2"/></text>';
+      const omittedT =
+          '<text x="0" y="30" w="80" h="20"><run str="CD"/></text>';
+      const keepT2 =
+          '<text x="0" y="30" w="80" h="20"><run str="CD" line-height="2"/></text>';
+      const omittedFirst =
+          '<text x="0" y="0" w="80" h="20"><run str="AB"/></text>';
+      const keepSecond =
+          '<text x="0" y="30" w="80" h="20"><run str="CD" line-height="2"/></text>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 630,
+      );
+      expect(
+        lineHeights(omitted),
+        [closeTo(2, 1e-9), closeTo(1, 1e-9)],
+        reason: 'omitted run line-height is 1; leftover must not keep '
+            'SpLine 2 so Draw collectParaIX does not double-space the '
+            'later glyph (`tokens.txt` SpLine → fo:line-height)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        lineHeights(keep),
+        everyElement(closeTo(2, 1e-9)),
+        reason: 'without omitted line-height leftover keeps SpLine 2',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        lineHeights(later),
+        [closeTo(1, 1e-9), closeTo(2, 1e-9)],
+        reason: 'later line-height leftover-bakes a sibling SpLine 2',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20"><run str="CD"/></text>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        lineHeights(includeHost),
+        [closeTo(2, 1e-9), closeTo(1, 1e-9)],
+        reason: 'include-shape nested omitted line-height leftover-bakes '
+            'SpLine 1 so Draw does not inherit host fo:line-height 200%',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        lineHeights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(2, 1e-9), closeTo(1, 1e-9)],
+        reason: 'a second save keeps leftover SpLine Draw paints',
+      );
+      expect(
+        lineHeights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(1, 1e-9), closeTo(2, 1e-9)],
+        reason: 'a second save keeps the later leftover SpLine sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
