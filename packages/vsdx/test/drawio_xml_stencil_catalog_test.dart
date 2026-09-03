@@ -28124,6 +28124,167 @@ void main() {
   );
 
   test(
+    'mxStencil ellipse omitted leftover y EllipseCmd for LibreOffice',
+    () {
+      List<double> ellipseCy(VsdxShape shape) {
+        final ys = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            for (final command in geometry.commands) {
+              if (command is EllipseCmd) ys.add(command.cy);
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        ys.sort();
+        return ys;
+      }
+
+      int ellipseCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            n += geometry.commands.whereType<EllipseCmd>().length;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final originCy = 95 * canvasScale;
+      final shiftedCy = 55 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<ellipse x="40" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 572,
+      );
+      expect(
+        ellipseCy(omitted),
+        [closeTo(shiftedCy, 1e-6), closeTo(originCy, 1e-6)],
+        reason: 'omitted ellipse y is Number(null)=0; leftover must not keep '
+            'cy so Draw collectEllipse does not paint the first leftover '
+            'oval (`tokens.txt` Ellipse → svg:ellipse)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<ellipse x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        ellipseCy(keep),
+        everyElement(closeTo(shiftedCy, 1e-6)),
+        reason: 'without omitted y leftover keeps EllipseCmd cy',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<ellipse x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        ellipseCy(later),
+        [closeTo(shiftedCy, 1e-6), closeTo(originCy, 1e-6)],
+        reason: 'later explicit y leftover-bakes a sibling EllipseCmd',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="40" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        ellipseCy(includeHost),
+        [closeTo(shiftedCy, 1e-6), closeTo(originCy, 1e-6)],
+        reason: 'include-shape nested omitted y leftover-bakes cy at h/2 so '
+            'Draw does not inherit host EllipseCmd',
+      );
+
+      final zero = decodeDrawioMxStencilXml(
+        '<shape name="Z" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<ellipse x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<ellipse/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        ellipseCount(zero),
+        1,
+        reason: 'omitted w/h is a 0×0 no-op; leftover must not bake a '
+            'degenerate collectEllipse sibling',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        ellipseCy(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(shiftedCy, 1e-6), closeTo(originCy, 1e-6)],
+        reason: 'a second save keeps leftover EllipseCmd Draw paints',
+      );
+      expect(
+        ellipseCy(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(shiftedCy, 1e-6), closeTo(originCy, 1e-6)],
+        reason: 'a second save keeps the later explicit EllipseCmd sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

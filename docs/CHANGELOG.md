@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil ellipse omitted leftover y EllipseCmd for
+  LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per node so a later omitted
+  sibling does not keep EllipseCmd cy (`tokens.txt` Ellipse →
+  `svg:ellipse`). leftover now snaps omitted to stencil-top, include-shape
+  nested omitted y leftover-bakes cy at h/2, and a later explicit y
+  leftover-bakes a sibling. A second save keeps both. 0×0 `<ellipse/>`
+  stays a no-op.
 - draw.io leftover mxStencil rect omitted leftover y MoveTo for
   LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted
