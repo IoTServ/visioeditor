@@ -36153,6 +36153,157 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D scale omitted leftover after negative keeps PinX for LibreOffice',
+    () {
+      List<double> xs(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            for (final command in geometry.commands) {
+              if (command is MoveTo) values.add(command.x);
+              if (command is LineTo) values.add(command.x);
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final xA = 10 * canvasScale;
+      final xB = 50 * canvasScale;
+      final omittedXs = <double>[
+        -xA,
+        -xB,
+        -xB,
+        -xA,
+        -xA,
+        -xA,
+        -xB,
+        -xB,
+        -xA,
+        -xA
+      ];
+      final keepXs = <double>[-xA, -xB, -xB, -xA, -xA, xA, xB, xB, xA, xA];
+      final laterXs = <double>[xA, xB, xB, xA, xA, -xA, -xB, -xB, -xA, -xA];
+      const keepS = '<scale scale="-1"/>';
+      const omittedS = '<scale/>';
+      const s1 = '<rect x="10" y="20" w="40" h="10"/><stroke/>';
+      const s2 = '<rect x="10" y="40" w="40" h="10"/><stroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$s1'
+        '$omittedS'
+        '$s2'
+        '</foreground>'
+        '</shape>',
+        id: 627,
+      );
+      expect(
+        xs(omitted),
+        [for (final x in omittedXs) closeTo(x, 1e-6)],
+        reason: 'omitted scale is fallback 1 (no-op multiply); leftover '
+            'must keep the previous mirror so Draw collectGeometry does '
+            'not un-mirror the second rail (`tokens.txt` PinX)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$s1'
+        '$keepS'
+        '$s2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        xs(keep),
+        [for (final x in keepXs) closeTo(x, 1e-6)],
+        reason: 'a second scale=-1 un-mirrors; leftover must not keep '
+            'the omitted no-op PinX so Draw paints the upright sibling',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$s1'
+        '$keepS'
+        '$s2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        xs(later),
+        [for (final x in laterXs) closeTo(x, 1e-6)],
+        reason: 'later scale=-1 leftover-bakes a mirrored sibling so Draw '
+            'does not concatenate the first unflipped rail (`tokens.txt` '
+            'PinX)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$s1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$s2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        xs(includeHost),
+        [for (final x in omittedXs) closeTo(x, 1e-6)],
+        reason: 'include-shape nested omitted scale leftover-bakes the '
+            'host mirror so Draw does not un-mirror the tile '
+            '(`tokens.txt` PinX)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        xs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [for (final x in omittedXs) closeTo(x, 1e-6)],
+        reason: 'a second save keeps leftover PinX Draw paints',
+      );
+      expect(
+        xs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [for (final x in laterXs) closeTo(x, 1e-6)],
+        reason: 'a second save keeps the later leftover mirrored sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

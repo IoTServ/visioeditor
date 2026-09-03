@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil mxXmlCanvas2D scale omitted leftover after
+  negative keeps PinX for LibreOffice. Official omitted scale is
+  fallback 1 (no-op multiply); after `scale="-1"` that keeps the
+  mirror so Draw collectGeometry does not un-mirror the second rail
+  (`tokens.txt` PinX). include-shape nested omitted leftover-bakes the
+  host mirror, and a later explicit `scale="-1"` leftover-bakes a
+  sibling. A second save keeps both. Do not snap omitted to
+  `Number(null)=0` (catalog 498 locked vs `scale="0"` collapse).
 - draw.io leftover mxStencil fillgradient omitted leftover southwest
   FillPattern for LibreOffice. NestedStencil `direction="southwest"`
   leftover-bakes FillPattern 31; omitted is south FillPattern 28.
