@@ -1513,7 +1513,9 @@ class _DrawioXmlShapeDecoder {
       // mxStencil.drawNode image x/y/w/h. libvisio collectForeignDataType
       // maps ImgOffsetX/Y + ImgWidth/Height to svg:x/y/width/height.
       // A missing box stretches the PNG over the XForm (IBM Floating IP
-      // is a mid-band icon on a 60×60 cell).
+      // is a mid-band icon on a 60×60 cell). leftover null boxW/boxH per
+      // image so a later omitted sibling does not keep ImgWidth
+      // (`tokens.txt` ImgWidth → svg:width).
       left: left,
       top: top,
       boxW: boxW > 1e-9 ? boxW : null,
