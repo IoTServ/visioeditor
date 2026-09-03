@@ -41682,6 +41682,380 @@ void main() {
   );
 
   test(
+    'mxStencil shadowcolor omitted leftover default ShdwForegnd for LibreOffice',
+    () {
+      int enabledShadowCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled &&
+              (next.fill.hasFill || next.line.hasLine)) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      bool hasDisabledShadowFill(VsdxShape shape) {
+        if (shape.fill.hasFill && !shape.shadow.enabled) return true;
+        return shape.children.any(hasDisabledShadowFill);
+      }
+
+      List<double> enabledPinY(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled &&
+              (next.fill.hasFill || next.line.hasLine)) {
+            values.add(next.pinY);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const blue = VsdxColor(0xFF1565C0);
+      const keepC =
+          '<shadowcolor color="hubFill" default="#1565c0"/>';
+      const omittedC = '<shadowcolor color="hubFill"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '$keepC'
+        '$r1'
+        '$omittedC'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 663,
+      );
+      expect(
+        enabledShadowCount(omitted),
+        1,
+        reason: 'omitted shadowcolor default is NestedStencil '
+            'getColorValue per-node; leftover must not reuse the first '
+            'hubFill default so Draw collectFillAndShadow does not paint '
+            'a later rail (`tokens.txt` ShdwForegnd → draw:shadow-color)',
+      );
+      expect(
+        hasDisabledShadowFill(omitted),
+        isTrue,
+        reason: 'the omitted-default plate leftover-bakes ShdwPattern 0 '
+            'Draw paints as draw:shadow=hidden',
+      );
+      expect(
+        enabledPinY(omitted),
+        [closeTo(3.0, 1e-6)],
+        reason: 'the remaining ShdwForegnd is the first rect',
+      );
+      expect(omitted.shadow.color, blue);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '$keepC'
+        '$r1'
+        '$keepC'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        enabledShadowCount(keep),
+        2,
+        reason: 'without omitted default leftover keeps both ShdwForegnd',
+      );
+      expect(
+        enabledPinY(keep),
+        [closeTo(3.0, 1e-6), closeTo(0.750, 1e-6)],
+        reason: 'both rects stay hubFill default ShdwForegnd',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '$omittedC'
+        '$r1'
+        '$keepC'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        enabledShadowCount(later),
+        1,
+        reason: 'later explicit default leftover-bakes a sibling ShdwForegnd',
+      );
+      expect(
+        enabledPinY(later),
+        [closeTo(0.750, 1e-6)],
+        reason: 'the later ShdwForegnd is the second rect',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '$keepC'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        enabledShadowCount(includeHost),
+        1,
+        reason: 'include-shape nested omitted default leftover-bakes '
+            'ShdwPattern 0 so Draw does not inherit host ShdwForegnd',
+      );
+      expect(
+        hasDisabledShadowFill(includeHost),
+        isTrue,
+        reason: 'nested omitted hubFill leftover-bakes a hidden-shadow tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        enabledShadowCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'a second save keeps leftover ShdwForegnd Draw paints',
+      );
+      expect(
+        enabledPinY(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(3.0, 1e-6)],
+        reason: 'a second save keeps the first-rect ShdwForegnd',
+      );
+      expect(
+        enabledShadowCount(leftoverDoc.pages.first.findShapeById(laterId)!),
+        1,
+        reason: 'a second save keeps the later leftover ShdwForegnd sibling',
+      );
+      expect(
+        enabledPinY(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0.750, 1e-6)],
+        reason: 'a second save keeps the later second-rect ShdwForegnd',
+      );
+    },
+  );
+
+  test(
+    'mxStencil shadow omitted leftover default color ShdwForegnd for LibreOffice',
+    () {
+      int enabledShadowCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled &&
+              (next.fill.hasFill || next.line.hasLine)) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      bool hasDisabledShadowFill(VsdxShape shape) {
+        if (shape.fill.hasFill && !shape.shadow.enabled) return true;
+        return shape.children.any(hasDisabledShadowFill);
+      }
+
+      List<double> enabledPinY(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.shadow.enabled &&
+              (next.fill.hasFill || next.line.hasLine)) {
+            values.add(next.pinY);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepS =
+          '<shadow enabled="1" color="hubFill" default="#1565c0"/>';
+      const omittedS = '<shadow enabled="1" color="hubFill"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 664,
+      );
+      expect(
+        enabledShadowCount(omitted),
+        1,
+        reason: 'omitted shadow color default is getColorValue per-node; '
+            'leftover must not reuse the first hubFill default so Draw '
+            'collectFillAndShadow does not paint a later rail '
+            '(`tokens.txt` ShdwForegnd → draw:shadow-color)',
+      );
+      expect(
+        hasDisabledShadowFill(omitted),
+        isTrue,
+        reason: 'the omitted-default plate leftover-bakes ShdwPattern 0',
+      );
+      expect(
+        enabledPinY(omitted),
+        [closeTo(3.0, 1e-6)],
+        reason: 'the remaining ShdwForegnd is the first rect',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        enabledShadowCount(keep),
+        2,
+        reason: 'without omitted default leftover keeps both ShdwForegnd',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        enabledShadowCount(later),
+        1,
+        reason: 'later explicit default leftover-bakes a sibling ShdwForegnd',
+      );
+      expect(
+        enabledPinY(later),
+        [closeTo(0.750, 1e-6)],
+        reason: 'the later ShdwForegnd is the second rect',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        enabledShadowCount(includeHost),
+        1,
+        reason: 'include-shape nested omitted default leftover-bakes '
+            'ShdwPattern 0 so Draw does not inherit host ShdwForegnd',
+      );
+      expect(
+        hasDisabledShadowFill(includeHost),
+        isTrue,
+        reason: 'nested omitted hubFill leftover-bakes a hidden-shadow tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        enabledShadowCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'a second save keeps leftover ShdwForegnd Draw paints',
+      );
+      expect(
+        enabledPinY(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(3.0, 1e-6)],
+        reason: 'a second save keeps the first-rect ShdwForegnd',
+      );
+      expect(
+        enabledShadowCount(leftoverDoc.pages.first.findShapeById(laterId)!),
+        1,
+        reason: 'a second save keeps the later leftover ShdwForegnd sibling',
+      );
+      expect(
+        enabledPinY(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0.750, 1e-6)],
+        reason: 'a second save keeps the later second-rect ShdwForegnd',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

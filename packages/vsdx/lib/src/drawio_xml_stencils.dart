@@ -909,7 +909,12 @@ class _DrawioXmlShapeDecoder {
         // official createShadow fill is null. leftover empty token
         // leftover-baked ShdwForegnd #808080 so Draw painted a gray
         // rail (`tokens.txt` ShdwForegnd → draw:shadow-color).
-        _applyMxShadowColor(node.getAttribute('color'));
+        // Style-key color uses this node's `default` like fillcolor
+        // (`tokens.txt` ShdwForegnd → draw:shadow-color).
+        _applyMxShadowColor(
+          node.getAttribute('color'),
+          fallback: node.getAttribute('default'),
+        );
         break;
       case 'shadowalpha':
         // mxXmlCanvas2D.setShadowAlpha always writes alpha.
@@ -2979,7 +2984,13 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     final colorAttr = node.getAttribute('color');
-    if (colorAttr != null) _applyMxShadowColor(colorAttr, rebuild: false);
+    if (colorAttr != null) {
+      _applyMxShadowColor(
+        colorAttr,
+        rebuild: false,
+        fallback: node.getAttribute('default'),
+      );
+    }
     final dxAttr = node.getAttribute('dx');
     final dyAttr = node.getAttribute('dy');
     if (dxAttr != null || dyAttr != null) {
@@ -2990,7 +3001,11 @@ class _DrawioXmlShapeDecoder {
     _shadow = _shadowFromCanvas();
   }
 
-  void _applyMxShadowColor(String? raw, {bool rebuild = true}) {
+  void _applyMxShadowColor(
+    String? raw, {
+    bool rebuild = true,
+    String? fallback,
+  }) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
     if (token.isEmpty || lower == 'none') {
@@ -3003,7 +3018,24 @@ class _DrawioXmlShapeDecoder {
     } else if (lower == 'default') {
       _shadowColor = _kMxDefaultShadowColor;
     } else {
-      _shadowColor = _mxGraphPaintColor(token) ?? _kMxDefaultShadowColor;
+      final parsed = _mxGraphPaintColor(token);
+      if (parsed != null) {
+        _shadowColor = parsed;
+      } else if (lower == 'fill' || token == 'fillColor') {
+        _shadowColor = _fillColor;
+      } else if (lower == 'stroke' || token == 'strokeColor') {
+        _shadowColor = _strokeColor;
+      } else if (_styleKeyIsNone(token, fallback)) {
+        _shadowColor = null;
+      } else {
+        // mxStencil.getColorValue is per-node `default`. leftover
+        // `_mxGraphPaintColor` only accepts CSS, so `color="hubFill"`
+        // fell through to SHADOWCOLOR gray even when default was a
+        // hex Draw leftover-bakes as ShdwForegnd
+        // (`tokens.txt` ShdwForegnd → draw:shadow-color). Unresolved
+        // custom keys leftover-bake none like fillcolor, not gray.
+        _shadowColor = _styleKeyColor(token, fallback);
+      }
     }
     if (rebuild) _rebuildEnabledShadow();
   }

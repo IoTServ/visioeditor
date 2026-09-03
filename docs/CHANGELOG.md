@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil shadowcolor / `<shadow color>` omitted
+  leftover default ShdwForegnd for LibreOffice. NestedStencil
+  getColorValue is per-node `default`; leftover no longer falls through
+  to SHADOWCOLOR gray so Draw collectFillAndShadow paints `#1565c0`,
+  and a later omitted default leftover-bakes ShdwPattern 0
+  (`tokens.txt` ShdwForegnd → draw:shadow-color). include-shape nested
+  omitted leftover-bakes hidden, and a later explicit default leftover-
+  bakes a sibling. A second save keeps both.
+
 - draw.io leftover mxStencil fillgradient / mxXmlCanvas2D `<gradient>`
   omitted leftover default color2 / c2 FillPattern for LibreOffice.
   NestedStencil getColorValue is per-node `default`; leftover no longer
