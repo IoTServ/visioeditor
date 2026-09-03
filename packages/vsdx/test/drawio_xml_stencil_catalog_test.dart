@@ -20361,6 +20361,220 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D alpha omitted leftover bakes FillForegndTrans and LineColorTrans 1 for LibreOffice',
+    () {
+      List<double> fillTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.foregroundTransparency);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      List<double> strokeTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) values.add(next.line.transparency);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      bool hasFillTrans(VsdxShape shape, double trans) {
+        if (shape.fill.hasFill &&
+            (shape.fill.foregroundTransparency - trans).abs() < 0.05) {
+          return true;
+        }
+        return shape.children.any((child) => hasFillTrans(child, trans));
+      }
+
+      bool hasStrokeTrans(VsdxShape shape, double trans) {
+        if (shape.line.hasLine &&
+            (shape.line.transparency - trans).abs() < 0.05) {
+          return true;
+        }
+        return shape.children.any((child) => hasStrokeTrans(child, trans));
+      }
+
+      double? glyphTrans(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text) &&
+            shape.richText.runs.isNotEmpty) {
+          return shape.richText.runs.first.charStyle.transparency;
+        }
+        for (final child in shape.children) {
+          final nested = glyphTrans(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<alpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 519,
+      );
+      expect(
+        fillTrans(omitted).single,
+        closeTo(1, 0.05),
+        reason: 'omitted alpha is Number(null)=0; leftover fallback 1 '
+            'kept FillForegndTrans 0 so Draw collectFillAndShadow painted '
+            'an opaque rail (`tokens.txt` FillForegndTrans)',
+      );
+      expect(
+        strokeTrans(omitted).single,
+        closeTo(1, 0.05),
+        reason: 'official setAlpha is overall; leftover must also snap '
+            'LineColorTrans so Draw collectLine does not paint an opaque '
+            'rail (`tokens.txt` has no LineColorTrans)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillTrans(keep).single,
+        closeTo(0, 0.05),
+        reason: 'without an alpha node leftover keeps createState opaque '
+            'FillForegndTrans',
+      );
+      expect(strokeTrans(keep).single, closeTo(0, 0.05));
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<alpha/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillTrans(laterHost),
+        [closeTo(0, 0.05), closeTo(1, 0.05)],
+        reason: 'later omitted alpha leftover-bakes FillForegndTrans 1 '
+            'so Draw does not paint the second rail opaque (`tokens.txt` '
+            'FillForegndTrans)',
+      );
+      expect(
+        strokeTrans(laterHost),
+        [closeTo(0, 0.05), closeTo(1, 0.05)],
+        reason: 'later omitted alpha leftover-bakes LineColorTrans 1 so '
+            'Draw does not paint the second stroke opaque',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<alpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(fillTrans(includeHost).first, closeTo(0, 0.05));
+      expect(
+        hasFillTrans(includeHost, 1),
+        isTrue,
+        reason: 'include-shape nested omitted alpha leftover-bakes '
+            'FillForegndTrans 1 so Draw does not paint the tile opaque',
+      );
+      expect(
+        hasStrokeTrans(includeHost, 1),
+        isTrue,
+        reason: 'include-shape nested omitted alpha leftover-bakes '
+            'LineColorTrans 1',
+      );
+
+      final omittedGlyph = decodeDrawioMxStencilXml(
+        '<shape name="T" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontcolor color="#000000"/>'
+        '<alpha/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphTrans(omittedGlyph, 'AB'),
+        closeTo(1, 0.05),
+        reason: 'mxSvgCanvas2D.text opacity is state.alpha; omitted '
+            'setAlpha leftover-bakes Char ColorTrans 1 so Draw '
+            'collectCharIX does not paint an opaque glyph',
+      );
+
+      final fillOnly = decodeDrawioMxStencilXml(
+        '<shape name="F" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillalpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(fillTrans(fillOnly).single, closeTo(1, 0.05));
+      expect(
+        strokeTrans(fillOnly).single,
+        closeTo(0, 0.05),
+        reason: 'dedicated fillalpha does not zero LineColorTrans',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(hasFillTrans(leftover, 0), isTrue);
+      expect(
+        hasFillTrans(leftover, 1),
+        isTrue,
+        reason: 'a second save keeps leftover FillForegndTrans 1 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

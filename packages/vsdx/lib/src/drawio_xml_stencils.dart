@@ -1024,6 +1024,10 @@ class _DrawioXmlShapeDecoder {
         // is alpha*fillAlpha → 0. leftover fallback 1 kept the rail
         // opaque so Draw collectFillAndShadow painted
         // draw:opacity=1 (`tokens.txt` FillForegndTrans).
+        // Official setAlpha is overall: leftover snaps omitted to 0
+        // so FillForegndTrans, LineColorTrans, Char ColorTrans, and
+        // image Transparency leftover-bake 1 together. Dedicated
+        // fillalpha / strokealpha stay on those channels.
         _overallAlpha = _alphaValue(node);
         break;
       case 'fillalpha':
