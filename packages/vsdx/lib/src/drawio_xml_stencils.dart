@@ -818,11 +818,14 @@ class _DrawioXmlShapeDecoder {
         _applyMxCanvasScale(_number(node, 'scale', fallback: 1));
         break;
       case 'rotate':
-        // mxXmlCanvas2D.rotate. leftover used to ignore the node, so
-        // later inherit fill extraInheritFill siblings sat unrotated
-        // (`tokens.txt` PinX; collectGeometry has no canvas). Angle is
-        // shape-level, so leftover bakes mxSvgCanvas2D's SVG transform
-        // into leftover inches.
+        // mxXmlCanvas2D.rotate / mxSvgCanvas2D.rotate skip identity
+        // (`theta==0 && !flipH && !flipV`). leftover used to ignore
+        // the node, so later inherit fill extraInheritFill siblings
+        // sat unrotated (`tokens.txt` PinX; collectGeometry has no
+        // canvas). Angle is shape-level, so leftover bakes the SVG
+        // transform into leftover inches. Omitted `<rotate/>` is the
+        // same identity skip so a later omitted rotate does not
+        // clear leftover inches (`tokens.txt` PinX / Angle).
         _applyMxCanvasRotate(node);
         break;
       case 'dashed':
@@ -2897,6 +2900,10 @@ class _DrawioXmlShapeDecoder {
     final theta = _number(node, 'theta');
     final flipH = node.getAttribute('flipH') == '1';
     final flipV = node.getAttribute('flipV') == '1';
+    // Official rotate does not append identity. leftover `_number`
+    // omitted theta is 0; early-return keeps leftover inches so Draw
+    // collectGeometry does not un-rotate a later sibling
+    // (`tokens.txt` PinX / Angle).
     if (theta.abs() < 1e-12 && !flipH && !flipV) return;
     // mxSvgCanvas2D.rotate: cx += dx; cy += dy; cx *= scale. leftover
     // stores that centre in leftover inches so include-shape nested

@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D rotate omitted leftover PinX for
+  LibreOffice. Official `rotate` skips identity (`theta==0 && !flipH
+  && !flipV`); mxSvgCanvas2D does not write a transform. leftover
+  early-return already keeps leftover inches so Draw
+  `collectGeometry` does not un-rotate a later sibling (`tokens.txt`
+  PinX / Angle). leftover now keeps previous leftover inches on a
+  later `<rotate/>`, include-shape copies that overlay, and a later
+  omitted rotate leftover-bakes a sibling. A second save keeps both.
+  No `<rotate>` node still stays unrotated.
 - draw.io leftover mxXmlCanvas2D translate omitted leftover PinX for
   LibreOffice. Official `format(null)` is NaN and `addOp` collapses
   vertices; leftover `_number` snaps omitted / invalid `dx`/`dy` to

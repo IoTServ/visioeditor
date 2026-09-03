@@ -21025,6 +21025,155 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D rotate omitted leftover bakes PinX for LibreOffice',
+    () {
+      double minMoveX(VsdxShape shape) {
+        var min = double.infinity;
+        for (final geometry in shape.geometries) {
+          for (final command in geometry.commands) {
+            if (command is MoveTo) min = math.min(min, command.x);
+          }
+        }
+        return min;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate/>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+        id: 523,
+      );
+      expect(
+        minMoveX(omitted),
+        closeTo(20 * canvasScale, 0.02),
+        reason: 'omitted rotate is official identity skip; leftover '
+            'early-return does not collapse PinX (`tokens.txt` PinX)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(keep),
+        closeTo(20 * canvasScale, 0.02),
+        reason: 'without a rotate node leftover stays unrotated',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '<rotate/>'
+        '<rect x="20" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(laterHost),
+        closeTo(0, 0.02),
+        reason: 'later omitted rotate is identity skip so Draw keeps the '
+            'first leftover PinX (`tokens.txt` PinX / Angle)',
+      );
+      expect(
+        laterHost.children.any((child) => minMoveX(child).abs() < 0.05),
+        isTrue,
+        reason: 'later omitted rotate leftover-bakes a sibling that stays '
+            'on the previous leftover inches',
+      );
+
+      final flipHost = decodeDrawioMxStencilXml(
+        '<shape name="F" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="0" cx="25" cy="0" flipH="1" flipV="0"/>'
+        '<rect x="10" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '<rotate/>'
+        '<rect x="10" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        minMoveX(flipHost),
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'later omitted rotate keeps canvas flipH leftover inches',
+      );
+      expect(
+        flipHost.children.any(
+          (child) => (minMoveX(child) - 40 * canvasScale).abs() < 0.02,
+        ),
+        isTrue,
+        reason: 'later omitted rotate leftover-bakes a flipH sibling so '
+            'Draw does not un-mirror the second rail',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rotate theta="90" cx="0" cy="0" flipH="0" flipV="0"/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rotate/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        includeHost.children.any((child) => minMoveX(child).abs() < 0.05),
+        isTrue,
+        reason: 'include-shape nested omitted rotate is identity skip so '
+            'host leftover-inch rotation stays; nested (20,0) maps to '
+            '(0,20)',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        minMoveX(leftover),
+        closeTo(0, 0.02),
+        reason: 'a second save keeps leftover rotated PinX Draw paints',
+      );
+      expect(
+        leftover.children.any((child) => minMoveX(child).abs() < 0.05),
+        isTrue,
+        reason: 'a second save keeps the later omitted-rotate sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
