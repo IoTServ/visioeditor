@@ -1025,6 +1025,12 @@ class _DrawioXmlShapeDecoder {
         _fillAlpha = _alphaValue(node);
         break;
       case 'strokealpha':
+        // Official drawNode calls setAlpha (overall). Dedicated
+        // LineColorTrans keeps FillForegndTrans vs stroke so Draw
+        // collectLine can ribbon (`tokens.txt` has no LineColorTrans).
+        // Omitted is Number(null)=0; leftover `_number` fallback 1
+        // kept LineColorTrans 0 so Draw painted an opaque rail
+        // mxSvgCanvas2D stroke-opacity 0 never painted.
         _strokeAlpha = _alphaValue(node);
         break;
       case 'sketch':

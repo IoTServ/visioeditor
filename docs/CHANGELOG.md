@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D strokealpha omitted leftover
+  LineColorTrans 1 for LibreOffice. Official `setAlpha(null)` /
+  NestedStencil `attrNum` fallback is 0; mxSvgCanvas2D
+  stroke-opacity is then 0. leftover `_number` fallback 1 kept
+  LineColorTrans 0, so Draw `collectLine` painted an opaque rail
+  (`tokens.txt` has no LineColorTrans; leftover write ribbons
+  FillForegndTrans → `draw:opacity`). leftover now snaps to 0,
+  include-shape copies that overlay, and a later omitted
+  strokealpha leftover-bakes a sibling. A second save keeps both.
+  Dedicated strokealpha does not zero FillForegndTrans.
 - draw.io leftover mxXmlCanvas2D fillgradient / gradient omitted leftover
   FillPattern 0 for LibreOffice. NestedStencil `isNoneColor(null)`
   calls `setFillColor(null)` / none; official `setGradient` does not

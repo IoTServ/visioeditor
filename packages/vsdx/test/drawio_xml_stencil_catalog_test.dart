@@ -20240,6 +20240,162 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
+    () {
+      List<double> strokeTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) values.add(next.line.transparency);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        values.sort();
+        return values;
+      }
+
+      bool hasStrokeTrans(VsdxShape shape, double trans) {
+        if (shape.line.hasLine &&
+            (shape.line.transparency - trans).abs() < 0.05) {
+          return true;
+        }
+        return shape.children.any((child) => hasStrokeTrans(child, trans));
+      }
+
+      ({int fadedFill, int opaqueLine}) leftoverPaint(VsdxShape shape) {
+        var fadedFill = 0;
+        var opaqueLine = 0;
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill && next.fill.foregroundTransparency > 0.5) {
+            fadedFill++;
+          }
+          if (next.line.hasLine && next.line.transparency < 0.1) {
+            opaqueLine++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return (fadedFill: fadedFill, opaqueLine: opaqueLine);
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokealpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 517,
+      );
+      expect(
+        strokeTrans(omitted).single,
+        closeTo(1, 0.05),
+        reason: 'omitted strokealpha is Number(null)=0; leftover fallback 1 '
+            'kept LineColorTrans 0 so Draw collectLine painted an opaque '
+            'rail (`tokens.txt` has no LineColorTrans)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        strokeTrans(keep).single,
+        closeTo(0, 0.05),
+        reason: 'without a strokealpha node leftover keeps createState '
+            'opaque LineColorTrans',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<strokealpha/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        strokeTrans(laterHost),
+        [closeTo(0, 0.05), closeTo(1, 0.05)],
+        reason: 'later omitted strokealpha leftover-bakes LineColorTrans 1 '
+            'so Draw does not paint the second rail opaque (`tokens.txt` '
+            'has no LineColorTrans)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokealpha/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        strokeTrans(includeHost).first,
+        closeTo(0, 0.05),
+        reason: 'first host inherit stroke keeps collectLine opaque',
+      );
+      expect(
+        hasStrokeTrans(includeHost, 1),
+        isTrue,
+        reason: 'include-shape nested omitted strokealpha leftover-bakes '
+            'LineColorTrans 1 so Draw does not paint the tile opaque',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      final paint = leftoverPaint(leftover);
+      expect(
+        paint.opaqueLine,
+        greaterThan(0),
+        reason: 'a second save keeps the first opaque rail Draw paints',
+      );
+      expect(
+        paint.fadedFill,
+        greaterThan(0),
+        reason: 'LineColorTrans is not a token; leftover ribbons omitted '
+            'strokealpha as FillForegndTrans 1 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D fillgradient omitted leftover bakes FillPattern 0 for LibreOffice',
     () {
       bool isGradient(VsdxFill fill) =>
