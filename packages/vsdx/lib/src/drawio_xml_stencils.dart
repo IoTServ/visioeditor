@@ -3846,10 +3846,15 @@ class _DrawioXmlShapeDecoder {
   }
 
   List<VsdxPathCommand> _decodeEllipse(XmlElement ellipse) {
+    // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
+    // leftover `_number` 0 per node so a later omitted sibling does
+    // not keep EllipseCmd cx (`tokens.txt` Ellipse → svg:ellipse).
     final left = _number(ellipse, 'x');
     final top = _number(ellipse, 'y');
     final width = _number(ellipse, 'w');
     final height = _number(ellipse, 'h');
+    // mxGraph 0×0 <ellipse/> is a no-op like <rect/>. leftover must
+    // not bake a degenerate collectEllipse sibling.
     if (width.abs() < 1e-9 && height.abs() < 1e-9) {
       return const <VsdxPathCommand>[];
     }
