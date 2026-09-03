@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover axial-north
+  FillPattern for LibreOffice. NestedStencil `direction="axial-north"`
+  leftover-bakes FillPattern 29; omitted is south FillPattern 28.
+  leftover now snaps omitted per node so Draw collectFillAndShadow does
+  not reuse axial (`tokens.txt` FillPattern → draw:style). include-shape
+  nested omitted leftover-bakes south, and a later explicit axial-north
+  leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil fillgradient omitted leftover axial
   FillPattern for LibreOffice. NestedStencil `direction="axial-east"`
   leftover-bakes FillPattern 26; omitted is south FillPattern 28.
