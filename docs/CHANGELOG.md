@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover arc x-axis-rotation
+  CubBezTo for LibreOffice. Official `drawNode` uses
+  `Number(x-axis-rotation)`; omitted is `Number(null)=0`. leftover
+  `_number` 0 per node so a later omitted sibling does not keep the
+  previous φ (`tokens.txt` CubBezTo). leftover now snaps omitted to the
+  axis-aligned rail, include-shape nested omitted rotation leftover-bakes
+  the unrotated CubBezTo, and a later explicit rotation leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil path omitted leftover arc large-arc-flag
   CubBezTo for LibreOffice. Official `drawNode` uses
   `Number(large-arc-flag)`; omitted is `Number(null)=0`. leftover `_flag`
