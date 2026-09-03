@@ -854,10 +854,12 @@ class _DrawioXmlShapeDecoder {
         final raw = node.getAttribute('pattern') ?? node.getAttribute('dash');
         if (raw == null) break;
         _dashPattern = _parseMxDashPattern(raw);
-        // `pattern="none"` is an empty list: mxStencil.js still
-        // setDashPattern(Number('none')*minScale → NaN). createDashPattern
-        // then writes stroke-dasharray="NaN", which SVG paints solid.
-        // Do not fall through to createState `3 3` (AWS 4 work package).
+        // `pattern="none"` / empty `pattern=""` is an empty list:
+        // official still setDashPattern (NaN / ''). createDashPattern
+        // writes stroke-dasharray="NaN", which SVG paints solid.
+        // leftover assigned null so `_lineWithDash` substituted
+        // createState `3 3`. Do not fall through to that default
+        // (AWS 4 work package / empty dashpattern leftover).
         break;
       case 'linecap':
         // mxXmlCanvas2D.setLineCap / mxStencil.drawNode always call
@@ -2317,15 +2319,22 @@ class _DrawioXmlShapeDecoder {
       _fillIsNone = true;
       return;
     }
-    final start = _mxGraphPaintColor(color1);
-    final end = _mxGraphPaintColor(color2);
+    // NestedStencil / getColorValue: style-key color1/color2 use this
+    // node's `default`, then a unique library default. leftover
+    // `_mxGraphPaintColor` only accepts CSS, so `color1="hubFill"`
+    // fell through to `_applyMxFill` solid even when color2 was a
+    // ramp stop Draw leftover-bakes as FillPattern 28
+    // (`tokens.txt` FillPattern → draw:fill=gradient).
+    final fallback = node.getAttribute('default');
+    final start = _mxGradientStopColor(color1, fallback);
     if (start == null) {
       _applyMxFill(
         color1,
-        fallback: node.getAttribute('default'),
+        fallback: fallback,
       );
       return;
     }
+    final end = color2 == null ? null : _mxGradientStopColor(color2, fallback);
     // mxXmlCanvas2D.setGradient default direction is south. leftover
     // `?? 'south'` per node so a later omitted sibling does not keep
     // FillPattern 27 (`tokens.txt` FillPattern → draw:angle).
@@ -2387,7 +2396,7 @@ class _DrawioXmlShapeDecoder {
     if (end == null || (start == end && (alpha1 - alpha2).abs() <= 1e-9)) {
       _applyMxFill(
         color1,
-        fallback: node.getAttribute('default'),
+        fallback: fallback,
       );
       return;
     }
@@ -2643,6 +2652,15 @@ class _DrawioXmlShapeDecoder {
       return;
     }
     _fontBorder = _styleKeyColor(token, fallback);
+  }
+
+  /// NestedStencil fillgradient / mxXmlCanvas2D `<gradient>` stop.
+  /// CSS first, then getColorValue per-node `default` / library unique.
+  VsdxColor? _mxGradientStopColor(String token, String? fallback) {
+    final parsed = _mxGraphPaintColor(token);
+    if (parsed != null) return parsed;
+    if (_styleKeyIsNone(token, fallback)) return null;
+    return _styleKeyColor(token, fallback);
   }
 
   /// mxStencil.getColorValue: cell style, then this node's `default`,
@@ -5546,7 +5564,13 @@ bool _dashPatternsEqual(List<double>? a, List<double>? b) {
 /// Cisco Security Guard / ISDN Switch emit `dash=` instead of `pattern=`.
 List<double>? _parseMxDashPattern(String? raw) {
   final text = (raw ?? '').trim();
-  if (text.isEmpty) return null;
+  if (text.isEmpty) {
+    // Official drawNode still setDashPattern('') when pattern is
+    // present-but-empty; createDashPattern writes stroke-dasharray
+    // NaN and SVG paints solid. leftover assigned null so
+    // [_lineWithDash] substituted createState `3 3`.
+    return const <double>[];
+  }
   if (text.toLowerCase() == 'none') return const <double>[];
   final values = <double>[];
   for (final part in text.split(RegExp(r'[\s,]+'))) {

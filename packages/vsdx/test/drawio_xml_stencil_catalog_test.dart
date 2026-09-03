@@ -40772,6 +40772,587 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient omitted leftover default FillPattern for LibreOffice',
+    () {
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<double> filledPinY(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.pinY);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      bool hasStrokeOnly(VsdxShape shape) {
+        if (shape.line.hasLine && !shape.fill.hasFill) return true;
+        return shape.children.any(hasStrokeOnly);
+      }
+
+      const keepG =
+          '<fillgradient color1="hubFill" default="#1565c0" color2="#bbdefb"/>';
+      const omittedG =
+          '<fillgradient color1="hubFill" color2="#bbdefb"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$omittedG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 658,
+      );
+      expect(
+        fillPatterns(omitted),
+        [28],
+        reason: 'omitted fillgradient default is NestedStencil '
+            'getColorValue per-node; leftover must not reuse the first '
+            'hubFill default so Draw collectFillAndShadow does not paint '
+            'a later south ramp (`tokens.txt` FillPattern → '
+            'draw:fill=gradient)',
+      );
+      expect(
+        hasStrokeOnly(omitted),
+        isTrue,
+        reason: 'the omitted-default plate leftover-bakes a stroke-only '
+            'sibling Draw paints as draw:fill=none',
+      );
+      expect(
+        filledPinY(omitted),
+        [closeTo(1.425, 1e-6)],
+        reason: 'the remaining south ramp is the first rect',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(keep),
+        [28, 28],
+        reason: 'without omitted default leftover keeps both south ramps',
+      );
+      expect(
+        filledPinY(keep),
+        [closeTo(1.425, 1e-6), closeTo(1.125, 1e-6)],
+        reason: 'both rects stay FillPattern 28 hubFill→#bbdefb',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(later),
+        [28],
+        reason: 'later explicit default leftover-bakes a sibling FillPattern',
+      );
+      expect(
+        filledPinY(later),
+        [closeTo(1.125, 1e-6)],
+        reason: 'the later south ramp is the second rect',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fillPatterns(includeHost),
+        [28],
+        reason: 'include-shape nested omitted default leftover-bakes none '
+            'so Draw does not inherit host FillPattern 28',
+      );
+      expect(
+        hasStrokeOnly(includeHost),
+        isTrue,
+        reason: 'nested omitted hubFill leftover-bakes a stroke-only tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [28],
+        reason: 'a second save keeps leftover FillPattern Draw paints',
+      );
+      expect(
+        filledPinY(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(1.425, 1e-6)],
+        reason: 'a second save keeps the first-rect south ramp',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28],
+        reason: 'a second save keeps the later leftover FillPattern sibling',
+      );
+      expect(
+        filledPinY(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(1.125, 1e-6)],
+        reason: 'a second save keeps the later second-rect south ramp',
+      );
+    },
+  );
+
+  test(
+    'mxStencil mxXmlCanvas2D gradient omitted leftover default FillPattern for LibreOffice',
+    () {
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<double> filledPinY(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.pinY);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      bool hasStrokeOnly(VsdxShape shape) {
+        if (shape.line.hasLine && !shape.fill.hasFill) return true;
+        return shape.children.any(hasStrokeOnly);
+      }
+
+      const keepG =
+          '<gradient c1="hubFill" default="#1565c0" c2="#bbdefb"/>';
+      const omittedG = '<gradient c1="hubFill" c2="#bbdefb"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$omittedG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 659,
+      );
+      expect(
+        fillPatterns(omitted),
+        [28],
+        reason: 'omitted mxXmlCanvas2D gradient default is getColorValue '
+            'per-node; leftover must not reuse the first hubFill default '
+            'so Draw collectFillAndShadow does not paint a later south '
+            'ramp (`tokens.txt` FillPattern → draw:fill=gradient)',
+      );
+      expect(
+        hasStrokeOnly(omitted),
+        isTrue,
+        reason: 'the omitted-default plate leftover-bakes a stroke-only '
+            'sibling Draw paints as draw:fill=none',
+      );
+      expect(
+        filledPinY(omitted),
+        [closeTo(1.425, 1e-6)],
+        reason: 'the remaining south ramp is the first rect',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(keep),
+        [28, 28],
+        reason: 'without omitted default leftover keeps both south ramps',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '$r1'
+        '$keepG'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(later),
+        [28],
+        reason: 'later explicit default leftover-bakes a sibling FillPattern',
+      );
+      expect(
+        filledPinY(later),
+        [closeTo(1.125, 1e-6)],
+        reason: 'the later south ramp is the second rect',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/><fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fillPatterns(includeHost),
+        [28],
+        reason: 'include-shape nested omitted default leftover-bakes none '
+            'so Draw does not inherit host FillPattern 28',
+      );
+      expect(
+        hasStrokeOnly(includeHost),
+        isTrue,
+        reason: 'nested omitted hubFill leftover-bakes a stroke-only tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [28],
+        reason: 'a second save keeps leftover FillPattern Draw paints',
+      );
+      expect(
+        filledPinY(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(1.425, 1e-6)],
+        reason: 'a second save keeps the first-rect south ramp',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28],
+        reason: 'a second save keeps the later leftover FillPattern sibling',
+      );
+      expect(
+        filledPinY(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(1.125, 1e-6)],
+        reason: 'a second save keeps the later second-rect south ramp',
+      );
+    },
+  );
+
+  test(
+    'mxStencil dashpattern empty leftover solid LinePattern for LibreOffice',
+    () {
+      List<double?> firstDash(VsdxShape shape) {
+        final values = <double?>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            final custom = next.line.customDashPattern;
+            values.add(
+              custom == null || custom.isEmpty ? null : custom.first,
+            );
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      int dashedCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine &&
+              (next.line.pattern > 1 ||
+                  (next.line.customDashPattern != null &&
+                      next.line.customDashPattern!.isNotEmpty))) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      int solidLineCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine &&
+              next.line.pattern == 1 &&
+              (next.line.customDashPattern == null ||
+                  next.line.customDashPattern!.isEmpty)) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      List<int> lineMoveTos(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            var n = 0;
+            for (final geometry in next.geometries) {
+              for (final command in geometry.commands) {
+                if (command is MoveTo) n++;
+              }
+            }
+            values.add(n);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const dashUnit = 1 / 96;
+      final dash8 = 8 * canvasScale / dashUnit;
+      const keepP = '<dashpattern pattern="8 8"/>';
+      const emptyP = '<dashpattern pattern=""/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><stroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><stroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '$keepP'
+        '$r1'
+        '$emptyP'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 660,
+      );
+      expect(
+        dashedCount(omitted),
+        1,
+        reason: 'empty dashpattern is official setDashPattern("") → SVG '
+            'NaN solid; leftover must not keep veDashPattern so Draw '
+            'collectLine does not dash the later rail (`tokens.txt` has '
+            'no custom dash)',
+      );
+      expect(
+        solidLineCount(omitted),
+        1,
+        reason: 'the empty-pattern plate leftover-bakes a solid sibling '
+            'Draw paints as draw:polygon',
+      );
+      expect(firstDash(omitted).first, closeTo(dash8, 1e-6));
+      expect(firstDash(omitted).last, isNull);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '$keepP'
+        '$r1'
+        '$keepP'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        solidLineCount(keep),
+        0,
+        reason: 'without empty dashpattern leftover keeps both rails dashed',
+      );
+      expect(
+        firstDash(keep),
+        everyElement(closeTo(dash8, 1e-6)),
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '$emptyP'
+        '$r1'
+        '$keepP'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dashedCount(later),
+        1,
+        reason: 'later explicit 8 8 leftover-bakes a sibling dash',
+      );
+      expect(
+        solidLineCount(later),
+        1,
+        reason: 'the first empty-pattern stroke stays solid LinePattern 1',
+      );
+      expect(firstDash(later).first, isNull);
+      expect(firstDash(later).last, closeTo(dash8, 1e-6));
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<dashed dashed="1"/>'
+        '$keepP'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$emptyP'
+        '<rect x="0" y="0" w="40" h="10"/><stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        dashedCount(includeHost),
+        1,
+        reason: 'the first host inherit stroke keeps veDashPattern',
+      );
+      expect(
+        solidLineCount(includeHost),
+        1,
+        reason: 'include-shape nested empty dashpattern leftover-bakes '
+            'solid so Draw does not inherit host 8 8',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        lineMoveTos(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [7, 1],
+        reason: 'a second save leftover-bakes the first 8 8 rail into '
+            'MoveTo gaps Draw paints as svg:d; the empty-pattern plate '
+            'stays one solid MoveTo',
+      );
+      expect(
+        lineMoveTos(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [1, 7],
+        reason: 'a second save leftover-bakes the later 8 8 sibling; the '
+            'first empty-pattern stroke stays one solid MoveTo',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

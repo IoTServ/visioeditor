@@ -582,6 +582,22 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient / mxXmlCanvas2D `<gradient>`
+  omitted leftover default FillPattern for LibreOffice. NestedStencil
+  getColorValue is per-node `default`; leftover now resolves style-key
+  stops so Draw collectFillAndShadow paints FillPattern 28 instead of
+  a solid plate, and a later omitted default leftover-bakes none
+  (`tokens.txt` FillPattern → draw:fill=gradient). include-shape
+  nested omitted leftover-bakes none, and a later explicit default
+  leftover-bakes a sibling. A second save keeps both.
+- draw.io leftover mxStencil dashpattern empty leftover leftover-bakes
+  solid for LibreOffice. Official `setDashPattern("")` is SVG
+  `stroke-dasharray="NaN"` (solid); leftover assigned null so Draw
+  leftover MoveTo reused createState `3 3`. leftover now snaps empty
+  `pattern=""` to solid like `none`. include-shape nested empty
+  leftover-bakes solid, and a later explicit `8 8` leftover-bakes a
+  sibling. A second save leftover-bakes MoveTo gaps.
+
 - draw.io leftover mxStencil fillstrokecolor omitted leftover default
   FillForegnd for LibreOffice. NestedStencil applies fill+stroke from
   per-node `default`; leftover no longer reuses an earlier sibling's
