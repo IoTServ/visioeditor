@@ -21706,6 +21706,163 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D text omitted leftover wrap and clip TxtWidth for LibreOffice',
+    () {
+      const str = 'MMMMMMMMMMMMMMMMMMMM';
+      const canvasScale = 1.5 / 100;
+      const boxW = 20.0;
+
+      List<VsdxShape> glyphs(VsdxShape shape) {
+        return <VsdxShape>[
+          if ((shape.text ?? '').contains('MMMM') && shape.children.isEmpty)
+            shape,
+          for (final child in shape.children) ...glyphs(child),
+        ];
+      }
+
+      double txtWidth(VsdxShape shape) =>
+          shape.richText.textBlock.widthInches ?? shape.width;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0" clip="1"/>'
+        '<text str="$str" x="0" y="30" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0"/>'
+        '</foreground>'
+        '</shape>',
+        id: 527,
+      );
+      final omittedGlyphs = glyphs(omitted);
+      expect(omittedGlyphs, hasLength(2));
+      expect(
+        omittedGlyphs.first.wordWrap,
+        isTrue,
+        reason: 'first canvas.text clip leftover-keeps TxtWidth so Draw '
+            'collectTextBlock wraps inside the clip frame (`tokens.txt` '
+            'has no veWordWrap; svg:width is TxtWidth)',
+      );
+      expect(
+        omittedGlyphs.last.wordWrap,
+        isFalse,
+        reason: 'omitted clip is not leftover canvas state; leftover must '
+            'not keep TxtWidth on the later glyph Draw paints',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0"/>'
+        '<text str="$str" x="0" y="30" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphs(keep).every((glyph) => !glyph.wordWrap),
+        isTrue,
+        reason: 'without clip leftover wrap=0 expands TxtWidth on save',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="1"/>'
+        '<text str="$str" x="0" y="30" w="$boxW" h="20" '
+        'align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final laterGlyphs = glyphs(laterHost);
+      expect(laterGlyphs, hasLength(2));
+      expect(
+        laterGlyphs.first.wordWrap,
+        isTrue,
+        reason: 'first canvas.text wrap leftover-keeps the cell box',
+      );
+      expect(
+        laterGlyphs.last.wordWrap,
+        isFalse,
+        reason: 'later omitted wrap leftover-bakes overflow TxtWidth so '
+            'Draw collectTextBlock does not wrap both glyphs',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0" clip="1"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="40" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="$str" x="0" y="0" w="$boxW" h="20" '
+        'align="left" valign="top" wrap="0"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      final nestedGlyphs = glyphs(includeHost);
+      expect(nestedGlyphs, hasLength(2));
+      expect(nestedGlyphs.first.wordWrap, isTrue);
+      expect(
+        nestedGlyphs.last.wordWrap,
+        isFalse,
+        reason: 'include-shape nested omitted clip does not inherit host '
+            'TxtWidth Draw collectTextBlock',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverOmitted = glyphs(
+        leftoverDoc.pages.first.findShapeById(omittedId)!,
+      );
+      expect(
+        txtWidth(leftoverOmitted.first),
+        closeTo(boxW * canvasScale, 0.02),
+        reason: 'a second save keeps leftover clip TxtWidth Draw paints',
+      );
+      expect(
+        txtWidth(leftoverOmitted.last),
+        greaterThan(boxW * canvasScale + 0.2),
+        reason: 'a second save keeps the later omitted-clip sibling',
+      );
+      final leftoverLater = glyphs(
+        leftoverDoc.pages.first.findShapeById(laterId)!,
+      );
+      expect(
+        txtWidth(leftoverLater.first),
+        closeTo(boxW * canvasScale, 0.02),
+        reason: 'a second save keeps leftover wrap TxtWidth Draw paints',
+      );
+      expect(
+        txtWidth(leftoverLater.last),
+        greaterThan(boxW * canvasScale + 0.2),
+        reason: 'a second save keeps the later omitted-wrap sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

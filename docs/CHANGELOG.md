@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text omitted leftover wrap/clip
+  TxtWidth for LibreOffice. Official `canvas.text` always writes
+  `wrap`; `clip` when `clip!=null` (mxStencil.drawNode always
+  passes `wrap=false`, `clip=false`). leftover reads those attrs
+  per glyph so a later omitted sibling does not keep TxtWidth
+  (`tokens.txt` has no veWordWrap; collectTextBlock `svg:width`
+  is TxtWidth). leftover now expands omitted wrap/clip on save,
+  include-shape nested omitted clip leftover-bakes overflow, and
+  a later omitted wrap leftover-bakes a sibling. A second save
+  keeps both. `clip="1"` / `wrap="1"` still keep the cell box.
 - draw.io leftover mxStencil include-shape omitted leftover Width
   for LibreOffice. Official `Number(w/h)` is 0 when omitted and
   `drawChildren` skips unless `w>0 && h>0`; NestedStencil `attrNum`

@@ -1156,11 +1156,13 @@ class _DrawioXmlShapeDecoder {
                     .toLowerCase()
                     .startsWith('vertical-'),
             wrap: node.getAttribute('wrap') == '1',
-            // mxXmlCanvas2D.text always writes clip; mxStencil.drawNode
-            // passes false. overflow fill|width|block also keep the cell
-            // box (plainText / createCss). leftover wrap=0 otherwise
-            // expands TxtWidth so Draw shows overflow (`tokens.txt`
-            // has no veWordWrap).
+            // mxXmlCanvas2D.text always writes wrap; clip when clip!=null
+            // (mxStencil.drawNode always passes wrap=false, clip=false).
+            // leftover reads them per glyph so a later omitted sibling
+            // does not keep TxtWidth (`tokens.txt` has no veWordWrap;
+            // collectTextBlock svg:width is TxtWidth). wrap=0 leftover
+            // expands TxtWidth on save so Draw shows overflow; clip /
+            // overflow fill|width|block keep the cell box.
             clip: node.getAttribute('clip') == '1',
             overflow: node.getAttribute('overflow'),
             // mxXmlCanvas2D.text dir=rtl. leftover Paragraph Flags so
