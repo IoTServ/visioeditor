@@ -582,6 +582,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fontbordercolor omitted leftover default
+  label-border for LibreOffice. Official getColorValue is per-node
+  `default`; leftover no longer reuses an earlier sibling's default so
+  Draw collectLine does not stroke a later NoFill plate (`tokens.txt`
+  has no label border). include-shape nested omitted leftover-bakes no
+  plate, and a later explicit default leftover-bakes a sibling. A
+  second save keeps both.
+- draw.io leftover mxStencil fontbackgroundcolor omitted leftover
+  default TextBkgnd for LibreOffice. Official getColorValue is per-node
+  `default`; leftover no longer reuses an earlier sibling's default so
+  Draw collectTextBlock does not paint fo:background-color on a later
+  glyph (`tokens.txt` TextBkgnd). include-shape nested omitted
+  leftover-bakes 0, and a later explicit default leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil fontcolor omitted leftover default Char
   Color for LibreOffice. Official getColorValue is per-node `default`;
   leftover no longer reuses an earlier sibling's default so Draw

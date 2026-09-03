@@ -40024,6 +40024,336 @@ void main() {
   );
 
   test(
+    'mxStencil fontbackgroundcolor omitted leftover default TextBkgnd for LibreOffice',
+    () {
+      const plate = VsdxColor(0xFF1565C0);
+
+      VsdxColor? bgOf(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) {
+          return shape.richText.textBlock.backgroundColor;
+        }
+        for (final child in shape.children) {
+          final nested = bgOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool hasBg(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) {
+          return shape.richText.textBlock.backgroundColor != null;
+        }
+        for (final child in shape.children) {
+          if (hasBg(child, text)) return true;
+        }
+        return false;
+      }
+
+      const keepC =
+          '<fontbackgroundcolor color="hubBg" default="#1565c0"/>';
+      const omittedC = '<fontbackgroundcolor color="hubBg"/>';
+      const t1 =
+          '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>';
+      const t2 =
+          '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepC'
+        '$t1'
+        '$omittedC'
+        '$t2'
+        '</foreground>'
+        '</shape>',
+        id: 654,
+      );
+      expect(bgOf(omitted, 'AB'), plate);
+      expect(
+        hasBg(omitted, 'CD'),
+        isFalse,
+        reason: 'omitted fontbackgroundcolor default is '
+            'mxStencil.getColorValue per-node; leftover must not reuse '
+            'the first hubBg default so Draw collectTextBlock does not '
+            'paint fo:background-color on the later glyph (`tokens.txt` '
+            'TextBkgnd)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepC'
+        '$t1'
+        '$keepC'
+        '$t2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(bgOf(keep, 'AB'), plate);
+      expect(
+        bgOf(keep, 'CD'),
+        plate,
+        reason: 'without omitted default leftover keeps both TextBkgnd',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '$t1'
+        '$keepC'
+        '$t2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        hasBg(later, 'AB'),
+        isFalse,
+        reason: 'first omitted default leftover-bakes TextBkgnd 0',
+      );
+      expect(
+        bgOf(later, 'CD'),
+        plate,
+        reason: 'later explicit default leftover-bakes a sibling TextBkgnd',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbackgroundcolor color="#1565c0"/>'
+        '$t1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(bgOf(includeHost, 'AB'), plate);
+      expect(
+        hasBg(includeHost, 'CD'),
+        isFalse,
+        reason: 'include-shape nested omitted default leftover-bakes '
+            'TextBkgnd 0',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        bgOf(leftoverDoc.pages.first.findShapeById(omittedId)!, 'AB'),
+        plate,
+        reason: 'a second save keeps leftover TextBkgnd Draw paints',
+      );
+      expect(
+        hasBg(leftoverDoc.pages.first.findShapeById(omittedId)!, 'CD'),
+        isFalse,
+        reason: 'a second save keeps leftover TextBkgnd 0 Draw paints',
+      );
+      expect(
+        hasBg(leftoverDoc.pages.first.findShapeById(laterId)!, 'AB'),
+        isFalse,
+        reason: 'a second save keeps the first omitted-default TextBkgnd 0',
+      );
+      expect(
+        bgOf(leftoverDoc.pages.first.findShapeById(laterId)!, 'CD'),
+        plate,
+        reason: 'a second save keeps the later leftover TextBkgnd sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil fontbordercolor omitted leftover default label-border for LibreOffice',
+    () {
+      const border = VsdxColor(0xFF1565C0);
+
+      VsdxShape? glyphOf(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxShape? plateOf(VsdxShape root, int sourceId) {
+        final name = '$kLibvisioLabelBorderShapeNamePrefix$sourceId';
+        VsdxShape? found;
+        void walk(VsdxShape next) {
+          if (found != null) return;
+          if (next.name == name) {
+            found = next;
+            return;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      const keepC = '<fontbordercolor color="hubBd" default="#1565c0"/>';
+      const omittedC = '<fontbordercolor color="hubBd"/>';
+      const t1 =
+          '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>';
+      const t2 =
+          '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepC'
+        '$t1'
+        '$omittedC'
+        '$t2'
+        '</foreground>'
+        '</shape>',
+        id: 655,
+      );
+      expect(glyphOf(omitted, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(omitted, 'CD')!.labelBorderColor,
+        isNull,
+        reason: 'omitted fontbordercolor default is mxStencil.getColorValue '
+            'per-node; leftover must not reuse the first hubBd default so '
+            'Draw collectLine does not stroke a later NoFill plate '
+            '(`tokens.txt` has no label border)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepC'
+        '$t1'
+        '$keepC'
+        '$t2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphOf(keep, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(keep, 'CD')!.labelBorderColor,
+        border,
+        reason: 'without omitted default leftover keeps both label borders',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '$t1'
+        '$keepC'
+        '$t2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphOf(later, 'AB')!.labelBorderColor,
+        isNull,
+        reason: 'first omitted default leftover-bakes no plate',
+      );
+      expect(
+        glyphOf(later, 'CD')!.labelBorderColor,
+        border,
+        reason: 'later explicit default leftover-bakes a sibling plate',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor color="#1565c0"/>'
+        '$t1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedC'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(glyphOf(includeHost, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(includeHost, 'CD')!.labelBorderColor,
+        isNull,
+        reason: 'include-shape nested omitted default leftover-bakes no plate',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverOmitted =
+          leftoverDoc.pages.first.findShapeById(omittedId)!;
+      final leftoverLater = leftoverDoc.pages.first.findShapeById(laterId)!;
+      final omittedAb = glyphOf(leftoverOmitted, 'AB')!;
+      final omittedCd = glyphOf(leftoverOmitted, 'CD')!;
+      expect(omittedAb.labelBorderColor, isNull);
+      expect(omittedCd.labelBorderColor, isNull);
+      final plateAb = plateOf(leftoverOmitted, omittedAb.id);
+      expect(
+        plateAb,
+        isNotNull,
+        reason: 'a second save keeps the first NoFill plate Draw paints',
+      );
+      expect(plateAb!.line.color, border);
+      expect(
+        plateOf(leftoverOmitted, omittedCd.id),
+        isNull,
+        reason: 'a second save keeps leftover omitted with no second plate',
+      );
+      final laterAb = glyphOf(leftoverLater, 'AB')!;
+      final laterCd = glyphOf(leftoverLater, 'CD')!;
+      expect(
+        plateOf(leftoverLater, laterAb.id),
+        isNull,
+        reason: 'a second save keeps the first omitted-default with no plate',
+      );
+      expect(
+        plateOf(leftoverLater, laterCd.id),
+        isNotNull,
+        reason: 'a second save keeps the later leftover plate sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
