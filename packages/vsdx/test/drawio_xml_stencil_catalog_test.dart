@@ -21344,6 +21344,167 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D image omitted leftover FlipX and aspect for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        return <VsdxShape>[
+          if (shape.hasImage && shape.children.isEmpty) shape,
+          for (final child in shape.children) ...imageShapes(child),
+        ];
+      }
+
+      const canvasScale = 1.5 / 100;
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="40" h="10" flipH="1" flipV="1"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="0" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>',
+        id: 525,
+      );
+      expect(omitted.flipX, isFalse);
+      expect(omitted.hasImage, isFalse);
+      final omittedPics = imageShapes(omitted);
+      expect(omittedPics, hasLength(2));
+      expect(
+        omittedPics.first.flipX,
+        isTrue,
+        reason: 'first canvas.image flipH leftover-bakes ForeignData FlipX '
+            'so Draw collectForeignDataType transformFlips mirrors it '
+            '(`tokens.txt` FlipX)',
+      );
+      expect(omittedPics.first.flipY, isTrue);
+      expect(
+        omittedPics.last.flipX,
+        isFalse,
+        reason: 'omitted flipH is not leftover canvas state; leftover must '
+            'not inherit FlipX onto the later PNG Draw paints',
+      );
+      expect(omittedPics.last.flipY, isFalse);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="40" h="10"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="0" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final keepPics = imageShapes(keep);
+      expect(keepPics, hasLength(2));
+      expect(
+        keepPics.every((pic) => !pic.flipX && !pic.flipY),
+        isTrue,
+        reason: 'without flipH leftover stays unmirrored ForeignData',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="40" h="10" aspect="1"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      final laterPics = imageShapes(laterHost);
+      expect(laterPics, hasLength(2));
+      expect(
+        laterPics.first.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+        reason: 'first canvas.image aspect="1" leftover-bakes meet ImgWidth',
+      );
+      expect(
+        laterPics.last.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'later omitted aspect leftover-bakes stretched Img* so Draw '
+            'collectForeignDataType does not letterbox both PNGs '
+            '(`tokens.txt` has no image aspect)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="40" h="10" flipH="1"/>'
+        '<include-shape name="mxgraph.test.tile" x="50" y="0" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      final nestedPics = imageShapes(includeHost);
+      expect(nestedPics, hasLength(2));
+      expect(nestedPics.first.flipX, isTrue);
+      expect(
+        nestedPics.last.flipX,
+        isFalse,
+        reason: 'include-shape nested omitted flipH does not inherit host '
+            'ForeignData FlipX Draw transformFlips',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverOmitted = imageShapes(
+        leftoverDoc.pages.first.findShapeById(omittedId)!,
+      );
+      expect(leftoverOmitted, hasLength(2));
+      expect(
+        leftoverOmitted.first.flipX,
+        isTrue,
+        reason: 'a second save keeps first ForeignData FlipX Draw paints',
+      );
+      expect(
+        leftoverOmitted.last.flipX,
+        isFalse,
+        reason: 'a second save keeps the later omitted-flipH sibling',
+      );
+      final leftoverLater = imageShapes(
+        leftoverDoc.pages.first.findShapeById(laterId)!,
+      );
+      expect(
+        leftoverLater.first.imgWidthInches,
+        closeTo(10 * canvasScale, 0.02),
+        reason: 'a second save keeps leftover meet ImgWidth Draw paints',
+      );
+      expect(
+        leftoverLater.last.imgWidthInches,
+        closeTo(40 * canvasScale, 0.02),
+        reason: 'a second save keeps the later omitted-aspect sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

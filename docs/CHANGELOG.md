@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D image omitted leftover FlipX /
+  ImgWidth for LibreOffice. Official `canvas.image` always writes
+  `aspect`/`flipH`/`flipV`; mxStencil.drawNode passes this node's
+  flips and `aspect=false`. leftover reads those attrs per image
+  so a later omitted sibling does not keep FlipX or letterbox
+  Img* (`tokens.txt` FlipX; no image aspect). Draw
+  `collectForeignDataType` maps FlipX to `draw:mirror-horizontal`
+  and Img* to `svg:width`. include-shape copies that overlay, and
+  a later omitted image leftover-bakes a sibling. A second save
+  keeps both. No `flipH`/`aspect` still stays stretch unmirrored.
 - draw.io leftover mxXmlCanvas2D begin leftover lastX/lastY 0 for
   LibreOffice. Official `begin` discards the unpainted path and
   resets `lastX`/`lastY` to 0; leftover used to concatenate onto

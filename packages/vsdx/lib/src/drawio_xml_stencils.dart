@@ -1417,13 +1417,16 @@ class _DrawioXmlShapeDecoder {
     var top = _number(node, 'y');
     var boxW = _number(node, 'w');
     var boxH = _number(node, 'h');
-    // mxXmlCanvas2D.image always writes aspect (default true). Official
+    // mxXmlCanvas2D.image always writes aspect/flipH/flipV. Official
     // mxSvgCanvas2D.image uses preserveAspectRatio meet when aspect, and
-    // "none" when false. mxStencil.drawNode always passes false (stretch);
-    // JS capture omits the attr. libvisio collectForeignDataType maps
-    // Img* to svg:width with no clip (`tokens.txt` has no image aspect),
-    // so leftover letterboxes Img* for aspect="1" or Draw stretches the
-    // PNG into the stencil box.
+    // "none" when false. mxStencil.drawNode always passes aspect=false
+    // (stretch) and this node's flipH/flipV (`=== '1'`); NestedStencil
+    // capture omits those attrs. leftover reads them per image so a later
+    // omitted sibling does not keep FlipX or letterbox Img*
+    // (`tokens.txt` has FlipX, no image aspect). collectForeignDataType
+    // transformFlips → draw:mirror-horizontal; Img* → svg:width with no
+    // clip, so leftover letterboxes Img* for aspect="1" or Draw stretches
+    // the PNG into the stencil box.
     if (_flag(node, 'aspect') && boxW > 1e-9 && boxH > 1e-9) {
       final size = _rasterPixelSize(parsed.bytes);
       if (size != null) {
@@ -1455,6 +1458,9 @@ class _DrawioXmlShapeDecoder {
       top: top,
       boxW: boxW > 1e-9 ? boxW : null,
       boxH: boxH > 1e-9 ? boxH : null,
+      // Per-image, not leftover canvas state. Official always writes
+      // flipH/flipV; omitted / "0" is false so a later PNG does not
+      // inherit transformFlips.
       flipH: node.getAttribute('flipH') == '1',
       flipV: node.getAttribute('flipV') == '1',
     )));
