@@ -582,6 +582,27 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover southwest
+  FillPattern for LibreOffice. NestedStencil `direction="southwest"`
+  leftover-bakes FillPattern 31; omitted is south FillPattern 28.
+  leftover now snaps omitted per node so Draw collectFillAndShadow does
+  not reuse southwest (`tokens.txt` FillPattern → draw:angle).
+  include-shape nested omitted leftover-bakes south, and a later
+  explicit southwest leftover-bakes a sibling. A second save keeps both.
+- draw.io leftover mxStencil fillgradient omitted leftover southeast
+  FillPattern for LibreOffice. NestedStencil `direction="southeast"`
+  leftover-bakes FillPattern 32; omitted is south FillPattern 28.
+  leftover now snaps omitted per node so Draw collectFillAndShadow does
+  not reuse southeast (`tokens.txt` FillPattern → draw:angle).
+  include-shape nested omitted leftover-bakes south, and a later
+  explicit southeast leftover-bakes a sibling. A second save keeps both.
+- draw.io leftover mxStencil fillgradient omitted leftover northwest
+  FillPattern for LibreOffice. NestedStencil `direction="northwest"`
+  leftover-bakes FillPattern 33; omitted is south FillPattern 28.
+  leftover now snaps omitted per node so Draw collectFillAndShadow does
+  not reuse northwest (`tokens.txt` FillPattern → draw:angle).
+  include-shape nested omitted leftover-bakes south, and a later
+  explicit northwest leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil fillgradient omitted leftover northeast
   FillPattern for LibreOffice. NestedStencil `direction="northeast"`
   leftover-bakes FillPattern 34; omitted is south FillPattern 28.
