@@ -3757,9 +3757,9 @@ class _DrawioXmlShapeDecoder {
   }
 
   List<VsdxPathCommand> _decodeRect(XmlElement rect) {
-    // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
-    // leftover `_number` 0 per node so a later omitted sibling does
-    // not keep MoveTo (`tokens.txt` Line → RelMoveTo).
+    // mxStencil.drawNode: Number(x)*sx / Number(y)*sy; omitted is
+    // Number(null)=0. leftover `_number` 0 per node so a later omitted
+    // sibling does not keep MoveTo (`tokens.txt` Line → RelMoveTo).
     final left = _number(rect, 'x');
     final top = _number(rect, 'y');
     final width = _number(rect, 'w');
