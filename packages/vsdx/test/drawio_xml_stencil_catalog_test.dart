@@ -30378,6 +30378,143 @@ void main() {
   );
 
   test(
+    'mxStencil rect omitted leftover h LineTo for LibreOffice',
+    () {
+      List<double> geomMinLineYs(VsdxShape shape) {
+        final ys = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            if (geometry.noShow) continue;
+            double? minY;
+            for (final command in geometry.commands) {
+              double? y;
+              if (command is LineTo) y = command.y;
+              if (command is RelLineTo) y = command.fy * next.height;
+              if (y != null) {
+                minY = minY == null ? y : (y < minY ? y : minY);
+              }
+            }
+            if (minY != null) ys.add(minY);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        ys.sort();
+        return ys;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final originY = 60 * canvasScale;
+      final shiftedY = 50 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<rect x="40" y="40" w="20"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 587,
+      );
+      expect(
+        geomMinLineYs(omitted),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'omitted rect h is Number(null)=0; leftover must not keep '
+            'Height so Draw collectGeometry does not RelLineTo the first '
+            'plate (`tokens.txt` Line)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        geomMinLineYs(keep),
+        everyElement(closeTo(shiftedY, 1e-6)),
+        reason: 'without omitted h leftover keeps Height LineTo',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="40" y="40" w="20"/>'
+        '<stroke/>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        geomMinLineYs(later),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'later explicit h leftover-bakes a sibling LineTo',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="40" y="40" w="20" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="40" y="40" w="20"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        geomMinLineYs(includeHost),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'include-shape nested omitted h leftover-bakes LineTo top '
+            'so Draw does not inherit host Height',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        geomMinLineYs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'a second save keeps leftover LineTo Draw paints',
+      );
+      expect(
+        geomMinLineYs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(shiftedY, 1e-6), closeTo(originY, 1e-6)],
+        reason: 'a second save keeps the later explicit LineTo sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
