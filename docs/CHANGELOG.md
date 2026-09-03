@@ -582,6 +582,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover spacing-bottom
+  BottomMargin for LibreOffice. Official omitted `spacing-bottom` is
+  0; leftover now snaps per glyph so Draw collectTextBlock does not
+  pad a later frame (`tokens.txt` BottomMargin → fo:padding-bottom).
+  include-shape nested omitted leftover-bakes 0, and a later explicit
+  `spacing-bottom="20"` leftover-bakes a sibling. A second save keeps
+  both.
+- draw.io leftover mxStencil text omitted leftover spacing-right
+  RightMargin for LibreOffice. Official omitted `spacing-right` is 0;
+  leftover now snaps per glyph so Draw collectTextBlock does not pad a
+  later frame (`tokens.txt` RightMargin → fo:padding-right).
+  include-shape nested omitted leftover-bakes 0, and a later explicit
+  `spacing-right="20"` leftover-bakes a sibling. A second save keeps
+  both.
 - draw.io leftover mxStencil text run omitted leftover
   text-pos-after-bullet IndLeft for LibreOffice. Official omitted
   `text-pos-after-bullet` is 0; leftover now snaps per `<run>` so Draw

@@ -38281,6 +38281,266 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover spacing-right RightMargin for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<double> rights(VsdxShape shape) => <double>[
+            glyphContaining(shape, 'AB')!.richText.textBlock.marginRightInches,
+            glyphContaining(shape, 'CD')!.richText.textBlock.marginRightInches,
+          ];
+
+      const canvasScale = 1.5 / 100;
+      final pad = 20 * canvasScale;
+      const keepT =
+          '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top" spacing-right="20"/>';
+      const omittedT =
+          '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top" spacing-right="20"/>';
+      const omittedFirst =
+          '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top" spacing-right="20"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 643,
+      );
+      expect(
+        rights(omitted),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'omitted spacing-right is leftover `_number` 0; leftover '
+            'must not keep RightMargin so Draw collectTextBlock does not '
+            'pad the later frame (`tokens.txt` RightMargin → '
+            'fo:padding-right)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        rights(keep),
+        everyElement(closeTo(pad, 1e-9)),
+        reason: 'without omitted spacing-right leftover keeps RightMargin',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        rights(later),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'later spacing-right leftover-bakes a sibling RightMargin',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="50" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="50" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="50" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        rights(includeHost),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'include-shape nested omitted spacing-right leftover-bakes '
+            '0 so Draw does not inherit host fo:padding-right',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        rights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'a second save keeps leftover RightMargin Draw paints',
+      );
+      expect(
+        rights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'a second save keeps the later leftover RightMargin sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil text omitted leftover spacing-bottom BottomMargin for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<double> bottoms(VsdxShape shape) => <double>[
+            glyphContaining(shape, 'AB')!
+                .richText
+                .textBlock
+                .marginBottomInches,
+            glyphContaining(shape, 'CD')!
+                .richText
+                .textBlock
+                .marginBottomInches,
+          ];
+
+      const canvasScale = 1.5 / 100;
+      final pad = 20 * canvasScale;
+      const keepT =
+          '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top" spacing-bottom="20"/>';
+      const omittedT =
+          '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top" spacing-bottom="20"/>';
+      const omittedFirst =
+          '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top" spacing-bottom="20"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 644,
+      );
+      expect(
+        bottoms(omitted),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'omitted spacing-bottom is leftover `_number` 0; leftover '
+            'must not keep BottomMargin so Draw collectTextBlock does not '
+            'pad the later frame (`tokens.txt` BottomMargin → '
+            'fo:padding-bottom)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        bottoms(keep),
+        everyElement(closeTo(pad, 1e-9)),
+        reason: 'without omitted spacing-bottom leftover keeps BottomMargin',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        bottoms(later),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'later spacing-bottom leftover-bakes a sibling BottomMargin',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="50" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="50" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="50" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        bottoms(includeHost),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'include-shape nested omitted spacing-bottom leftover-bakes '
+            '0 so Draw does not inherit host fo:padding-bottom',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        bottoms(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'a second save keeps leftover BottomMargin Draw paints',
+      );
+      expect(
+        bottoms(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'a second save keeps the later leftover BottomMargin sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
