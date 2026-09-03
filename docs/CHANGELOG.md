@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS line-through / `<sup>` / `<sub>`
+  omitted leftover Char.Style / Char.Pos for LibreOffice. mxSvgCanvas2D
+  HTML paints `text-decoration:line-through` and `<sup>`/`<sub>`;
+  leftover ignored them so Draw collectCharIX reused regular
+  `style:text-line-through-style` / no `style:text-position`
+  (`tokens.txt` Style / Pos). leftover already maps those HTML
+  features. include-shape nested omitted leftover-bakes regular /
+  normal, and a later explicit rule leftover-bakes a sibling. A
+  second save keeps Style / Pos.
+
 - draw.io leftover mxStencil html CSS font-size / font-family / color /
   background-color omitted leftover Char.Size / Font / Color /
   Highlight for LibreOffice. mxSvgCanvas2D HTML paints those CSS
