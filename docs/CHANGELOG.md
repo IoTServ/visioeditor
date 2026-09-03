@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover NestedStencil text omitted leftover textopacity
+  ColorTrans for LibreOffice. Official `canvas.text` does not write
+  `textopacity`; mxText.apply default is 100. leftover `_number`
+  fallback 100 per glyph so a later omitted sibling does not keep
+  ColorTrans (`tokens.txt` has no ColorTrans; collectCharIX
+  `fo:color`). leftover now snaps omitted to opaque, include-shape
+  nested omitted textopacity leftover-bakes opaque, and a later
+  `textopacity="0"` leftover-bakes a sibling. A second save
+  ColorTrans-bakes the faded glyph over the page. `textopacity="0"`
+  still leftover-bakes ColorTrans 1.
 - draw.io leftover NestedStencil text omitted leftover spacing
   LeftMargin for LibreOffice. Official `canvas.text` does not write
   `spacing-*`. leftover `_number` 0 per glyph so a later omitted

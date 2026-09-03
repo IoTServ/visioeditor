@@ -23254,6 +23254,166 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover textopacity ColorTrans for LibreOffice',
+    () {
+      VsdxTextRun? runContaining(VsdxShape shape, String text) {
+        for (final run in shape.richText.runs) {
+          if (run.text.contains(text)) return run;
+        }
+        for (final child in shape.children) {
+          final nested = runContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool isBackdropGlyph(VsdxCharStyle style) {
+        if (style.transparency > 0.5) return true;
+        final color = style.color;
+        if (color == null) return true;
+        if (color.value == 0xFF000000) return false;
+        return color.red > 200 && color.green > 200 && color.blue > 200;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top" '
+        'textopacity="0"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 537,
+      );
+      expect(
+        runContaining(omitted, 'AB')!.charStyle.transparency,
+        closeTo(1, 1e-6),
+      );
+      expect(
+        runContaining(omitted, 'CD')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'omitted textopacity is mxText.apply 100; leftover must not '
+            'keep ColorTrans so Draw collectCharIX does not fade the later '
+            'glyph (`tokens.txt` has no ColorTrans)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        runContaining(keep, 'AB')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+      );
+      expect(
+        runContaining(keep, 'CD')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'without textopacity leftover keeps opaque ColorTrans 0',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top" '
+        'textopacity="0"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        runContaining(later, 'AB')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+      );
+      expect(
+        runContaining(later, 'CD')!.charStyle.transparency,
+        closeTo(1, 1e-6),
+        reason: 'later textopacity leftover-bakes ColorTrans 1 on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top" '
+        'textopacity="0"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        runContaining(includeHost, 'AB')!.charStyle.transparency,
+        closeTo(1, 1e-6),
+      );
+      expect(
+        runContaining(includeHost, 'CD')!.charStyle.transparency,
+        closeTo(0, 1e-6),
+        reason: 'include-shape nested omitted textopacity leftover-bakes '
+            'opaque so Draw does not inherit host ColorTrans',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        isBackdropGlyph(
+          runContaining(
+            leftoverDoc.pages.first.findShapeById(omittedId)!,
+            'AB',
+          )!
+              .charStyle,
+        ),
+        isTrue,
+        reason: 'ColorTrans is not a token; leftover bakes the faded glyph '
+            'over the page',
+      );
+      expect(
+        runContaining(
+          leftoverDoc.pages.first.findShapeById(omittedId)!,
+          'CD',
+        )!
+            .charStyle
+            .transparency,
+        closeTo(0, 1e-6),
+        reason: 'a second save keeps leftover omitted-textopacity opaque',
+      );
+      expect(
+        isBackdropGlyph(
+          runContaining(
+            leftoverDoc.pages.first.findShapeById(laterId)!,
+            'CD',
+          )!
+              .charStyle,
+        ),
+        isTrue,
+        reason: 'a second save ColorTrans-bakes the later faded sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

@@ -2613,6 +2613,11 @@ class _DrawioXmlShapeDecoder {
   /// still multiply so include-shape nested glyphs keep host setAlpha
   /// (`tokens.txt` has no ColorTrans). fillalpha/strokealpha do not.
   List<_DrawioStencilLabelRun> _decodeTextRuns(XmlElement node) {
+    // mxText.apply STYLE_TEXT_OPACITY default 100. leftover reads
+    // `textopacity` per glyph (`_number` fallback 100) so a later
+    // omitted sibling does not keep ColorTrans (`tokens.txt` has no
+    // ColorTrans; collectCharIX fo:color). NestedStencil capture
+    // omits 100.
     final parentRaw = _number(node, 'textopacity', fallback: 100);
     final parentOpacity = _opacityPercentWithCanvasAlpha(parentRaw);
     final raw = <_DrawioStencilLabelRun>[
