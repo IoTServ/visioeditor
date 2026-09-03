@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover close LineTo for
+  LibreOffice. Official `drawNode` `canvas.close()` is this subpath.
+  leftover LineTo the start so a later omitted sibling stays open
+  (`tokens.txt` Line → RelLineTo / `svg:d` `z`). leftover now leaves
+  omitted open, include-shape nested omitted close leftover-bakes
+  open, and a later `<close/>` leftover-bakes a sibling. A second
+  save keeps both. `<close/>` still leftover-bakes the return LineTo.
 - draw.io leftover mxStencil rect omitted leftover x MoveTo for
   LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted

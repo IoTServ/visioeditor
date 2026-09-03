@@ -24774,6 +24774,163 @@ void main() {
   );
 
   test(
+    'mxStencil path omitted leftover close LineTo for LibreOffice',
+    () {
+      List<bool> closes(VsdxShape shape) {
+        final flags = <bool>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            if (geometry.noShow || geometry.commands.isEmpty) continue;
+            double? startX, startY, lastX, lastY;
+            for (final command in geometry.commands) {
+              if (command is MoveTo && startX == null) {
+                startX = command.x;
+                startY = command.y;
+              } else if (command is RelMoveTo && startX == null) {
+                startX = command.fx * next.width;
+                startY = command.fy * next.height;
+              }
+              if (command is LineTo) {
+                lastX = command.x;
+                lastY = command.y;
+              } else if (command is RelLineTo) {
+                lastX = command.fx * next.width;
+                lastY = command.fy * next.height;
+              }
+            }
+            flags.add(
+              startX != null &&
+                  lastX != null &&
+                  (lastX - startX).abs() < 1e-9 &&
+                  (lastY! - startY!).abs() < 1e-9,
+            );
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return flags;
+      }
+
+      const closed = '<path>'
+          '<move x="0" y="0"/>'
+          '<line x="80" y="0"/>'
+          '<line x="80" y="80"/>'
+          '<close/>'
+          '</path>';
+      const open = '<path>'
+          '<move x="0" y="0"/>'
+          '<line x="80" y="0"/>'
+          '<line x="80" y="80"/>'
+          '</path>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$closed'
+        '<stroke/>'
+        '$open'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 547,
+      );
+      expect(
+        closes(omitted),
+        [true, false],
+        reason: 'omitted close is not canvas state; leftover must leave the '
+            'later rail open so Draw collectGeometry does not RelLineTo the '
+            'start (`tokens.txt` Line → svg:d z)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$closed'
+        '<stroke/>'
+        '$closed'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        closes(keep),
+        [true, true],
+        reason: 'without omitted close leftover keeps return LineTo',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$open'
+        '<stroke/>'
+        '$closed'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        closes(later),
+        [false, true],
+        reason: 'later close leftover-bakes a sibling return LineTo',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$closed'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$open'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        closes(includeHost),
+        [true, false],
+        reason: 'include-shape nested omitted close leftover-bakes open so '
+            'Draw does not inherit host return LineTo',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        closes(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [true, false],
+        reason: 'a second save keeps leftover open/closed rails Draw paints',
+      );
+      expect(
+        closes(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [false, true],
+        reason: 'a second save keeps the later leftover close sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

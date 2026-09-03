@@ -3695,6 +3695,9 @@ class _DrawioXmlShapeDecoder {
         _penY = endY;
         break;
       case 'close':
+        // mxStencil.drawNode canvas.close() is this subpath, not canvas
+        // state. leftover LineTo the start so a later omitted sibling
+        // stays open (`tokens.txt` Line → RelLineTo / svg:d z).
         if (_hasSub && (_penX != _subX || _penY != _subY)) {
           commands.add(LineTo(_x(_subX, _subY), _y(_subX, _subY)));
         }
