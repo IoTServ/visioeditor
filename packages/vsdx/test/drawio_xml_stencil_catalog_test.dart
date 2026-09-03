@@ -23718,6 +23718,144 @@ void main() {
   );
 
   test(
+    'mxStencil path omitted leftover rounded arcSize QuadBezTo for LibreOffice',
+    () {
+      int countQuad(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            n += geometry.commands.whereType<QuadBezTo>().length;
+            n += geometry.commands.whereType<RelQuadBezTo>().length;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      const roundedPath = '<path rounded="1" arcSize="10">'
+          '<move x="0" y="0"/>'
+          '<line x="100" y="0"/>'
+          '<line x="100" y="60"/>'
+          '<line x="0" y="60"/>'
+          '<line x="0" y="0"/>'
+          '</path>';
+      const omittedPath = '<path rounded="1">'
+          '<move x="0" y="0"/>'
+          '<line x="100" y="0"/>'
+          '<line x="100" y="60"/>'
+          '<line x="0" y="60"/>'
+          '<line x="0" y="0"/>'
+          '</path>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '$roundedPath'
+        '<stroke/>'
+        '$omittedPath'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 540,
+      );
+      expect(
+        countQuad(omitted),
+        4,
+        reason: 'omitted arcSize is Number(null)=0; leftover must not keep '
+            'the first leftover fillets Draw collectGeometry maps to '
+            'RelQuadBezTo (`tokens.txt` RelQuadBezTo)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '$roundedPath'
+        '<stroke/>'
+        '$roundedPath'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        countQuad(keep),
+        8,
+        reason: 'without omitted arcSize leftover keeps QuadBezTo fillets',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '$omittedPath'
+        '<stroke/>'
+        '$roundedPath'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        countQuad(later),
+        4,
+        reason: 'later arcSize leftover-bakes QuadBezTo on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '$roundedPath'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="60"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '$omittedPath'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        countQuad(includeHost),
+        4,
+        reason: 'include-shape nested omitted arcSize leftover-bakes sharp '
+            'LineTo so Draw does not inherit host fillets',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        countQuad(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        4,
+        reason: 'a second save keeps leftover RelQuadBezTo Draw paints',
+      );
+      expect(
+        countQuad(leftoverDoc.pages.first.findShapeById(laterId)!),
+        4,
+        reason: 'a second save keeps the later leftover fillets',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

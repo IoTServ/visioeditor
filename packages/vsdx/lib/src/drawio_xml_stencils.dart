@@ -3471,6 +3471,10 @@ class _DrawioXmlShapeDecoder {
     if (segs.isEmpty) return null;
     var arcSize = _number(path, 'arcSize');
     if (arcSize <= 0) arcSize = _number(path, 'arcsize');
+    // mxStencil.drawNode: Number(arcSize); omitted is Number(null)=0.
+    // leftover `_number` 0 per path so a later omitted sibling does
+    // not keep QuadBezTo fillets (`tokens.txt` RelQuadBezTo).
+    // leftoverArc 0 is addPoints LineTo (sharp corners).
     final leftoverArc = arcSize * _canvasScale.abs();
     final commands = <VsdxPathCommand>[];
     for (final seg in segs) {

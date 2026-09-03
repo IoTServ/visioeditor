@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover rounded arcSize
+  QuadBezTo for LibreOffice. Official `drawNode` uses `Number(arcSize)`;
+  omitted is `Number(null)=0`. leftover `_number` 0 per path so a later
+  omitted sibling does not keep fillets (`tokens.txt` RelQuadBezTo).
+  leftover now snaps omitted to sharp LineTo, include-shape nested
+  omitted arcSize leftover-bakes sharp, and a later `arcSize="10"`
+  leftover-bakes a sibling. A second save keeps both. `arcSize="10"`
+  still leftover-bakes QuadBezTo.
 - draw.io leftover mxStencil path omitted leftover move MoveTo for
   LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted
