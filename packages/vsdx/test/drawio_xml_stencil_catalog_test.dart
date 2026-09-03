@@ -32878,10 +32878,8 @@ void main() {
       const canvasScale = 1.5 / 100;
       final rDx = 10 * canvasScale;
       final rDy = 20 * canvasScale;
-      const keepRr =
-          '<roundrect x="0" y="0" w="40" h="30" dx="10" dy="20"/>';
-      const keepRr2 =
-          '<roundrect x="0" y="40" w="40" h="30" dx="10" dy="20"/>';
+      const keepRr = '<roundrect x="0" y="0" w="40" h="30" dx="10" dy="20"/>';
+      const keepRr2 = '<roundrect x="0" y="40" w="40" h="30" dx="10" dy="20"/>';
       const omittedDx = '<roundrect x="0" y="40" w="40" h="30" dy="20"/>';
 
       final omitted = decodeDrawioMxStencilXml(
@@ -33013,10 +33011,8 @@ void main() {
       const canvasScale = 1.5 / 100;
       final copyRy = 20 * canvasScale;
       final keepRy = 25 * canvasScale;
-      const keepRr =
-          '<roundrect x="0" y="0" w="40" h="30" dx="10" dy="20"/>';
-      const keepRr2 =
-          '<roundrect x="0" y="40" w="40" h="30" dx="10" dy="20"/>';
+      const keepRr = '<roundrect x="0" y="0" w="40" h="30" dx="10" dy="20"/>';
+      const keepRr2 = '<roundrect x="0" y="40" w="40" h="30" dx="10" dy="20"/>';
       const omittedDy = '<roundrect x="0" y="40" w="40" h="30" dx="10"/>';
 
       final omittedList = <Matcher>[
@@ -33441,11 +33437,9 @@ void main() {
 
       final keepRad = math.pi / 4;
       final omitRad = -math.pi / 2;
-      final keepG =
-          '<fillgradient color1="#1565c0" color2="#bbdefb" '
+      final keepG = '<fillgradient color1="#1565c0" color2="#bbdefb" '
           'stops="#1565c0@0,#bbdefb@1" angle="$keepRad"/>';
-      const omittedG =
-          '<fillgradient color1="#1565c0" color2="#bbdefb" '
+      const omittedG = '<fillgradient color1="#1565c0" color2="#bbdefb" '
           'stops="#1565c0@0,#bbdefb@1"/>';
 
       final omitted = decodeDrawioMxStencilXml(
@@ -33912,8 +33906,7 @@ void main() {
         return values;
       }
 
-      const keepG =
-          '<fillgradient color1="#1565c0" color2="#bbdefb" '
+      const keepG = '<fillgradient color1="#1565c0" color2="#bbdefb" '
           'stops="#1565c0@0,#90caf9@0.5,#bbdefb@1"/>';
       const omittedG = '<fillgradient color1="#1565c0" color2="#bbdefb"/>';
 
@@ -34311,6 +34304,154 @@ void main() {
         fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
         [15, 16],
         reason: 'a second save keeps the later leftover hatch sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil sketch omitted leftover jiggle plates for LibreOffice',
+    () {
+      List<double> jiggles(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.sketchEffect) values.add(next.sketchJiggle);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      double minX(VsdxShape shape) {
+        var min = double.infinity;
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            for (final command in geometry.commands) {
+              if (command is MoveTo) {
+                min = math.min(min, command.x);
+              }
+              if (command is LineTo) {
+                min = math.min(min, command.x);
+              }
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return min;
+      }
+
+      const keepS = '<sketch enabled="1" jiggle="8"/>';
+      const omittedS = '<sketch enabled="1"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 613,
+      );
+      expect(
+        jiggles(omitted),
+        [closeTo(8, 1e-6), closeTo(2, 1e-6)],
+        reason: 'omitted sketch jiggle is draw.io default 2; leftover must '
+            'not keep 8 so Draw leftover stroke plates do not reuse the '
+            'first leftover inches (`tokens.txt` has no veSketchJiggle)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        jiggles(keep),
+        everyElement(closeTo(8, 1e-6)),
+        reason: 'without omitted jiggle leftover keeps 8',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        jiggles(later),
+        [closeTo(2, 1e-6), closeTo(8, 1e-6)],
+        reason: 'later explicit jiggle leftover-bakes 8 on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        jiggles(includeHost),
+        [closeTo(8, 1e-6), closeTo(2, 1e-6)],
+        reason: 'include-shape nested omitted jiggle leftover-bakes 2 so '
+            'Draw does not inherit host 8',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        minX(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        closeTo(-0.014437292937198948, 1e-6),
+        reason:
+            'a second save keeps leftover default-jiggle plates Draw paints',
+      );
+      expect(
+        minX(leftoverDoc.pages.first.findShapeById(laterId)!),
+        closeTo(-0.05728583257053319, 1e-6),
+        reason: 'a second save keeps the later leftover jiggle-8 plates',
       );
     },
   );

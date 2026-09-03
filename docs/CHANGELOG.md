@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil sketch omitted leftover jiggle plates for
+  LibreOffice. NestedStencil `setSketch` writes `jiggle` only when > 0;
+  omitted is draw.io default 2. leftover now snaps omitted per node so
+  Draw leftover stroke plates do not reuse the first leftover inches
+  (`tokens.txt` has no veSketchJiggle). include-shape nested omitted
+  jiggle leftover-bakes 2, and a later explicit 8 leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil sketch omitted leftover angle FillPattern
   for LibreOffice. NestedStencil `setSketch` writes `angle` when finite;
   omitted is draw.io default −41°. leftover now snaps omitted per node
