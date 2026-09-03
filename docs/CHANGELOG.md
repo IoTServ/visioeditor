@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover radial
+  FillPattern for LibreOffice. NestedStencil packed `stops` plus
+  `direction="radial"` leftover-bakes FillPattern 40; omitted direction
+  is south FillPattern 28. leftover now snaps omitted per node so Draw
+  collectFillAndShadow does not reuse radial (`tokens.txt` FillPattern →
+  draw:style). include-shape nested omitted leftover-bakes south, and a
+  later explicit radial leftover-bakes a sibling. A second save keeps
+  both.
 - draw.io leftover mxStencil sketch omitted leftover gap FillPattern
   for LibreOffice. NestedStencil `setSketch` writes `gap` only when > 0;
   omitted is draw.io default 4. leftover now snaps omitted per node so

@@ -34595,6 +34595,135 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient omitted leftover radial FillPattern for LibreOffice',
+    () {
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepG = '<fillgradient color1="#1565c0" color2="#bbdefb" '
+          'stops="#1565c0@0,#bbdefb@1" direction="radial"/>';
+      const omittedG = '<fillgradient color1="#1565c0" color2="#bbdefb" '
+          'stops="#1565c0@0,#bbdefb@1"/>';
+      const f1 = '<rect x="0" y="0" w="40" h="10"/><fill/>';
+      const f2 = '<rect x="0" y="20" w="40" h="10"/><fill/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$f1'
+        '$omittedG'
+        '$f2'
+        '</foreground>'
+        '</shape>',
+        id: 615,
+      );
+      expect(
+        fillPatterns(omitted),
+        [40, 28],
+        reason: 'omitted packed fillgradient direction is south; leftover '
+            'must not keep FillPattern 40 so Draw collectFillAndShadow '
+            'does not reuse radial (`tokens.txt` FillPattern → '
+            'draw:style)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$f1'
+        '$keepG'
+        '$f2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(keep),
+        everyElement(40),
+        reason: 'without omitted direction leftover keeps FillPattern 40',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '$f1'
+        '$keepG'
+        '$f2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillPatterns(later),
+        [28, 40],
+        reason: 'later direction="radial" leftover-bakes a sibling '
+            'FillPattern 40',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '$f1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '$f2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fillPatterns(includeHost),
+        [40, 28],
+        reason: 'include-shape nested omitted direction leftover-bakes '
+            'south so Draw does not inherit host FillPattern 40',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [40, 28],
+        reason: 'a second save keeps leftover FillPattern Draw paints',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28, 40],
+        reason: 'a second save keeps the later leftover radial sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
