@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS font-weight / font-style /
+  text-decoration omitted leftover Char.Style for LibreOffice.
+  mxSvgCanvas2D HTML paints CSS `font-weight:bold` / `font-style:italic`
+  / `text-decoration:underline`; leftover ignored them so Draw
+  collectCharIX reused regular `fo:font-weight` / `fo:font-style` /
+  `style:text-underline-style` (`tokens.txt` Style). leftover already
+  maps those CSS properties onto Style bits. include-shape nested
+  omitted leftover-bakes regular, and a later explicit rule leftover-
+  bakes a sibling. A second save keeps Style.
+
 - draw.io leftover mxStencil html CSS line-height / text-align omitted
   leftover SpLine / HorzAlign for LibreOffice. mxSvgCanvas2D HTML
   paints CSS `line-height` / `text-align` on block `<p>`/`<div>`;
