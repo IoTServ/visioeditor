@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover NestedStencil text omitted leftover spacing
+  LeftMargin for LibreOffice. Official `canvas.text` does not write
+  `spacing-*`. leftover `_number` 0 per glyph so a later omitted
+  sibling does not keep LeftMargin (`tokens.txt` LeftMargin →
+  `fo:padding-left`). leftover now snaps omitted to 0, include-shape
+  nested omitted spacing leftover-bakes 0, and a later
+  `spacing-left` leftover-bakes a sibling. A second save keeps
+  both. `spacing-left` still leftover-bakes LeftMargin.
 - draw.io leftover mxStencil text omitted leftover align-shape
   TxtAngle for LibreOffice. Official `drawNode` uses this node's
   `align-shape=="0"` to counter `shape.rotation`. leftover reads it

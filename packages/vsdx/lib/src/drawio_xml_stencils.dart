@@ -1152,6 +1152,10 @@ class _DrawioXmlShapeDecoder {
             y: _number(node, 'y'),
             boxWidth: _number(node, 'w'),
             boxHeight: _number(node, 'h'),
+            // NestedStencil leftover extras; mxXmlCanvas2D.text does not
+            // write spacing-*. leftover `_number` 0 per glyph so a later
+            // omitted sibling does not keep LeftMargin / TopMargin
+            // (`tokens.txt` LeftMargin → fo:padding-left).
             spacingLeft: _number(node, 'spacing-left'),
             spacingRight: _number(node, 'spacing-right'),
             spacingTop: _number(node, 'spacing-top'),

@@ -23099,6 +23099,161 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover spacing LeftMargin for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final left = 20 * canvasScale;
+      final top = 10 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top" '
+        'spacing-left="20" spacing-top="10"/>'
+        '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 536,
+      );
+      expect(
+        glyphContaining(omitted, 'AB')!.richText.textBlock.marginLeftInches,
+        closeTo(left, 1e-6),
+      );
+      expect(
+        glyphContaining(omitted, 'AB')!.richText.textBlock.marginTopInches,
+        closeTo(top, 1e-6),
+      );
+      expect(
+        glyphContaining(omitted, 'CD')!.richText.textBlock.marginLeftInches,
+        closeTo(0, 1e-6),
+        reason: 'omitted spacing-left is leftover `_number` 0; leftover must '
+            'not keep LeftMargin Draw collectTextBlock maps to '
+            'fo:padding-left (`tokens.txt` LeftMargin)',
+      );
+      expect(
+        glyphContaining(omitted, 'CD')!.richText.textBlock.marginTopInches,
+        closeTo(0, 1e-6),
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphContaining(keep, 'AB')!.richText.textBlock.marginLeftInches,
+        closeTo(0, 1e-6),
+      );
+      expect(
+        glyphContaining(keep, 'CD')!.richText.textBlock.marginLeftInches,
+        closeTo(0, 1e-6),
+        reason: 'without spacing leftover keeps LeftMargin 0',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="50" h="20" align="left" valign="top" '
+        'spacing-left="20" spacing-top="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphContaining(later, 'AB')!.richText.textBlock.marginLeftInches,
+        closeTo(0, 1e-6),
+      );
+      expect(
+        glyphContaining(later, 'CD')!.richText.textBlock.marginLeftInches,
+        closeTo(left, 1e-6),
+        reason: 'later spacing-left leftover-bakes LeftMargin on a sibling',
+      );
+      expect(
+        glyphContaining(later, 'CD')!.richText.textBlock.marginTopInches,
+        closeTo(top, 1e-6),
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="50" h="20" align="left" valign="top" '
+        'spacing-left="20" spacing-top="10"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="50" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="50" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="50" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphContaining(includeHost, 'AB')!.richText.textBlock.marginLeftInches,
+        closeTo(left, 1e-6),
+      );
+      expect(
+        glyphContaining(includeHost, 'CD')!.richText.textBlock.marginLeftInches,
+        closeTo(0, 1e-6),
+        reason: 'include-shape nested omitted spacing leftover-bakes '
+            'LeftMargin 0 so Draw does not inherit host padding',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        glyphContaining(
+          leftoverDoc.pages.first.findShapeById(omittedId)!,
+          'CD',
+        )!
+            .richText
+            .textBlock
+            .marginLeftInches,
+        closeTo(0, 1e-6),
+        reason: 'a second save keeps leftover omitted-spacing LeftMargin',
+      );
+      expect(
+        glyphContaining(
+          leftoverDoc.pages.first.findShapeById(laterId)!,
+          'CD',
+        )!
+            .richText
+            .textBlock
+            .marginLeftInches,
+        closeTo(left, 1e-6),
+        reason: 'a second save keeps leftover spacing-left LeftMargin',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
