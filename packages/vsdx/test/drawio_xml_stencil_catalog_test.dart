@@ -22490,6 +22490,165 @@ void main() {
   );
 
   test(
+    'mxStencil strokewidth omitted leftover fixed LineWeight for LibreOffice',
+    () {
+      List<double> lineWeights(VsdxShape shape) {
+        final weights = <double>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) weights.add(next.line.weightInches);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        weights.sort();
+        return weights;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const nestedMinScale = (80 / 10) * canvasScale;
+      const width = 2.0;
+      final hairline = width * canvasScale;
+      final scaled = width * nestedMinScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="80"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="2" fixed="1"/>'
+        '<ellipse x="0" y="0" w="4" h="4"/>'
+        '<stroke/>'
+        '<strokewidth width="2"/>'
+        '<rect x="5" y="5" w="4" h="4"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 532,
+      );
+      expect(
+        lineWeights(omitted),
+        [closeTo(hairline, 1e-6), closeTo(scaled, 1e-6)],
+        reason: 'omitted fixed is nested minScale; leftover must not keep '
+            'the first canvas-pixel hairline on the later rail Draw '
+            'collectLine paints (`tokens.txt` LineWeight)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="80"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="2"/>'
+        '<ellipse x="0" y="0" w="4" h="4"/>'
+        '<stroke/>'
+        '<rect x="5" y="5" w="4" h="4"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        lineWeights(keep),
+        everyElement(closeTo(scaled, 1e-6)),
+        reason: 'without fixed leftover stays nested minScale LineWeight',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="80"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="2"/>'
+        '<ellipse x="0" y="0" w="4" h="4"/>'
+        '<stroke/>'
+        '<strokewidth width="2" fixed="1"/>'
+        '<rect x="5" y="5" w="4" h="4"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        lineWeights(laterHost),
+        [closeTo(hairline, 1e-6), closeTo(scaled, 1e-6)],
+        reason: 'later fixed leftover-bakes a hairline sibling so Draw '
+            'does not scale both rails (`tokens.txt` LineWeight)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="2" fixed="1"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="80" h="80"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="2"/>'
+        '<ellipse x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(includeHost.line.weightInches, closeTo(hairline, 1e-6));
+      expect(
+        includeHost.children.any(
+          (child) => (child.line.weightInches - scaled).abs() < 1e-6,
+        ),
+        isTrue,
+        reason: 'include-shape nested omitted fixed leftover-bakes nested '
+            'minScale so Draw collectLine does not inherit host hairline',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        lineWeights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(hairline, 1e-6), closeTo(scaled, 1e-6)],
+        reason: 'a second save keeps leftover LineWeight Draw paints',
+      );
+      expect(
+        lineWeights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(hairline, 1e-6), closeTo(scaled, 1e-6)],
+        reason: 'a second save keeps the later fixed sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

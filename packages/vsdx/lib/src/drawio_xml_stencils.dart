@@ -1132,6 +1132,11 @@ class _DrawioXmlShapeDecoder {
         final raw = node.getAttribute('width');
         final width = double.tryParse((raw ?? '').trim());
         _strokeWidth = (width != null && width.isFinite) ? width : 0;
+        // mxStencil.drawNode: fixed=="1" is width×1, else ×minScale.
+        // leftover `_strokeWidthFixed` is this node, not canvas state,
+        // so a later omitted fixed does not keep the hairline LineWeight
+        // (`tokens.txt` LineWeight). Nested include minScale still
+        // scales when fixed is omitted / "0".
         _strokeWidthFixed = node.getAttribute('fixed') == '1';
         break;
       case 'text':

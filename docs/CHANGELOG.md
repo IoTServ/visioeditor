@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil strokewidth omitted leftover fixed
+  LineWeight for LibreOffice. Official `drawNode` uses `fixed=="1"`
+  for width×1 else ×minScale. leftover `_strokeWidthFixed` is this
+  node so a later omitted fixed does not keep the hairline
+  LineWeight (`tokens.txt` LineWeight). leftover now snaps omitted
+  to minScale, include-shape nested omitted fixed leftover-bakes
+  the nested minScale, and a later `fixed="1"` leftover-bakes a
+  sibling. A second save keeps both. `fixed="1"` still stays a
+  canvas-pixel hairline.
 - draw.io leftover mxXmlCanvas2D text omitted leftover overflow
   TxtWidth for LibreOffice. Official `canvas.text` writes
   `overflow` when `overflow!=null`; mxStencil.drawNode always
