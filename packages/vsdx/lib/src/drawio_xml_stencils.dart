@@ -6360,6 +6360,69 @@ void _mxHtmlApplyMargins(_MxHtmlStyle next, String attrs) {
   if (ml != null) next.marginLeft = ml;
 }
 
+/// CSS padding on block `<p>`/`<div>`. leftover ignored it so
+/// collectParaIX IndLeft stayed 0 and Draw painted flush `fo:margin-left`
+/// (`tokens.txt` IndLeft). Add onto CSS/UA margin so a later omitted
+/// sibling does not keep the inset.
+void _mxHtmlApplyPadding(_MxHtmlStyle next, String attrs) {
+  void add({
+    double? top,
+    double? right,
+    double? bottom,
+    double? left,
+  }) {
+    if (top != null) next.marginTop += top;
+    if (right != null) next.marginRight += right;
+    if (bottom != null) next.marginBottom += bottom;
+    if (left != null) next.marginLeft += left;
+  }
+
+  final box = (_mxHtmlStyleProp(attrs, 'padding') ?? '').trim();
+  if (box.isNotEmpty) {
+    final parts = [
+      for (final token in box.split(RegExp(r'\s+'))) _mxHtmlCssPx(token),
+    ];
+    if (parts.isNotEmpty && parts.every((v) => v != null)) {
+      final values = [for (final v in parts) v!];
+      if (values.length == 1) {
+        add(
+          top: values[0],
+          right: values[0],
+          bottom: values[0],
+          left: values[0],
+        );
+      } else if (values.length == 2) {
+        add(
+          top: values[0],
+          bottom: values[0],
+          right: values[1],
+          left: values[1],
+        );
+      } else if (values.length == 3) {
+        add(
+          top: values[0],
+          right: values[1],
+          left: values[1],
+          bottom: values[2],
+        );
+      } else {
+        add(
+          top: values[0],
+          right: values[1],
+          bottom: values[2],
+          left: values[3],
+        );
+      }
+    }
+  }
+  add(
+    top: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-top')),
+    right: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-right')),
+    bottom: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-bottom')),
+    left: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-left')),
+  );
+}
+
 void _mxHtmlApplyCss(
   _MxHtmlStyle next,
   String attrs,
@@ -6446,6 +6509,7 @@ void _mxHtmlApplyCss(
       RegExp(r'^h[1-6]$').hasMatch(tag)) {
     _mxHtmlUaBlockMargins(next, tag);
     _mxHtmlApplyMargins(next, attrs);
+    _mxHtmlApplyPadding(next, attrs);
     next.paraStart = true;
   }
   final lh = _mxHtmlStyleProp(attrs, 'line-height');

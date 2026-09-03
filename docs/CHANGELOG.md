@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS padding omitted leftover IndLeft
+  for LibreOffice. mxSvgCanvas2D HTML paints CSS `padding-left` on
+  block `<p>`/`<div>`; leftover ignored it so collectParaIX IndLeft
+  stayed 0 and Draw painted flush `fo:margin-left` (`tokens.txt`
+  IndLeft). leftover now adds padding onto CSS/UA margin. include-shape
+  nested omitted leftover-bakes 0, and a later explicit padding
+  leftover-bakes a sibling. A second save keeps IndLeft.
+
 - draw.io leftover mxStencil html CSS opacity omitted leftover
   ColorTrans for LibreOffice. mxSvgCanvas2D HTML paints CSS `opacity`;
   leftover ignored it so collectCharIX ColorTrans stayed 0 and Draw
