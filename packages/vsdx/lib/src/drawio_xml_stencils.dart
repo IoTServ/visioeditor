@@ -616,6 +616,10 @@ class _DrawioXmlShapeDecoder {
             : VsdxFill(foregroundTransparency: parentFillTrans));
     // restore() / later sibling linecap leak onto collectLine otherwise.
     // Capture at the inherit `_finish` like LineWeight / LineColorTrans.
+    // NoLine=1 rails (strokecolor=none / omitted setStrokeColor(null))
+    // must not inherit LineColor on the host. leftover used to keep
+    // `_paintLine` when children were empty, so Draw painted palette
+    // stroke (`tokens.txt` LineColor → svg:stroke).
     final savedCap = _lineCap;
     final savedJoin = _lineJoin;
     final savedMiter = _miterLimit;
@@ -631,7 +635,7 @@ class _DrawioXmlShapeDecoder {
     if (inheritLine && _capturedParentStrokeColor) {
       _strokeColor = _parentStrokeColor;
     }
-    var parentLine = pictureFrameOnly || (!inheritLine && children.isNotEmpty)
+    var parentLine = pictureFrameOnly || !inheritLine
         ? const VsdxLine(pattern: 0)
         : _paintLine(stroke: true);
     if (inheritLine && _capturedParentStrokeColor) {
@@ -1016,10 +1020,21 @@ class _DrawioXmlShapeDecoder {
         if (jiggle != null && jiggle.isFinite) _sketchJiggle = jiggle;
         break;
       case 'strokecolor':
-        _applyMxStroke(
-          node.getAttribute('color'),
-          fallback: node.getAttribute('default'),
-        );
+        // mxXmlCanvas2D.setStrokeColor(null) writes color="none".
+        // NestedStencil mxStencilColor(null) returns null; isNoneColor
+        // clears stroke. leftover empty token inherited LineColor so
+        // Draw painted palette stroke (`tokens.txt` LineColor → svg:stroke).
+        final strokeColor = node.getAttribute('color');
+        if (strokeColor == null) {
+          _strokeFollowsFill = false;
+          _strokeColor = null;
+          _strokeIsNone = true;
+        } else {
+          _applyMxStroke(
+            strokeColor,
+            fallback: node.getAttribute('default'),
+          );
+        }
         break;
       case 'fontcolor':
         _applyMxFont(
@@ -1141,6 +1156,8 @@ class _DrawioXmlShapeDecoder {
       // Draw can paint them as sibling shapes (one FillForegnd each).
       // Omitted `<fillcolor/>` color is setFillColor(null) / none so
       // Draw does not inherit FillForegnd (`tokens.txt` → svg:fill).
+      // Omitted `<strokecolor/>` color is setStrokeColor(null) / none so
+      // Draw does not inherit LineColor (`tokens.txt` → svg:stroke).
       // `fillgradient` / mxXmlCanvas2D `<gradient c1= c2=>` bake
       // FillPattern 25–34 so libvisio's two-stop linear
       // (`_fillAndShadowProperties`) keeps AWS brand ramps;

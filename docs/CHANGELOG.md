@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D strokecolor omitted leftover
+  LinePattern 0 for LibreOffice. Official `setStrokeColor(null)`
+  writes `none`; NestedStencil `mxStencilColor(null)` is none.
+  leftover empty token inherited LineColor, so Draw
+  `collectLine` painted palette stroke
+  (`tokens.txt` → `svg:stroke`). leftover now snaps omitted to
+  none, include-shape copies that overlay, and a later omitted
+  strokecolor leftover-bakes a sibling. A second save keeps
+  both.
 - draw.io leftover mxXmlCanvas2D fillcolor omitted leftover
   FillPattern 0 for LibreOffice. Official `setFillColor(null)`
   writes `none`; NestedStencil `mxStencilColor(null)` is none.
