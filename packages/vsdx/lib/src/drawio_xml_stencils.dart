@@ -1102,9 +1102,12 @@ class _DrawioXmlShapeDecoder {
         );
         break;
       case 'fontbordercolor':
-        // mxText.configureCanvas / mxXmlCanvas2D setFontBorderColor.
-        // Visio has no label-border cell; leftover bakes a NoFill sibling
-        // Draw collectLine strokes (`tokens.txt` has no label border).
+        // mxXmlCanvas2D.setFontBorderColor(null) writes color=none.
+        // NestedStencil isNoneColor(null) → none. leftover empty /
+        // omitted already clears `_fontBorder`; a later
+        // `<fontbordercolor/>` must not keep User.veLabelBorderColor
+        // so Draw collectLine does not stroke a second NoFill plate
+        // (`tokens.txt` has no label border).
         _applyMxFontBorder(
           node.getAttribute('color'),
           fallback: node.getAttribute('default'),

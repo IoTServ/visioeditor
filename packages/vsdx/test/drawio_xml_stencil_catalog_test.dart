@@ -20707,6 +20707,152 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fontbordercolor omitted leftover bakes no label-border plate for LibreOffice',
+    () {
+      const border = VsdxColor(0xFF1565C0);
+
+      VsdxShape? glyphOf(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) return shape;
+        for (final child in shape.children) {
+          final nested = glyphOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      VsdxShape? plateOf(VsdxShape root, int sourceId) {
+        final name = '$kLibvisioLabelBorderShapeNamePrefix$sourceId';
+        VsdxShape? found;
+        void walk(VsdxShape next) {
+          if (found != null) return;
+          if (next.name == name) {
+            found = next;
+            return;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(root);
+        return found;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontbordercolor/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 521,
+      );
+      expect(glyphOf(omitted, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(omitted, 'CD')!.labelBorderColor,
+        isNull,
+        reason: 'omitted color is setFontBorderColor(null)/none; leftover '
+            'kept User.veLabelBorderColor so Draw collectLine stroked a '
+            'second NoFill plate (`tokens.txt` has no label border)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphOf(keep, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(keep, 'CD')!.labelBorderColor,
+        border,
+        reason: 'without a fontbordercolor node leftover keeps the previous '
+            'label border',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontbordercolor/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphOf(laterHost, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(laterHost, 'CD')!.labelBorderColor,
+        isNull,
+        reason: 'later omitted fontbordercolor leftover-bakes no plate so '
+            'Draw does not stroke the second glyph (`tokens.txt` has no '
+            'label border)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontbordercolor/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(glyphOf(includeHost, 'AB')!.labelBorderColor, border);
+      expect(
+        glyphOf(includeHost, 'CD')!.labelBorderColor,
+        isNull,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'fontbordercolor leftover-bakes no plate',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      final leftoverAb = glyphOf(leftover, 'AB')!;
+      final leftoverCd = glyphOf(leftover, 'CD')!;
+      expect(leftoverAb.labelBorderColor, isNull);
+      expect(leftoverCd.labelBorderColor, isNull);
+      final plateAb = plateOf(leftover, leftoverAb.id);
+      expect(plateAb, isNotNull,
+          reason: 'a second save keeps the first NoFill plate Draw paints');
+      expect(plateAb!.fill.pattern, 0);
+      expect(plateAb.line.pattern, 1);
+      expect(plateAb.line.color, border);
+      expect(
+        plateOf(leftover, leftoverCd.id),
+        isNull,
+        reason: 'a second save keeps leftover omitted with no second plate',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
