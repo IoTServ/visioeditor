@@ -26123,6 +26123,118 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover str skip for LibreOffice',
+    () {
+      int glyphCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if ((next.text ?? '').isNotEmpty) n++;
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+        id: 557,
+      );
+      expect(
+        glyphCount(omitted),
+        1,
+        reason: 'omitted text str is mxXmlCanvas2D str==null skip; leftover '
+            'must not reuse the first glyph Draw collectText paints '
+            '(`tokens.txt` Character)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphCount(keep),
+        2,
+        reason: 'without omitted str leftover keeps both glyphs',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphCount(later),
+        1,
+        reason: 'later explicit str leftover-bakes a sibling glyph',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphCount(includeHost),
+        1,
+        reason: 'include-shape nested omitted str leftover-bakes no nested '
+            'glyph so Draw does not inherit host Character',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        glyphCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'a second save keeps leftover single glyph Draw paints',
+      );
+      expect(
+        glyphCount(leftoverDoc.pages.first.findShapeById(laterId)!),
+        1,
+        reason: 'a second save keeps the later explicit str sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

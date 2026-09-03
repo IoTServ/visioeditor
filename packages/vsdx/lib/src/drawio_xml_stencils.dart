@@ -1145,6 +1145,9 @@ class _DrawioXmlShapeDecoder {
         break;
       case 'text':
         final runs = _decodeTextRuns(node);
+        // mxXmlCanvas2D.text skips str==null. leftover empty runs skip
+        // so a later omitted sibling does not reuse the previous glyph
+        // (`tokens.txt` Character). Empty / missing str is skip, not keep.
         if (runs.isNotEmpty) {
           _labels.add(_snapshotLabelCanvas(_DrawioStencilLabel(
             text: runs.map((run) => run.text).join(),

@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover str skip for
+  LibreOffice. Official `mxXmlCanvas2D.text` skips `str==null`. leftover
+  empty runs skip so a later omitted sibling does not reuse the previous
+  glyph (`tokens.txt` Character → `text:p`). leftover now paints one
+  glyph, include-shape nested omitted str leftover-bakes no nested
+  glyph, and a later explicit str leftover-bakes a sibling. A second
+  save keeps both. Empty `str` is skip, not keep.
 - draw.io leftover mxStencil path omitted leftover rounded QuadBezTo for
   LibreOffice. Official `drawNode` uses `rounded=="1"` addPoints. leftover
   reads it per path so a later omitted sibling stays sharp (`tokens.txt`
