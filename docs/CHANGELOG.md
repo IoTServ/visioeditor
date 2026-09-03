@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D strokewidth omitted leftover
+  LineWeight hairline for LibreOffice. Official `setStrokeWidth`
+  writes `width`; NestedStencil `Number(null)*minScale` is 0;
+  `mxSvgCanvas2D.getCurrentStrokeWidth` then floors to
+  `minStrokeWidth=1`. leftover `tryParse` skip kept the previous
+  leftover inches, so Draw `collectLine` stroked the thick rail
+  (`tokens.txt` LineWeight). leftover now snaps omitted to 0 and
+  floors to the hairline, include-shape copies that overlay, and a
+  later omitted strokewidth leftover-bakes a sibling. A second
+  save keeps both.
 - draw.io leftover mxXmlCanvas2D shadowalpha omitted leftover
   ShdwPattern 0 for LibreOffice. Official `setShadowAlpha`
   writes `alpha`; NestedStencil `Number(null)` is 0.

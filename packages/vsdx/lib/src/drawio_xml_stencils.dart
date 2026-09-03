@@ -1064,16 +1064,15 @@ class _DrawioXmlShapeDecoder {
       case 'strokewidth':
         // mxStencil.drawNode: width * (fixed=="1" ? 1 : minScale).
         // mxXmlCanvas2D.setStrokeWidth always writes width, including
-        // 0. leftover `width > 0` kept the previous leftover inches,
-        // so Draw collectLine stroked the hairline with the thick
-        // rail (`tokens.txt` LineWeight). Official
+        // 0. leftover `tryParse` skip kept the previous leftover
+        // inches, so Draw collectLine stroked the hairline with the
+        // thick rail (`tokens.txt` LineWeight). Official
         // `getCurrentStrokeWidth` is max(minStrokeWidth=1, …).
+        // Omitted is Number(null)=0 the same way as width="0".
         final raw = node.getAttribute('width');
-        final width = double.tryParse(raw ?? '');
-        if (width != null && width.isFinite) {
-          _strokeWidth = width;
-          _strokeWidthFixed = node.getAttribute('fixed') == '1';
-        }
+        final width = double.tryParse((raw ?? '').trim());
+        _strokeWidth = (width != null && width.isFinite) ? width : 0;
+        _strokeWidthFixed = node.getAttribute('fixed') == '1';
         break;
       case 'text':
         final runs = _decodeTextRuns(node);
@@ -2879,10 +2878,10 @@ class _DrawioXmlShapeDecoder {
     // nested w0×h0.
     // mxSvgCanvas2D.getCurrentStrokeWidth:
     // `max(minStrokeWidth=1, max(0.01, format(width * state.scale)))`.
-    // leftover `width > 0` skipped 0, so Draw collectLine kept the
-    // previous leftover inches (`tokens.txt` LineWeight). A zero
-    // canvas width is one stencil pixel, same as width=1 after the
-    // minStrokeWidth floor (state.scale is leftover `_canvasUserScale`).
+    // leftover tryParse skip kept the previous leftover inches
+    // (`tokens.txt` LineWeight). A zero / omitted canvas width is one
+    // stencil pixel, same as width=1 after the minStrokeWidth floor
+    // (state.scale is leftover `_canvasUserScale`).
     final scale = (_strokeWidthFixed
             ? _canvasScale
             : math.min(scaleX.abs(), scaleY.abs())) *

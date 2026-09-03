@@ -17347,6 +17347,134 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D strokewidth omitted leftover bakes minStrokeWidth for LibreOffice',
+    () {
+      List<double> lineWeights(VsdxShape shape) {
+        final weights = <double>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) weights.add(next.line.weightInches);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        weights.sort();
+        return weights;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const hairline = 1 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 512,
+      );
+      expect(
+        lineWeights(omitted),
+        everyElement(closeTo(hairline, 1e-6)),
+        reason: 'omitted strokewidth is Number(null)=0; leftover tryParse '
+            'skip kept the previous leftover inches so Draw collectLine '
+            'stroked the thick rail (`tokens.txt` LineWeight). '
+            'getCurrentStrokeWidth floors to minStrokeWidth=1',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        lineWeights(keep),
+        everyElement(closeTo(canvasScale, 1e-6)),
+        reason: 'without a strokewidth node leftover keeps drawShape 1×minScale',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<strokewidth/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        lineWeights(laterHost),
+        [closeTo(hairline, 1e-6), closeTo(4 * canvasScale, 1e-6)],
+        reason: 'later omitted strokewidth leftover-bakes minStrokeWidth so '
+            'Draw does not reuse the first leftover inches',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth width="4"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<strokewidth/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        lineWeights(includeHost).any((w) => (w - 4 * canvasScale).abs() < 1e-6),
+        isTrue,
+        reason: 'the first host inherit stroke keeps leftover inches 4',
+      );
+      expect(
+        lineWeights(includeHost).any((w) => (w - hairline).abs() < 1e-6),
+        isTrue,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'strokewidth leftover-bakes minStrokeWidth',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        lineWeights(leftover),
+        [closeTo(hairline, 1e-6), closeTo(4 * canvasScale, 1e-6)],
+        reason: 'a second save keeps leftover minStrokeWidth Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {
@@ -19011,10 +19139,11 @@ void main() {
         id: 494,
       );
       expect(
-        lineWeights(omitted),
-        everyElement(closeTo(4 * canvasScale, 1e-6)),
-        reason: 'omitted width is a no-op like Number(null) skip; leftover '
-            'keeps the previous leftover inches',
+        lineWeights(omitted)..sort(),
+        [closeTo(hairline, 1e-6), closeTo(4 * canvasScale, 1e-6)],
+        reason: 'omitted width is Number(null)=0; leftover tryParse skip '
+            'kept the previous leftover inches so Draw collectLine '
+            'stroked both rails thick (`tokens.txt` LineWeight)',
       );
 
       final zero = decodeDrawioMxStencilXml(
