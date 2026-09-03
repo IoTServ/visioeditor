@@ -3949,6 +3949,11 @@ class _DrawioXmlShapeDecoder {
     final width = boxW * scaleX.abs();
     final height = boxH * scaleY.abs();
     if (width <= 1e-9 || height <= 1e-9) return VsdxRichText.empty;
+    // Shapes.js getLabelMargins: Number(x||0)/Number(y||0); omitted is
+    // 0. leftover `_number` 0 per labelBounds so a later omitted sibling
+    // does not keep TxtPinX (`tokens.txt` TxtPinX → svg:x). Official
+    // include-shape only paints; nested labelBounds stay on the nested
+    // stencil and are not merged.
     return VsdxRichText(
       runs: const <VsdxTextRun>[],
       textBlock: VsdxTextBlock(
