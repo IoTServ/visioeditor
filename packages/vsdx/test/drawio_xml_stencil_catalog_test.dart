@@ -25058,6 +25058,130 @@ void main() {
   );
 
   test(
+    'mxStencil image omitted leftover x PinX for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      List<VsdxShape> imageShapes(VsdxShape shape) {
+        return <VsdxShape>[
+          if (shape.hasImage && shape.children.isEmpty) shape,
+          for (final child in shape.children) ...imageShapes(child),
+        ];
+      }
+
+      List<double> imagePinXs(VsdxShape shape) {
+        final xs = [for (final pic in imageShapes(shape)) pic.pinX];
+        xs.sort();
+        return xs;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final originPin = 10 * canvasScale;
+      final shiftedPin = 50 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="40" y="40" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+        id: 550,
+      );
+      expect(
+        imagePinXs(omitted),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'omitted image x is Number(null)=0; leftover must not keep '
+            'PinX so Draw collectForeignDataType does not paint the first '
+            'PNG (`tokens.txt` ImgOffsetX → svg:x)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="40" y="40" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="40" y="40" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        imagePinXs(keep),
+        everyElement(closeTo(shiftedPin, 1e-6)),
+        reason: 'without omitted x leftover keeps ForeignData PinX',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="40" y="40" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        imagePinXs(later),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'later explicit x leftover-bakes a sibling PinX',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="40" y="40" w="20" h="10"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        imagePinXs(includeHost),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'include-shape nested omitted x leftover-bakes PinX at w/2 so '
+            'Draw does not inherit host ImgOffset',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        imagePinXs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'a second save keeps leftover PinX Draw paints',
+      );
+      expect(
+        imagePinXs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(originPin, 1e-6), closeTo(shiftedPin, 1e-6)],
+        reason: 'a second save keeps the later explicit PinX sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil roundrect omitted leftover x MoveTo for LibreOffice',
     () {
       List<double> firstMoveXs(VsdxShape shape) {

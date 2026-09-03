@@ -1456,6 +1456,9 @@ class _DrawioXmlShapeDecoder {
     final src = node.getAttribute('src') ?? '';
     final parsed = _dataUriImage(src);
     if (parsed == null) return;
+    // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
+    // leftover `_number` 0 per image so a later omitted sibling does
+    // not keep ImgOffset / PinX (`tokens.txt` ImgOffsetX → svg:x).
     var left = _number(node, 'x');
     var top = _number(node, 'y');
     var boxW = _number(node, 'w');
