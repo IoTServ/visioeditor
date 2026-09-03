@@ -3449,7 +3449,9 @@ class _DrawioXmlShapeDecoder {
 
   List<VsdxPathCommand> _decodePath(XmlElement path) {
     // mxStencil.drawNode: rounded="1" uses addPoints on move/line
-    // subpaths. Any other child (close, curve, …) falls back.
+    // subpaths. Omitted rounded is not leftover canvas state; leftover
+    // parses regularly so a later omitted sibling does not keep
+    // QuadBezTo fillets (`tokens.txt` RelQuadBezTo).
     if (path.getAttribute('rounded') == '1') {
       final rounded = _decodeRoundedPath(path);
       if (rounded != null) return _closedPolylineFromMoveOnly(rounded);

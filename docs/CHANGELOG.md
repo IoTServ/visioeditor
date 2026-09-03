@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover rounded QuadBezTo for
+  LibreOffice. Official `drawNode` uses `rounded=="1"` addPoints. leftover
+  reads it per path so a later omitted sibling stays sharp (`tokens.txt`
+  RelQuadBezTo). leftover now leaves omitted LineTo, include-shape nested
+  omitted rounded leftover-bakes sharp, and a later `rounded="1"` leftover-bakes
+  a sibling. A second save keeps both. `rounded="1"` still leftover-bakes
+  QuadBezTo.
 - draw.io leftover mxStencil include-shape omitted leftover x PinX for
   LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
   `Number(null)=0`. leftover `_number` 0 per include so a later omitted
