@@ -17824,6 +17824,163 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D shadowcolor omitted leftover bakes ShdwPattern 0 for LibreOffice',
+    () {
+      bool hasEnabledShadow(VsdxShape shape) {
+        if (shape.shadow.enabled &&
+            (shape.fill.hasFill || shape.line.hasLine)) {
+          return true;
+        }
+        return shape.children.any(hasEnabledShadow);
+      }
+
+      bool hasDisabledShadowFill(VsdxShape shape) {
+        if (shape.fill.hasFill && !shape.shadow.enabled) return true;
+        return shape.children.any(hasDisabledShadowFill);
+      }
+
+      bool hasShadowColor(VsdxShape shape, VsdxColor color) {
+        if (shape.shadow.enabled &&
+            (shape.fill.hasFill || shape.line.hasLine) &&
+            shape.shadow.color == color) {
+          return true;
+        }
+        return shape.children.any((child) => hasShadowColor(child, color));
+      }
+
+      const gray = VsdxColor(0xFF808080);
+      const red = VsdxColor(0xFFC62828);
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowcolor/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 515,
+      );
+      expect(
+        omitted.shadow.enabled,
+        isFalse,
+        reason: 'omitted shadowcolor is setShadowColor(null)/none; leftover '
+            'empty token leftover-baked ShdwForegnd #808080 so Draw '
+            'collectFillAndShadow painted a gray rail (`tokens.txt` '
+            'ShdwForegnd → draw:shadow-color). Official createShadow fill '
+            'is null',
+      );
+      expect(omitted.fill.hasFill, isTrue);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        keep.shadow.enabled,
+        isTrue,
+        reason: 'without a shadowcolor node leftover keeps createState '
+            'SHADOWCOLOR gray',
+      );
+      expect(keep.shadow.color, gray);
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowcolor color="#c62828"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<shadowcolor/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        laterHost.shadow.enabled && laterHost.shadow.color == red ||
+            laterHost.children.any(
+              (child) => child.shadow.enabled && child.shadow.color == red,
+            ),
+        isTrue,
+        reason: 'first hex shadowcolor keeps collectFillAndShadow '
+            'ShdwForegnd',
+      );
+      expect(
+        hasDisabledShadowFill(laterHost),
+        isTrue,
+        reason: 'later omitted shadowcolor leftover-bakes ShdwPattern 0 '
+            'so Draw does not paint SHADOWCOLOR gray',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<shadow enabled="1"/>'
+        '<shadowcolor color="#c62828"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<shadowcolor/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        hasShadowColor(includeHost, red),
+        isTrue,
+        reason: 'the first host fillstroke keeps leftover hex ShdwForegnd',
+      );
+      expect(
+        hasDisabledShadowFill(includeHost),
+        isTrue,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'shadowcolor leftover-bakes ShdwPattern 0',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        hasShadowColor(leftover, red),
+        isTrue,
+        reason: 'a second save keeps leftover hex ShdwForegnd Draw paints',
+      );
+      expect(
+        hasDisabledShadowFill(leftover),
+        isTrue,
+        reason: 'a second save keeps leftover ShdwPattern 0 Draw paints',
+      );
+      expect(hasEnabledShadow(keep), isTrue);
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D linecap omitted leftover bakes LineCap 1 for LibreOffice',
     () {
       LineCap? strokedCap(VsdxShape shape) {

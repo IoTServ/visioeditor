@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D shadowcolor omitted leftover
+  ShdwPattern 0 for LibreOffice. Official `setShadowColor(null)`
+  writes `none`; `mxSvgCanvas2D.createShadow` fill is null.
+  NestedStencil `isNoneColor` snaps to `SHADOWCOLOR` gray.
+  leftover empty token leftover-baked `ShdwForegnd` `#808080`, so
+  Draw `collectFillAndShadow` painted a gray rail (`tokens.txt`
+  `ShdwForegnd` → `draw:shadow-color`). leftover now turns
+  ShdwPattern 0, include-shape copies that overlay, and a later
+  omitted shadowcolor leftover-bakes a sibling. A second save
+  keeps both. No `<shadowcolor>` node still stays createState
+  gray.
 - draw.io leftover mxXmlCanvas2D fontcolor omitted leftover Char
   ColorTrans for LibreOffice. Official `setFontColor(null)` writes
   `none`; `mxUtils.getLightDarkColor(null)` is `fill: transparent`.

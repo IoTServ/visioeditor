@@ -258,7 +258,7 @@ class _MxPaintState {
   final VsdxLineJoin? lineJoin;
   final double? miterLimit;
   final VsdxShadow? shadow;
-  final VsdxColor shadowColor;
+  final VsdxColor? shadowColor;
   final double shadowAlpha;
   final double shadowDx;
   final double shadowDy;
@@ -410,7 +410,7 @@ class _DrawioXmlShapeDecoder {
   VsdxLineJoin? _parentStrokeJoin;
   double? _parentMiterLimit;
   VsdxShadow? _shadow;
-  VsdxColor _shadowColor = _kMxDefaultShadowColor;
+  VsdxColor? _shadowColor = _kMxDefaultShadowColor;
   double _shadowAlpha = _kMxDefaultShadowAlpha;
   double _shadowDx = _kMxDefaultShadowDx;
   double _shadowDy = _kMxDefaultShadowDy;
@@ -896,9 +896,11 @@ class _DrawioXmlShapeDecoder {
         _applyMxShadow(node);
         break;
       case 'shadowcolor':
-        // mxXmlCanvas2D.setShadowColor. leftover used to ignore the
-        // node, so collectFillAndShadow reused ShdwForegnd
-        // (`tokens.txt` ShdwForegnd → draw:shadow-color).
+        // mxXmlCanvas2D.setShadowColor(null) writes color="none".
+        // NestedStencil isNoneColor maps that to SHADOWCOLOR gray;
+        // official createShadow fill is null. leftover empty token
+        // leftover-baked ShdwForegnd #808080 so Draw painted a gray
+        // rail (`tokens.txt` ShdwForegnd → draw:shadow-color).
         _applyMxShadowColor(node.getAttribute('color'));
         break;
       case 'shadowalpha':
@@ -2773,7 +2775,14 @@ class _DrawioXmlShapeDecoder {
   void _applyMxShadowColor(String? raw, {bool rebuild = true}) {
     final token = (raw ?? '').trim();
     final lower = token.toLowerCase();
-    if (token.isEmpty || lower == 'default' || lower == 'none') {
+    if (token.isEmpty || lower == 'none') {
+      // mxXmlCanvas2D.setShadowColor(null) writes none. NestedStencil
+      // isNoneColor → #808080; official createShadow fill is null.
+      // leftover gray leftover-baked a collectFillAndShadow rail
+      // (`tokens.txt` ShdwForegnd → draw:shadow-color). ColorTrans is
+      // not how shadows vanish; leftover turns ShdwPattern 0.
+      _shadowColor = null;
+    } else if (lower == 'default') {
       _shadowColor = _kMxDefaultShadowColor;
     } else {
       _shadowColor = _mxGraphPaintColor(token) ?? _kMxDefaultShadowColor;
@@ -2888,7 +2897,10 @@ class _DrawioXmlShapeDecoder {
     // is invisible. `tokens.txt` has no ShdwForegndTrans, so leftover
     // turns ShdwPattern 0 instead of premultiplying RGB to white that
     // Draw still paints as draw:shadow (`tokens.txt` ShdwPattern).
+    // Omitted / none shadowcolor is createShadow fill null; leftover
+    // gray leftover-baked ShdwForegnd Draw still paints.
     if (_shadowAlpha <= 1e-9) return VsdxShadow.disabled;
+    if (_shadowColor == null) return VsdxShadow.disabled;
     var offsetX = _shadowDx * scaleX * _canvasUserScale;
     var offsetY = -_shadowDy * scaleY * _canvasUserScale;
     if (offsetX.abs() < 1e-9) offsetX = 0.02;
