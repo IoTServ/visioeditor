@@ -583,6 +583,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
 - draw.io leftover mxStencil fillgradient / mxXmlCanvas2D `<gradient>`
+  omitted leftover default color2 / c2 FillPattern for LibreOffice.
+  NestedStencil getColorValue is per-node `default`; leftover no longer
+  reuses an earlier sibling's hubFill stop so Draw collectFillAndShadow
+  leftover-bakes solid color1 (`tokens.txt` FillPattern → draw:fill).
+  include-shape nested omitted leftover-bakes solid, and a later
+  explicit default leftover-bakes a sibling south ramp. A second save
+  keeps both.
+
+- draw.io leftover mxStencil fillgradient / mxXmlCanvas2D `<gradient>`
   omitted leftover default FillPattern for LibreOffice. NestedStencil
   getColorValue is per-node `default`; leftover now resolves style-key
   stops so Draw collectFillAndShadow paints FillPattern 28 instead of
