@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover h TxtHeight for
+  LibreOffice. Official `drawNode` uses `Number(h)*sy`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per glyph so a later omitted
+  sibling does not keep TxtHeight (`tokens.txt` TxtHeight). leftover
+  now snaps omitted to a tight pin, include-shape nested omitted h
+  leftover-bakes the tight box, and a later explicit h leftover-bakes
+  a sibling. A second save keeps both. `h=` still leftover-bakes the
+  cell box.
 - draw.io leftover mxStencil rotate omitted leftover cx PinX for
   LibreOffice. Official `Number(cx)`; omitted is `Number(null)=0`.
   leftover `_number` 0 per rotate so a later omitted sibling does not

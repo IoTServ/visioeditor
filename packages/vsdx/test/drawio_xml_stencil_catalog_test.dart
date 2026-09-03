@@ -26924,6 +26924,128 @@ void main() {
   );
 
   test(
+    'mxStencil text omitted leftover h TxtHeight for LibreOffice',
+    () {
+      VsdxShape? glyphContaining(VsdxShape shape, String text) {
+        if ((shape.text ?? '') == text) return shape;
+        for (final child in shape.children) {
+          final nested = glyphContaining(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      List<double> glyphHeights(VsdxShape shape) {
+        final heights = <double>[
+          for (final text in <String>['AB', 'CD'])
+            glyphContaining(shape, text)!.height,
+        ];
+        heights.sort();
+        return heights;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final fontInches = 11 * canvasScale;
+      final tightH = fontInches * 1.4;
+      final cellH = 20 * canvasScale;
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40"/>'
+        '</foreground>'
+        '</shape>',
+        id: 563,
+      );
+      expect(
+        glyphHeights(omitted),
+        [closeTo(tightH, 1e-6), closeTo(cellH, 1e-6)],
+        reason: 'omitted text h is Number(null)=0; leftover must not keep '
+            'TxtHeight so Draw collectTextBlock does not clip the later '
+            'glyph (`tokens.txt` TxtHeight)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphHeights(keep),
+        everyElement(closeTo(cellH, 1e-6)),
+        reason: 'without omitted h leftover keeps TxtHeight',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        glyphHeights(later),
+        [closeTo(tightH, 1e-6), closeTo(cellH, 1e-6)],
+        reason: 'later explicit h leftover-bakes a sibling TxtHeight',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<text str="AB" x="0" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text str="CD" x="0" y="0" w="40"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        glyphHeights(includeHost),
+        [closeTo(tightH, 1e-6), closeTo(cellH, 1e-6)],
+        reason: 'include-shape nested omitted h leftover-bakes the tight '
+            'box so Draw does not inherit host TxtHeight',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        glyphHeights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(tightH, 1e-6), closeTo(cellH, 1e-6)],
+        reason: 'a second save keeps leftover TxtHeight Draw paints',
+      );
+      expect(
+        glyphHeights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(tightH, 1e-6), closeTo(cellH, 1e-6)],
+        reason: 'a second save keeps the later explicit TxtHeight sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
