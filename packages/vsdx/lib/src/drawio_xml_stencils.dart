@@ -1476,9 +1476,10 @@ class _DrawioXmlShapeDecoder {
     // PNG (`tokens.txt` ForeignData). Empty / missing src is skip, not
     // keep (unlike fillstrokecolor).
     if (parsed == null) return;
-    // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
-    // leftover `_number` 0 per image so a later omitted sibling does
-    // not keep ImgOffset / PinX (`tokens.txt` ImgOffsetX → svg:x).
+    // mxStencil.drawNode: Number(x)*sx / Number(y)*sy; omitted is
+    // Number(null)=0. leftover `_number` 0 per image so a later
+    // omitted sibling does not keep ImgOffset / PinX / PinY
+    // (`tokens.txt` ImgOffsetX → svg:x; ImgOffsetY → svg:y).
     var left = _number(node, 'x');
     var top = _number(node, 'y');
     var boxW = _number(node, 'w');
