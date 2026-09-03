@@ -3246,6 +3246,7 @@ class _DrawioXmlShapeDecoder {
       for (final value in source)
         if (value > 0) value * scale * strokeMul / drawioDashUnitInches,
     ];
+    if (values.length == 1) values.add(values.first);
     return values.length >= 2 ? values : null;
   }
 
@@ -5611,7 +5612,14 @@ List<double>? _parseMxDashPattern(String? raw) {
     if (value == null || !value.isFinite || value <= 0) continue;
     values.add(value);
   }
-  return values.length >= 2 ? values : null;
+  if (values.isEmpty) return null;
+  // Official drawNode still setDashPattern a one-token array.
+  // mxSvgCanvas2D.createDashPattern / CSS stroke-dasharray repeat that
+  // length on and off. leftover `length >= 2` assigned null so
+  // [_lineWithDash] substituted createState `3 3`, Draw leftover
+  // MoveTo reused the default gaps (`tokens.txt` has no custom dash).
+  if (values.length == 1) return <double>[values.first, values.first];
+  return values;
 }
 
 int _mxFillPatternForDirection(String dir) => switch (dir) {

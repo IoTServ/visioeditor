@@ -42056,6 +42056,168 @@ void main() {
   );
 
   test(
+    'mxStencil dashpattern single leftover veDashPattern for LibreOffice',
+    () {
+      List<double> firstDash(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          final custom = next.line.customDashPattern;
+          if (next.line.hasLine && custom != null && custom.isNotEmpty) {
+            values.add(custom.first);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> lineMoveTos(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            var n = 0;
+            for (final geometry in next.geometries) {
+              for (final command in geometry.commands) {
+                if (command is MoveTo) n++;
+              }
+            }
+            values.add(n);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      const dashUnit = 1 / 96;
+      final dash8 = 8 * canvasScale / dashUnit;
+      final dash3 = 3 * canvasScale / dashUnit;
+      const d1 = '<dashed dashed="1"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><stroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><stroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$d1'
+        '<dashpattern pattern="8 8"/>'
+        '$r1'
+        '<dashpattern pattern="8"/>'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 665,
+      );
+      expect(
+        firstDash(omitted),
+        everyElement(closeTo(dash8, 1e-6)),
+        reason: 'a one-token dashpattern is official setDashPattern("8") / '
+            'CSS stroke-dasharray repeat; leftover length>=2 assigned '
+            'null so [_lineWithDash] substituted createState 3 3 and '
+            'Draw leftover MoveTo reused the default gaps (`tokens.txt` '
+            'has no custom dash)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$d1'
+        '<dashpattern pattern="8 8"/>'
+        '$r1'
+        '<dashpattern pattern="8 8"/>'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        firstDash(keep),
+        everyElement(closeTo(dash8, 1e-6)),
+        reason: 'without a one-token sibling leftover keeps both 8 8 rails',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$d1'
+        '$r1'
+        '<dashpattern pattern="8"/>'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(firstDash(later).first, closeTo(dash3, 1e-6));
+      expect(
+        firstDash(later).last,
+        closeTo(dash8, 1e-6),
+        reason: 'later one-token leftover-bakes an 8 8 sibling so Draw '
+            'does not keep createState 3 3',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$d1'
+        '<dashpattern pattern="8 8"/>'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<dashpattern pattern="8"/>'
+        '<rect x="0" y="0" w="40" h="10"/><stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        firstDash(includeHost),
+        everyElement(closeTo(dash8, 1e-6)),
+        reason: 'include-shape nested one-token leftover-bakes 8 8 so Draw '
+            'does not inherit createState 3 3',
+      );
+      expect(firstDash(includeHost).length, 2);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        lineMoveTos(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [14],
+        reason: 'a second save leftover-bakes both 8 8 rails into MoveTo '
+            'gaps Draw paints as one svg:d',
+      );
+      expect(
+        lineMoveTos(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [17, 7],
+        reason: 'a second save leftover-bakes createState 3 3 then the '
+            'later 8 8 sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

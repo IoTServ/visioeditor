@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil dashpattern single leftover veDashPattern
+  for LibreOffice. Official `setDashPattern("8")` is CSS
+  `stroke-dasharray` repeating that length; leftover `length >= 2`
+  assigned null so Draw leftover MoveTo reused createState `3 3`.
+  leftover now duplicates a one-token array like `8 8`. include-shape
+  nested one-token leftover-bakes 8 8, and a later explicit token
+  leftover-bakes a sibling after inherit 3 3. A second save leftover-
+  bakes MoveTo gaps.
+
 - draw.io leftover mxStencil shadowcolor / `<shadow color>` omitted
   leftover default ShdwForegnd for LibreOffice. NestedStencil
   getColorValue is per-node `default`; leftover no longer falls through
