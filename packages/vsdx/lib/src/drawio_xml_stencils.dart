@@ -1455,6 +1455,10 @@ class _DrawioXmlShapeDecoder {
   void _consumeRaster(XmlElement node) {
     final src = node.getAttribute('src') ?? '';
     final parsed = _dataUriImage(src);
+    // mxXmlCanvas2D.image always writes src. leftover `_dataUriImage`
+    // null skips so a later omitted sibling does not reuse the previous
+    // PNG (`tokens.txt` ForeignData). Empty / missing src is skip, not
+    // keep (unlike fillstrokecolor).
     if (parsed == null) return;
     // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
     // leftover `_number` 0 per image so a later omitted sibling does

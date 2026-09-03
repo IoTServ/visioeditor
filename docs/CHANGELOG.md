@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil image omitted leftover src skip for
+  LibreOffice. Official `drawNode` always writes `src`. leftover
+  `_dataUriImage` null skips so a later omitted sibling does not reuse
+  the previous PNG (`tokens.txt` ForeignData → `draw:image`). leftover
+  now paints one bitmap, include-shape nested omitted src leftover-bakes
+  no nested PNG, and a later explicit src leftover-bakes a sibling. A
+  second save keeps both. Empty `src` is skip, not keep.
 - draw.io leftover mxStencil image omitted leftover x PinX for
   LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
   `Number(null)=0`. leftover `_number` 0 per image so a later omitted

@@ -25182,6 +25182,126 @@ void main() {
   );
 
   test(
+    'mxStencil image omitted leftover src skip for LibreOffice',
+    () {
+      const png =
+          'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
+      int imageCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.hasImage) n++;
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="20" h="10"/>'
+        '<image x="50" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+        id: 551,
+      );
+      expect(
+        imageCount(omitted),
+        1,
+        reason: 'omitted image src is not leftover canvas state; leftover '
+            'must skip so Draw collectForeignDataType does not reuse the '
+            'first PNG (`tokens.txt` ForeignData)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        imageCount(keep),
+        2,
+        reason: 'without omitted src leftover keeps both ForeignData PNGs',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image x="0" y="0" w="20" h="10"/>'
+        '<image src="data:image/png;base64,$png" '
+        'x="50" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        imageCount(later),
+        1,
+        reason: 'later explicit src leftover-bakes a sibling PNG',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<image src="data:image/png;base64,$png" '
+        'x="0" y="0" w="20" h="10"/>'
+        '<include-shape name="mxgraph.test.tile" x="50" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="20" h="10" strokewidth="1">'
+        '<foreground>'
+        '<image x="0" y="0" w="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        imageCount(includeHost),
+        1,
+        reason: 'include-shape nested omitted src leftover-bakes no nested '
+            'PNG so Draw does not inherit host ForeignData',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'a second save keeps leftover single ForeignData Draw paints',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(laterId)!),
+        1,
+        reason: 'a second save keeps the later explicit src sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil roundrect omitted leftover x MoveTo for LibreOffice',
     () {
       List<double> firstMoveXs(VsdxShape shape) {
