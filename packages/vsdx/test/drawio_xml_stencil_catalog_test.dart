@@ -22824,6 +22824,140 @@ void main() {
   );
 
   test(
+    'mxStencil fillstrokecolor omitted leftover keeps FillForegnd for LibreOffice',
+    () {
+      const red = VsdxColor(0xFFFF0000);
+      const green = VsdxColor(0xFF00FF00);
+
+      int countFill(VsdxShape shape, VsdxColor color) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.fill.pattern != 0 && next.fill.foreground == color) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="32" h="32" strokewidth="1">'
+        '<foreground>'
+        '<fillstrokecolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<fillstrokecolor/>'
+        '<rect x="12" y="12" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 534,
+      );
+      expect(
+        countFill(omitted, red),
+        2,
+        reason: 'omitted fillstrokecolor is NestedStencil skip / official '
+            'no-op; leftover must keep the leftover hex Draw '
+            'collectFillAndShadow paints (`tokens.txt` FillForegnd)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="32" h="32" strokewidth="1">'
+        '<foreground>'
+        '<fillstrokecolor color="#ff0000"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<rect x="12" y="12" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        countFill(keep, red),
+        2,
+        reason: 'without an omitted fillstrokecolor leftover keeps hex',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="32" h="32" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<fillstrokecolor color="#ff0000"/>'
+        '<rect x="12" y="12" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        countFill(later, red),
+        1,
+        reason: 'later fillstrokecolor leftover-bakes a red sibling so Draw '
+            'does not paint both plates leftover hex',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="32" h="32" strokewidth="1">'
+        '<foreground>'
+        '<fillstrokecolor color="#00ff00"/>'
+        '<rect x="0" y="0" w="8" h="8"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="16" h="16"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="16" h="16" strokewidth="1">'
+        '<foreground>'
+        '<fillstrokecolor color="#ff0000"/>'
+        '<fillstrokecolor/>'
+        '<rect x="0" y="0" w="16" h="16"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(countFill(includeHost, green), 1);
+      expect(
+        countFill(includeHost, red),
+        1,
+        reason: 'include-shape nested omitted fillstrokecolor leftover-bakes '
+            'the nested hex so Draw does not inherit host green',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        countFill(leftoverDoc.pages.first.findShapeById(omittedId)!, red),
+        2,
+        reason: 'a second save keeps leftover FillForegnd Draw paints',
+      );
+      expect(
+        countFill(leftoverDoc.pages.first.findShapeById(laterId)!, red),
+        1,
+        reason: 'a second save keeps the later leftover hex sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

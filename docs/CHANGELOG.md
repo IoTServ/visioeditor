@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover NestedStencil fillstrokecolor omitted leftover
+  FillForegnd for LibreOffice. Official `drawNode` has no case
+  (skip); NestedStencil skips empty / `currentColor` like
+  dashpattern omitted. leftover `_applyMxFillStrokeColor` returns
+  so a later omitted sibling does not snap FillForegnd none
+  (`tokens.txt` FillForegnd / LineColor). leftover now keeps the
+  previous leftover hex, include-shape nested omitted
+  fillstrokecolor leftover-bakes the nested hex, and a later hex
+  leftover-bakes a sibling. A second save keeps both. Hex
+  `fillstrokecolor` still pins fill+stroke without painting.
 - draw.io leftover mxXmlCanvas2D text omitted leftover format
   Character Style for LibreOffice. Official `canvas.text` always
   writes `format` (empty when mxStencil.drawNode passes `''`).

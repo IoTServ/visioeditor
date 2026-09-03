@@ -951,7 +951,11 @@ class _DrawioXmlShapeDecoder {
         // fillstroke filled that pending rect; leftover then kept a
         // solid FillForegnd plate that Draw painted over the glyph.
         // Hex `color` still sets fill and stroke like fillcolor+strokecolor
-        // without painting. `currentColor` / omitted stays inherit.
+        // without painting. `currentColor` / omitted stays inherit —
+        // NestedStencil skips empty like dashpattern omitted, so a later
+        // omitted leftover keeps the previous leftover hex Draw
+        // collectFillAndShadow / collectLine paints (`tokens.txt`
+        // FillForegnd / LineColor).
         _applyMxFillStrokeColor(node);
         break;
       case 'fontsize':
