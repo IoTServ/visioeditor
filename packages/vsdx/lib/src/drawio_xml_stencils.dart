@@ -3675,9 +3675,10 @@ class _DrawioXmlShapeDecoder {
         ));
         break;
       case 'quad':
-        // mxStencil.drawNode: Number(x2)*sx; omitted is Number(null)=0.
-        // leftover `_number` 0 per node so a later omitted sibling does
-        // not keep last QuadBezTo (`tokens.txt` RelQuadBezTo).
+        // mxStencil.drawNode: Number(x2)*sx / Number(y2)*sy; omitted is
+        // Number(null)=0. leftover `_number` 0 per node so a later
+        // omitted sibling does not keep last QuadBezTo (`tokens.txt`
+        // RelQuadBezTo).
         _ensurePathStart(commands);
         final x1 = _number(command, 'x1');
         final y1 = _number(command, 'y1');
