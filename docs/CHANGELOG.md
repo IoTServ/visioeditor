@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS border-bottom dashed omitted
+  leftover dashed Line for LibreOffice. NestedStencil
+  `paintHtmlBorderBottom` leftover-bakes `dashpattern 6 3` (not dotted
+  `1 2`); leftover ignored CSS `border-bottom:1px dashed` so Draw
+  collectLine omitted the dashes (`tokens.txt` LinePattern /
+  veDashPattern). leftover now paints the 6 3 ribbon Draw maps to
+  `svg:d` `h228` gaps. include-shape nested omitted leftover-bakes
+  none, and a later explicit rule leftover-bakes a sibling. A second
+  save keeps the leftover-baked two MoveTo gaps.
+
 - draw.io leftover mxStencil html CSS border-bottom dotted omitted
   leftover dashed Line for LibreOffice. NestedStencil
   `paintHtmlBorderBottom` leftover-bakes a collectLine sibling because

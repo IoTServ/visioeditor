@@ -45209,6 +45209,196 @@ void main() {
   );
 
   test(
+    'mxStencil html CSS border-bottom dashed omitted leftover Line for LibreOffice',
+    () {
+      int dashRibbons(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if ((next.text ?? '').trim().isEmpty && next.line.hasLine) {
+            final cmds = [
+              for (final geometry in next.geometries) ...geometry.commands,
+            ];
+            if (cmds.length >= 2 &&
+                cmds.any((cmd) => cmd is LineTo) &&
+                cmds.every((cmd) => cmd is MoveTo || cmd is LineTo)) {
+              final dashed = next.line.pattern >= 2 ||
+                  (next.line.customDashPattern?.isNotEmpty ?? false) ||
+                  cmds.whereType<MoveTo>().length > 1;
+              if (dashed) n++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      List<double>? firstDash(VsdxShape shape) {
+        List<double>? found;
+        void walk(VsdxShape next) {
+          if (found != null) return;
+          if ((next.text ?? '').trim().isEmpty && next.line.hasLine) {
+            final pat = next.line.customDashPattern;
+            if (pat != null && pat.length >= 2) found = pat;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return found;
+      }
+
+      int dashMoves(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if ((next.text ?? '').trim().isEmpty && next.line.hasLine) {
+            n += [
+              for (final geometry in next.geometries) ...geometry.commands,
+            ].whereType<MoveTo>().length;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      const keepT =
+          '<text str="&lt;span style=&quot;border-bottom:1px dashed #000&quot;&gt;AB&lt;/span&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;border-bottom:1px dashed #000&quot;&gt;CD&lt;/span&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;border-bottom:1px dashed #000&quot;&gt;CD&lt;/span&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 688,
+      );
+      expect(
+        dashRibbons(omitted),
+        1,
+        reason: 'omitted html CSS border-bottom dashed is none; leftover '
+            'must not keep the dashed Line sibling so Draw collectLine '
+            'does not underline the later glyph (`tokens.txt` LinePattern / '
+            'veDashPattern; Char Style 0x4 would be a solid underline)',
+      );
+      expect(
+        firstDash(omitted),
+        [closeTo(8.64, 0.01), closeTo(4.32, 0.01)],
+        reason: 'NestedStencil paintHtmlBorderBottom leftover-bakes dashed '
+            'as mxXmlCanvas2D dashpattern 6 3 (8.64/4.32 visio inches at '
+            'catalog 1.5/100), not dotted 1 2 (1.44/2.88); Draw leftover '
+            'paints h228 gaps not dotted h38',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dashRibbons(keep),
+        2,
+        reason: 'without omitted CSS border-bottom leftover keeps both '
+            'dashed Line siblings',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dashRibbons(later),
+        1,
+        reason: 'later CSS border-bottom leftover-bakes a sibling dashed Line',
+      );
+      expect(
+        firstDash(later),
+        [closeTo(8.64, 0.01), closeTo(4.32, 0.01)],
+        reason: 'later dashed leftover stays 6 3 not dotted 1 2',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        dashRibbons(includeHost),
+        1,
+        reason: 'include-shape nested omitted CSS border-bottom leftover-bakes '
+            'none so Draw does not inherit host collectLine dashes',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        dashMoves(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        2,
+        reason: 'a second save leftover-bakes dashed 6 3 as two MoveTo gaps '
+            '(Draw fodg M0 0h228M342 0h160), not dotted five h38 segments',
+      );
+      expect(
+        dashMoves(leftoverDoc.pages.first.findShapeById(laterId)!),
+        2,
+        reason: 'a second save keeps the later leftover dashed 6 3 ribbon',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
