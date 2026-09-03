@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover stops
+  FillPattern for LibreOffice. NestedStencil capture writes packed
+  `stops`; omitted is the two-color south ramp. leftover now snaps
+  omitted so Draw collectFillAndShadow does not reuse three FillGradient
+  rows (`tokens.txt` FillPattern). include-shape nested omitted stops
+  leftover-bakes the two-color ramp, packed stops leftover-bake SoftEdges
+  PNG, and a later explicit stops leftover-bakes packed rows. A second
+  save keeps both.
 - draw.io leftover mxStencil mxXmlCanvas2D shadowoffset omitted leftover
   dy ShapeShdwOffsetY for LibreOffice. Official `setShadowOffset` uses
   `Number(dy)`; omitted is `Number(null)=0`. leftover now snaps omitted

@@ -33869,6 +33869,175 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient omitted leftover stops FillPattern for LibreOffice',
+    () {
+      List<int> stopCounts(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) {
+            values.add(next.fill.gradient?.stops.length ?? 0);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      int imageCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.hasImage) n++;
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepG =
+          '<fillgradient color1="#1565c0" color2="#bbdefb" '
+          'stops="#1565c0@0,#90caf9@0.5,#bbdefb@1"/>';
+      const omittedG = '<fillgradient color1="#1565c0" color2="#bbdefb"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '$omittedG'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 610,
+      );
+      expect(
+        stopCounts(omitted),
+        [3, 0],
+        reason: 'omitted fillgradient stops is the two-color south ramp; '
+            'leftover must not keep three FillGradient rows so Draw '
+            'collectFillAndShadow does not reuse the packed wash '
+            '(`tokens.txt` FillPattern)',
+      );
+      expect(fillPatterns(omitted), [28, 28]);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '$keepG'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        stopCounts(keep),
+        [3, 3],
+        reason: 'without omitted stops leftover keeps three-stop rows',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '$keepG'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        stopCounts(later),
+        [0, 3],
+        reason: 'later explicit stops leftover-bakes packed rows on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        stopCounts(includeHost),
+        [3, 0],
+        reason: 'include-shape nested omitted stops leftover-bakes the '
+            'two-color ramp so Draw does not inherit host packed rows',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final keepId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(keep.copyWith(id: keepId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [28],
+        reason: 'a second save keeps the two-color FillPattern; packed '
+            'stops leftover-bake SoftEdges PNG',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        1,
+        reason: 'packed-stop sibling leftover-bakes SoftEdges PNG',
+      );
+      expect(
+        imageCount(leftoverDoc.pages.first.findShapeById(keepId)!),
+        2,
+        reason: 'a second save keeps both packed-stop SoftEdges Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

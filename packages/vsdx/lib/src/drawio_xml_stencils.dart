@@ -2328,6 +2328,10 @@ class _DrawioXmlShapeDecoder {
     _fillColor = start;
     _fillIsNone = false;
     _fillFollowsStroke = false;
+    // NestedStencil capture writes packed `stops`. Omitted is empty so
+    // leftover falls through to the two-color south ramp and a later
+    // omitted sibling does not keep three FillGradient rows
+    // (`tokens.txt` FillPattern → SoftEdges PNG).
     final packedStops = _parseMxGradientStops(node.getAttribute('stops'));
     if (packedStops.length >= 2) {
       // NestedStencil capture writes angle as leftover radians
