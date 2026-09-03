@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape omitted leftover x PinX for
+  LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per include so a later omitted
+  sibling does not keep the previous include box (`tokens.txt` Line →
+  RelMoveTo). leftover now snaps omitted to the origin, include-shape
+  nested omitted x leftover-bakes MoveTo 0, and a later explicit x
+  leftover-bakes a sibling. A second save keeps both. Omitted w/h still
+  skips the tile.
 - draw.io leftover mxStencil text omitted leftover x TxtPinX for
   LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
   `Number(null)=0`. leftover `_number` 0 per glyph so a later omitted

@@ -25841,6 +25841,150 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape omitted leftover x MoveTo for LibreOffice',
+    () {
+      List<double> strokeFirstMoveXs(VsdxShape shape) {
+        final xs = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            if (geometry.noShow || geometry.noLine) continue;
+            for (final command in geometry.commands) {
+              if (command is MoveTo) {
+                xs.add(command.x);
+                break;
+              }
+              if (command is RelMoveTo) {
+                xs.add(command.fx * next.width);
+                break;
+              }
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        xs.sort();
+        return xs;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final shiftedX = 40 * canvasScale;
+      const tile = '<shape name="tile" w="40" h="20" strokewidth="1">'
+          '<foreground>'
+          '<rect x="0" y="0" w="40" h="20"/>'
+          '<stroke/>'
+          '</foreground>'
+          '</shape>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="40" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '$tile'
+        '</shapes>',
+        id: 555,
+      );
+      expect(
+        strokeFirstMoveXs(omitted),
+        [closeTo(0, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'omitted include-shape x is Number(null)=0; leftover must not '
+            'keep the previous include box so Draw collectGeometry does not '
+            'RelMoveTo the first tile (`tokens.txt` Line)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="40" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="40" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '$tile'
+        '</shapes>',
+      );
+      expect(
+        strokeFirstMoveXs(keep),
+        everyElement(closeTo(shiftedX, 1e-6)),
+        reason: 'without omitted x leftover keeps the include box',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.tile" x="40" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '$tile'
+        '</shapes>',
+      );
+      expect(
+        strokeFirstMoveXs(later),
+        [closeTo(0, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'later explicit x leftover-bakes a sibling include box',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="60" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="40" y="0" w="40" h="20"/>'
+        '<include-shape name="mxgraph.test.wrap" x="0" y="30" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="wrap" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" y="0" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '$tile'
+        '</shapes>',
+      );
+      expect(
+        strokeFirstMoveXs(includeHost),
+        [closeTo(0, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'include-shape nested omitted x leftover-bakes MoveTo 0 so '
+            'Draw does not inherit host include PinX',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        strokeFirstMoveXs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(0, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'a second save keeps leftover include MoveTo Draw paints',
+      );
+      expect(
+        strokeFirstMoveXs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0, 1e-6), closeTo(shiftedX, 1e-6)],
+        reason: 'a second save keeps the later explicit include sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

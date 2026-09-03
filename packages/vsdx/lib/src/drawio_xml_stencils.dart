@@ -1526,6 +1526,9 @@ class _DrawioXmlShapeDecoder {
     if (_includeDepth > 8) return;
     final nestedEl = _lookupStencil(node.getAttribute('name'));
     if (nestedEl == null || identical(nestedEl, element)) return;
+    // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0.
+    // leftover `_number` 0 per include so a later omitted sibling does
+    // not keep the previous include box (`tokens.txt` PinX / Line).
     final x = _number(node, 'x');
     final y = _number(node, 'y');
     // mxStencil.drawNode include-shape is Number(w)*sx, Number(h)*sy.
