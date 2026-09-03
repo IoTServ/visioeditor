@@ -33282,6 +33282,135 @@ void main() {
   );
 
   test(
+    'mxStencil constraint omitted leftover name Prompt for LibreOffice',
+    () {
+      List<String?> prompts(VsdxShape shape) =>
+          [for (final point in shape.connectionPoints) point.prompt];
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="0" y="0.5" name="in"/>'
+        '<constraint x="1" y="0.5"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 606,
+      );
+      expect(
+        prompts(omitted),
+        ['in', null],
+        reason: 'omitted constraint name is null; leftover must not keep '
+            'Prompt so Draw does not glue the first leftover name '
+            '(`tokens.txt` Prompt)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="0" y="0.5" name="in"/>'
+        '<constraint x="1" y="0.5" name="in"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        prompts(keep),
+        ['in', 'in'],
+        reason: 'without omitted name leftover keeps Prompt',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="0" y="0.5"/>'
+        '<constraint x="1" y="0.5" name="in"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        prompts(later),
+        [null, 'in'],
+        reason: 'later explicit name leftover-bakes a sibling Prompt',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="0" y="0.5" name="in"/>'
+        '<constraint x="1" y="0.5" name="in"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="100" h="100"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<connections>'
+        '<constraint x="1" y="0.5"/>'
+        '</connections>'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        prompts(includeHost),
+        ['in', 'in'],
+        reason: 'include-shape nested omitted name leftover-bakes no nested '
+            'Prompt so Draw does not inherit host Connections',
+      );
+      expect(
+        includeHost.children.single.connectionPoints,
+        isEmpty,
+        reason: 'official include-shape only paints; nested connections '
+            'are not merged onto the tile',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        prompts(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        ['in', null],
+        reason: 'a second save keeps leftover Prompt Draw glues',
+      );
+      expect(
+        prompts(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [null, 'in'],
+        reason: 'a second save keeps the later explicit Prompt sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

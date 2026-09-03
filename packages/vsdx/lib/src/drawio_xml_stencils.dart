@@ -4004,6 +4004,9 @@ class _DrawioXmlShapeDecoder {
         VsdxConnectionPoint(
           _number(constraint, 'x') * targetWidth,
           (1 - _number(constraint, 'y')) * targetHeight,
+          // mxStencil.parseConstraint: getAttribute('name'); omitted is
+          // null so a later omitted sibling does not keep Prompt
+          // (`tokens.txt` Prompt).
           prompt: constraint.getAttribute('name'),
         ),
     ];

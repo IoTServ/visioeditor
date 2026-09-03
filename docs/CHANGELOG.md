@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil constraint omitted leftover name Prompt for
+  LibreOffice. Official `parseConstraint` uses `getAttribute('name')`;
+  omitted is null. leftover now snaps omitted to no Prompt so Draw does
+  not glue the previous name (`tokens.txt` Prompt). include-shape nested
+  omitted name leftover-bakes no nested connections, and a later
+  explicit name leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil rotate omitted leftover flipH PinX for
   LibreOffice. Official `rotate` uses `flipH === '1'`; omitted is false.
   leftover now snaps omitted to unmirrored leftover inches so Draw
