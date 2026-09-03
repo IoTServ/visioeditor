@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape omitted leftover y PinY for
+  LibreOffice. Official `drawNode` uses `Number(y)*sy`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per include so a later omitted
+  sibling does not keep the previous include box (`tokens.txt` Line →
+  RelMoveTo). leftover now snaps omitted to the origin, include-shape
+  nested omitted y leftover-bakes MoveTo stencil-top, and a later
+  explicit y leftover-bakes a sibling. A second save keeps both.
+  Omitted w/h still skips the tile.
 - draw.io leftover mxStencil fillgradient omitted leftover color2
   FillPattern for LibreOffice. Official `setGradient` requires color2.
   leftover `_applyMxFill(color1)` per node so a later omitted sibling
