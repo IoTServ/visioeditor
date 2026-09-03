@@ -20240,6 +20240,127 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fontstyle omitted leftover bakes Char.Style 0 for LibreOffice',
+    () {
+      VsdxCharStyle? glyphStyle(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text) &&
+            shape.richText.runs.isNotEmpty) {
+          return shape.richText.runs.first.charStyle;
+        }
+        for (final child in shape.children) {
+          final nested = glyphStyle(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontstyle style="2"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontstyle/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 518,
+      );
+      expect(glyphStyle(omitted, 'AB')!.style.italic, isTrue);
+      expect(
+        glyphStyle(omitted, 'CD')!.style.italic,
+        isFalse,
+        reason: 'omitted style is setFontStyle(null)=0; leftover `_number` '
+            'kept FONT_ITALIC so Draw collectCharIX reused fo:font-style '
+            '(`tokens.txt` Style)',
+      );
+      expect(glyphStyle(omitted, 'CD')!.style.bold, isFalse);
+      expect(glyphStyle(omitted, 'CD')!.underline, isFalse);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontstyle style="2"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphStyle(keep, 'AB')!.style.italic, isTrue);
+      expect(
+        glyphStyle(keep, 'CD')!.style.italic,
+        isTrue,
+        reason: 'without a fontstyle node leftover keeps the previous '
+            'Char.Style bits',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontstyle style="2"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontstyle/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(glyphStyle(laterHost, 'AB')!.style.italic, isTrue);
+      expect(
+        glyphStyle(laterHost, 'CD')!.style.italic,
+        isFalse,
+        reason: 'later omitted fontstyle leftover-bakes Style 0 so Draw '
+            'does not italicize the second glyph (`tokens.txt` Style)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontstyle style="2"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontstyle/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(glyphStyle(includeHost, 'AB')!.style.italic, isTrue);
+      expect(
+        glyphStyle(includeHost, 'CD')!.style.italic,
+        isFalse,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'fontstyle leftover-bakes Style 0',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(glyphStyle(leftover, 'AB')!.style.italic, isTrue);
+      expect(
+        glyphStyle(leftover, 'CD')!.style.italic,
+        isFalse,
+        reason: 'a second save keeps leftover Char.Style 0 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

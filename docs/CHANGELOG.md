@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fontstyle omitted leftover Char
+  Style 0 for LibreOffice. Official `setFontStyle(null)` stores 0;
+  NestedStencil `Number.isFinite` else 0. leftover `_number`
+  fallback already 0; parse like fontsize so omitted / invalid
+  snaps to 0 and a later `<fontstyle/>` does not keep FONT_ITALIC
+  on `collectCharIX` (`tokens.txt` Style → `fo:font-style`).
+  leftover now snaps omitted to 0, include-shape copies that
+  overlay, and a later omitted fontstyle leftover-bakes a sibling.
+  A second save keeps both. No `<fontstyle>` node still stays the
+  previous bits.
 - draw.io leftover mxXmlCanvas2D strokealpha omitted leftover
   LineColorTrans 1 for LibreOffice. Official `setAlpha(null)` /
   NestedStencil `attrNum` fallback is 0; mxSvgCanvas2D

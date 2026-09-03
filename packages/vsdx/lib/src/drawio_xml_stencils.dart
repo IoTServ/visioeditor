@@ -962,10 +962,15 @@ class _DrawioXmlShapeDecoder {
         _fontSize = (size != null && size.isFinite) ? size : 0;
         break;
       case 'fontstyle':
-        // mxXmlCanvas2D compressed setFontStyle, including 0 so a
-        // FONT_ITALIC title does not stick on the next collectCharIX
-        // sibling (fo:font-style).
-        _fontStyle = _number(node, 'style').round();
+        // mxStencil.drawNode always setFontStyle(style).
+        // mxAbstractCanvas2D.setFontStyle(null) stores 0. NestedStencil
+        // Number.isFinite else 0. leftover `_number` fallback already
+        // 0; parse like fontsize so omitted / invalid snaps to 0 and a
+        // later `<fontstyle/>` does not keep FONT_ITALIC on
+        // collectCharIX (`tokens.txt` Style → fo:font-style).
+        final raw = node.getAttribute('style');
+        final parsed = double.tryParse((raw ?? '').trim());
+        _fontStyle = (parsed != null && parsed.isFinite) ? parsed.round() : 0;
         break;
       case 'fontfamily':
         // mxStencil.drawNode always setFontFamily(family).
