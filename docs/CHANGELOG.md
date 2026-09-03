@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS line-height / text-align omitted
+  leftover SpLine / HorzAlign for LibreOffice. mxSvgCanvas2D HTML
+  paints CSS `line-height` / `text-align` on block `<p>`/`<div>`;
+  leftover ignored them so Draw collectParaIX reused 100% /
+  `fo:text-align=left` (`tokens.txt` SpLine / HorzAlign). leftover
+  already maps those CSS properties. include-shape nested omitted
+  leftover-bakes 1 / left, and a later explicit rule leftover-bakes a
+  sibling. A second save keeps SpLine / HorzAlign.
+
 - draw.io leftover mxStencil html CSS padding-right / padding-top /
   padding-bottom omitted leftover IndRight / SpBefore / SpAfter for
   LibreOffice. mxSvgCanvas2D HTML paints those CSS paddings on block
