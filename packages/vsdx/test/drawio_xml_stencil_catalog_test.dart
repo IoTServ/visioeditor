@@ -20240,6 +20240,186 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fillgradient omitted leftover bakes FillPattern 0 for LibreOffice',
+    () {
+      bool isGradient(VsdxFill fill) =>
+          fill.pattern >= 25 && fill.pattern <= 40;
+
+      bool hasFill(VsdxShape shape) {
+        if (shape.fill.hasFill) return true;
+        return shape.children.any(hasFill);
+      }
+
+      int fillCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) n++;
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      bool hasGradientFill(VsdxShape shape) {
+        if (isGradient(shape.fill)) return true;
+        return shape.children.any(hasGradientFill);
+      }
+
+      bool hasStrokeOnly(VsdxShape shape) {
+        if (shape.line.hasLine && !shape.fill.hasFill) return true;
+        return shape.children.any(hasStrokeOnly);
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 516,
+      );
+      expect(
+        hasFill(omitted),
+        isFalse,
+        reason: 'omitted fillgradient color1 is NestedStencil '
+            'isNoneColor(null) → setFillColor(null)/none; leftover '
+            '_applyMxFill empty inherited FillForegnd so Draw painted '
+            'palette fill (`tokens.txt` FillForegnd → svg:fill)',
+      );
+      expect(omitted.line.hasLine, isTrue);
+
+      final omittedGradient = decodeDrawioMxStencilXml(
+        '<shape name="G" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<gradient/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        hasFill(omittedGradient),
+        isFalse,
+        reason: 'omitted mxXmlCanvas2D <gradient/> c1 is the same none fill',
+      );
+      expect(omittedGradient.line.hasLine, isTrue);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillCount(keep),
+        2,
+        reason: 'without a later fillgradient node leftover keeps the '
+            'previous FillPattern 28 on both rails',
+      );
+      expect(hasGradientFill(keep), isTrue);
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<fillgradient/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fillCount(laterHost),
+        1,
+        reason: 'later omitted fillgradient leftover-bakes a sibling so Draw '
+            'does not inherit FillForegnd on the second rail',
+      );
+      expect(
+        hasGradientFill(laterHost),
+        isTrue,
+        reason: 'first fillgradient south keeps FillPattern 28 Draw paints',
+      );
+      expect(
+        hasStrokeOnly(laterHost),
+        isTrue,
+        reason: 'later omitted fillgradient fillstroke stays stroke-only',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="20" y="0" w="10" h="10"/>'
+        '<rect x="0" y="80" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="10" h="10" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient/>'
+        '<rect x="0" y="0" w="10" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fillCount(includeHost),
+        1,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'fillgradient turns FillPattern 0 for the tile and later '
+            'host fillstroke',
+      );
+      expect(hasGradientFill(includeHost), isTrue);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        leftover.fill.hasFill ||
+            leftover.children.any((child) => child.fill.hasFill),
+        isTrue,
+        reason: 'a second save keeps the first FillPattern 28 Draw paints',
+      );
+      expect(
+        leftover.line.hasLine && !leftover.fill.hasFill ||
+            leftover.children.any(
+              (child) => child.line.hasLine && !child.fill.hasFill,
+            ),
+        isTrue,
+        reason: 'a second save keeps the later stroke-only rail Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil dashed leftover follows drawNode dashed==1 for LibreOffice',
     () {
       final omitted = decodeDrawioMxStencilXml(

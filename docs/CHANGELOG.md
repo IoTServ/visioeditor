@@ -582,6 +582,17 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fillgradient / gradient omitted leftover
+  FillPattern 0 for LibreOffice. NestedStencil `isNoneColor(null)`
+  calls `setFillColor(null)` / none; official `setGradient` does not
+  emit when `color1` is null. leftover `_applyMxFill('')` inherited
+  FillForegnd so Draw `collectFillAndShadow` painted palette fill
+  (`tokens.txt` FillForegnd → `svg:fill`). leftover now snaps omitted
+  `color1`/`c1` to none, include-shape copies that overlay, and a later
+  omitted fillgradient leftover-bakes a sibling. A second save keeps
+  both. No `<fillgradient>` / `<gradient>` node still stays the previous
+  FillPattern. Present `color1` without `color2` still collapses to
+  solid fill.
 - draw.io leftover mxXmlCanvas2D fontfamily omitted leftover Char
   Font Arial for LibreOffice. Official `setFontFamily(null)` always
   runs; NestedStencil skips omitted `family` so leftover kept

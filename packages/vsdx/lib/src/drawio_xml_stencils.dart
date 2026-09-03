@@ -1008,6 +1008,9 @@ class _DrawioXmlShapeDecoder {
         // capture writes `<fillgradient color1=>`. Both leftover-bake
         // FillPattern 25–40 so Draw `_fillAndShadowProperties` keeps the
         // ramp (`tokens.txt` FillPattern → draw:fill=gradient).
+        // Omitted color1/c1 is NestedStencil isNoneColor(null) →
+        // setFillColor(null); leftover `_applyMxFill('')` inherited
+        // FillForegnd so Draw painted palette fill.
         _applyMxFillGradient(node);
         break;
       case 'alpha':
@@ -2161,6 +2164,17 @@ class _DrawioXmlShapeDecoder {
   void _applyMxFillGradient(XmlElement node) {
     final color1 = node.getAttribute('color1') ?? node.getAttribute('c1');
     final color2 = node.getAttribute('color2') ?? node.getAttribute('c2');
+    if (color1 == null) {
+      // NestedStencil isNoneColor(null) → setFillColor(null) / none.
+      // mxXmlCanvas2D.setGradient does not emit when color1 is null.
+      // leftover `_applyMxFill('')` inherited FillForegnd so Draw
+      // painted palette fill (`tokens.txt` FillForegnd → svg:fill).
+      _fillOverride = null;
+      _fillFollowsStroke = false;
+      _fillColor = null;
+      _fillIsNone = true;
+      return;
+    }
     final start = _mxGraphPaintColor(color1);
     final end = _mxGraphPaintColor(color2);
     if (start == null) {
