@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil dashed omitted leftover LinePattern for
+  LibreOffice. Official `setDashed(dashed=="1")`; omitted stays solid.
+  leftover now snaps per `<dashed/>` so Draw collectLine does not dash
+  a later rail (`tokens.txt` LinePattern). A save leftover-bakes
+  veDashPattern into MoveTo gaps. include-shape nested omitted
+  leftover-bakes solid, and a later explicit `dashed="1"` leftover-
+  bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil fontbordercolor omitted leftover default
   label-border for LibreOffice. Official getColorValue is per-node
   `default`; leftover no longer reuses an earlier sibling's default so

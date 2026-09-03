@@ -40354,6 +40354,226 @@ void main() {
   );
 
   test(
+    'mxStencil dashed omitted leftover bakes solid LinePattern for LibreOffice',
+    () {
+      int dashedCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine &&
+              (next.line.pattern > 1 ||
+                  (next.line.customDashPattern != null &&
+                      next.line.customDashPattern!.isNotEmpty))) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      int solidLineCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          if (next.line.hasLine &&
+              next.line.pattern == 1 &&
+              (next.line.customDashPattern == null ||
+                  next.line.customDashPattern!.isEmpty)) {
+            n++;
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      int moveToCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            for (final command in geometry.commands) {
+              if (command is MoveTo) n++;
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      List<int> lineMoveTos(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.line.hasLine) {
+            var n = 0;
+            for (final geometry in next.geometries) {
+              for (final command in geometry.commands) {
+                if (command is MoveTo) n++;
+              }
+            }
+            values.add(n);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepD = '<dashed dashed="1"/>';
+      const omittedD = '<dashed/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><stroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><stroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepD'
+        '$r1'
+        '$omittedD'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 656,
+      );
+      expect(
+        dashedCount(omitted),
+        1,
+        reason: 'omitted dashed is setDashed(dashed=="1") false; leftover '
+            'must not keep veDashPattern so Draw collectLine does not '
+            'dash the later rail (`tokens.txt` LinePattern)',
+      );
+      expect(
+        solidLineCount(omitted),
+        1,
+        reason: 'the omitted-dashed plate leftover-bakes a solid sibling '
+            'Draw paints as draw:polygon',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepD'
+        '$r1'
+        '$keepD'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dashedCount(keep),
+        1,
+        reason: 'without omitted dashed leftover keeps both rails dashed',
+      );
+      expect(
+        solidLineCount(keep),
+        0,
+        reason: 'both dashed="1" strokes stay veDashPattern',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$r1'
+        '$keepD'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        dashedCount(later),
+        1,
+        reason: 'later dashed="1" leftover-bakes a sibling dash',
+      );
+      expect(
+        solidLineCount(later),
+        1,
+        reason: 'the first inherit stroke stays solid LinePattern 1',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepD'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedD'
+        '<rect x="0" y="0" w="40" h="10"/><stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        dashedCount(includeHost),
+        1,
+        reason: 'the first host inherit stroke keeps veDashPattern',
+      );
+      expect(
+        solidLineCount(includeHost),
+        1,
+        reason: 'include-shape nested omitted dashed leftover-bakes solid '
+            'so Draw does not inherit host dash',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverOmitted =
+          leftoverDoc.pages.first.findShapeById(omittedId)!;
+      final leftoverLater = leftoverDoc.pages.first.findShapeById(laterId)!;
+      expect(
+        moveToCount(leftoverOmitted),
+        18,
+        reason: 'a second save leftover-bakes the first dashed rail into '
+            'MoveTo gaps Draw paints as svg:d',
+      );
+      expect(
+        lineMoveTos(leftoverOmitted),
+        [17, 1],
+        reason: 'the later omitted-dashed plate stays one solid MoveTo',
+      );
+      expect(
+        moveToCount(leftoverLater),
+        18,
+        reason: 'a second save leftover-bakes the later dashed rail',
+      );
+      expect(
+        lineMoveTos(leftoverLater),
+        [1, 17],
+        reason: 'the first inherit stroke stays one solid MoveTo',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
