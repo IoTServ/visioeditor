@@ -3692,10 +3692,10 @@ class _DrawioXmlShapeDecoder {
         ));
         break;
       case 'arc':
-        // mxStencil.drawNode: Number(x)*sx; omitted is Number(null)=0
-        // and rx/ry 0 collapses the SVG arc to LineTo. leftover
-        // `_number` 0 per node so a later omitted sibling does not keep
-        // CubBezTo (`tokens.txt` CubBezTo → RelCubBezTo).
+        // mxStencil.drawNode: Number(x)*sx / Number(y)*sy; omitted is
+        // Number(null)=0 and rx/ry 0 collapses the SVG arc to LineTo.
+        // leftover `_number` 0 per node so a later omitted sibling does
+        // not keep CubBezTo (`tokens.txt` CubBezTo → RelCubBezTo).
         _ensurePathStart(commands);
         final endX = _number(command, 'x');
         final endY = _number(command, 'y');
