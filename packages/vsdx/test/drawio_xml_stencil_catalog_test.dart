@@ -29628,6 +29628,157 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient omitted leftover alpha2 FillForegndTrans for LibreOffice',
+    () {
+      List<double> fgTrans(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) {
+            values.add(next.fill.foregroundTransparency);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south" '
+        'alpha2="0"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 582,
+      );
+      expect(
+        fgTrans(omitted),
+        [closeTo(1, 1e-6), closeTo(0, 1e-6)],
+        reason: 'omitted fillgradient alpha2 defaults to 1; leftover must '
+            'not keep FillForegndTrans 1 so Draw collectFillAndShadow does '
+            'not reuse transparent color2 (`tokens.txt` FillForegndTrans)',
+      );
+      expect(fillPatterns(omitted), [28, 28]);
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south" '
+        'alpha2="0"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south" '
+        'alpha2="0"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fgTrans(keep),
+        everyElement(closeTo(1, 1e-6)),
+        reason: 'without omitted alpha2 leftover keeps FillForegndTrans 1',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south" '
+        'alpha2="0"/>'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        fgTrans(later),
+        [closeTo(0, 1e-6), closeTo(1, 1e-6)],
+        reason:
+            'later explicit alpha2 leftover-bakes a sibling FillForegndTrans',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south" '
+        'alpha2="0"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<fillgradient color1="#1565c0" color2="#bbdefb" direction="south"/>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        fgTrans(includeHost),
+        [closeTo(1, 1e-6), closeTo(0, 1e-6)],
+        reason: 'include-shape nested omitted alpha2 leftover-bakes '
+            'FillForegndTrans 0 so Draw does not inherit host Trans',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [28],
+        reason: 'a second save keeps the opaque omitted-alpha2 FillPattern; '
+            'FillForegndTrans 1 sibling leftover-bakes SoftEdges PNG',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28],
+        reason: 'a second save keeps the later explicit FillPattern sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
