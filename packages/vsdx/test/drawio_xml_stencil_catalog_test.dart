@@ -45399,6 +45399,141 @@ void main() {
   );
 
   test(
+    'mxStencil html CSS padding percent omitted leftover IndLeft for LibreOffice',
+    () {
+      List<double> indents(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.indentLeftInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      // NestedStencil htmlCssLength: 10% of text box w=80, not parseFloat
+      // "10%" → 10px.
+      final pad = 80 * 0.10 * canvasScale;
+      const keepT =
+          '<text str="&lt;p style=&quot;padding-left:10%&quot;&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;padding-left:10%&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" '
+          'x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;padding-left:10%&quot;&gt;CD&lt;/p&gt;" '
+          'x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 689,
+      );
+      expect(
+        indents(omitted),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'omitted html CSS padding-left percent is 0; leftover must '
+            'not keep IndLeft so Draw collectParaIX does not inset the later '
+            'glyph (`tokens.txt` IndLeft → fo:margin-left). 10% of w=80 is '
+            '8px (0.12in), not parseFloat 10px',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        indents(keep),
+        everyElement(closeTo(pad, 1e-9)),
+        reason: 'without omitted CSS padding percent leftover keeps IndLeft',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        indents(later),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'later CSS padding percent leftover-bakes a sibling IndLeft',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        indents(includeHost),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'include-shape nested omitted CSS padding percent leftover-bakes '
+            '0 so Draw does not inherit host fo:margin-left',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        indents(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(pad, 1e-9), closeTo(0, 1e-9)],
+        reason: 'a second save keeps leftover percent IndLeft Draw paints',
+      );
+      expect(
+        indents(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(0, 1e-9), closeTo(pad, 1e-9)],
+        reason: 'a second save keeps the later leftover percent IndLeft sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

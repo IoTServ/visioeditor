@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS padding percent omitted leftover
+  IndLeft for LibreOffice. NestedStencil `htmlCssLength` maps
+  `padding-left:10%` to the text box width (CSS 2.1 8.4); leftover
+  `parseFloat("10%")` froze 10px so Draw collectParaIX inset the
+  wrong `fo:margin-left` (`tokens.txt` IndLeft). leftover now uses
+  the containing-block width. include-shape nested omitted leftover-bakes
+  0, and a later explicit rule leftover-bakes a sibling. A second
+  save keeps IndLeft.
+
 - draw.io leftover mxStencil html CSS border-bottom dashed omitted
   leftover dashed Line for LibreOffice. NestedStencil
   `paintHtmlBorderBottom` leftover-bakes `dashpattern 6 3` (not dotted

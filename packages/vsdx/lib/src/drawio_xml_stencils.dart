@@ -2795,7 +2795,11 @@ class _DrawioXmlShapeDecoder {
     final str = node.getAttribute('str') ?? '';
     if ((node.getAttribute('format') ?? '').trim().toLowerCase() == 'html') {
       return _bakeDrawioLabelRuns(
-        _parseMxHtmlLabel(str, textOpacity: parentOpacity),
+        _parseMxHtmlLabel(
+          str,
+          textOpacity: parentOpacity,
+          boxWidthPx: _number(node, 'w'),
+        ),
       );
     }
     final baked = textForLibvisioWrite(str);
@@ -2926,6 +2930,7 @@ class _DrawioXmlShapeDecoder {
   List<_DrawioStencilLabelRun> _parseMxHtmlLabel(
     String html, {
     required double textOpacity,
+    required double boxWidthPx,
   }) {
     final stack = <_MxHtmlStyle>[
       _MxHtmlStyle(
@@ -3047,7 +3052,13 @@ class _DrawioXmlShapeDecoder {
           next.olNeedPrefix = false;
         }
       }
-      _mxHtmlApplyCss(next, attrs, tag, resolveColor: _mxRunFontColor);
+      _mxHtmlApplyCss(
+        next,
+        attrs,
+        tag,
+        resolveColor: _mxRunFontColor,
+        boxWidthPx: boxWidthPx,
+      );
       if (block && pendingBlockMarginAfter != 0) {
         next.marginTop = math.max(next.marginTop, pendingBlockMarginAfter);
         pendingBlockMarginAfter = 0;
@@ -6266,6 +6277,26 @@ double? _mxHtmlCssPx(String? raw) {
       RegExp(r'^-?[0-9]*\.?[0-9]+').stringMatch(token) ?? '');
 }
 
+/// NestedStencil `htmlCssLength`. CSS padding percentages are of the
+/// containing-block WIDTH on every side (CSS 2.1 8.4). leftover
+/// `_mxHtmlCssPx` parseFloat("10%") froze 10px so Draw collectParaIX
+/// IndLeft was the wrong `fo:margin-left`.
+double? _mxHtmlCssLength(String? raw, double? percentOf) {
+  final token = (raw ?? '').trim();
+  if (token.isEmpty ||
+      token == 'auto' ||
+      token == 'inherit' ||
+      token == 'none') {
+    return null;
+  }
+  if (token.endsWith('%')) {
+    final n = double.tryParse(token.substring(0, token.length - 1).trim());
+    if (n == null || !n.isFinite || percentOf == null) return null;
+    return percentOf * n / 100;
+  }
+  return _mxHtmlCssPx(token);
+}
+
 /// CSS `opacity` → 0–1 factor. Percent is 0–100. Invalid / inherit skip.
 double? _mxHtmlCssOpacityFactor(String? raw) {
   final token = (raw ?? '').trim().toLowerCase();
@@ -6471,7 +6502,11 @@ void _mxHtmlApplyMargins(_MxHtmlStyle next, String attrs) {
 /// collectParaIX IndLeft stayed 0 and Draw painted flush `fo:margin-left`
 /// (`tokens.txt` IndLeft). Add onto CSS/UA margin so a later omitted
 /// sibling does not keep the inset.
-void _mxHtmlApplyPadding(_MxHtmlStyle next, String attrs) {
+void _mxHtmlApplyPadding(
+  _MxHtmlStyle next,
+  String attrs, {
+  double? percentOf,
+}) {
   void add({
     double? top,
     double? right,
@@ -6487,7 +6522,8 @@ void _mxHtmlApplyPadding(_MxHtmlStyle next, String attrs) {
   final box = (_mxHtmlStyleProp(attrs, 'padding') ?? '').trim();
   if (box.isNotEmpty) {
     final parts = [
-      for (final token in box.split(RegExp(r'\s+'))) _mxHtmlCssPx(token),
+      for (final token in box.split(RegExp(r'\s+')))
+        _mxHtmlCssLength(token, percentOf),
     ];
     if (parts.isNotEmpty && parts.every((v) => v != null)) {
       final values = [for (final v in parts) v!];
@@ -6523,10 +6559,12 @@ void _mxHtmlApplyPadding(_MxHtmlStyle next, String attrs) {
     }
   }
   add(
-    top: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-top')),
-    right: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-right')),
-    bottom: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-bottom')),
-    left: _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'padding-left')),
+    top: _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'padding-top'), percentOf),
+    right:
+        _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'padding-right'), percentOf),
+    bottom:
+        _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'padding-bottom'), percentOf),
+    left: _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'padding-left'), percentOf),
   );
 }
 
@@ -6535,6 +6573,7 @@ void _mxHtmlApplyCss(
   String attrs,
   String tag, {
   required VsdxColor? Function(String? raw) resolveColor,
+  double? boxWidthPx,
 }) {
   _mxHtmlUaHeadingDefaults(next, tag);
   final color = _mxHtmlAttr(attrs, 'color') ?? _mxHtmlStyleProp(attrs, 'color');
@@ -6621,7 +6660,7 @@ void _mxHtmlApplyCss(
       RegExp(r'^h[1-6]$').hasMatch(tag)) {
     _mxHtmlUaBlockMargins(next, tag);
     _mxHtmlApplyMargins(next, attrs);
-    _mxHtmlApplyPadding(next, attrs);
+    _mxHtmlApplyPadding(next, attrs, percentOf: boxWidthPx);
     next.paraStart = true;
   }
   final lh = _mxHtmlStyleProp(attrs, 'line-height');
