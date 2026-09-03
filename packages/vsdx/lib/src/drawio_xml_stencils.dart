@@ -1175,6 +1175,12 @@ class _DrawioXmlShapeDecoder {
             // expands TxtWidth on save so Draw shows overflow; clip /
             // overflow fill|width|block keep the cell box.
             clip: node.getAttribute('clip') == '1',
+            // mxXmlCanvas2D.text writes overflow when overflow!=null.
+            // mxStencil.drawNode always passes null. leftover reads it
+            // per glyph so a later omitted sibling does not keep
+            // TxtWidth (`tokens.txt` has no veWordWrap; collectTextBlock
+            // svg:width is TxtWidth). overflow fill|width|block keep
+            // the cell box; omitted leftover expands TxtWidth on save.
             overflow: node.getAttribute('overflow'),
             // Per-glyph, not leftover canvas state. Official writes dir
             // only when dir!=null; omitted / missing is LTR so a later

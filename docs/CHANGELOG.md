@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D text omitted leftover overflow
+  TxtWidth for LibreOffice. Official `canvas.text` writes
+  `overflow` when `overflow!=null`; mxStencil.drawNode always
+  passes null. leftover reads it per glyph so a later omitted
+  sibling does not keep TxtWidth (`tokens.txt` has no veWordWrap;
+  collectTextBlock `svg:width` is TxtWidth). leftover now expands
+  omitted overflow on save, include-shape nested omitted overflow
+  leftover-bakes overflow, and a later omitted overflow leftover-bakes
+  a sibling. A second save keeps both. `overflow="fill"` /
+  `overflow="width"` still keep the cell box.
 - draw.io leftover mxXmlCanvas2D text omitted leftover align
   HorzAlign for LibreOffice. Official `canvas.text` writes
   `align`/`valign` when set; mxStencil.drawNode always passes
