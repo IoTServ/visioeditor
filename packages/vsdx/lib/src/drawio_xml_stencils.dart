@@ -1183,8 +1183,12 @@ class _DrawioXmlShapeDecoder {
             // omits it. leftover reads dir per glyph so a later omitted
             // sibling does not keep Paragraph Flags / TextDirection
             // (`tokens.txt` Flags swaps left↔end; TextDirection).
-            // vertical="1" is mxStencil.drawNode; dir vertical-* is SVG
-            // writing-mode.
+            // vertical="1" is mxStencil.drawNode (rotation −90); dir
+            // vertical-* is SVG writing-mode. leftover reads vertical
+            // per glyph so a later omitted sibling does not keep
+            // TextDirection (`tokens.txt` TextDirection). Official
+            // omitted is not `"1"` so rotation 0. A save bakes
+            // TextDirection=1 into TxtAngle −π/2.
             vertical: node.getAttribute('vertical') == '1' ||
                 (node.getAttribute('dir') ?? '')
                     .toLowerCase()

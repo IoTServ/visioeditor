@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text omitted leftover vertical
+  TextDirection for LibreOffice. Official `drawNode` uses
+  `vertical=="1"` rotation −90; omitted is not `"1"`. leftover reads
+  vertical per glyph so a later omitted sibling does not keep
+  TextDirection (`tokens.txt` TextDirection). leftover now snaps
+  omitted to horizontal, include-shape nested omitted leftover-bakes
+  LTR, and a later `vertical="1"` leftover-bakes a sibling. A second
+  save bakes TextDirection=1 into TxtAngle −π/2. `dir="vertical-*"`
+  still leftover-bakes TextDirection.
 - draw.io leftover mxStencil image omitted leftover w ImgWidth for
   LibreOffice. Official `drawNode` uses `Number(w)*sx`; omitted is
   `Number(null)=0`. leftover null boxW stretches over the XForm so a
