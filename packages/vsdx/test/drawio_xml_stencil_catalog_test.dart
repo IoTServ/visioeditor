@@ -36678,6 +36678,175 @@ void main() {
   );
 
   test(
+    'mxStencil text run omitted leftover bullet IndLeft for LibreOffice',
+    () {
+      List<int> bullets(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.bullet);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<double> indents(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.indentLeftInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<String> texts(VsdxShape shape) {
+        final values = <String>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.text);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text x="0" y="0" w="80" h="20"><run str="AB" bullet="1"/></text>';
+      const omittedT =
+          '<text x="0" y="30" w="80" h="20"><run str="CD"/></text>';
+      const keepT2 =
+          '<text x="0" y="30" w="80" h="20"><run str="CD" bullet="1"/></text>';
+      const omittedFirst =
+          '<text x="0" y="0" w="80" h="20"><run str="AB"/></text>';
+      const keepSecond =
+          '<text x="0" y="30" w="80" h="20"><run str="CD" bullet="1"/></text>';
+      const marker = '\u2022';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 631,
+      );
+      expect(
+        bullets(omitted),
+        [1, 0],
+        reason: 'omitted run bullet is 0; leftover must not keep Bullet 1 '
+            'so Draw collectParaIX does not hang-indent the later glyph '
+            '(`tokens.txt` Bullet → fo:margin-left hanging indent)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        bullets(keep),
+        everyElement(1),
+        reason: 'without omitted bullet leftover keeps Bullet 1',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        bullets(later),
+        [0, 1],
+        reason: 'later bullet leftover-bakes a sibling Bullet 1',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '<text x="0" y="0" w="80" h="20"><run str="CD"/></text>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        bullets(includeHost),
+        [1, 0],
+        reason: 'include-shape nested omitted bullet leftover-bakes 0 so '
+            'Draw does not inherit host hanging indent',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      final leftoverOmitted = leftoverDoc.pages.first.findShapeById(omittedId)!;
+      expect(
+        indents(leftoverOmitted),
+        [closeTo(0.25, 1e-6), closeTo(0, 1e-6)],
+        reason: 'Bullet is not kept after write; leftover prefixes the '
+            'glyph and hangs IndLeft so Draw paints fo:margin-left',
+      );
+      expect(
+        texts(leftoverOmitted),
+        ['$marker AB', 'CD'],
+        reason: 'Draw never paints text:bullet-char; leftover bakes •',
+      );
+      final leftoverLater = leftoverDoc.pages.first.findShapeById(laterId)!;
+      expect(
+        indents(leftoverLater),
+        [closeTo(0, 1e-6), closeTo(0.25, 1e-6)],
+        reason: 'a second save keeps the later leftover hanging indent',
+      );
+      expect(
+        texts(leftoverLater),
+        ['AB', '$marker CD'],
+        reason: 'a second save keeps the later leftover bullet glyph',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

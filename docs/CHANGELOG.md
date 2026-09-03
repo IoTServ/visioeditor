@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover bullet IndLeft
+  for LibreOffice. Official omitted `bullet` is 0; leftover now snaps
+  per `<run>` so Draw collectParaIX does not hang-indent a later glyph
+  (`tokens.txt` Bullet → fo:margin-left hanging indent). Draw never
+  paints `text:bullet-char`; a save prefixes `•` and drops Bullet.
+  include-shape nested omitted leftover-bakes 0, and a later explicit
+  `bullet="1"` leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil text run omitted leftover line-height
   SpLine for LibreOffice. Official omitted `line-height` is 1; leftover
   now snaps per `<run>` so Draw collectParaIX does not double-space a
