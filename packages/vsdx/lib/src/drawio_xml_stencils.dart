@@ -2330,11 +2330,19 @@ class _DrawioXmlShapeDecoder {
     _fillFollowsStroke = false;
     final packedStops = _parseMxGradientStops(node.getAttribute('stops'));
     if (packedStops.length >= 2) {
-      final pattern = _mxFillPatternForDirection(dir);
+      // NestedStencil capture writes angle as leftover radians
+      // (`state.gradientAngle`) when packed stops are present. Omitted
+      // is the direction slot so a later omitted sibling does not keep
+      // FillPattern 34 (`tokens.txt` FillPattern → draw:angle).
       final angleAttr = node.getAttribute('angle');
       final angleRad =
           double.tryParse(angleAttr ?? '') ?? _mxFillGradientAngleRad(dir);
       final radial = dir == 'radial';
+      final pattern = radial
+          ? 40
+          : (angleAttr != null && angleAttr.trim().isNotEmpty)
+              ? _mxFillPatternForAngleRad(angleRad)
+              : _mxFillPatternForDirection(dir);
       _fillOverride = VsdxFill(
         foreground: radial ? packedStops.first.color : packedStops.last.color,
         background: radial ? packedStops.last.color : packedStops.first.color,
@@ -5537,6 +5545,35 @@ int _mxFillPatternForDirection(String dir) => switch (dir) {
       'radial' => 40,
       _ => 28,
     };
+
+/// NestedStencil leftover radians → libvisio FillPattern 25–34
+/// (`draw:angle` = 90 − angleRad×180/π). Omitted angle stays on the
+/// direction slot so Draw does not reuse the previous leftover wash.
+int _mxFillPatternForAngleRad(double angleRad) {
+  var draw = (90 - angleRad * 180 / math.pi) % 360;
+  if (draw < 0) draw += 360;
+  const table = <int, double>{
+    25: 270,
+    27: 90,
+    28: 180,
+    30: 0,
+    31: 225,
+    32: 135,
+    33: 315,
+    34: 45,
+  };
+  var best = 28;
+  var bestDelta = 360.0;
+  table.forEach((pattern, deg) {
+    var delta = (draw - deg).abs();
+    if (delta > 180) delta = 360 - delta;
+    if (delta < bestDelta) {
+      bestDelta = delta;
+      best = pattern;
+    }
+  });
+  return best;
+}
 
 double _mxFillGradientAngleRad(String dir) => switch (dir) {
       'east' => 0,

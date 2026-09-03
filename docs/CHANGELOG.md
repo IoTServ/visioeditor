@@ -582,6 +582,14 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillgradient omitted leftover angle
+  FillPattern for LibreOffice. NestedStencil capture writes leftover
+  radians on `angle`; omitted is the direction slot
+  (`_mxFillGradientAngleRad`, south −π/2). leftover now snaps omitted
+  so Draw collectFillAndShadow does not reuse draw:angle (`tokens.txt`
+  FillPattern). include-shape nested omitted angle leftover-bakes the
+  south slot, and a later explicit angle leftover-bakes leftover
+  radians. A second save keeps both.
 - draw.io leftover mxStencil constraint omitted leftover name Prompt for
   LibreOffice. Official `parseConstraint` uses `getAttribute('name')`;
   omitted is null. leftover now snaps omitted to no Prompt so Draw does

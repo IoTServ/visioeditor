@@ -33411,6 +33411,166 @@ void main() {
   );
 
   test(
+    'mxStencil fillgradient omitted leftover angle FillPattern for LibreOffice',
+    () {
+      List<double?> gradAngles(VsdxShape shape) {
+        final values = <double?>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.gradient?.angleRad);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      final keepRad = math.pi / 4;
+      final omitRad = -math.pi / 2;
+      final keepG =
+          '<fillgradient color1="#1565c0" color2="#bbdefb" '
+          'stops="#1565c0@0,#bbdefb@1" angle="$keepRad"/>';
+      const omittedG =
+          '<fillgradient color1="#1565c0" color2="#bbdefb" '
+          'stops="#1565c0@0,#bbdefb@1"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '$omittedG'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 607,
+      );
+      expect(
+        gradAngles(omitted),
+        [closeTo(keepRad, 1e-6), closeTo(omitRad, 1e-6)],
+        reason: 'omitted fillgradient angle is the south slot; leftover '
+            'must not keep leftover radians so Draw collectFillAndShadow '
+            'does not reuse draw:angle (`tokens.txt` FillPattern)',
+      );
+      expect(
+        fillPatterns(omitted),
+        [34, 28],
+        reason: 'NestedStencil leftover radians leftover-bakes FillPattern '
+            '34; omitted snaps to south 28',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '$keepG'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        gradAngles(keep),
+        everyElement(closeTo(keepRad, 1e-6)),
+        reason: 'without omitted angle leftover keeps leftover radians',
+      );
+      expect(fillPatterns(keep), [34, 34]);
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '$keepG'
+        '<rect x="0" y="20" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        gradAngles(later),
+        [closeTo(omitRad, 1e-6), closeTo(keepRad, 1e-6)],
+        reason: 'later explicit angle leftover-bakes leftover radians on a '
+            'sibling',
+      );
+      expect(fillPatterns(later), [28, 34]);
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedG'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        gradAngles(includeHost),
+        [closeTo(keepRad, 1e-6), closeTo(omitRad, 1e-6)],
+        reason: 'include-shape nested omitted angle leftover-bakes the '
+            'south slot so Draw does not inherit host leftover radians',
+      );
+      expect(fillPatterns(includeHost), [34, 28]);
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [34, 28],
+        reason: 'a second save keeps leftover FillPattern Draw paints',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [28, 34],
+        reason: 'a second save keeps the later leftover FillPattern sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
