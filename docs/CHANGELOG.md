@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover fontsize Char.Size
+  for LibreOffice. Official omitted `fontsize` is canvas createState 11;
+  leftover now snaps per `<run>` so Draw collectCharIX does not enlarge a
+  later glyph (`tokens.txt` Size → fo:font-size). include-shape nested
+  omitted leftover-bakes 11, and a later explicit `fontsize="20"`
+  leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil text run omitted leftover margin-left
   IndLeft for LibreOffice. Official omitted `margin-left` is 0; leftover
   now snaps per `<run>` so Draw collectParaIX does not pad a later glyph
