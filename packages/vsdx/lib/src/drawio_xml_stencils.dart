@@ -3758,6 +3758,10 @@ class _DrawioXmlShapeDecoder {
     }
     final dxRaw = rect.getAttribute('dx');
     final dyRaw = rect.getAttribute('dy');
+    // mxXmlCanvas2D.roundrect dx/dy. Omitted both attrs is not leftover
+    // canvas state; leftover falls through to arcsize 15 so a later
+    // omitted sibling does not keep the previous leftover radius
+    // (`tokens.txt` CubBezTo → RelCubBezTo).
     if (dxRaw != null || dyRaw != null) {
       // mxXmlCanvas2D.roundrect. mxSvgCanvas2D.roundrect sets rx/ry
       // only when dx/dy > 0. leftover used to ignore the attrs and
