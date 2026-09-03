@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil path omitted leftover arc x CubBezTo for
+  LibreOffice. Official `drawNode` uses `Number(x)*sx`; omitted is
+  `Number(null)=0`. leftover `_number` 0 per node so a later omitted
+  sibling does not keep lastX (`tokens.txt` CubBezTo → RelCubBezTo).
+  leftover now snaps omitted to stencil-left, include-shape nested omitted
+  x leftover-bakes CubBezTo stencil-left, and a later explicit x leftover-bakes
+  a sibling. A second save keeps both.
 - draw.io leftover mxStencil roundrect omitted leftover h CubBezTo for
   LibreOffice. Official `drawNode` uses `Number(h)*sy`; omitted is
   `Number(null)=0`. leftover `_number` 0 per node so a later omitted
