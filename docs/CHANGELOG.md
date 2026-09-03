@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil roundrect omitted leftover dy CubBezTo
+  copies rx for LibreOffice. Official mxSvgCanvas2D.roundrect omits `ry`
+  when dy is 0; SVG copies the specified `rx` onto `ry`. leftover now
+  snaps omitted dy to dx so Draw collectGeometry does not RelCubBezTo
+  the previous ellipse fillet (`tokens.txt` CubBezTo). include-shape
+  nested omitted dy leftover-bakes the copied ry, and a later explicit
+  dy leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil roundrect omitted leftover dx CubBezTo
   copies ry for LibreOffice. Official mxSvgCanvas2D.roundrect omits `rx`
   when dx is 0; SVG copies the specified `ry` onto `rx`. leftover now

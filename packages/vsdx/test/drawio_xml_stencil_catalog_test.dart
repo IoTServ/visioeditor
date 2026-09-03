@@ -32989,6 +32989,162 @@ void main() {
   );
 
   test(
+    'mxStencil roundrect omitted leftover dy CubBezTo copies rx for LibreOffice',
+    () {
+      List<double> cubYs(VsdxShape shape) {
+        final ys = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            for (final command in geometry.commands) {
+              if (command is CubBezTo) ys.add(command.y);
+              if (command is RelCubBezTo) ys.add(command.fy * next.height);
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        ys.sort();
+        return ys;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final copyRy = 20 * canvasScale;
+      final keepRy = 25 * canvasScale;
+      const keepRr =
+          '<roundrect x="0" y="0" w="40" h="30" dx="10" dy="20"/>';
+      const keepRr2 =
+          '<roundrect x="0" y="40" w="40" h="30" dx="10" dy="20"/>';
+      const omittedDy = '<roundrect x="0" y="40" w="40" h="30" dx="10"/>';
+
+      final omittedList = <Matcher>[
+        closeTo(10 * canvasScale, 1e-6),
+        closeTo(copyRy, 1e-6),
+        closeTo(30 * canvasScale, 1e-6),
+        closeTo(40 * canvasScale, 1e-6),
+        closeTo(50 * canvasScale, 1e-6),
+        closeTo(65 * canvasScale, 1e-6),
+        closeTo(65 * canvasScale, 1e-6),
+        closeTo(80 * canvasScale, 1e-6),
+      ];
+      final keepList = <Matcher>[
+        closeTo(10 * canvasScale, 1e-6),
+        closeTo(keepRy, 1e-6),
+        closeTo(keepRy, 1e-6),
+        closeTo(40 * canvasScale, 1e-6),
+        closeTo(50 * canvasScale, 1e-6),
+        closeTo(65 * canvasScale, 1e-6),
+        closeTo(65 * canvasScale, 1e-6),
+        closeTo(80 * canvasScale, 1e-6),
+      ];
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="80" strokewidth="1">'
+        '<foreground>'
+        '$keepRr'
+        '<fillstroke/>'
+        '$omittedDy'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+        id: 604,
+      );
+      expect(
+        cubYs(omitted),
+        omittedList,
+        reason: 'omitted roundrect dy is Number(null)=0; SVG copies rx onto '
+            'ry so leftover must not keep the previous ellipse fillet '
+            '(`tokens.txt` CubBezTo)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="80" strokewidth="1">'
+        '<foreground>'
+        '$keepRr'
+        '<fillstroke/>'
+        '$keepRr2'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        cubYs(keep),
+        keepList,
+        reason: 'without omitted dy leftover keeps the authored ry',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="80" strokewidth="1">'
+        '<foreground>'
+        '$omittedDy'
+        '<fillstroke/>'
+        '$keepRr'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        cubYs(later),
+        omittedList,
+        reason: 'later explicit dy leftover-bakes CubBezTo on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="80" strokewidth="1">'
+        '<foreground>'
+        '$keepRr'
+        '<fillstroke/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="80"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="80" strokewidth="1">'
+        '<foreground>'
+        '$omittedDy'
+        '<fillstroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        cubYs(includeHost),
+        omittedList,
+        reason: 'include-shape nested omitted dy leftover-bakes SVG-copied '
+            'ry so Draw does not inherit host CubBezTo',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        cubYs(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        omittedList,
+        reason: 'a second save keeps leftover CubBezTo Draw paints',
+      );
+      expect(
+        cubYs(leftoverDoc.pages.first.findShapeById(laterId)!),
+        omittedList,
+        reason: 'a second save keeps the later leftover CubBezTo sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
