@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil fillstrokecolor omitted leftover default
+  FillForegnd for LibreOffice. NestedStencil applies fill+stroke from
+  per-node `default`; leftover no longer reuses an earlier sibling's
+  default so Draw collectFillAndShadow / collectLine do not paint a
+  later plate (`tokens.txt` FillForegnd → svg:fill). include-shape
+  nested omitted leftover-bakes none, and a later explicit default
+  leftover-bakes a sibling. A second save keeps both.
 - draw.io leftover mxStencil dashed omitted leftover LinePattern for
   LibreOffice. Official `setDashed(dashed=="1")`; omitted stays solid.
   leftover now snaps per `<dashed/>` so Draw collectLine does not dash
