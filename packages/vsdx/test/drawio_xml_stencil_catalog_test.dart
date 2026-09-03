@@ -35509,6 +35509,142 @@ void main() {
   );
 
   test(
+    'mxStencil rotate omitted leftover flipV PinY for LibreOffice',
+    () {
+      List<double> ys(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final geometry in next.geometries) {
+            for (final command in geometry.commands) {
+              if (command is MoveTo) values.add(command.y);
+              if (command is LineTo) values.add(command.y);
+            }
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final yA = 75 * canvasScale;
+      final yB = 115 * canvasScale;
+      final omittedYs = <double>[yA, yB, yB, yA, yA, yB, yA, yA, yB, yB];
+      final keepYs = <double>[yA, yB, yB, yA, yA, yA, yB, yB, yA, yA];
+      final laterYs = <double>[yB, yA, yA, yB, yB, yA, yB, yB, yA, yA];
+      const keepRot = '<rotate theta="90" flipV="1" cx="20" cy="5"/>';
+      const omittedRot = '<rotate theta="90" cx="20" cy="5"/>';
+      const r1 = '<rect x="0" y="20" w="40" h="10"/><stroke/>';
+      const r2 = '<rect x="0" y="40" w="40" h="10"/><stroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepRot'
+        '$r1'
+        '$omittedRot'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 622,
+      );
+      expect(
+        ys(omitted),
+        [for (final y in omittedYs) closeTo(y, 1e-6)],
+        reason: 'omitted rotate flipV is not "1"; leftover must not keep '
+            'the previous mirror so Draw collectGeometry does not reuse '
+            'PinY (`tokens.txt` PinY)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepRot'
+        '$r1'
+        '$keepRot'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        ys(keep),
+        [for (final y in keepYs) closeTo(y, 1e-6)],
+        reason: 'without omitted flipV leftover keeps the mirrored PinY',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedRot'
+        '$r1'
+        '$keepRot'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        ys(later),
+        [for (final y in laterYs) closeTo(y, 1e-6)],
+        reason: 'later explicit flipV leftover-bakes a mirrored sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepRot'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="100" h="100"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedRot'
+        '$r2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        ys(includeHost),
+        [for (final y in omittedYs) closeTo(y, 1e-6)],
+        reason: 'include-shape nested omitted flipV leftover-bakes the '
+            'unmirrored PinY so Draw does not inherit host Flip',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        ys(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [for (final y in omittedYs) closeTo(y, 1e-6)],
+        reason: 'a second save keeps leftover PinY Draw paints',
+      );
+      expect(
+        ys(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [for (final y in laterYs) closeTo(y, 1e-6)],
+        reason: 'a second save keeps the later leftover flipV sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

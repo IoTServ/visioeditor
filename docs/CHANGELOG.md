@@ -582,6 +582,12 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil rotate omitted leftover flipV PinY for
+  LibreOffice. Official `flipV === '1'`; omitted is false so a later
+  omitted sibling does not keep the previous mirror (`tokens.txt`
+  PinY). include-shape nested omitted flipV leftover-bakes the unmirrored
+  PinY, and a later explicit flipV leftover-bakes a sibling. A second
+  save keeps both.
 - draw.io leftover mxStencil fillgradient omitted leftover west
   FillPattern for LibreOffice. NestedStencil `direction="west"`
   leftover-bakes FillPattern 25; omitted is south FillPattern 28.
