@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil roundrect omitted leftover dx CubBezTo
+  copies ry for LibreOffice. Official mxSvgCanvas2D.roundrect omits `rx`
+  when dx is 0; SVG copies the specified `ry` onto `rx`. leftover now
+  snaps omitted dx to dy so Draw collectGeometry does not RelCubBezTo a
+  stadium (`tokens.txt` CubBezTo). include-shape nested omitted dx
+  leftover-bakes the copied rx, and a later explicit dx leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil labelBounds omitted leftover h TxtHeight for
   LibreOffice. Official Shapes.js `getLabelMargins` uses
   `Number(h || stencil.h0)`; omitted is the stencil source height, not 0.

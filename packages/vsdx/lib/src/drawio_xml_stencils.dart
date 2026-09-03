@@ -3809,13 +3809,16 @@ class _DrawioXmlShapeDecoder {
     // (`tokens.txt` CubBezTo → RelCubBezTo).
     if (dxRaw != null || dyRaw != null) {
       // mxXmlCanvas2D.roundrect. mxSvgCanvas2D.roundrect sets rx/ry
-      // only when dx/dy > 0. leftover used to ignore the attrs and
-      // default arcsize 15, so Draw collectGeometry rounded a sharp
-      // canvas roundrect (`tokens.txt` CubBezTo → RelCubBezTo).
+      // only when dx/dy > 0. SVG copies the specified axis onto the
+      // omitted / zero axis (`rx` without `ry` uses `rx`, and vice
+      // versa). leftover used to leave omitted dx at 0 so Draw
+      // collectGeometry RelCubBezTo a stadium (`tokens.txt` CubBezTo).
       var radiusX = double.tryParse(dxRaw ?? '') ?? 0.0;
-      var radiusY = double.tryParse(dyRaw ?? '') ?? radiusX;
+      var radiusY = double.tryParse(dyRaw ?? '') ?? 0.0;
       if (!radiusX.isFinite) radiusX = 0;
       if (!radiusY.isFinite) radiusY = 0;
+      if (!(radiusX > 0) && radiusY > 0) radiusX = radiusY;
+      if (!(radiusY > 0) && radiusX > 0) radiusY = radiusX;
       if (!(radiusX > 0) && !(radiusY > 0)) {
         return _decodeRect(rect);
       }
