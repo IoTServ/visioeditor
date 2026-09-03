@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxXmlCanvas2D fontbackgroundcolor omitted leftover
+  TextBkgnd 0 for LibreOffice. Official `setFontBackgroundColor(null)`
+  writes `none`; NestedStencil `isNoneColor(null)` is none. leftover
+  empty already clears `_fontBackground` so Draw `collectTextBlock`
+  does not keep `fo:background-color` (`tokens.txt` TextBkgnd).
+  leftover now snaps omitted to none, include-shape copies that
+  overlay, and a later omitted fontbackgroundcolor leftover-bakes a
+  sibling. A second save keeps both. No `<fontbackgroundcolor>` node
+  still stays the previous TextBkgnd.
 - draw.io leftover mxXmlCanvas2D alpha omitted leftover
   FillForegndTrans / LineColorTrans / Char ColorTrans 1 for
   LibreOffice. Official `setAlpha(null)` stores 0; NestedStencil

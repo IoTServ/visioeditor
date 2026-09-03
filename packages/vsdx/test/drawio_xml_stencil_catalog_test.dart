@@ -20575,6 +20575,138 @@ void main() {
   );
 
   test(
+    'mxStencil mxXmlCanvas2D fontbackgroundcolor omitted leftover bakes TextBkgnd 0 for LibreOffice',
+    () {
+      const plate = VsdxColor(0xFF1565C0);
+
+      VsdxColor? bgOf(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) {
+          return shape.richText.textBlock.backgroundColor;
+        }
+        for (final child in shape.children) {
+          final nested = bgOf(child, text);
+          if (nested != null) return nested;
+        }
+        return null;
+      }
+
+      bool hasBg(VsdxShape shape, String text) {
+        if ((shape.text ?? '').contains(text)) {
+          return shape.richText.textBlock.backgroundColor != null;
+        }
+        for (final child in shape.children) {
+          if (hasBg(child, text)) return true;
+        }
+        return false;
+      }
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbackgroundcolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontbackgroundcolor/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+        id: 520,
+      );
+      expect(bgOf(omitted, 'AB'), plate);
+      expect(
+        hasBg(omitted, 'CD'),
+        isFalse,
+        reason: 'omitted color is setFontBackgroundColor(null)/none; leftover '
+            'kept TextBkgnd so Draw collectTextBlock painted '
+            'fo:background-color on the second glyph (`tokens.txt` '
+            'TextBkgnd)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbackgroundcolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(bgOf(keep, 'AB'), plate);
+      expect(
+        bgOf(keep, 'CD'),
+        plate,
+        reason: 'without a fontbackgroundcolor node leftover keeps the '
+            'previous TextBkgnd',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbackgroundcolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<fontbackgroundcolor/>'
+        '<text str="CD" x="0" y="30" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(bgOf(laterHost, 'AB'), plate);
+      expect(
+        hasBg(laterHost, 'CD'),
+        isFalse,
+        reason: 'later omitted fontbackgroundcolor leftover-bakes TextBkgnd 0 '
+            'so Draw does not paint the second plate (`tokens.txt` '
+            'TextBkgnd)',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<fontbackgroundcolor color="#1565c0"/>'
+        '<text str="AB" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '<include-shape name="mxgraph.test.tile" x="10" y="10" w="40" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="20" strokewidth="1">'
+        '<foreground>'
+        '<fontbackgroundcolor/>'
+        '<text str="CD" x="0" y="0" w="40" h="20" align="left" valign="top"/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(bgOf(includeHost, 'AB'), plate);
+      expect(
+        hasBg(includeHost, 'CD'),
+        isFalse,
+        reason: 'include-shape shares the canvas; nested omitted '
+            'fontbackgroundcolor leftover-bakes TextBkgnd 0',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(bgOf(leftover, 'AB'), plate);
+      expect(
+        hasBg(leftover, 'CD'),
+        isFalse,
+        reason: 'a second save keeps leftover TextBkgnd 0 Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

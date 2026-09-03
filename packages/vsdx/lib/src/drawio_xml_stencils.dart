@@ -1091,6 +1091,11 @@ class _DrawioXmlShapeDecoder {
         );
         break;
       case 'fontbackgroundcolor':
+        // mxXmlCanvas2D.setFontBackgroundColor(null) writes color=none.
+        // NestedStencil isNoneColor(null) → none. leftover empty /
+        // omitted already clears `_fontBackground`; a later
+        // `<fontbackgroundcolor/>` must not keep TextBkgnd on
+        // collectTextBlock (`tokens.txt` TextBkgnd → fo:background-color).
         _applyMxFontBackground(
           node.getAttribute('color'),
           fallback: node.getAttribute('default'),
