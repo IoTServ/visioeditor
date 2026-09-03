@@ -34457,6 +34457,144 @@ void main() {
   );
 
   test(
+    'mxStencil sketch omitted leftover gap FillPattern for LibreOffice',
+    () {
+      List<double> gaps(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.sketchEffect) values.add(next.sketchHachureGapPx);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepS = '<sketch enabled="1" fill="hachure" gap="20"/>';
+      const omittedS = '<sketch enabled="1" fill="hachure"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 614,
+      );
+      expect(
+        gaps(omitted),
+        [closeTo(20, 1e-6), closeTo(4, 1e-6)],
+        reason: 'omitted sketch gap is draw.io default 4; leftover must '
+            'not keep 20 so Draw collectFillAndShadow does not reuse '
+            'FillPattern 5 (`tokens.txt` FillPattern → draw:distance)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        gaps(keep),
+        everyElement(closeTo(20, 1e-6)),
+        reason: 'without omitted gap leftover keeps 20',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        gaps(later),
+        [closeTo(4, 1e-6), closeTo(20, 1e-6)],
+        reason: 'later explicit gap leftover-bakes 20 on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        gaps(includeHost),
+        [closeTo(20, 1e-6), closeTo(4, 1e-6)],
+        reason: 'include-shape nested omitted gap leftover-bakes 4 so '
+            'Draw does not inherit host 20',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [5, 15],
+        reason: 'a second save keeps leftover default-gap FillPattern 15',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [15, 5],
+        reason: 'a second save keeps the later leftover sparse gap sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

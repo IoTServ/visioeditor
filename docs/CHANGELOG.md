@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil sketch omitted leftover gap FillPattern
+  for LibreOffice. NestedStencil `setSketch` writes `gap` only when > 0;
+  omitted is draw.io default 4. leftover now snaps omitted per node so
+  Draw collectFillAndShadow does not reuse FillPattern 5
+  (`tokens.txt` FillPattern → draw:distance). include-shape nested
+  omitted gap leftover-bakes 4, and a later explicit 20 leftover-bakes a
+  sibling. A second save keeps both.
 - draw.io leftover mxStencil sketch omitted leftover jiggle plates for
   LibreOffice. NestedStencil `setSketch` writes `jiggle` only when > 0;
   omitted is draw.io default 2. leftover now snaps omitted per node so
