@@ -582,6 +582,15 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil include-shape omitted leftover Width
+  for LibreOffice. Official `Number(w/h)` is 0 when omitted and
+  `drawChildren` skips unless `w>0 && h>0`; NestedStencil `attrNum`
+  fallback 0. leftover `_number` 0 then skip so Draw
+  `collectGeometry` does not inherit nested stencil Width
+  (`tokens.txt` Width). leftover now skips omitted w/h, include-shape
+  nested omitted include skips the inner tile, and a later omitted
+  include leftover-bakes no sibling. A second save keeps both. With
+  `w`/`h` leftover still paints the nested tile.
 - draw.io leftover mxXmlCanvas2D image omitted leftover FlipX /
   ImgWidth for LibreOffice. Official `canvas.image` always writes
   `aspect`/`flipH`/`flipV`; mxStencil.drawNode passes this node's

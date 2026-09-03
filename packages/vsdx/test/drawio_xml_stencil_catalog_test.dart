@@ -21505,6 +21505,207 @@ void main() {
   );
 
   test(
+    'mxStencil include-shape omitted leftover skips nested Width for LibreOffice',
+    () {
+      int nestedStrokeCount(VsdxShape shape) {
+        var n = 0;
+        void walk(VsdxShape next) {
+          for (final child in next.children) {
+            if (child.line.hasLine) n++;
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return n;
+      }
+
+      bool hasNestedFill(VsdxShape shape) {
+        for (final child in shape.children) {
+          if (child.fill.hasFill) return true;
+          if (hasNestedFill(child)) return true;
+        }
+        return false;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final omitted = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<include-shape name="mxgraph.test.tile"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+        id: 526,
+      );
+      expect(
+        omitted.fill.hasFill,
+        isTrue,
+        reason: 'host inherit fill stays when omitted include is skipped',
+      );
+      expect(
+        nestedStrokeCount(omitted),
+        0,
+        reason: 'official drawChildren skips w==0; leftover must not fall '
+            'through to nested stencil Width so Draw collectGeometry does '
+            'not paint the tile (`tokens.txt` Width)',
+      );
+
+      final omittedW = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        nestedStrokeCount(omittedW),
+        0,
+        reason: 'omitted w is Number(null)=0; leftover must not use nested '
+            'stencil w as the include box',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<fill/>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(keep.fill.hasFill, isTrue);
+      expect(
+        nestedStrokeCount(keep),
+        1,
+        reason: 'with w/h leftover still paints the nested tile Draw '
+            'collectLine strokes (`tokens.txt` Line)',
+      );
+      expect(
+        keep.children.any((child) {
+          if (!child.line.hasLine) return false;
+          var minY = double.infinity;
+          for (final geometry in child.geometries) {
+            for (final command in geometry.commands) {
+              if (command is MoveTo) minY = math.min(minY, command.y);
+            }
+          }
+          return (minY - (100 - 20) * canvasScale).abs() < 0.02;
+        }),
+        isTrue,
+        reason: 'include y=20 leftover-bakes nested MoveTo so Draw '
+            'collectGeometry paints the tile below the host fill '
+            '(`tokens.txt` PinX)',
+      );
+
+      final laterHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="40" h="10"/>'
+        '<include-shape name="mxgraph.test.tile"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        nestedStrokeCount(laterHost),
+        1,
+        reason: 'later omitted include does not inherit the previous '
+            'include box so Draw collectGeometry paints one tile',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '<include-shape name="mxgraph.test.tile" x="0" y="0" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="40" h="10"/>'
+        '<stroke/>'
+        '<include-shape name="mxgraph.test.inner"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="inner" w="20" h="10" strokewidth="1">'
+        '<foreground>'
+        '<rect x="0" y="0" w="20" h="10"/>'
+        '<fill/>'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        nestedStrokeCount(includeHost),
+        1,
+        reason: 'host include with w/h still leftover-bakes the tile stroke',
+      );
+      expect(
+        hasNestedFill(includeHost),
+        isFalse,
+        reason: 'include-shape nested omitted include skips the inner tile '
+            'so Draw collectFillAndShadow does not inherit nested Width',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(laterHost.copyWith(id: laterId)),
+      );
+      final leftover = parser
+          .parse(
+            writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+          )
+          .pages
+          .first
+          .findShapeById(laterId)!;
+      expect(
+        nestedStrokeCount(leftover),
+        1,
+        reason: 'a second save keeps the first nested tile Draw paints',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {

@@ -1475,6 +1475,11 @@ class _DrawioXmlShapeDecoder {
     if (nestedEl == null || identical(nestedEl, element)) return;
     final x = _number(node, 'x');
     final y = _number(node, 'y');
+    // mxStencil.drawNode include-shape is Number(w)*sx, Number(h)*sy.
+    // Number(null)=0; drawChildren skips unless w>0 && h>0. NestedStencil
+    // attrNum fallback 0. leftover `_number` 0 then skip so omitted w/h
+    // does not fall through to nested stencil w/h (`tokens.txt` Width);
+    // a later omitted include does not inherit the previous include box.
     final w = _number(node, 'w');
     final h = _number(node, 'h');
     if (!(w > 1e-9) || !(h > 1e-9)) return;
