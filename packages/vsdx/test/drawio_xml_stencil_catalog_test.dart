@@ -34176,6 +34176,146 @@ void main() {
   );
 
   test(
+    'mxStencil sketch omitted leftover angle FillPattern for LibreOffice',
+    () {
+      List<double> angs(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          if (next.sketchEffect) {
+            values.add(next.sketchHachureAngleDegrees);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      List<int> fillPatterns(VsdxShape shape) {
+        final values = <int>[];
+        void walk(VsdxShape next) {
+          if (next.fill.hasFill) values.add(next.fill.pattern);
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepS = '<sketch enabled="1" angle="45"/>';
+      const omittedS = '<sketch enabled="1"/>';
+      const r1 = '<rect x="0" y="0" w="40" h="10"/><fillstroke/>';
+      const r2 = '<rect x="0" y="20" w="40" h="10"/><fillstroke/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+        id: 612,
+      );
+      expect(
+        angs(omitted),
+        [closeTo(45, 1e-6), closeTo(-41, 1e-6)],
+        reason: 'omitted sketch angle is draw.io default −41; leftover must '
+            'not keep 45 so Draw collectFillAndShadow does not reuse '
+            'FillPattern 16 (`tokens.txt` FillPattern → draw:rotation)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        angs(keep),
+        everyElement(closeTo(45, 1e-6)),
+        reason: 'without omitted angle leftover keeps 45',
+      );
+
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r1'
+        '$keepS'
+        '$r2'
+        '</foreground>'
+        '</shape>',
+      );
+      expect(
+        angs(later),
+        [closeTo(-41, 1e-6), closeTo(45, 1e-6)],
+        reason: 'later explicit angle leftover-bakes 45 on a sibling',
+      );
+
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepS'
+        '$r1'
+        '<include-shape name="mxgraph.test.tile" x="0" y="20" w="40" h="10"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="40" h="10" strokewidth="1">'
+        '<foreground>'
+        '$omittedS'
+        '$r2'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        angs(includeHost),
+        [closeTo(45, 1e-6), closeTo(-41, 1e-6)],
+        reason: 'include-shape nested omitted angle leftover-bakes −41 so '
+            'Draw does not inherit host 45',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [16, 15],
+        reason: 'a second save keeps leftover FillPattern hatch Draw paints',
+      );
+      expect(
+        fillPatterns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [15, 16],
+        reason: 'a second save keeps the later leftover hatch sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
