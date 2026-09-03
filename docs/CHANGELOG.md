@@ -582,6 +582,13 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil text run omitted leftover fontcolor
+  Char.Color for LibreOffice. Official omitted `fontcolor` is canvas
+  black; leftover now snaps per `<run>` so Draw collectCharIX does not
+  paint a later glyph blue (`tokens.txt` Color → fo:color). include-shape
+  nested omitted leftover-bakes black, and a later explicit
+  `fontcolor="#1565c0"` leftover-bakes a sibling. A second save keeps
+  both.
 - draw.io leftover mxStencil text run omitted leftover align HorzAlign
   for LibreOffice. Official omitted run `align` falls through to the
   glyph left default; leftover now snaps per `<run>` so Draw
