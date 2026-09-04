@@ -1208,7 +1208,11 @@ class _DrawioXmlShapeDecoder {
                 (node.getAttribute('dir') ?? '')
                     .toLowerCase()
                     .startsWith('vertical-'),
-            wrap: node.getAttribute('wrap') == '1',
+            wrap: node.getAttribute('wrap') == '1' &&
+                !_mxHtmlLabelHasNowrap(node),
+            // NestedStencil htmlHasNowrap: format=html
+            // white-space:nowrap / text-wrap:nowrap wins over wrap=1
+            // so leftover can expand TxtWidth Draw collects as svg:width.
             // mxXmlCanvas2D.text always writes wrap; clip when clip!=null
             // (mxStencil.drawNode always passes wrap=false, clip=false).
             // leftover reads them per glyph so a later omitted sibling
@@ -6178,6 +6182,20 @@ String _mxHtmlDecodeEntities(String value) {
 
 String _mxHtmlCollapseWhitespace(String text) =>
     text.replaceAll(RegExp(r'[\t\f\v\r ]+'), ' ');
+
+/// NestedStencil `htmlHasNowrap`. mxText `text-wrap:nowrap` /
+/// `white-space:nowrap` wins over wrap=1 so leftover can expand
+/// TxtWidth Draw collects as svg:width.
+bool _mxHtmlHasNowrap(String html) =>
+    RegExp(r'text-wrap\s*:\s*nowrap', caseSensitive: false).hasMatch(html) ||
+    RegExp(r'white-space\s*:\s*nowrap', caseSensitive: false).hasMatch(html);
+
+bool _mxHtmlLabelHasNowrap(XmlElement node) {
+  if ((node.getAttribute('format') ?? '').trim().toLowerCase() != 'html') {
+    return false;
+  }
+  return _mxHtmlHasNowrap(node.getAttribute('str') ?? '');
+}
 
 String? _mxHtmlAttr(String attrs, String name) {
   final match = RegExp(

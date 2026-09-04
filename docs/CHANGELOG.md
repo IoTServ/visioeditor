@@ -582,6 +582,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `white-space:nowrap` /
+  `text-wrap:nowrap` / `<br>` / `<hr>` / `font-size:2em` / `150%` /
+  `size="-1"` / h2 UA / CSS `color:blue` omitted leftover veWordWrap /
+  Character / Char.Size / Color for LibreOffice. NestedStencil
+  `htmlHasNowrap` wins over wrap=1; leftover ignored nowrap so Draw
+  collectTextBlock kept TxtWidth (`tokens.txt` has no veWordWrap;
+  svg:width 7.998cm vs 1.524cm). leftover now honors nowrap and already
+  maps the remaining HTML tags. include-shape nested omitted leftover-bakes
+  wrap / a single line / canvas 11px / black, and a later explicit rule
+  leftover-bakes a sibling. A second save keeps TxtWidth / Character /
+  Size / Color.
+
 - draw.io leftover mxStencil html `<strike>` / h1 UA / CSS `smaller` /
   `larger` / `text-align:justify` / `p align=right` / `size="+2"` /
   `font-size:x-large` / `margin:10%` shorthand / h3 `font-weight:normal`
