@@ -54850,6 +54850,1756 @@ void main() {
   );
 
   test(
+    'mxStencil html font size 2 omitted leftover Char.Size for LibreOffice',
+    () {
+      List<double> sizes(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontSizeInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final keepSize = 13 * canvasScale;
+      final omittedSize = 11 * canvasScale;
+      const keepT =
+          '<text str="&lt;font size=&quot;2&quot;&gt;AB&lt;/font&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;font size=&quot;2&quot;&gt;CD&lt;/font&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;font size=&quot;2&quot;&gt;CD&lt;/font&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 760,
+      );
+      expect(
+        sizes(omitted),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'omitted html font size=2 is canvas 11px; leftover must not keep '
+            'Char.Size so Draw collectCharIX does not change the later glyph '
+            '(`tokens.txt` Size → fo:font-size 14.1pt vs 11.9pt)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        sizes(keep),
+        everyElement(closeTo(keepSize, 1e-9)),
+        reason: 'without omitted html font size=2 leftover keeps Char.Size',
+      );
+      expect(
+        sizes(later),
+        [closeTo(omittedSize, 1e-9), closeTo(keepSize, 1e-9)],
+        reason: 'later html font size=2 leftover-bakes a sibling Char.Size',
+      );
+      expect(
+        sizes(includeHost),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'include-shape nested omitted html font size=2 leftover-bakes 11px so '
+            'Draw does not inherit host fo:font-size',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        sizes(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'a second save keeps leftover Char.Size Draw paints',
+      );
+      expect(
+        sizes(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(omittedSize, 1e-9), closeTo(keepSize, 1e-9)],
+        reason: 'a second save keeps the later leftover Char.Size sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html font size 4 omitted leftover Char.Size for LibreOffice',
+    () {
+      List<double> sizes(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontSizeInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final keepSize = 18 * canvasScale;
+      final omittedSize = 11 * canvasScale;
+      const keepT =
+          '<text str="&lt;font size=&quot;4&quot;&gt;AB&lt;/font&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;font size=&quot;4&quot;&gt;CD&lt;/font&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;font size=&quot;4&quot;&gt;CD&lt;/font&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 761,
+      );
+      expect(
+        sizes(omitted),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'omitted html font size=4 is canvas 11px; leftover must not keep '
+            'Char.Size so Draw collectCharIX does not change the later glyph '
+            '(`tokens.txt` Size → fo:font-size 19.4pt vs 11.9pt)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        sizes(keep),
+        everyElement(closeTo(keepSize, 1e-9)),
+        reason: 'without omitted html font size=4 leftover keeps Char.Size',
+      );
+      expect(
+        sizes(later),
+        [closeTo(omittedSize, 1e-9), closeTo(keepSize, 1e-9)],
+        reason: 'later html font size=4 leftover-bakes a sibling Char.Size',
+      );
+      expect(
+        sizes(includeHost),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'include-shape nested omitted html font size=4 leftover-bakes 11px so '
+            'Draw does not inherit host fo:font-size',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        sizes(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'a second save keeps leftover Char.Size Draw paints',
+      );
+      expect(
+        sizes(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(omittedSize, 1e-9), closeTo(keepSize, 1e-9)],
+        reason: 'a second save keeps the later leftover Char.Size sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS font-weight 800 omitted leftover Char.Style for LibreOffice',
+    () {
+      List<bool> bolds(VsdxShape shape) {
+        final values = <bool>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.style.bold);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;span style=&quot;font-weight:800&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;font-weight:800&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;font-weight:800&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 762,
+      );
+      expect(
+        bolds(omitted),
+        [true, false],
+        reason: 'omitted html CSS font-weight 800 is canvas regular; leftover must not keep Style.bold so Draw collectCharIX does not bold the later glyph (`tokens.txt` Style → fo:font-weight)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        bolds(keep),
+        everyElement(isTrue),
+        reason: 'without omitted leftover keeps Style.bold',
+      );
+      expect(
+        bolds(later),
+        [false, true],
+        reason: 'later leftover-bakes a sibling Style.bold',
+      );
+      expect(
+        bolds(includeHost),
+        [true, false],
+        reason: 'include-shape nested omitted leftover-bakes regular so Draw '
+            'does not inherit host fo:font-weight',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        bolds(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [true, false],
+        reason: 'a second save keeps leftover Style.bold Draw paints',
+      );
+      expect(
+        bolds(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [false, true],
+        reason: 'a second save keeps the later leftover Style.bold sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html h4 font-weight normal omitted leftover Char.Style for LibreOffice',
+    () {
+      List<bool> bolds(VsdxShape shape) {
+        final values = <bool>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.style.bold);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;h4&gt;AB&lt;/h4&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;h4 style=&quot;font-weight:normal&quot;&gt;CD&lt;/h4&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;h4&gt;CD&lt;/h4&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;h4 style=&quot;font-weight:normal&quot;&gt;AB&lt;/h4&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;h4&gt;CD&lt;/h4&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 763,
+      );
+      expect(
+        bolds(omitted),
+        [true, false],
+        reason: 'html h4 UA bold is cleared by font-weight:normal; leftover must not keep Style.bold so Draw collectCharIX does not bold the later glyph (`tokens.txt` Style → fo:font-weight)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        bolds(keep),
+        everyElement(isTrue),
+        reason: 'without omitted leftover keeps Style.bold',
+      );
+      expect(
+        bolds(later),
+        [false, true],
+        reason: 'later leftover-bakes a sibling Style.bold',
+      );
+      expect(
+        bolds(includeHost),
+        [true, false],
+        reason: 'include-shape nested omitted leftover-bakes regular so Draw '
+            'does not inherit host fo:font-weight',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        bolds(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [true, false],
+        reason: 'a second save keeps leftover Style.bold Draw paints',
+      );
+      expect(
+        bolds(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [false, true],
+        reason: 'a second save keeps the later leftover Style.bold sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS font-family Times omitted leftover Char.Font for LibreOffice',
+    () {
+      List<String?> families(VsdxShape shape) {
+        final values = <String?>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontFamily);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;span style=&quot;font-family:Times&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;font-family:Times&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;font-family:Times&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 764,
+      );
+      expect(
+        families(omitted),
+        ['Times New Roman', 'Arial'],
+        reason: 'omitted html CSS Times is canvas Arial; leftover must not keep '
+            'Char.Font so Draw collectCharIX does not restyle the later glyph '
+            '(`tokens.txt` Font → style:font-name Times New Roman vs Arial)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        families(keep),
+        everyElement('Times New Roman'),
+        reason: 'without omitted html CSS Times leftover keeps Char.Font',
+      );
+      expect(
+        families(later),
+        ['Arial', 'Times New Roman'],
+        reason: 'later html CSS Times leftover-bakes a sibling Char.Font',
+      );
+      expect(
+        families(includeHost),
+        ['Times New Roman', 'Arial'],
+        reason: 'include-shape nested omitted html CSS Times leftover-bakes Arial so '
+            'Draw does not inherit host style:font-name',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        ['Times New Roman', 'Arial'],
+        reason: 'a second save keeps leftover Char.Font Draw paints',
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(laterId)!),
+        ['Arial', 'Times New Roman'],
+        reason: 'a second save keeps the later leftover Char.Font sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS font-family serif omitted leftover Char.Font for LibreOffice',
+    () {
+      List<String?> families(VsdxShape shape) {
+        final values = <String?>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontFamily);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;span style=&quot;font-family:serif&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;font-family:serif&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;font-family:serif&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 765,
+      );
+      expect(
+        families(omitted),
+        ['Times New Roman', 'Arial'],
+        reason: 'omitted html CSS serif is canvas Arial; leftover must not keep '
+            'Char.Font so Draw collectCharIX does not restyle the later glyph '
+            '(`tokens.txt` Font → style:font-name Times New Roman vs Arial)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        families(keep),
+        everyElement('Times New Roman'),
+        reason: 'without omitted html CSS serif leftover keeps Char.Font',
+      );
+      expect(
+        families(later),
+        ['Arial', 'Times New Roman'],
+        reason: 'later html CSS serif leftover-bakes a sibling Char.Font',
+      );
+      expect(
+        families(includeHost),
+        ['Times New Roman', 'Arial'],
+        reason: 'include-shape nested omitted html CSS serif leftover-bakes Arial so '
+            'Draw does not inherit host style:font-name',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        ['Times New Roman', 'Arial'],
+        reason: 'a second save keeps leftover Char.Font Draw paints',
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(laterId)!),
+        ['Arial', 'Times New Roman'],
+        reason: 'a second save keeps the later leftover Char.Font sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS font-family monospace omitted leftover Char.Font for LibreOffice',
+    () {
+      List<String?> families(VsdxShape shape) {
+        final values = <String?>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontFamily);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;span style=&quot;font-family:monospace&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;font-family:monospace&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;font-family:monospace&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 766,
+      );
+      expect(
+        families(omitted),
+        ['Courier New', 'Arial'],
+        reason: 'omitted html CSS monospace is canvas Arial; leftover must not keep '
+            'Char.Font so Draw collectCharIX does not restyle the later glyph '
+            '(`tokens.txt` Font → style:font-name Courier New vs Arial)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        families(keep),
+        everyElement('Courier New'),
+        reason: 'without omitted html CSS monospace leftover keeps Char.Font',
+      );
+      expect(
+        families(later),
+        ['Arial', 'Courier New'],
+        reason: 'later html CSS monospace leftover-bakes a sibling Char.Font',
+      );
+      expect(
+        families(includeHost),
+        ['Courier New', 'Arial'],
+        reason: 'include-shape nested omitted html CSS monospace leftover-bakes Arial so '
+            'Draw does not inherit host style:font-name',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        ['Courier New', 'Arial'],
+        reason: 'a second save keeps leftover Char.Font Draw paints',
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(laterId)!),
+        ['Arial', 'Courier New'],
+        reason: 'a second save keeps the later leftover Char.Font sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS font-family Verdana omitted leftover Char.Font for LibreOffice',
+    () {
+      List<String?> families(VsdxShape shape) {
+        final values = <String?>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontFamily);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;span style=&quot;font-family:Verdana&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;font-family:Verdana&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;font-family:Verdana&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 767,
+      );
+      expect(
+        families(omitted),
+        ['Verdana', 'Arial'],
+        reason: 'omitted html CSS Verdana is canvas Arial; leftover must not keep '
+            'Char.Font so Draw collectCharIX does not restyle the later glyph '
+            '(`tokens.txt` Font → style:font-name Verdana vs Arial)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        families(keep),
+        everyElement('Verdana'),
+        reason: 'without omitted html CSS Verdana leftover keeps Char.Font',
+      );
+      expect(
+        families(later),
+        ['Arial', 'Verdana'],
+        reason: 'later html CSS Verdana leftover-bakes a sibling Char.Font',
+      );
+      expect(
+        families(includeHost),
+        ['Verdana', 'Arial'],
+        reason: 'include-shape nested omitted html CSS Verdana leftover-bakes Arial so '
+            'Draw does not inherit host style:font-name',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        ['Verdana', 'Arial'],
+        reason: 'a second save keeps leftover Char.Font Draw paints',
+      );
+      expect(
+        families(leftoverDoc.pages.first.findShapeById(laterId)!),
+        ['Arial', 'Verdana'],
+        reason: 'a second save keeps the later leftover Char.Font sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS color purple omitted leftover Char.Color for LibreOffice',
+    () {
+      List<VsdxColor?> colors(VsdxShape shape) {
+        final values = <VsdxColor?>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.color);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      final purple = VsdxColor.tryParse('#800080')!;
+      final black = VsdxColor.tryParse('#000000')!;
+      const keepT =
+          '<text str="&lt;span style=&quot;color:purple&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;color:purple&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;color:purple&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 768,
+      );
+      expect(
+        colors(omitted),
+        [purple, black],
+        reason: 'omitted html CSS named color is canvas black; leftover must '
+            'not keep Char.Color so Draw collectCharIX does not tint the later '
+            'glyph (`tokens.txt` Color → fo:color #800080)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        colors(keep),
+        everyElement(purple),
+        reason: 'without omitted CSS color:purple leftover keeps Char.Color',
+      );
+      expect(
+        colors(later),
+        [black, purple],
+        reason: 'later CSS color:purple leftover-bakes a sibling Char.Color',
+      );
+      expect(
+        colors(includeHost),
+        [purple, black],
+        reason: 'include-shape nested omitted CSS color leftover-bakes black '
+            'so Draw does not inherit host fo:color',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        colors(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [purple, black],
+        reason: 'a second save keeps leftover Char.Color Draw paints',
+      );
+      expect(
+        colors(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [black, purple],
+        reason: 'a second save keeps the later leftover Char.Color sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS font-size 0.75em omitted leftover Char.Size for LibreOffice',
+    () {
+      List<double> sizes(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.fontSizeInches);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final keepSize = 11 * 0.75 * canvasScale;
+      final omittedSize = 11 * canvasScale;
+      const keepT =
+          '<text str="&lt;span style=&quot;font-size:0.75em&quot;&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;span&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;span style=&quot;font-size:0.75em&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;span&gt;AB&lt;/span&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;span style=&quot;font-size:0.75em&quot;&gt;CD&lt;/span&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 769,
+      );
+      expect(
+        sizes(omitted),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'omitted html CSS 0.75em is canvas 11px; leftover must not keep '
+            'Char.Size so Draw collectCharIX does not change the later glyph '
+            '(`tokens.txt` Size → fo:font-size 8.9pt vs 11.9pt)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        sizes(keep),
+        everyElement(closeTo(keepSize, 1e-9)),
+        reason: 'without omitted html CSS 0.75em leftover keeps Char.Size',
+      );
+      expect(
+        sizes(later),
+        [closeTo(omittedSize, 1e-9), closeTo(keepSize, 1e-9)],
+        reason: 'later html CSS 0.75em leftover-bakes a sibling Char.Size',
+      );
+      expect(
+        sizes(includeHost),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'include-shape nested omitted html CSS 0.75em leftover-bakes 11px so '
+            'Draw does not inherit host fo:font-size',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        sizes(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(keepSize, 1e-9), closeTo(omittedSize, 1e-9)],
+        reason: 'a second save keeps leftover Char.Size Draw paints',
+      );
+      expect(
+        sizes(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(omittedSize, 1e-9), closeTo(keepSize, 1e-9)],
+        reason: 'a second save keeps the later leftover Char.Size sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS line-height px omitted leftover Para for LibreOffice',
+    () {
+      List<double> lineHeights(VsdxShape shape) {
+        final values = <double>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.lineSpacing);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;p style=&quot;line-height:16.5px&quot;&gt;AB&lt;/p&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;line-height:16.5px&quot;&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;line-height:16.5px&quot;&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 770,
+      );
+      expect(
+        lineHeights(omitted),
+        [closeTo(1.5, 1e-9), closeTo(1, 1e-9)],
+        reason: 'omitted html CSS line-height px is 1; leftover must not keep '
+            'SpLine 1.5 so Draw collectParaIX does not stretch the later glyph '
+            '(`tokens.txt` SpLine → fo:line-height 150% vs 100%)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        lineHeights(keep),
+        everyElement(closeTo(1.5, 1e-9)),
+        reason: 'without omitted CSS line-height px leftover keeps SpLine',
+      );
+      expect(
+        lineHeights(later),
+        [closeTo(1, 1e-9), closeTo(1.5, 1e-9)],
+        reason: 'later CSS line-height px leftover-bakes a sibling SpLine',
+      );
+      expect(
+        lineHeights(includeHost),
+        [closeTo(1.5, 1e-9), closeTo(1, 1e-9)],
+        reason: 'include-shape nested omitted CSS line-height px leftover-bakes '
+            '1 so Draw does not inherit host fo:line-height',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        lineHeights(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [closeTo(1.5, 1e-9), closeTo(1, 1e-9)],
+        reason: 'a second save keeps leftover SpLine Draw paints',
+      );
+      expect(
+        lineHeights(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [closeTo(1, 1e-9), closeTo(1.5, 1e-9)],
+        reason: 'a second save keeps the later leftover SpLine sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS text-align end omitted leftover HorzAlign for LibreOffice',
+    () {
+      List<VsdxHorzAlign> aligns(VsdxShape shape) {
+        final values = <VsdxHorzAlign>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.paraStyle.horizontalAlign);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;p style=&quot;text-align:end&quot;&gt;AB&lt;/p&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;text-align:end&quot;&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;text-align:end&quot;&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 771,
+      );
+      expect(
+        aligns(omitted),
+        [VsdxHorzAlign.right, VsdxHorzAlign.left],
+        reason: 'omitted html CSS text-align:end is left; leftover must not '
+            'keep HorzAlign so Draw collectParaIX does not end-align the later '
+            'glyph (`tokens.txt` HorzAlign → fo:text-align end vs left)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        aligns(keep),
+        everyElement(VsdxHorzAlign.right),
+        reason: 'without omitted CSS text-align:end leftover keeps HorzAlign',
+      );
+      expect(
+        aligns(later),
+        [VsdxHorzAlign.left, VsdxHorzAlign.right],
+        reason: 'later CSS text-align:end leftover-bakes a sibling HorzAlign',
+      );
+      expect(
+        aligns(includeHost),
+        [VsdxHorzAlign.right, VsdxHorzAlign.left],
+        reason: 'include-shape nested omitted CSS text-align leftover-bakes '
+            'left so Draw does not inherit host fo:text-align',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        aligns(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [VsdxHorzAlign.right, VsdxHorzAlign.left],
+        reason: 'a second save keeps leftover HorzAlign Draw paints',
+      );
+      expect(
+        aligns(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [VsdxHorzAlign.left, VsdxHorzAlign.right],
+        reason: 'a second save keeps the later leftover HorzAlign sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html CSS margin-left px omitted leftover Para for LibreOffice',
+    () {
+      List<List<double>> boxes(VsdxShape shape) {
+        final values = <List<double>>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            final p = run.paraStyle;
+            values.add([
+              p.indentLeftInches,
+              p.indentRightInches,
+              p.spaceBeforeInches,
+              p.spaceAfterInches,
+            ]);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const canvasScale = 1.5 / 100;
+      final pad = 8 * canvasScale;
+      final ua = 11 * canvasScale;
+      List<Matcher> keepBox() => [
+            closeTo(pad, 1e-9),
+            closeTo(0, 1e-9),
+            closeTo(ua, 1e-9),
+            closeTo(ua, 1e-9),
+          ];
+      List<Matcher> omitBox() => [
+            closeTo(0, 1e-9),
+            closeTo(0, 1e-9),
+            closeTo(ua, 1e-9),
+            closeTo(ua, 1e-9),
+          ];
+      const keepT =
+          '<text str="&lt;p style=&quot;margin-left:8px&quot;&gt;AB&lt;/p&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;p&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;p style=&quot;margin-left:8px&quot;&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;p&gt;AB&lt;/p&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;p style=&quot;margin-left:8px&quot;&gt;CD&lt;/p&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 772,
+      );
+      expect(
+        boxes(omitted),
+        [keepBox(), omitBox()],
+        reason: 'omitted html CSS margin-left px is 0; leftover must not keep '
+            'IndLeft so Draw collectParaIX does not inset the later glyph '
+            '(`tokens.txt` IndLeft → fo:margin-left 0.305cm vs 0cm)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        boxes(keep),
+        [keepBox(), keepBox()],
+        reason: 'without omitted CSS margin-left px leftover keeps IndLeft',
+      );
+      expect(
+        boxes(later),
+        [omitBox(), keepBox()],
+        reason: 'later CSS margin-left px leftover-bakes a sibling IndLeft',
+      );
+      expect(
+        boxes(includeHost),
+        [keepBox(), omitBox()],
+        reason: 'include-shape nested omitted CSS margin-left leftover-bakes 0 '
+            'so Draw does not inherit host fo:margin-left',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        boxes(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [keepBox(), omitBox()],
+        reason: 'a second save keeps leftover IndLeft Draw paints',
+      );
+      expect(
+        boxes(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [omitBox(), keepBox()],
+        reason: 'a second save keeps the later leftover IndLeft sibling',
+      );
+    },
+  );
+
+  test(
+    'mxStencil html em font-style normal omitted leftover Char.Style for LibreOffice',
+    () {
+      List<bool> italics(VsdxShape shape) {
+        final values = <bool>[];
+        void walk(VsdxShape next) {
+          for (final run in next.richText.runs) {
+            values.add(run.charStyle.style.italic);
+          }
+          for (final child in next.children) {
+            walk(child);
+          }
+        }
+
+        walk(shape);
+        return values;
+      }
+
+      const keepT =
+          '<text str="&lt;em&gt;AB&lt;/em&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedT =
+          '<text str="&lt;em style=&quot;font-style:normal&quot;&gt;CD&lt;/em&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepT2 =
+          '<text str="&lt;em&gt;CD&lt;/em&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+      const omittedFirst =
+          '<text str="&lt;em style=&quot;font-style:normal&quot;&gt;AB&lt;/em&gt;" x="0" y="0" w="80" h="20" format="html" align="left" valign="top"/>';
+      const keepSecond =
+          '<text str="&lt;em&gt;CD&lt;/em&gt;" x="0" y="30" w="80" h="20" format="html" align="left" valign="top"/>';
+
+      final omitted = decodeDrawioMxStencilXml(
+        '<shape name="O" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$omittedT'
+        '</foreground>'
+        '</shape>',
+        id: 773,
+      );
+      expect(
+        italics(omitted),
+        [true, false],
+        reason: 'html em italic is cleared by font-style:normal; leftover must '
+            'not keep Style.italic so Draw collectCharIX does not italicize '
+            'the later glyph (`tokens.txt` Style → fo:font-style)',
+      );
+
+      final keep = decodeDrawioMxStencilXml(
+        '<shape name="K" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '$keepT2'
+        '</foreground>'
+        '</shape>',
+      );
+      final later = decodeDrawioMxStencilXml(
+        '<shape name="L" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$omittedFirst'
+        '$keepSecond'
+        '</foreground>'
+        '</shape>',
+      );
+      final includeHost = decodeDrawioMxStencilXml(
+        '<shapes name="mxgraph.test">'
+        '<shape name="host" w="100" h="100" strokewidth="1">'
+        '<foreground>'
+        '$keepT'
+        '<include-shape name="mxgraph.test.tile" x="0" y="30" w="80" h="20"/>'
+        '</foreground>'
+        '</shape>'
+        '<shape name="tile" w="80" h="20" strokewidth="1">'
+        '<foreground>'
+        '$omittedT'
+        '</foreground>'
+        '</shape>'
+        '</shapes>',
+      );
+      expect(
+        italics(keep),
+        everyElement(isTrue),
+        reason: 'without omitted em font-style:normal leftover keeps italic',
+      );
+      expect(
+        italics(later),
+        [false, true],
+        reason: 'later em leftover-bakes a sibling Style.italic',
+      );
+      expect(
+        italics(includeHost),
+        [true, false],
+        reason: 'include-shape nested omitted em leftover-bakes regular so Draw '
+            'does not inherit host fo:font-style',
+      );
+
+      final writer = VsdxWriter();
+      final parser = DocumentParser();
+      var doc = parser.parse(writer.emptyDocument());
+      final omittedId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(omitted.copyWith(id: omittedId)),
+      );
+      final laterId = doc.pages.first.nextFreeShapeId();
+      doc = doc.replacePage(
+        0,
+        doc.pages.first.addShape(later.copyWith(id: laterId)),
+      );
+      final leftoverDoc = parser.parse(
+        writer.write(originalBytes: writer.emptyDocument(), edited: doc),
+      );
+      expect(
+        italics(leftoverDoc.pages.first.findShapeById(omittedId)!),
+        [true, false],
+        reason: 'a second save keeps leftover Style.italic Draw paints',
+      );
+      expect(
+        italics(leftoverDoc.pages.first.findShapeById(laterId)!),
+        [false, true],
+        reason: 'a second save keeps the later leftover Style.italic sibling',
+      );
+    },
+  );
+
+  test(
     'mxStencil mxXmlCanvas2D strokealpha omitted leftover bakes LineColorTrans 1 for LibreOffice',
     () {
       List<double> strokeTrans(VsdxShape shape) {
