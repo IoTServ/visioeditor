@@ -582,6 +582,27 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:14pt` / `1.25em` /
+  `16pt` / `0.5rem` / h1 / h2 / h6 `font-weight:normal` / CSS
+  `background-color:rgba()` / canvas `fontbordercolor` /
+  `fillstrokecolor` / mxXmlCanvas2D `<gradient c1>` `rgba()` omitted
+  leftover Char.Size / Style / Highlight / label-border / FillForegnd /
+  FillPattern for LibreOffice. NestedStencil `htmlCssPx` treats `14pt`
+  / `16pt` as parseFloat px (15.1pt / 17.3pt vs 11.9pt); `1.25em` is
+  13.75px of canvas 11 (14.9pt vs 11.9pt); `0.5rem` is 8px of the 16px
+  medium (8.6pt vs 11.9pt); h1/h2/h6 UA bold is cleared by
+  `font-weight:normal`. `htmlCssColorToHex` paints rgba RGB channels
+  onto Char.Highlight / User.veLabelBorderColor / FillForegnd /
+  LineColor / FillBkgnd. leftover must not keep the previous hex so
+  Draw collectCharIX / collectLine / collectFillAndShadow map
+  `fo:font-size` / `fo:font-weight` / `fo:background-color` /
+  `svg:stroke-color` / `draw:fill-color` / `Gradient_5f_0` `#1565c0`
+  vs none (`tokens.txt` Size / Style / LineColor / FillForegnd /
+  FillPattern). include-shape nested omitted leftover-bakes the canvas
+  / none default, and a later explicit rule leftover-bakes a sibling.
+  A second save keeps Size / Style / Highlight / label-border plates /
+  FillForegnd / FillPattern.
+
 - draw.io leftover mxStencil html CSS `font-size:12pt` / h5
   `font-weight:normal` / `color:rebeccapurple` /
   `font-family:Times New Roman` / canvas `strokecolor` /
