@@ -582,6 +582,19 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html h4–h6 UA / CSS `xx-small` / `small` /
+  `large` / `xx-large` / `xxx-large` / `size="1"` / `size="7"` /
+  `size="+1"` / `1rem` / `20px` / `margin-top|right|bottom:10%` /
+  `font-weight:700` / `div align=center` / `font-style:oblique` /
+  `color:green` omitted leftover Char.Size / Style / Para / HorzAlign /
+  Color for LibreOffice. mxSvgCanvas2D HTML paints those tags; leftover
+  ignored them so Draw collectCharIX / collectParaIX reused canvas 11px /
+  regular / UA `fo:margin-*` / left / black (`tokens.txt` Size / Style /
+  Ind* / Sp* / HorzAlign / Color). leftover already maps those HTML
+  features. include-shape nested omitted leftover-bakes the canvas / UA
+  default, and a later explicit rule leftover-bakes a sibling. A second
+  save keeps Size / Style / Ind* / Sp* / HorzAlign / Color.
+
 - draw.io leftover mxStencil html CSS `white-space:nowrap` /
   `text-wrap:nowrap` / `<br>` / `<hr>` / `font-size:2em` / `150%` /
   `size="-1"` / h2 UA / CSS `color:blue` omitted leftover veWordWrap /
