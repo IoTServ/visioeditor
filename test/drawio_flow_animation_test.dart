@@ -204,9 +204,11 @@ void main() {
       matching: find.byWidgetPredicate((widget) => widget is Scrollable),
     );
     final state = tester.state<ScrollableState>(scrollable);
-    for (var i = 0;
-        i < 30 && find.text('Flow Animation').evaluate().isEmpty;
-        i++) {
+    for (
+      var i = 0;
+      i < 30 && find.text('Flow Animation').evaluate().isEmpty;
+      i++
+    ) {
       state.position.jumpTo(
         (state.position.pixels + 240).clamp(0, state.position.maxScrollExtent),
       );
@@ -214,6 +216,7 @@ void main() {
     }
     expect(find.text('Flow Animation'), findsOneWidget);
     await tester.ensureVisible(find.text('Flow Animation'));
+    await tester.tap(find.text('Flow Animation'));
     await tester.pumpAndSettle();
 
     final sectionY = tester.getCenter(find.text('Flow Animation')).dy;

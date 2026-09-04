@@ -74,8 +74,11 @@ void main() {
     final exported = value.exportToBytes();
     final reopenedDoc = const DocumentParser().parse(exported);
     final reopened = reopenedDoc.pages.single.findShapeById(id)!;
-    expect(reopened.sketchEffect, isFalse,
-        reason: 'Sketch User rows are not tokens; veSketch is written 0');
+    expect(
+      reopened.sketchEffect,
+      isFalse,
+      reason: 'Sketch User rows are not tokens; veSketch is written 0',
+    );
     expect(reopened.sketchJiggle, closeTo(3.5, 1e-6));
     expect(reopened.fill.pattern, 23);
     expect(
@@ -211,8 +214,7 @@ void main() {
     ).withSketchEffect(true).withSketchFillStyle(VsdxSketchFillStyle.solid);
     expect(solid.usesSketchPatternFill, isFalse);
     expect(
-      solid.withSketchFillStyle(VsdxSketchFillStyle.auto)
-          .usesSketchPatternFill,
+      solid.withSketchFillStyle(VsdxSketchFillStyle.auto).usesSketchPatternFill,
       isTrue,
     );
     final gradient = const VsdxGradient(
@@ -273,8 +275,9 @@ void main() {
     expect(value.currentPage!.findShapeById(nextEdge)!.sketchJiggle, 4);
   });
 
-  testWidgets('Format exposes draw.io Sketch, Jiggle, and fill controls',
-      (tester) async {
+  testWidgets('Format exposes draw.io Sketch, Jiggle, and fill controls', (
+    tester,
+  ) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.binding.setSurfaceSize(const Size(1280, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -288,19 +291,28 @@ void main() {
     rectangle(canvas.controller, 2);
     await tester.pumpAndSettle();
 
-    final scrollable = find.descendant(
-      of: find.byKey(const ValueKey('property-panel-list')),
-      matching: find.byType(Scrollable),
-    ).first;
+    final scrollable = find
+        .descendant(
+          of: find.byKey(const ValueKey('property-panel-list')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
     final state = tester.state<ScrollableState>(scrollable);
-    final sketchSwitch = find.byKey(const ValueKey('sketch-effect-switch'));
-    for (var i = 0; i < 30 && sketchSwitch.evaluate().isEmpty; i++) {
+    final sketchTitle = find.byKey(
+      const ValueKey('property-section-title-sketch'),
+    );
+    for (var i = 0; i < 30 && sketchTitle.evaluate().isEmpty; i++) {
       state.position.jumpTo(
         (state.position.pixels + 220).clamp(0, state.position.maxScrollExtent),
       );
       await tester.pumpAndSettle();
     }
-    expect(find.text('Sketch'), findsOneWidget);
+    expect(sketchTitle, findsOneWidget);
+    expect(find.byKey(const ValueKey('sketch-effect-switch')), findsNothing);
+    await tester.ensureVisible(sketchTitle);
+    await tester.tap(sketchTitle);
+    await tester.pumpAndSettle();
+    final sketchSwitch = find.byKey(const ValueKey('sketch-effect-switch'));
     expect(sketchSwitch, findsOneWidget);
     await tester.ensureVisible(sketchSwitch);
     await tester.tap(
@@ -310,20 +322,24 @@ void main() {
     expect(canvas.controller.selectedHasSketchEffect, isTrue);
     expect(canvas.controller.canSetSketchFillStyle, isTrue);
 
-    await tester.dragUntilVisible(
-      find.text('Fill'),
-      scrollable,
-      const Offset(0, 200),
-    );
+    // Fill sits above Sketch (with Line/Text in between). Scroll up from the
+    // Sketch header so the lazy ListView actually builds the Fill group.
+    final fillTitle = find.byKey(const ValueKey('property-section-title-fill'));
+    for (var i = 0; i < 40 && fillTitle.evaluate().isEmpty; i++) {
+      state.position.jumpTo(
+        (state.position.pixels - 160).clamp(0, state.position.maxScrollExtent),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(fillTitle, findsOneWidget);
+    await tester.ensureVisible(fillTitle);
     await tester.pumpAndSettle();
-    final sketchFillDropdown =
-        find.byKey(const ValueKey('sketch-fill-style-dropdown'));
+    final sketchFillDropdown = find.byKey(
+      const ValueKey('sketch-fill-style-dropdown'),
+    );
     await tester.ensureVisible(sketchFillDropdown);
     await tester.pumpAndSettle();
-    expect(
-      sketchFillDropdown,
-      findsOneWidget,
-    );
+    expect(sketchFillDropdown, findsOneWidget);
     expect(
       find.byKey(const ValueKey('sketch-hachure-gap-slider')),
       findsOneWidget,
@@ -346,11 +362,16 @@ void main() {
     );
 
     final jiggle = find.byKey(const ValueKey('sketch-jiggle-slider'));
-    await tester.dragUntilVisible(
-      jiggle,
-      scrollable,
-      const Offset(0, -180),
-    );
+    for (var i = 0; i < 40 && sketchTitle.evaluate().isEmpty; i++) {
+      state.position.jumpTo(
+        (state.position.pixels + 160).clamp(0, state.position.maxScrollExtent),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(sketchTitle, findsOneWidget);
+    await tester.ensureVisible(sketchTitle);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(jiggle);
     await tester.pumpAndSettle();
     expect(jiggle, findsOneWidget);
     expect(find.text('Jiggle'), findsOneWidget);
@@ -360,5 +381,68 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(canvas.controller.selectedSketchJiggle, greaterThan(2));
+  });
+
+  testWidgets('Format folds secondary groups and keeps Fill/Arrange open', (
+    tester,
+  ) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.binding.setSurfaceSize(const Size(1280, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = await AppSettings.load();
+    await tester.pumpWidget(VisioEditorApp(settings: settings));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, 'New drawing'));
+    await tester.pumpAndSettle();
+
+    final canvas = tester.widget<PageCanvas>(find.byType(PageCanvas));
+    rectangle(canvas.controller, 2);
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey('property-section-title-arrange')),
+      findsOneWidget,
+    );
+
+    final scrollable = find
+        .descendant(
+          of: find.byKey(const ValueKey('property-panel-list')),
+          matching: find.byType(Scrollable),
+        )
+        .first;
+    final state = tester.state<ScrollableState>(scrollable);
+    Future<void> reveal(Finder finder) async {
+      state.position.jumpTo(0);
+      await tester.pumpAndSettle();
+      for (var i = 0; i < 25 && finder.evaluate().isEmpty; i++) {
+        state.position.jumpTo(
+          (state.position.pixels + 180).clamp(
+            0,
+            state.position.maxScrollExtent,
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+      expect(finder, findsOneWidget);
+      await tester.ensureVisible(finder);
+      await tester.pumpAndSettle();
+    }
+
+    await reveal(find.byKey(const ValueKey('property-section-title-fill')));
+    await reveal(find.byKey(const ValueKey('property-section-title-line')));
+    await reveal(find.byKey(const ValueKey('shape-opacity-slider')));
+
+    expect(find.byKey(const ValueKey('sketch-effect-switch')), findsNothing);
+
+    final shadowTitle = find.byKey(
+      const ValueKey('property-section-title-shadow'),
+    );
+    await reveal(shadowTitle);
+    await tester.tap(shadowTitle);
+    await tester.pumpAndSettle();
+    expect(find.byType(Switch), findsWidgets);
+
+    await tester.tap(shadowTitle);
+    await tester.pumpAndSettle();
   });
 }

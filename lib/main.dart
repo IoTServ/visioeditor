@@ -4599,13 +4599,86 @@ class _StencilThumbPainter extends CustomPainter {
       old.stencil != stencil;
 }
 
+/// LibreOffice-style sidebar section title bar. Content sits as sibling
+/// [ListView] children so a tall group can still scroll control-by-control.
+class _PropertySectionHeader extends StatelessWidget {
+  const _PropertySectionHeader({
+    required this.id,
+    required this.title,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  final String id;
+  final String title;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+        child: InkWell(
+          onTap: onToggle,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(2, 6, 6, 6),
+            child: Row(
+              children: [
+                Icon(
+                  expanded ? Icons.expand_more : Icons.chevron_right,
+                  size: 18,
+                  color: scheme.onSurfaceVariant,
+                ),
+                const SizedBox(width: 2),
+                Expanded(
+                  child: Text(
+                    title,
+                    key: ValueKey('property-section-title-$id'),
+                    style: theme.textTheme.labelLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 /// Right-hand inspector for the current selection (fill / line / delete).
-class _PropertyPanel extends StatelessWidget {
+class _PropertyPanel extends StatefulWidget {
   const _PropertyPanel({required this.controller, this.fillWidth = false});
 
   final EditorController controller;
+
   /// When true (compact bottom sheet), stretch to the parent width.
   final bool fillWidth;
+
+  @override
+  State<_PropertyPanel> createState() => _PropertyPanelState();
+}
+
+class _PropertyPanelState extends State<_PropertyPanel> {
+  EditorController get controller => widget.controller;
+
+  /// User toggles override the per-section default (open vs closed).
+  final Map<String, bool> _expanded = <String, bool>{};
+
+  bool _sectionExpanded(String id, bool initiallyExpanded) =>
+      _expanded[id] ?? initiallyExpanded;
+
+  void _toggleSection(String id, bool initiallyExpanded) {
+    setState(() {
+      _expanded[id] = !_sectionExpanded(id, initiallyExpanded);
+    });
+  }
 
   static const List<int> _swatches = <int>[
     0xFFFFFFFF,
@@ -4624,7 +4697,9 @@ class _PropertyPanel extends StatelessWidget {
     final isChart = controller.selectedChartId != null;
     final isIcon = controller.selectedIconId != null;
     return SizedBox(
-      width: fillWidth ? double.infinity : ((isChart || isIcon) ? 300 : 232),
+      width: widget.fillWidth
+          ? double.infinity
+          : ((isChart || isIcon) ? 300 : 232),
       child: ListView(
         key: const ValueKey('property-panel-list'),
         padding: const EdgeInsets.all(16),
@@ -4638,24 +4713,38 @@ class _PropertyPanel extends StatelessWidget {
           const SizedBox(height: 8),
           Wrap(
             children: [
-              _iconBtn(Icons.flip_to_front, EditorL10n.of(context).bringToFront,
-                  controller.bringSelectionToFront),
-              _iconBtn(Icons.flip_to_back, EditorL10n.of(context).sendToBack,
-                  controller.sendSelectionToBack),
-              _iconBtn(Icons.arrow_upward, EditorL10n.of(context).bringForwardShortcut,
-                  controller.bringSelectionForward),
-              _iconBtn(Icons.arrow_downward, EditorL10n.of(context).sendBackwardShortcut,
-                  controller.sendSelectionBackward),
+              _iconBtn(
+                Icons.flip_to_front,
+                EditorL10n.of(context).bringToFront,
+                controller.bringSelectionToFront,
+              ),
+              _iconBtn(
+                Icons.flip_to_back,
+                EditorL10n.of(context).sendToBack,
+                controller.sendSelectionToBack,
+              ),
+              _iconBtn(
+                Icons.arrow_upward,
+                EditorL10n.of(context).bringForwardShortcut,
+                controller.bringSelectionForward,
+              ),
+              _iconBtn(
+                Icons.arrow_downward,
+                EditorL10n.of(context).sendBackwardShortcut,
+                controller.sendSelectionBackward,
+              ),
               IconButton(
-                onPressed:
-                    controller.canGroup ? controller.groupSelection : null,
+                onPressed: controller.canGroup
+                    ? controller.groupSelection
+                    : null,
                 icon: const Icon(Icons.group_work_outlined),
                 tooltip: EditorL10n.of(context).groupShortcut,
                 visualDensity: VisualDensity.compact,
               ),
               IconButton(
-                onPressed:
-                    controller.canUngroup ? controller.ungroupSelection : null,
+                onPressed: controller.canUngroup
+                    ? controller.ungroupSelection
+                    : null,
                 icon: const Icon(Icons.call_split),
                 tooltip: EditorL10n.of(context).ungroupShortcut,
                 visualDensity: VisualDensity.compact,
@@ -4686,633 +4775,762 @@ class _PropertyPanel extends StatelessWidget {
             const SizedBox(height: 16),
             IconConfigPanel(controller: controller),
           ],
-          const SizedBox(height: 16),
-          _section(context, EditorL10n.of(context).panelArrange),
-          Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
+          const SizedBox(height: 8),
+          ..._foldSection(
+            id: 'arrange',
+            title: EditorL10n.of(context).panelArrange,
             children: [
-              if (!controller.selectionLocked) ...[
-                _iconBtn(Icons.flip, EditorL10n.of(context).flipHorizontal,
-                    controller.flipHorizontal),
-                Transform.rotate(
-                  angle: math.pi / 2,
-                  child: _iconBtn(
+              Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  if (!controller.selectionLocked) ...[
+                    _iconBtn(
                       Icons.flip,
-                      EditorL10n.of(context).flipVertical,
-                      controller.flipVertical),
-                ),
-                _iconBtn(Icons.rotate_left, EditorL10n.of(context).rotateLeft90,
-                    () => controller.rotateSelection90(clockwise: false)),
-                _iconBtn(
-                    Icons.rotate_right,
-                    EditorL10n.of(context).rotateRight90,
-                    () => controller.rotateSelection90()),
-              ],
-              _iconBtn(
-                controller.selectionLocked ? Icons.lock : Icons.lock_open,
-                controller.selectionLocked ? EditorL10n.of(context).unlockShortcut : EditorL10n.of(context).lockShortcut,
-                controller.toggleLock,
+                      EditorL10n.of(context).flipHorizontal,
+                      controller.flipHorizontal,
+                    ),
+                    Transform.rotate(
+                      angle: math.pi / 2,
+                      child: _iconBtn(
+                        Icons.flip,
+                        EditorL10n.of(context).flipVertical,
+                        controller.flipVertical,
+                      ),
+                    ),
+                    _iconBtn(
+                      Icons.rotate_left,
+                      EditorL10n.of(context).rotateLeft90,
+                      () => controller.rotateSelection90(clockwise: false),
+                    ),
+                    _iconBtn(
+                      Icons.rotate_right,
+                      EditorL10n.of(context).rotateRight90,
+                      () => controller.rotateSelection90(),
+                    ),
+                  ],
+                  _iconBtn(
+                    controller.selectionLocked ? Icons.lock : Icons.lock_open,
+                    controller.selectionLocked
+                        ? EditorL10n.of(context).unlockShortcut
+                        : EditorL10n.of(context).lockShortcut,
+                    controller.toggleLock,
+                  ),
+                  if (controller.canSwapSelection)
+                    _iconBtn(
+                      Icons.swap_horiz,
+                      EditorL10n.of(context).swapShapes,
+                      controller.swapSelectionPositions,
+                    ),
+                  if (controller.canCopySize)
+                    _iconBtn(
+                      Icons.content_copy,
+                      EditorL10n.of(context).copySize,
+                      controller.copySelectionSize,
+                    ),
+                  if (controller.canPasteSize)
+                    _iconBtn(
+                      Icons.content_paste,
+                      EditorL10n.of(context).pasteSize,
+                      controller.pasteSelectionSize,
+                    ),
+                  if (controller.canAutosizeSelection)
+                    _iconBtn(
+                      Icons.fit_screen,
+                      EditorL10n.of(context).autosizeShortcut,
+                      controller.autosizeSelection,
+                    ),
+                ],
               ),
-              if (controller.canSwapSelection)
-                _iconBtn(
-                  Icons.swap_horiz,
-                  EditorL10n.of(context).swapShapes,
-                  controller.swapSelectionPositions,
-                ),
-              if (controller.canCopySize)
-                _iconBtn(
-                  Icons.content_copy,
-                  EditorL10n.of(context).copySize,
-                  controller.copySelectionSize,
-                ),
-              if (controller.canPasteSize)
-                _iconBtn(
-                  Icons.content_paste,
-                  EditorL10n.of(context).pasteSize,
-                  controller.pasteSelectionSize,
-                ),
-              if (controller.canAutosizeSelection)
-                _iconBtn(
-                  Icons.fit_screen,
-                  EditorL10n.of(context).autosizeShortcut,
-                  controller.autosizeSelection,
-                ),
+              if (!controller.selectionLocked)
+                _arrangeFields(context, controller),
             ],
           ),
-          if (!controller.selectionLocked) _arrangeFields(context, controller),
-          const SizedBox(height: 16),
-          if (count >= 1) ...[
-            _section(
-              context,
-              count == 1
+          if (count >= 1)
+            ..._foldSection(
+              id: 'align',
+              title: count == 1
                   ? EditorL10n.of(context).panelAlignToPage
                   : EditorL10n.of(context).panelAlign,
-            ),
-            Wrap(
               children: [
-                _iconBtn(
-                    Icons.align_horizontal_left,
-                    count == 1
-                        ? EditorL10n.of(context).alignLeftPage
-                        : EditorL10n.of(context).alignLeft,
-                    controller.alignLeft),
-                _iconBtn(
-                    Icons.align_horizontal_center,
-                    count == 1
-                        ? EditorL10n.of(context).centerHorizontallyPage
-                        : EditorL10n.of(context).centerHorizontally,
-                    controller.alignCenterH),
-                _iconBtn(
-                    Icons.align_horizontal_right,
-                    count == 1
-                        ? EditorL10n.of(context).alignRightPage
-                        : EditorL10n.of(context).alignRight,
-                    controller.alignRight),
-                _iconBtn(
-                    Icons.align_vertical_top,
-                    count == 1
-                        ? EditorL10n.of(context).alignTopPage
-                        : EditorL10n.of(context).alignTop,
-                    controller.alignTop),
-                _iconBtn(
-                    Icons.align_vertical_center,
-                    count == 1
-                        ? EditorL10n.of(context).centerVerticallyPage
-                        : EditorL10n.of(context).centerVertically,
-                    controller.alignMiddle),
-                _iconBtn(
-                    Icons.align_vertical_bottom,
-                    count == 1
-                        ? EditorL10n.of(context).alignBottomPage
-                        : EditorL10n.of(context).alignBottom,
-                    controller.alignBottom),
-                if (controller.canDistributeSelection) ...[
-                  _iconBtn(
-                      Icons.horizontal_distribute,
-                      EditorL10n.of(context).distributeH,
-                      controller.distributeHorizontally),
-                  _iconBtn(
-                      Icons.vertical_distribute,
-                      EditorL10n.of(context).distributeV,
-                      controller.distributeVertically),
-                  _iconBtn(
-                      Icons.space_bar,
-                      EditorL10n.of(context).distributeSpacingH,
-                      controller.distributeHorizontalSpacing),
-                  _iconBtn(
-                      Icons.import_export,
-                      EditorL10n.of(context).distributeSpacingV,
-                      controller.distributeVerticalSpacing),
-                ],
-                if (count >= 2) ...[
-                  _iconBtn(Icons.width_normal, EditorL10n.of(context).sameWidth,
-                      controller.matchSelectionWidth),
-                  _iconBtn(Icons.height, EditorL10n.of(context).sameHeight,
-                      controller.matchSelectionHeight),
-                  _iconBtn(Icons.aspect_ratio, EditorL10n.of(context).sameSize,
-                      controller.matchSelectionSize),
-                ],
-                if (controller.canSnapSelectionToGrid)
-                  _iconBtn(
-                    Icons.grid_4x4,
-                    EditorL10n.of(context).snapSelectionToGrid,
-                    controller.snapSelectionToGrid,
-                  ),
-              ],
-            ),
-            const SizedBox(height: 16),
-          ],
-          if (!isChart) ...[
-          _fullWidthOutlineButton(
-            onPressed: count > 0
-                ? controller.setSelectionAsDefaultStyle
-                : null,
-            icon: Icons.format_paint,
-            label: EditorL10n.of(context).setAsDefaultStyle,
-          ),
-          const SizedBox(height: 4),
-          _fullWidthOutlineButton(
-            onPressed: controller.clearDefaultStyle,
-            icon: Icons.layers_clear_outlined,
-            label: EditorL10n.of(context).clearDefaultStyle,
-          ),
-          const SizedBox(height: 8),
-          _OpacitySlider(
-            key: const ValueKey('shape-opacity-slider'),
-            label: EditorL10n.of(context).shapeOpacity,
-            opacity: controller.selectedShapeOpacity,
-            onStart: controller.beginTransaction,
-            onChanged: (v) =>
-                controller.setShapeOpacity(v, transient: true),
-            onEnd: controller.commitTransaction,
-          ),
-          const SizedBox(height: 16),
-          _section(context, EditorL10n.of(context).panelFill),
-          _swatchRow(
-            onColor: (v) {
-              final fill = controller.selectedFill;
-              if (fill != null && fill.hasGradient) {
-                _retargetFillGradientStop0(controller, solid: VsdxColor(v));
-              } else {
-                controller.setFillColor(VsdxColor(v));
-              }
-            },
-            onNone: controller.setNoFill,
-          ),
-          const SizedBox(height: 6),
-          _themeSwatchRow(
-            context,
-            controller: controller,
-            onSlot: (slot) {
-              final fill = controller.selectedFill;
-              if (fill != null && fill.hasGradient) {
-                _retargetFillGradientStop0(controller, themeSlot: slot);
-              } else {
-                controller.setFillThemeSlot(slot);
-              }
-            },
-            selectedSlot: controller.selectedFill?.hasGradient == true
-                ? controller.selectedFill?.gradient?.stops.first.themeColorIndex
-                : (controller.selectedFill?.foreground == null
-                    ? controller.selectedFill?.themeForegroundIndex
-                    : null),
-          ),
-          if (controller.canSetSketchFillStyle)
-            _sketchFillControls(context, controller)
-          else
-            _fillPatternControls(context, controller),
-          if ((controller.selectedFill?.pattern ?? 1) > 1) ...[
-            const SizedBox(height: 6),
-            Text(
-              EditorL10n.of(context).background,
-              style: Theme.of(context).textTheme.labelSmall,
-            ),
-            const SizedBox(height: 4),
-            _swatchRow(
-              onColor: (v) => controller.setFillBackground(VsdxColor(v)),
-              onNone: () => controller.setFillBackground(
-                const VsdxColor(0xFFFFFFFF),
-              ),
-            ),
-            const SizedBox(height: 6),
-            _themeSwatchRow(
-              context,
-              controller: controller,
-              onSlot: controller.setFillBackgroundThemeSlot,
-              selectedSlot: controller.selectedFill?.background == null
-                  ? controller.selectedFill?.themeBackgroundIndex
-                  : null,
-            ),
-          ],
-          _OpacitySlider(
-            label: EditorL10n.of(context).opacity,
-            opacity: 1 - (controller.selectedFill?.foregroundTransparency ?? 0),
-            onStart: controller.beginTransaction,
-            onChanged: (v) => controller.setFillOpacity(v, transient: true),
-            onEnd: controller.commitTransaction,
-          ),
-          if (!controller.selectedUsesSketchPatternFill)
-            _fillGradientControls(context, controller),
-          _roundedControl(context, controller),
-          const SizedBox(height: 16),
-          _section(context, EditorL10n.of(context).panelLine),
-          _swatchRow(
-            onColor: (v) {
-              final line = controller.selectedLine;
-              if (line != null && line.hasGradient) {
-                _retargetLineGradientStop0(controller, solid: VsdxColor(v));
-              } else {
-                controller.setLineColor(VsdxColor(v));
-              }
-            },
-            onNone: controller.setNoLine,
-          ),
-          const SizedBox(height: 6),
-          _themeSwatchRow(
-            context,
-            controller: controller,
-            onSlot: (slot) {
-              final line = controller.selectedLine;
-              if (line != null && line.hasGradient) {
-                _retargetLineGradientStop0(controller, themeSlot: slot);
-              } else {
-                controller.setLineThemeSlot(slot);
-              }
-            },
-            selectedSlot: controller.selectedLine?.hasGradient == true
-                ? controller.selectedLine?.gradient?.stops.first.themeColorIndex
-                : (controller.selectedLine?.color == null
-                    ? controller.selectedLine?.themeColorIndex
-                    : null),
-          ),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 6,
-            children: [
-              for (final pt in <double>[0.5, 1, 2, 3])
-                ActionChip(
-                  label: Text('${pt == pt.roundToDouble() ? pt.toInt() : pt}pt'),
-                  onPressed: () => controller.setLineWeight(pt / 72.0),
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          _dashDropdown(context, controller),
-          const SizedBox(height: 6),
-          _dashPatternControls(context, controller),
-          const SizedBox(height: 8),
-          _compoundTypeRow(context, controller),
-          const SizedBox(height: 8),
-          Text(
-            EditorL10n.of(context).lineCap,
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 4,
-            children: [
-              for (final cap in LineCap.values)
-                ChoiceChip(
-                  label: Text(switch (cap) {
-                    LineCap.extended => EditorL10n.of(context).lineCapFlat,
-                    LineCap.round => EditorL10n.of(context).lineCapRound,
-                    LineCap.square => EditorL10n.of(context).lineCapSquare,
-                  }),
-                  selected: controller.selectedLine?.cap == cap,
-                  onSelected: (_) => controller.setLineCap(cap),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Text(
-            EditorL10n.of(context).lineJoin,
-            style: Theme.of(context).textTheme.labelSmall,
-          ),
-          const SizedBox(height: 4),
-          Wrap(
-            spacing: 4,
-            runSpacing: 4,
-            children: [
-              for (final join in VsdxLineJoin.values)
-                ChoiceChip(
-                  label: Text(switch (join) {
-                    VsdxLineJoin.miter =>
-                      EditorL10n.of(context).lineJoinMiter,
-                    VsdxLineJoin.arcs =>
-                      EditorL10n.of(context).lineJoinArcs,
-                    VsdxLineJoin.bevel =>
-                      EditorL10n.of(context).lineJoinBevel,
-                    VsdxLineJoin.miterClip =>
-                      EditorL10n.of(context).lineJoinMiterClip,
-                    VsdxLineJoin.round =>
-                      EditorL10n.of(context).lineJoinRound,
-                  }),
-                  selected: controller.selectedLineJoin == join,
-                  onSelected: (_) => controller.setLineJoin(join),
-                  visualDensity: VisualDensity.compact,
-                ),
-            ],
-          ),
-          if (controller.selectedLineJoin == VsdxLineJoin.miter ||
-              controller.selectedLineJoin == VsdxLineJoin.miterClip)
-            _RangeSlider(
-              label: EditorL10n.of(context).miterLimit,
-              value: controller.selectedLineMiterLimit,
-              min: 1,
-              max: 100,
-              format: (v) => '${v.round()}',
-              onStart: controller.beginTransaction,
-              onChanged: (v) => controller.setLineMiterLimit(
-                v.roundToDouble(),
-                transient: true,
-              ),
-              onEnd: controller.commitTransaction,
-            ),
-          const SizedBox(height: 8),
-          _arrowPickers(context, controller),
-          _OpacitySlider(
-            label: EditorL10n.of(context).opacity,
-            opacity: 1 - (controller.selectedLine?.transparency ?? 0),
-            onStart: controller.beginTransaction,
-            onChanged: (v) => controller.setLineOpacity(v, transient: true),
-            onEnd: controller.commitTransaction,
-          ),
-          _lineGradientControls(context, controller),
-          if (controller.hasConnectorSelected) ...[
-            const SizedBox(height: 16),
-            _section(context, EditorL10n.of(context).panelConnector),
-            if (controller.canReverseConnector) ...[
-              _fullWidthOutlineButton(
-                onPressed: controller.reverseSelectedConnectors,
-                icon: Icons.swap_horiz,
-                label: EditorL10n.of(context).reverseConnector,
-              ),
-              const SizedBox(height: 8),
-            ],
-            Wrap(
-              spacing: 8,
-              children: [
-                for (final s in ConnectorRouteStyle.values)
-                  ChoiceChip(
-                    label: Text(switch (s) {
-                      ConnectorRouteStyle.straight =>
-                        EditorL10n.of(context).straight,
-                      ConnectorRouteStyle.orthogonal =>
-                        EditorL10n.of(context).orthogonal,
-                      ConnectorRouteStyle.curved =>
-                        EditorL10n.of(context).curved,
-                    }),
-                    selected: controller.selectedConnectorRouteStyle == s,
-                    onSelected: (_) => controller.setConnectorRouteStyle(s),
-                  ),
-              ],
-            ),
-            _switchRow(
-              label: EditorL10n.of(context).rounded,
-              value: controller.selectedConnectorRounded,
-              // Rounded corners are moot for an already-smooth curved edge.
-              onChanged: controller.selectedConnectorRouteStyle ==
-                      ConnectorRouteStyle.curved
-                  ? null
-                  : controller.setConnectorRounded,
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(EditorL10n.of(context).connectorLineJumps),
-                ),
-                DropdownButton<ConnectorLineJumpStyle>(
-                  value: controller.selectedConnectorLineJumpStyle,
-                  isDense: true,
-                  items: [
-                    for (final style in ConnectorLineJumpStyle.values)
-                      DropdownMenuItem<ConnectorLineJumpStyle>(
-                        value: style,
-                        child: Text(switch (style) {
-                          ConnectorLineJumpStyle.none =>
-                            EditorL10n.of(context).none,
-                          ConnectorLineJumpStyle.arc =>
-                            EditorL10n.of(context).jumpArc,
-                          ConnectorLineJumpStyle.gap =>
-                            EditorL10n.of(context).jumpGap,
-                          ConnectorLineJumpStyle.sharp =>
-                            EditorL10n.of(context).jumpSharp,
-                          ConnectorLineJumpStyle.line =>
-                            EditorL10n.of(context).jumpLine,
-                        }),
+                Wrap(
+                  children: [
+                    _iconBtn(
+                      Icons.align_horizontal_left,
+                      count == 1
+                          ? EditorL10n.of(context).alignLeftPage
+                          : EditorL10n.of(context).alignLeft,
+                      controller.alignLeft,
+                    ),
+                    _iconBtn(
+                      Icons.align_horizontal_center,
+                      count == 1
+                          ? EditorL10n.of(context).centerHorizontallyPage
+                          : EditorL10n.of(context).centerHorizontally,
+                      controller.alignCenterH,
+                    ),
+                    _iconBtn(
+                      Icons.align_horizontal_right,
+                      count == 1
+                          ? EditorL10n.of(context).alignRightPage
+                          : EditorL10n.of(context).alignRight,
+                      controller.alignRight,
+                    ),
+                    _iconBtn(
+                      Icons.align_vertical_top,
+                      count == 1
+                          ? EditorL10n.of(context).alignTopPage
+                          : EditorL10n.of(context).alignTop,
+                      controller.alignTop,
+                    ),
+                    _iconBtn(
+                      Icons.align_vertical_center,
+                      count == 1
+                          ? EditorL10n.of(context).centerVerticallyPage
+                          : EditorL10n.of(context).centerVertically,
+                      controller.alignMiddle,
+                    ),
+                    _iconBtn(
+                      Icons.align_vertical_bottom,
+                      count == 1
+                          ? EditorL10n.of(context).alignBottomPage
+                          : EditorL10n.of(context).alignBottom,
+                      controller.alignBottom,
+                    ),
+                    if (controller.canDistributeSelection) ...[
+                      _iconBtn(
+                        Icons.horizontal_distribute,
+                        EditorL10n.of(context).distributeH,
+                        controller.distributeHorizontally,
+                      ),
+                      _iconBtn(
+                        Icons.vertical_distribute,
+                        EditorL10n.of(context).distributeV,
+                        controller.distributeVertically,
+                      ),
+                      _iconBtn(
+                        Icons.space_bar,
+                        EditorL10n.of(context).distributeSpacingH,
+                        controller.distributeHorizontalSpacing,
+                      ),
+                      _iconBtn(
+                        Icons.import_export,
+                        EditorL10n.of(context).distributeSpacingV,
+                        controller.distributeVerticalSpacing,
+                      ),
+                    ],
+                    if (count >= 2) ...[
+                      _iconBtn(
+                        Icons.width_normal,
+                        EditorL10n.of(context).sameWidth,
+                        controller.matchSelectionWidth,
+                      ),
+                      _iconBtn(
+                        Icons.height,
+                        EditorL10n.of(context).sameHeight,
+                        controller.matchSelectionHeight,
+                      ),
+                      _iconBtn(
+                        Icons.aspect_ratio,
+                        EditorL10n.of(context).sameSize,
+                        controller.matchSelectionSize,
+                      ),
+                    ],
+                    if (controller.canSnapSelectionToGrid)
+                      _iconBtn(
+                        Icons.grid_4x4,
+                        EditorL10n.of(context).snapSelectionToGrid,
+                        controller.snapSelectionToGrid,
                       ),
                   ],
-                  onChanged: (style) {
-                    if (style != null) {
-                      controller.setConnectorLineJumpStyle(style);
-                    }
-                  },
                 ),
               ],
             ),
-            if (controller.selectedConnectorLineJumpStyle !=
-                ConnectorLineJumpStyle.none)
-              _RangeSlider(
-                label: EditorL10n.of(context).connectorLineJumpSize,
-                value: controller.selectedConnectorLineJumpSize,
-                min: 0.02,
-                max: 0.25,
-                format: (v) => '${(v * 72).round()} pt',
-                onStart: controller.beginTransaction,
-                onChanged: (v) => controller.setConnectorLineJumpSize(
-                  v,
-                  transient: true,
-                ),
-                onEnd: controller.commitTransaction,
-              ),
-          ],
-          // Text sits with Style (fill/line) like draw.io's Format → Text tab —
-          // not buried under shadow/glow. Shown for any selection; empty runs
-          // still expose defaults and seed Character/Paragraph on first edit.
-          if (controller.selectedCharStyle != null) ...[
-            const SizedBox(height: 16),
-            _section(context, EditorL10n.of(context).panelText),
-            _textControls(context),
-          ],
-          ], // !isChart
-          if (controller.canSetSketchEffect) ...[
-            const SizedBox(height: 8),
-            _section(context, EditorL10n.of(context).sketch),
-            _switchRow(
-              key: const ValueKey('sketch-effect-switch'),
-              label: EditorL10n.of(context).enabled,
-              value: controller.selectedHasSketchEffect,
-              onChanged: controller.setSketchEffect,
+          if (!isChart) ...[
+            _fullWidthOutlineButton(
+              onPressed: count > 0
+                  ? controller.setSelectionAsDefaultStyle
+                  : null,
+              icon: Icons.format_paint,
+              label: EditorL10n.of(context).setAsDefaultStyle,
             ),
-            if (controller.selectedHasSketchEffect)
-              _RangeSlider(
-                key: const ValueKey('sketch-jiggle-slider'),
-                label: EditorL10n.of(context).jiggle,
-                value: controller.selectedSketchJiggle,
-                min: 0.5,
-                max: 5,
-                format: (value) => value.toStringAsFixed(1),
-                onStart: controller.beginTransaction,
-                onChanged: (value) =>
-                    controller.setSketchJiggle(value, transient: true),
-                onEnd: controller.commitTransaction,
-              ),
-          ],
-          if (controller.canSetGlassEffect) ...[
-            const SizedBox(height: 8),
-            _section(context, EditorL10n.of(context).glass),
-            _switchRow(
-              label: EditorL10n.of(context).enabled,
-              value: controller.selectedHasGlassEffect,
-              onChanged: controller.setGlassEffect,
+            const SizedBox(height: 4),
+            _fullWidthOutlineButton(
+              onPressed: controller.clearDefaultStyle,
+              icon: Icons.layers_clear_outlined,
+              label: EditorL10n.of(context).clearDefaultStyle,
             ),
-          ],
-          if (controller.canSetFlowAnimation) ...[
             const SizedBox(height: 8),
-            _section(context, EditorL10n.of(context).flowAnimation),
-            _switchRow(
-              label: EditorL10n.of(context).enabled,
-              value: controller.selectedHasFlowAnimation,
-              onChanged: controller.setFlowAnimation,
-            ),
-            if (controller.selectedHasFlowAnimation) ...[
-              _RangeSlider(
-                label: EditorL10n.of(context).flowDuration,
-                value: controller.selectedFlowAnimationDurationMs.toDouble(),
-                min: 100,
-                max: 3000,
-                format: (value) => '${value.round()} ms',
-                onStart: controller.beginTransaction,
-                onChanged: (value) => controller.setFlowAnimationDurationMs(
-                  value,
-                  transient: true,
-                ),
-                onEnd: controller.commitTransaction,
-              ),
-              Row(
-                children: [
-                  Expanded(child: Text(EditorL10n.of(context).flowTiming)),
-                  Expanded(
-                    child: DropdownButton<VsdxFlowAnimationTiming>(
-                      value: controller.selectedFlowAnimationTiming,
-                      isDense: true,
-                      isExpanded: true,
-                      items: [
-                        for (final timing in VsdxFlowAnimationTiming.values)
-                          DropdownMenuItem(
-                            value: timing,
-                            child: Text(
-                              timing.cssValue,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          controller.setFlowAnimationTiming(value);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                children: [
-                  Expanded(child: Text(EditorL10n.of(context).flowDirection)),
-                  Expanded(
-                    child: DropdownButton<VsdxFlowAnimationDirection>(
-                      value: controller.selectedFlowAnimationDirection,
-                      isDense: true,
-                      isExpanded: true,
-                      items: [
-                        for (final direction
-                            in VsdxFlowAnimationDirection.values)
-                          DropdownMenuItem(
-                            value: direction,
-                            child: Text(
-                              switch (direction) {
-                                VsdxFlowAnimationDirection.normal =>
-                                  EditorL10n.of(context).flowNormal,
-                                VsdxFlowAnimationDirection.reverse =>
-                                  EditorL10n.of(context).flowReverse,
-                                VsdxFlowAnimationDirection.alternate =>
-                                  EditorL10n.of(context).alternate,
-                                VsdxFlowAnimationDirection.alternateReverse =>
-                                  EditorL10n.of(context).alternateReverse,
-                              },
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                      ],
-                      onChanged: (value) {
-                        if (value != null) {
-                          controller.setFlowAnimationDirection(value);
-                        }
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ],
-          const SizedBox(height: 8),
-          _section(context, EditorL10n.of(context).panelShadow),
-          _switchRow(
-            label: EditorL10n.of(context).enabled,
-            value: controller.selectedHasShadow,
-            onChanged: controller.setShadow,
-          ),
-          if (controller.selectedHasShadow)
-            _shadowDetailControls(context, controller),
-          const SizedBox(height: 8),
-          _section(context, EditorL10n.of(context).panelGlow),
-          _switchRow(
-            label: EditorL10n.of(context).enabled,
-            value: controller.selectedHasGlow,
-            onChanged: controller.setGlow,
-          ),
-          if (controller.selectedHasGlow)
-            _glowDetailControls(context, controller),
-          const SizedBox(height: 8),
-          _section(context, EditorL10n.of(context).panelReflection),
-          _switchRow(
-            label: EditorL10n.of(context).enabled,
-            value: controller.selectedHasReflection,
-            onChanged: controller.setReflection,
-          ),
-          if (controller.selectedHasReflection)
-            _reflectionDetailControls(context, controller),
-          const SizedBox(height: 8),
-          _section(context, EditorL10n.of(context).panelSoftEdges),
-          _switchRow(
-            label: EditorL10n.of(context).enabled,
-            value: controller.selectedHasSoftEdges,
-            onChanged: controller.setSoftEdges,
-          ),
-          if (controller.selectedHasSoftEdges)
-            _RangeSlider(
-              label: EditorL10n.of(context).size,
-              value: controller.selectedSoftEdgesInches.clamp(0.01, 0.25),
-              min: 0.01,
-              max: 0.25,
-              format: (v) => '${(v * 100).round() / 100}"',
+            _OpacitySlider(
+              key: const ValueKey('shape-opacity-slider'),
+              label: EditorL10n.of(context).shapeOpacity,
+              opacity: controller.selectedShapeOpacity,
               onStart: controller.beginTransaction,
-              onChanged: (v) =>
-                  controller.updateSoftEdges(v, transient: true),
+              onChanged: (v) => controller.setShapeOpacity(v, transient: true),
               onEnd: controller.commitTransaction,
             ),
-          if (controller.canReplaceSelectedImage) ...[
-            const SizedBox(height: 16),
-            _imageSection(context),
-          ],
+            const SizedBox(height: 8),
+            ..._foldSection(
+              id: 'fill',
+              title: EditorL10n.of(context).panelFill,
+              children: [
+                _swatchRow(
+                  onColor: (v) {
+                    final fill = controller.selectedFill;
+                    if (fill != null && fill.hasGradient) {
+                      _retargetFillGradientStop0(
+                        controller,
+                        solid: VsdxColor(v),
+                      );
+                    } else {
+                      controller.setFillColor(VsdxColor(v));
+                    }
+                  },
+                  onNone: controller.setNoFill,
+                ),
+                const SizedBox(height: 6),
+                _themeSwatchRow(
+                  context,
+                  controller: controller,
+                  onSlot: (slot) {
+                    final fill = controller.selectedFill;
+                    if (fill != null && fill.hasGradient) {
+                      _retargetFillGradientStop0(controller, themeSlot: slot);
+                    } else {
+                      controller.setFillThemeSlot(slot);
+                    }
+                  },
+                  selectedSlot: controller.selectedFill?.hasGradient == true
+                      ? controller
+                            .selectedFill
+                            ?.gradient
+                            ?.stops
+                            .first
+                            .themeColorIndex
+                      : (controller.selectedFill?.foreground == null
+                            ? controller.selectedFill?.themeForegroundIndex
+                            : null),
+                ),
+                if (controller.canSetSketchFillStyle)
+                  _sketchFillControls(context, controller)
+                else
+                  _fillPatternControls(context, controller),
+                if ((controller.selectedFill?.pattern ?? 1) > 1) ...[
+                  const SizedBox(height: 6),
+                  Text(
+                    EditorL10n.of(context).background,
+                    style: Theme.of(context).textTheme.labelSmall,
+                  ),
+                  const SizedBox(height: 4),
+                  _swatchRow(
+                    onColor: (v) => controller.setFillBackground(VsdxColor(v)),
+                    onNone: () => controller.setFillBackground(
+                      const VsdxColor(0xFFFFFFFF),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  _themeSwatchRow(
+                    context,
+                    controller: controller,
+                    onSlot: controller.setFillBackgroundThemeSlot,
+                    selectedSlot: controller.selectedFill?.background == null
+                        ? controller.selectedFill?.themeBackgroundIndex
+                        : null,
+                  ),
+                ],
+                _OpacitySlider(
+                  label: EditorL10n.of(context).opacity,
+                  opacity:
+                      1 -
+                      (controller.selectedFill?.foregroundTransparency ?? 0),
+                  onStart: controller.beginTransaction,
+                  onChanged: (v) =>
+                      controller.setFillOpacity(v, transient: true),
+                  onEnd: controller.commitTransaction,
+                ),
+                if (!controller.selectedUsesSketchPatternFill)
+                  _fillGradientControls(context, controller),
+                _roundedControl(context, controller),
+              ],
+            ),
+            ..._foldSection(
+              id: 'line',
+              title: EditorL10n.of(context).panelLine,
+              children: [
+                _swatchRow(
+                  onColor: (v) {
+                    final line = controller.selectedLine;
+                    if (line != null && line.hasGradient) {
+                      _retargetLineGradientStop0(
+                        controller,
+                        solid: VsdxColor(v),
+                      );
+                    } else {
+                      controller.setLineColor(VsdxColor(v));
+                    }
+                  },
+                  onNone: controller.setNoLine,
+                ),
+                const SizedBox(height: 6),
+                _themeSwatchRow(
+                  context,
+                  controller: controller,
+                  onSlot: (slot) {
+                    final line = controller.selectedLine;
+                    if (line != null && line.hasGradient) {
+                      _retargetLineGradientStop0(controller, themeSlot: slot);
+                    } else {
+                      controller.setLineThemeSlot(slot);
+                    }
+                  },
+                  selectedSlot: controller.selectedLine?.hasGradient == true
+                      ? controller
+                            .selectedLine
+                            ?.gradient
+                            ?.stops
+                            .first
+                            .themeColorIndex
+                      : (controller.selectedLine?.color == null
+                            ? controller.selectedLine?.themeColorIndex
+                            : null),
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  children: [
+                    for (final pt in <double>[0.5, 1, 2, 3])
+                      ActionChip(
+                        label: Text(
+                          '${pt == pt.roundToDouble() ? pt.toInt() : pt}pt',
+                        ),
+                        onPressed: () => controller.setLineWeight(pt / 72.0),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                _dashDropdown(context, controller),
+                const SizedBox(height: 6),
+                _dashPatternControls(context, controller),
+                const SizedBox(height: 8),
+                _compoundTypeRow(context, controller),
+                const SizedBox(height: 8),
+                Text(
+                  EditorL10n.of(context).lineCap,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 4,
+                  children: [
+                    for (final cap in LineCap.values)
+                      ChoiceChip(
+                        label: Text(switch (cap) {
+                          LineCap.extended => EditorL10n.of(
+                            context,
+                          ).lineCapFlat,
+                          LineCap.round => EditorL10n.of(context).lineCapRound,
+                          LineCap.square => EditorL10n.of(
+                            context,
+                          ).lineCapSquare,
+                        }),
+                        selected: controller.selectedLine?.cap == cap,
+                        onSelected: (_) => controller.setLineCap(cap),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  EditorL10n.of(context).lineJoin,
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+                const SizedBox(height: 4),
+                Wrap(
+                  spacing: 4,
+                  runSpacing: 4,
+                  children: [
+                    for (final join in VsdxLineJoin.values)
+                      ChoiceChip(
+                        label: Text(switch (join) {
+                          VsdxLineJoin.miter => EditorL10n.of(
+                            context,
+                          ).lineJoinMiter,
+                          VsdxLineJoin.arcs => EditorL10n.of(
+                            context,
+                          ).lineJoinArcs,
+                          VsdxLineJoin.bevel => EditorL10n.of(
+                            context,
+                          ).lineJoinBevel,
+                          VsdxLineJoin.miterClip => EditorL10n.of(
+                            context,
+                          ).lineJoinMiterClip,
+                          VsdxLineJoin.round => EditorL10n.of(
+                            context,
+                          ).lineJoinRound,
+                        }),
+                        selected: controller.selectedLineJoin == join,
+                        onSelected: (_) => controller.setLineJoin(join),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                  ],
+                ),
+                if (controller.selectedLineJoin == VsdxLineJoin.miter ||
+                    controller.selectedLineJoin == VsdxLineJoin.miterClip)
+                  _RangeSlider(
+                    label: EditorL10n.of(context).miterLimit,
+                    value: controller.selectedLineMiterLimit,
+                    min: 1,
+                    max: 100,
+                    format: (v) => '${v.round()}',
+                    onStart: controller.beginTransaction,
+                    onChanged: (v) => controller.setLineMiterLimit(
+                      v.roundToDouble(),
+                      transient: true,
+                    ),
+                    onEnd: controller.commitTransaction,
+                  ),
+                const SizedBox(height: 8),
+                _arrowPickers(context, controller),
+                _OpacitySlider(
+                  label: EditorL10n.of(context).opacity,
+                  opacity: 1 - (controller.selectedLine?.transparency ?? 0),
+                  onStart: controller.beginTransaction,
+                  onChanged: (v) =>
+                      controller.setLineOpacity(v, transient: true),
+                  onEnd: controller.commitTransaction,
+                ),
+                _lineGradientControls(context, controller),
+              ],
+            ),
+            if (controller.hasConnectorSelected)
+              ..._foldSection(
+                id: 'connector',
+                title: EditorL10n.of(context).panelConnector,
+                children: [
+                  if (controller.canReverseConnector) ...[
+                    _fullWidthOutlineButton(
+                      onPressed: controller.reverseSelectedConnectors,
+                      icon: Icons.swap_horiz,
+                      label: EditorL10n.of(context).reverseConnector,
+                    ),
+                    const SizedBox(height: 8),
+                  ],
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      for (final s in ConnectorRouteStyle.values)
+                        ChoiceChip(
+                          label: Text(switch (s) {
+                            ConnectorRouteStyle.straight => EditorL10n.of(
+                              context,
+                            ).straight,
+                            ConnectorRouteStyle.orthogonal => EditorL10n.of(
+                              context,
+                            ).orthogonal,
+                            ConnectorRouteStyle.curved => EditorL10n.of(
+                              context,
+                            ).curved,
+                          }),
+                          selected: controller.selectedConnectorRouteStyle == s,
+                          onSelected: (_) =>
+                              controller.setConnectorRouteStyle(s),
+                        ),
+                    ],
+                  ),
+                  _switchRow(
+                    label: EditorL10n.of(context).rounded,
+                    value: controller.selectedConnectorRounded,
+                    // Rounded corners are moot for an already-smooth curved edge.
+                    onChanged:
+                        controller.selectedConnectorRouteStyle ==
+                            ConnectorRouteStyle.curved
+                        ? null
+                        : controller.setConnectorRounded,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(EditorL10n.of(context).connectorLineJumps),
+                      ),
+                      DropdownButton<ConnectorLineJumpStyle>(
+                        value: controller.selectedConnectorLineJumpStyle,
+                        isDense: true,
+                        items: [
+                          for (final style in ConnectorLineJumpStyle.values)
+                            DropdownMenuItem<ConnectorLineJumpStyle>(
+                              value: style,
+                              child: Text(switch (style) {
+                                ConnectorLineJumpStyle.none => EditorL10n.of(
+                                  context,
+                                ).none,
+                                ConnectorLineJumpStyle.arc => EditorL10n.of(
+                                  context,
+                                ).jumpArc,
+                                ConnectorLineJumpStyle.gap => EditorL10n.of(
+                                  context,
+                                ).jumpGap,
+                                ConnectorLineJumpStyle.sharp => EditorL10n.of(
+                                  context,
+                                ).jumpSharp,
+                                ConnectorLineJumpStyle.line => EditorL10n.of(
+                                  context,
+                                ).jumpLine,
+                              }),
+                            ),
+                        ],
+                        onChanged: (style) {
+                          if (style != null) {
+                            controller.setConnectorLineJumpStyle(style);
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                  if (controller.selectedConnectorLineJumpStyle !=
+                      ConnectorLineJumpStyle.none)
+                    _RangeSlider(
+                      label: EditorL10n.of(context).connectorLineJumpSize,
+                      value: controller.selectedConnectorLineJumpSize,
+                      min: 0.02,
+                      max: 0.25,
+                      format: (v) => '${(v * 72).round()} pt',
+                      onStart: controller.beginTransaction,
+                      onChanged: (v) => controller.setConnectorLineJumpSize(
+                        v,
+                        transient: true,
+                      ),
+                      onEnd: controller.commitTransaction,
+                    ),
+                ],
+              ),
+            // Text sits with Style (fill/line) like draw.io's Format → Text tab —
+            // not buried under shadow/glow. Shown for any selection; empty runs
+            // still expose defaults and seed Character/Paragraph on first edit.
+            if (controller.selectedCharStyle != null)
+              ..._foldSection(
+                id: 'text',
+                title: EditorL10n.of(context).panelText,
+                children: [_textControls(context)],
+              ),
+          ], // !isChart
+          if (controller.canSetSketchEffect)
+            ..._foldSection(
+              id: 'sketch',
+              title: EditorL10n.of(context).sketch,
+              initiallyExpanded: false,
+              children: [
+                _switchRow(
+                  key: const ValueKey('sketch-effect-switch'),
+                  label: EditorL10n.of(context).enabled,
+                  value: controller.selectedHasSketchEffect,
+                  onChanged: controller.setSketchEffect,
+                ),
+                if (controller.selectedHasSketchEffect)
+                  _RangeSlider(
+                    key: const ValueKey('sketch-jiggle-slider'),
+                    label: EditorL10n.of(context).jiggle,
+                    value: controller.selectedSketchJiggle,
+                    min: 0.5,
+                    max: 5,
+                    format: (value) => value.toStringAsFixed(1),
+                    onStart: controller.beginTransaction,
+                    onChanged: (value) =>
+                        controller.setSketchJiggle(value, transient: true),
+                    onEnd: controller.commitTransaction,
+                  ),
+              ],
+            ),
+          if (controller.canSetGlassEffect)
+            ..._foldSection(
+              id: 'glass',
+              title: EditorL10n.of(context).glass,
+              initiallyExpanded: false,
+              children: [
+                _switchRow(
+                  label: EditorL10n.of(context).enabled,
+                  value: controller.selectedHasGlassEffect,
+                  onChanged: controller.setGlassEffect,
+                ),
+              ],
+            ),
+          if (controller.canSetFlowAnimation)
+            ..._foldSection(
+              id: 'flowAnimation',
+              title: EditorL10n.of(context).flowAnimation,
+              initiallyExpanded: false,
+              children: [
+                _switchRow(
+                  label: EditorL10n.of(context).enabled,
+                  value: controller.selectedHasFlowAnimation,
+                  onChanged: controller.setFlowAnimation,
+                ),
+                if (controller.selectedHasFlowAnimation) ...[
+                  _RangeSlider(
+                    label: EditorL10n.of(context).flowDuration,
+                    value: controller.selectedFlowAnimationDurationMs
+                        .toDouble(),
+                    min: 100,
+                    max: 3000,
+                    format: (value) => '${value.round()} ms',
+                    onStart: controller.beginTransaction,
+                    onChanged: (value) => controller.setFlowAnimationDurationMs(
+                      value,
+                      transient: true,
+                    ),
+                    onEnd: controller.commitTransaction,
+                  ),
+                  Row(
+                    children: [
+                      Expanded(child: Text(EditorL10n.of(context).flowTiming)),
+                      Expanded(
+                        child: DropdownButton<VsdxFlowAnimationTiming>(
+                          value: controller.selectedFlowAnimationTiming,
+                          isDense: true,
+                          isExpanded: true,
+                          items: [
+                            for (final timing in VsdxFlowAnimationTiming.values)
+                              DropdownMenuItem(
+                                value: timing,
+                                child: Text(
+                                  timing.cssValue,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              controller.setFlowAnimationTiming(value);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(EditorL10n.of(context).flowDirection),
+                      ),
+                      Expanded(
+                        child: DropdownButton<VsdxFlowAnimationDirection>(
+                          value: controller.selectedFlowAnimationDirection,
+                          isDense: true,
+                          isExpanded: true,
+                          items: [
+                            for (final direction
+                                in VsdxFlowAnimationDirection.values)
+                              DropdownMenuItem(
+                                value: direction,
+                                child: Text(switch (direction) {
+                                  VsdxFlowAnimationDirection.normal =>
+                                    EditorL10n.of(context).flowNormal,
+                                  VsdxFlowAnimationDirection.reverse =>
+                                    EditorL10n.of(context).flowReverse,
+                                  VsdxFlowAnimationDirection.alternate =>
+                                    EditorL10n.of(context).alternate,
+                                  VsdxFlowAnimationDirection.alternateReverse =>
+                                    EditorL10n.of(context).alternateReverse,
+                                }, overflow: TextOverflow.ellipsis),
+                              ),
+                          ],
+                          onChanged: (value) {
+                            if (value != null) {
+                              controller.setFlowAnimationDirection(value);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          ..._foldSection(
+            id: 'shadow',
+            title: EditorL10n.of(context).panelShadow,
+            initiallyExpanded: false,
+            children: [
+              _switchRow(
+                label: EditorL10n.of(context).enabled,
+                value: controller.selectedHasShadow,
+                onChanged: controller.setShadow,
+              ),
+              if (controller.selectedHasShadow)
+                _shadowDetailControls(context, controller),
+            ],
+          ),
+          ..._foldSection(
+            id: 'glow',
+            title: EditorL10n.of(context).panelGlow,
+            initiallyExpanded: false,
+            children: [
+              _switchRow(
+                label: EditorL10n.of(context).enabled,
+                value: controller.selectedHasGlow,
+                onChanged: controller.setGlow,
+              ),
+              if (controller.selectedHasGlow)
+                _glowDetailControls(context, controller),
+            ],
+          ),
+          ..._foldSection(
+            id: 'reflection',
+            title: EditorL10n.of(context).panelReflection,
+            initiallyExpanded: false,
+            children: [
+              _switchRow(
+                label: EditorL10n.of(context).enabled,
+                value: controller.selectedHasReflection,
+                onChanged: controller.setReflection,
+              ),
+              if (controller.selectedHasReflection)
+                _reflectionDetailControls(context, controller),
+            ],
+          ),
+          ..._foldSection(
+            id: 'softEdges',
+            title: EditorL10n.of(context).panelSoftEdges,
+            initiallyExpanded: false,
+            children: [
+              _switchRow(
+                label: EditorL10n.of(context).enabled,
+                value: controller.selectedHasSoftEdges,
+                onChanged: controller.setSoftEdges,
+              ),
+              if (controller.selectedHasSoftEdges)
+                _RangeSlider(
+                  label: EditorL10n.of(context).size,
+                  value: controller.selectedSoftEdgesInches.clamp(0.01, 0.25),
+                  min: 0.01,
+                  max: 0.25,
+                  format: (v) => '${(v * 100).round() / 100}"',
+                  onStart: controller.beginTransaction,
+                  onChanged: (v) =>
+                      controller.updateSoftEdges(v, transient: true),
+                  onEnd: controller.commitTransaction,
+                ),
+            ],
+          ),
+          if (controller.canReplaceSelectedImage)
+            ..._foldSection(
+              id: 'image',
+              title: EditorL10n.of(context).panelImage,
+              children: [_imageSection(context)],
+            ),
           if (controller.singleSelectedId != null) ...[
-            const SizedBox(height: 16),
-            _dataSection(context),
-            const SizedBox(height: 16),
-            _linkSection(context),
+            ..._foldSection(
+              id: 'data',
+              title: EditorL10n.of(context).panelData,
+              initiallyExpanded: false,
+              children: [_dataSection(context)],
+            ),
+            ..._foldSection(
+              id: 'link',
+              title: EditorL10n.of(context).panelLink,
+              initiallyExpanded: false,
+              children: [_linkSection(context)],
+            ),
           ],
           const Divider(height: 32),
           Tooltip(
@@ -5342,21 +5560,33 @@ class _PropertyPanel extends StatelessWidget {
       key: key,
       children: [
         Expanded(
-          child: Text(
-            label,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
         ),
         Switch(value: value, onChanged: onChanged),
       ],
     );
   }
 
-  Widget _section(BuildContext context, String label) => Padding(
-        padding: const EdgeInsets.only(bottom: 8),
-        child: Text(label, style: Theme.of(context).textTheme.labelLarge),
-      );
+  /// LibreOffice-style collapsible group. Primary style/geometry groups start
+  /// open; effect, data, and link groups start closed. Header and body are
+  /// separate [ListView] children so ensureVisible / scrolling still work.
+  List<Widget> _foldSection({
+    required String id,
+    required String title,
+    bool initiallyExpanded = true,
+    required List<Widget> children,
+  }) {
+    final expanded = _sectionExpanded(id, initiallyExpanded);
+    return <Widget>[
+      _PropertySectionHeader(
+        id: id,
+        title: title,
+        expanded: expanded,
+        onToggle: () => _toggleSection(id, initiallyExpanded),
+      ),
+      if (expanded) ...children,
+    ];
+  }
 
   /// Full-width outline action that ellipsizes long locale labels inside the
   /// narrow Format panel / bottom sheet.
@@ -5393,9 +5623,9 @@ class _PropertyPanel extends StatelessWidget {
       return const SizedBox.shrink();
     }
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _section(context, EditorL10n.of(context).panelImage),
         _fullWidthOutlineButton(
           onPressed: () async {
             final picked = await pickImageFile();
@@ -5515,9 +5745,9 @@ class _PropertyPanel extends StatelessWidget {
     final props = controller.selectedProperties;
     final scheme = Theme.of(context).colorScheme;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _section(context, EditorL10n.of(context).panelData),
         if (props.isEmpty)
           Text(
             EditorL10n.of(context).noShapeData,
@@ -5571,9 +5801,9 @@ class _PropertyPanel extends StatelessWidget {
     final target = link?.effectiveTarget;
     final scheme = Theme.of(context).colorScheme;
     return Column(
+      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _section(context, EditorL10n.of(context).panelLink),
         if (target == null || target.isEmpty)
           Text(
             EditorL10n.of(context).noLink,

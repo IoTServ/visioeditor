@@ -47,8 +47,11 @@ void main() {
     );
     final reopenedDoc = const DocumentParser().parse(value.exportToBytes());
     final reopened = reopenedDoc.pages.single.findShapeById(id)!;
-    expect(reopened.glassEffect, isFalse,
-        reason: 'User.veGlass is not a token; save bakes a sibling highlight');
+    expect(
+      reopened.glassEffect,
+      isFalse,
+      reason: 'User.veGlass is not a token; save bakes a sibling highlight',
+    );
     expect(
       reopenedDoc.pages.single.shapes.where(isLibvisioGlassPlate),
       hasLength(1),
@@ -95,19 +98,10 @@ void main() {
     expect(bounds.right, closeTo(4.05, 1e-6));
     expect(bounds.bottom, greaterThan(2));
 
-    final shape = VsdxShapeFactory.rectangle(
-      id: 1,
-      pinX: 3,
-      pinY: 2,
-      width: 4,
-      height: 2,
-    )
-        .copyWith(
-          fill: const VsdxFill(
-            foreground: VsdxColor(0xFF1565C0),
-          ),
-        )
-        .withGlassEffect(true);
+    final shape =
+        VsdxShapeFactory.rectangle(id: 1, pinX: 3, pinY: 2, width: 4, height: 2)
+            .copyWith(fill: const VsdxFill(foreground: VsdxColor(0xFF1565C0)))
+            .withGlassEffect(true);
     final page = VsdxPage(
       id: 0,
       name: 'Glass',
@@ -186,6 +180,7 @@ void main() {
     }
     expect(find.text('Glass'), findsOneWidget);
     await tester.ensureVisible(find.text('Glass'));
+    await tester.tap(find.text('Glass'));
     await tester.pumpAndSettle();
 
     final glassY = tester.getCenter(find.text('Glass')).dy;
