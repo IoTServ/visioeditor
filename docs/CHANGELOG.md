@@ -582,6 +582,16 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html `p align` / named font color /
+  `<del>` / CSS margin percent omitted leftover HorzAlign / Char.Color
+  / Style / IndLeft for LibreOffice. mxSvgCanvas2D HTML paints those
+  tags; leftover `parseFloat("10%")` froze margin-left as 10px so Draw
+  collectParaIX inset the wrong `fo:margin-left` (`tokens.txt` IndLeft).
+  leftover now uses the containing-block width, same as padding.
+  include-shape nested omitted leftover-bakes the canvas / UA default,
+  and a later explicit rule leftover-bakes a sibling. A second save
+  keeps HorzAlign / Color / Style / IndLeft.
+
 - draw.io leftover mxStencil html font color / `<strong>` / `<em>` /
   `<s>` / `<ol>` / `<ul>` omitted leftover Char.Color / Style / Para
   for LibreOffice. mxSvgCanvas2D HTML paints those tags; leftover

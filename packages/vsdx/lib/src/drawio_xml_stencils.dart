@@ -6462,11 +6462,16 @@ void _mxHtmlUaBlockMargins(_MxHtmlStyle next, String tag) {
   }
 }
 
-void _mxHtmlApplyMargins(_MxHtmlStyle next, String attrs) {
+void _mxHtmlApplyMargins(
+  _MxHtmlStyle next,
+  String attrs, {
+  double? percentOf,
+}) {
   final box = (_mxHtmlStyleProp(attrs, 'margin') ?? '').trim();
   if (box.isNotEmpty) {
     final parts = [
-      for (final token in box.split(RegExp(r'\s+'))) _mxHtmlCssPx(token),
+      for (final token in box.split(RegExp(r'\s+')))
+        _mxHtmlCssLength(token, percentOf),
     ];
     if (parts.isNotEmpty && parts.every((v) => v != null)) {
       final values = [for (final v in parts) v!];
@@ -6488,13 +6493,16 @@ void _mxHtmlApplyMargins(_MxHtmlStyle next, String attrs) {
       }
     }
   }
-  final mt = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-top'));
+  final mt = _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'margin-top'), percentOf);
   if (mt != null) next.marginTop = mt;
-  final mr = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-right'));
+  final mr =
+      _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'margin-right'), percentOf);
   if (mr != null) next.marginRight = mr;
-  final mb = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-bottom'));
+  final mb =
+      _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'margin-bottom'), percentOf);
   if (mb != null) next.marginBottom = mb;
-  final ml = _mxHtmlCssPx(_mxHtmlStyleProp(attrs, 'margin-left'));
+  final ml =
+      _mxHtmlCssLength(_mxHtmlStyleProp(attrs, 'margin-left'), percentOf);
   if (ml != null) next.marginLeft = ml;
 }
 
@@ -6659,7 +6667,7 @@ void _mxHtmlApplyCss(
       tag == 'li' ||
       RegExp(r'^h[1-6]$').hasMatch(tag)) {
     _mxHtmlUaBlockMargins(next, tag);
-    _mxHtmlApplyMargins(next, attrs);
+    _mxHtmlApplyMargins(next, attrs, percentOf: boxWidthPx);
     _mxHtmlApplyPadding(next, attrs, percentOf: boxWidthPx);
     next.paraStart = true;
   }
