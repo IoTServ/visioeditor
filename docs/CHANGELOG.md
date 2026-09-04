@@ -582,6 +582,18 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html font color / `<strong>` / `<em>` /
+  `<s>` / `<ol>` / `<ul>` omitted leftover Char.Color / Style / Para
+  for LibreOffice. mxSvgCanvas2D HTML paints those tags; leftover
+  ignored them so Draw collectCharIX / collectParaIX reused canvas
+  black / regular / flush `fo:margin-left` (`tokens.txt` Color / Style
+  / IndLeft / Bullet). leftover already maps those HTML features. ol
+  leftover-bakes `1. ` into Character; ul leftover-bakes U+2022 and
+  drops Bullet on save so Draw paints hanging `fo:margin-left`.
+  include-shape nested omitted leftover-bakes the canvas / UA default,
+  and a later explicit rule leftover-bakes a sibling. A second save
+  keeps Color / Style / IndLeft / the baked markers.
+
 - draw.io leftover mxStencil html font size / `<u>` / `<b>` / `<i>` /
   font face / CSS padding shorthand percent omitted leftover Char.Size /
   Style / Font / Para for LibreOffice. mxSvgCanvas2D HTML paints those
