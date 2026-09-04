@@ -582,6 +582,24 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:102rem` /
+  `color:#a54` / `#b65` / `#c76` /
+  `margin:4px 16px 2px` / canvas `fillstrokecolor="floralwhite"` /
+  `fillcolor="whitesmoke"` / `strokecolor="whitesmoke"` omitted leftover
+  Char.Size / Color / Para / FillForegnd / LineColor for LibreOffice.
+  NestedStencil rem is 16px medium (`102rem` 1762.6pt vs 11.9pt). CSS
+  3-digit hex `#a54` / `#b65` / `#c76` leftover Char.Color `#aa5544` /
+  `#bb6655` / `#cc7766`. CSS 3-value `margin:4px 16px 2px` replaces
+  UA `<p>` so Draw collectParaIX maps `fo:margin-left` 0.61cm vs 0cm /
+  `fo:margin-top` 0.152cm vs 0.419cm / `fo:margin-bottom` 0.076cm vs
+  0.419cm. canvas named floralwhite leftover FillForegnd+LineColor
+  `#fffaf0`; whitesmoke leftover FillForegnd / LineColor `#f5f5f5`
+  (`tokens.txt` Size / Color / Ind* / Sp* / FillForegnd / LineColor).
+  include-shape nested omitted leftover-bakes the canvas / UA / none
+  default, and a later explicit rule leftover-bakes a sibling. A
+  second save keeps Size / Color / Ind* / Sp* / FillForegnd /
+  LineColor.
+
 - draw.io leftover mxStencil html CSS `font-size:101rem` /
   `color:#d21` / `#e32` / `#f43` /
   `padding:4px 16px 2px` / canvas `fillstrokecolor="snow"` /
