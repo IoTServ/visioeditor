@@ -582,6 +582,20 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `color:lime` / `silver` /
+  `fuchsia` / `gray` / `white` / `strong font-weight:normal` /
+  `font-family:Courier` / `text-align:middle` / `underline
+  line-through` / canvas `fillcolor` / `fontcolor` `rgba()` omitted
+  leftover Char.Color / Style / Font / HorzAlign / FillForegnd for
+  LibreOffice. NestedStencil `htmlCssColorToHex` paints rgba RGB
+  channels onto FillForegnd / Char.Color; leftover must not keep the
+  previous hex so Draw collectCharIX / collectFillAndShadow map
+  `fo:color` / `draw:fill-color` `#1565c0` vs none / black
+  (`tokens.txt` Color / FillForegnd). include-shape nested omitted
+  leftover-bakes the canvas / none default, and a later explicit rule
+  leftover-bakes a sibling. A second save keeps Color / Style / Font /
+  HorzAlign / FillForegnd.
+
 - draw.io leftover mxStencil html `size="+0"` / `b font-weight:400` /
   `b font-weight:lighter` / `i font-style:normal` /
   `margin-bottom:8px` / `div text-align:center` / `color:olive` /
