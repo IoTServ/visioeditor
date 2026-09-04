@@ -582,6 +582,22 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:5rem` / `color:salmon`
+  / `violet` / `chocolate` / `margin:8px 16px 4px 2px` / canvas
+  `fillstrokecolor="navy"` / `fillcolor="maroon"` /
+  `strokecolor="maroon"` omitted leftover Char.Size / Color / Para /
+  FillForegnd / LineColor for LibreOffice. NestedStencil rem is 16px
+  medium (`5rem` 86.4pt vs 11.9pt). named salmon / violet / chocolate
+  leftover Char.Color `#fa8072` / `#ee82ee` / `#d2691e`. CSS 4-value
+  `margin` shorthand replaces UA `<p>` (`fo:margin-left` 0.076cm vs
+  0cm / `fo:margin-right` 0.61cm vs 0cm). canvas named navy leftover
+  FillForegnd+LineColor `#000080`; maroon leftover FillForegnd /
+  LineColor `#800000` (`tokens.txt` Size / Color / Ind* / Sp* /
+  FillForegnd / LineColor). include-shape nested omitted leftover-bakes
+  the canvas / UA / none default, and a later explicit rule
+  leftover-bakes a sibling. A second save keeps Size / Color / Ind* /
+  Sp* / FillForegnd / LineColor.
+
 - draw.io leftover mxStencil html CSS `font-size:4rem` / `color:crimson`
   / `tomato` / `khaki` / `margin:8px 16px` / `margin:8px 16px 4px` /
   canvas `strokecolor` / `fontbackgroundcolor` / `shadowcolor` `navy`
