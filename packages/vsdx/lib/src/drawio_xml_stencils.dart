@@ -5444,6 +5444,22 @@ VsdxColor? _mxGraphPaintColor(String? raw) {
   }
   final named = _mxCssNamedColors[token.toLowerCase()];
   if (named != null) return VsdxColor(named);
+  // NestedStencil htmlCssColorToHex: rgb/rgba first three channels.
+  // Visio `RGB()` is three args; CSS `rgba(r,g,b,a)` has four so
+  // VsdxColor.tryParse skips it and leftover kept canvas black.
+  // Draw collectCharIX maps the hex (`tokens.txt` Color → fo:color).
+  final rgb = RegExp(
+    r'rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)',
+    caseSensitive: false,
+  ).firstMatch(token);
+  if (rgb != null) {
+    return VsdxColor.argb(
+      0xFF,
+      int.parse(rgb.group(1)!) & 0xFF,
+      int.parse(rgb.group(2)!) & 0xFF,
+      int.parse(rgb.group(3)!) & 0xFF,
+    );
+  }
   return VsdxColor.tryParse(token);
 }
 
