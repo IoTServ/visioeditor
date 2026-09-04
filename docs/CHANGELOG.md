@@ -582,6 +582,24 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:12pt` / h5
+  `font-weight:normal` / `color:rebeccapurple` /
+  `font-family:Times New Roman` / canvas `strokecolor` /
+  `fontbackgroundcolor` / `shadowcolor` / `fillgradient` `rgba()`
+  omitted leftover Char.Size / Style / Color / Font / LineColor /
+  TextBkgnd / ShdwForegnd / FillPattern for LibreOffice. NestedStencil
+  `htmlCssPx` treats `12pt` as parseFloat 12px (13pt vs 11.9pt);
+  `htmlCssColorToHex` paints rgba RGB channels onto LineColor /
+  TextBkgnd / ShdwForegnd / FillBkgnd. leftover must not keep the
+  previous hex so Draw collectLine / collectTextBlock /
+  collectFillAndShadow map `svg:stroke-color` / `fo:background-color`
+  / `draw:shadow-color` / `Gradient_5f_0` `#1565c0` vs none
+  (`tokens.txt` LineColor / TextBkgnd / ShdwForegnd / FillPattern).
+  include-shape nested omitted leftover-bakes the canvas / none
+  default, and a later explicit rule leftover-bakes a sibling. A
+  second save keeps Size / Style / Color / Font / LineColor /
+  TextBkgnd / ShdwForegnd / FillPattern.
+
 - draw.io leftover mxStencil html CSS `color:lime` / `silver` /
   `fuchsia` / `gray` / `white` / `strong font-weight:normal` /
   `font-family:Courier` / `text-align:middle` / `underline
