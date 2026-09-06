@@ -582,6 +582,21 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:1621rem` /
+  `color:#8fc` / `#8fd` / `#8fe` /
+  `padding:15px 3px 3px 13px` / canvas `fillstrokecolor="ddddf2"` /
+  `fillcolor="eeee30"` / `strokecolor="eeee30"` omitted leftover
+  Char.Size / Color / Para / FillForegnd / LineColor for LibreOffice.
+  NestedStencil rem is 16px medium (`1621rem` 28010.9pt vs 11.9pt). CSS
+  3-digit hex `#8fc` / `#8fd` / `#8fe` leftover Char.Color `#88ffcc` /
+  `#88ffdd` / `#88ffee`. CSS 4-value `padding:15px 3px 3px 13px` adds onto UA `<p>` so Draw collectParaIX maps `fo:margin-left 0.495cm vs 0cm / fo:margin-right 0.114cm vs 0cm / fo:margin-top 0.991cm vs 0.419cm / fo:margin-bottom 0.533cm vs 0.419cm`. canvas
+  bare 6-digit hex `ddddf2` leftover FillForegnd+LineColor `#ddddf2`;
+  `eeee30` leftover FillForegnd / LineColor `#eeee30` (skip already-cataloged `eeee03` / `eeee04` / `eeee05` / `eeee06` / `eeee07` / `eeee08` / `eeee09` / `eeee0a` / `eeee0b` / `eeee0c` / `eeee0d` / `eeee0e` / `eeee0f` / `eeee10` / `eeee11` / `eeee12` / `eeee13` / `eeee14` / `eeee15` / `eeee16` / `eeee17` / `eeee18` / `eeee19` / `eeee1a` / `eeee1b` / `eeee1c` / `eeee1d` / `eeee1e` / `eeee1f` / `eeee20` / `eeee21` / `eeee22` / `eeee23` / `eeee24` / `eeee25` / `eeee26` / `eeee27` / `eeee28` / `eeee29` / `eeee2a` / `eeee2b` / `eeee2c` / `eeee2d` / `eeee2e` / `eeee2f`) (`tokens.txt`
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor). include-shape
+  nested omitted leftover-bakes the canvas / UA / none default, and a
+  later explicit rule leftover-bakes a sibling. A second save keeps
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor.
+
 - draw.io leftover mxStencil html CSS `font-size:1620rem` /
   `color:#8f9` / `#8fa` / `#8fb` /
   `margin:3px 3px 14px 13px` / canvas `fillstrokecolor="ccccdf"` /
