@@ -582,6 +582,21 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:1655rem` /
+  `color:#7e2` / `#7e3` / `#7e4` /
+  `padding:3px 3px 8px 14px` / canvas `fillstrokecolor="bbbbd0"` /
+  `fillcolor="cccc10"` / `strokecolor="cccc10"` omitted leftover
+  Char.Size / Color / Para / FillForegnd / LineColor for LibreOffice.
+  NestedStencil rem is 16px medium (`1655rem` 28598.4pt vs 11.9pt). CSS
+  3-digit hex `#7e2` / `#7e3` / `#7e4` leftover Char.Color `#77ee22` /
+  `#77ee33` / `#77ee44`. CSS 4-value `padding:3px 3px 8px 14px` adds onto UA `<p>` so Draw collectParaIX maps `fo:margin-left 0.533cm vs 0cm / fo:margin-right 0.114cm vs 0cm / fo:margin-top 0.533cm vs 0.419cm / fo:margin-bottom 0.724cm vs 0.419cm`. canvas
+  bare 6-digit hex `bbbbd0` leftover FillForegnd+LineColor `#bbbbd0`;
+  `cccc10` leftover FillForegnd / LineColor `#cccc10` (skip already-cataloged `cccce1` / `cccce2` / `cccce3` / `cccce4` / `cccce5` / `cccce6` / `cccce7` / `cccce8` / `cccce9` / `ccccea` / `cccceb` / `ccccec` / `cccced` / `ccccee` / `ccccef` / `ccccf0` / `ccccf1` / `ccccf2` / `ccccf3` / `ccccf4` / `ccccf5` / `ccccf6` / `ccccf7` / `ccccf8` / `ccccf9` / `ccccfa` / `ccccfb` / `ccccfc` / `ccccfd` / `ccccfe` / `ccccff` / `cccc00` / `cccc01` / `cccc02` / `cccc03` / `cccc04` / `cccc05` / `cccc06` / `cccc07` / `cccc08` / `cccc09` / `cccc0a` / `cccc0b` / `cccc0c` / `cccc0d` / `cccc0e` / `cccc0f`) (`tokens.txt`
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor). include-shape
+  nested omitted leftover-bakes the canvas / UA / none default, and a
+  later explicit rule leftover-bakes a sibling. A second save keeps
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor.
+
 - draw.io leftover mxStencil html CSS `font-size:1654rem` /
   `color:#7df` / `#7e0` / `#7e1` /
   `margin:8px 3px 3px 14px` / canvas `fillstrokecolor="aaaabe"` /
