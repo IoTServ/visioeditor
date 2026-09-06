@@ -582,6 +582,21 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:1666rem` /
+  `color:#803` / `#804` / `#805` /
+  `margin:11px 3px 3px 14px` / canvas `fillstrokecolor="aaaabf"` /
+  `fillcolor="bbbbf4"` / `strokecolor="bbbbf4"` omitted leftover
+  Char.Size / Color / Para / FillForegnd / LineColor for LibreOffice.
+  NestedStencil rem is 16px medium (`1666rem` 28788.5pt vs 11.9pt). CSS
+  3-digit hex `#803` / `#804` / `#805` leftover Char.Color `#880033` /
+  `#880044` / `#880055`. CSS 4-value `margin:11px 3px 3px 14px` replaces UA `<p>` so Draw collectParaIX maps `fo:margin-left 0.533cm vs 0cm / fo:margin-right 0.114cm vs 0cm / fo:margin-top 0.419cm vs 0.419cm / fo:margin-bottom 0.114cm vs 0.419cm`. canvas
+  bare 6-digit hex `aaaabf` leftover FillForegnd+LineColor `#aaaabf`;
+  `bbbbf4` leftover FillForegnd / LineColor `#bbbbf4` (skip already-cataloged `bbbbc0` / `bbbbc1` / `bbbbc2` / `bbbbc3` / `bbbbc4` / `bbbbc5` / `bbbbc6` / `bbbbc7` / `bbbbc8` / `bbbbc9` / `bbbbca` / `bbbbcb` / `bbbbcc` / `bbbbcd` / `bbbbce` / `bbbbcf` / `bbbbd0` / `bbbbd1` / `bbbbd2` / `bbbbd3` / `bbbbd4` / `bbbbd5` / `bbbbd6` / `bbbbd7` / `bbbbd8` / `bbbbd9` / `bbbbda` / `bbbbdb` / `bbbbdc` / `bbbbdd` / `bbbbde` / `bbbbdf` / `bbbbe0` / `bbbbe1` / `bbbbe2` / `bbbbe3` / `bbbbe4` / `bbbbe5` / `bbbbe6` / `bbbbe7` / `bbbbe8` / `bbbbe9` / `bbbbea` / `bbbbeb` / `bbbbec` / `bbbbed` / `bbbbee` / `bbbbef` / `bbbbf0` / `bbbbf1` / `bbbbf2` / `bbbbf3`) (`tokens.txt`
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor). include-shape
+  nested omitted leftover-bakes the canvas / UA / none default, and a
+  later explicit rule leftover-bakes a sibling. A second save keeps
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor.
+
 - draw.io leftover mxStencil html CSS `font-size:1665rem` /
   `color:#800` / `#801` / `#802` /
   `padding:11px 3px 3px 14px` / canvas `fillstrokecolor="ffffae"` /
