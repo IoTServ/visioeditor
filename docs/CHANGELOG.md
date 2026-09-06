@@ -582,6 +582,21 @@ The format loosely follows [Keep a Changelog]; versions follow SemVer.
   page, unsaved marker, selection count) and a live zoom percentage on the
   canvas zoom control (click it for presets, page-fit commands, or custom zoom).
 
+- draw.io leftover mxStencil html CSS `font-size:1678rem` /
+  `color:#8f3` / `#8f4` / `#8f5` /
+  `margin:14px 3px 3px 14px` / canvas `fillstrokecolor="aaaab0"` /
+  `fillcolor="bbbb02"` / `strokecolor="bbbb02"` omitted leftover
+  Char.Size / Color / Para / FillForegnd / LineColor for LibreOffice.
+  NestedStencil rem is 16px medium (`1678rem` 28995.8pt vs 11.9pt). CSS
+  3-digit hex `#8f3` / `#8f4` / `#8f5` leftover Char.Color `#88ff33` /
+  `#88ff44` / `#88ff55`. CSS 4-value `margin:14px 3px 3px 14px` replaces UA `<p>` so Draw collectParaIX maps `fo:margin-left 0.533cm vs 0cm / fo:margin-right 0.114cm vs 0cm / fo:margin-top 0.533cm vs 0.419cm / fo:margin-bottom 0.114cm vs 0.419cm`. canvas
+  bare 6-digit hex `aaaab0` leftover FillForegnd+LineColor `#aaaab0`;
+  `bbbb02` leftover FillForegnd / LineColor `#bbbb02` (skip already-cataloged `bbbbc1` / `bbbbc2` / `bbbbc3` / `bbbbc4` / `bbbbc5` / `bbbbc6` / `bbbbc7` / `bbbbc8` / `bbbbc9` / `bbbbca` / `bbbbcb` / `bbbbcc` / `bbbbcd` / `bbbbce` / `bbbbcf` / `bbbbd0` / `bbbbd1` / `bbbbd2` / `bbbbd3` / `bbbbd4` / `bbbbd5` / `bbbbd6` / `bbbbd7` / `bbbbd8` / `bbbbd9` / `bbbbda` / `bbbbdb` / `bbbbdc` / `bbbbdd` / `bbbbde` / `bbbbdf` / `bbbbe0` / `bbbbe1` / `bbbbe2` / `bbbbe3` / `bbbbe4` / `bbbbe5` / `bbbbe6` / `bbbbe7` / `bbbbe8` / `bbbbe9` / `bbbbea` / `bbbbeb` / `bbbbec` / `bbbbed` / `bbbbee` / `bbbbef` / `bbbbf0` / `bbbbf1` / `bbbbf2` / `bbbbf3` / `bbbbf4` / `bbbbf5` / `bbbbf6` / `bbbbf7` / `bbbbf8` / `bbbbf9` / `bbbbfa` / `bbbbfb` / `bbbbfc` / `bbbbfd` / `bbbbfe` / `bbbbff` / `bbbb00` / `bbbb01`) (`tokens.txt`
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor). include-shape
+  nested omitted leftover-bakes the canvas / UA / none default, and a
+  later explicit rule leftover-bakes a sibling. A second save keeps
+  Size / Color / Ind* / Sp* / FillForegnd / LineColor.
+
 - draw.io leftover mxStencil html CSS `font-size:1677rem` /
   `color:#8f0` / `#8f1` / `#8f2` /
   `padding:14px 3px 3px 14px` / canvas `fillstrokecolor="ffffaf"` /
